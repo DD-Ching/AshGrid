@@ -1,0 +1,1956 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>未来战场 · 构成主义</title>
+<style>
+:root {
+  --red: #C8261C;
+  --red-bright: #E63329;
+  --red-dim: #8B1A14;
+  --black: #1A1A1A;
+  --cream: #E8E4D8;
+  --cream-dark: #D4CFC0;
+  --gray: #6B6B6B;
+  --light-gray: #B8B4A8;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-user-select: none; user-select: none; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--cream);
+  font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Helvetica Neue", sans-serif;
+  cursor: none;
+  color: var(--black);
+}
+canvas { display: block; position: fixed; top: 0; left: 0; }
+
+.overlay {
+  position: fixed; inset: 0;
+  z-index: 100;
+  cursor: default;
+}
+.overlay.hidden { display: none; }
+
+.start-screen {
+  background: var(--cream);
+  padding: 4vh 6vw;
+  position: relative;
+  overflow: hidden;
+}
+.start-bg {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  width: 100%; height: 100%;
+}
+.start-content {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  display: flex; flex-direction: column; justify-content: space-between;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.brand-mark {
+  font-size: 12px; letter-spacing: 6px; font-weight: 800;
+  color: var(--red); text-transform: uppercase;
+  border-top: 3px solid var(--black);
+  border-bottom: 1px solid var(--black);
+  padding: 8px 12px;
+  display: inline-block; align-self: flex-start;
+  background: var(--cream);
+}
+.title {
+  font-size: clamp(60px, 11vw, 180px);
+  line-height: 0.82;
+  font-weight: 900;
+  color: var(--black);
+  letter-spacing: -4px;
+  margin-top: 16px;
+  position: relative;
+}
+.title .red { color: var(--red); display: inline-block; transform: translateX(-8px); }
+.title .slash { color: var(--red); }
+.subtitle {
+  font-size: clamp(14px, 1.5vw, 22px);
+  letter-spacing: 12px;
+  color: var(--black);
+  margin-top: 24px;
+  font-weight: 600;
+  border-left: 6px solid var(--red);
+  padding-left: 16px;
+}
+.tagline {
+  font-size: 12px; letter-spacing: 4px;
+  color: var(--gray);
+  margin-top: 8px;
+  padding-left: 22px;
+}
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px 24px;
+  padding: 24px 0;
+  border-top: 3px solid var(--black);
+  border-bottom: 1px solid var(--black);
+}
+.ctrl-item {
+  display: flex; gap: 12px; align-items: center;
+  font-size: 13px; letter-spacing: 1px;
+  font-weight: 500;
+}
+.ctrl-key {
+  font-weight: 900;
+  background: var(--black); color: var(--cream);
+  padding: 6px 10px; min-width: 44px; text-align: center;
+  font-family: "Courier New", monospace;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+.start-btn {
+  background: var(--red);
+  color: var(--cream);
+  border: none;
+  font-family: inherit;
+  font-size: 22px; letter-spacing: 8px; font-weight: 900;
+  padding: 22px 56px;
+  cursor: pointer;
+  align-self: flex-start;
+  border-radius: 0;
+  transition: transform 0.15s, background 0.15s;
+  margin-top: 24px;
+  position: relative;
+}
+.start-btn::after {
+  content: '';
+  position: absolute;
+  top: 6px; left: 6px;
+  width: 100%; height: 100%;
+  background: var(--black);
+  z-index: -1;
+}
+.start-btn:hover { transform: translate(4px, -4px); background: var(--red-bright); }
+.footer-bar {
+  display: flex; justify-content: space-between;
+  font-size: 10px; letter-spacing: 3px; color: var(--gray);
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--black);
+}
+
+/* End screen */
+.end-screen {
+  background: var(--cream);
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+}
+.end-bg {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  width: 100%; height: 100%;
+}
+.end-content {
+  position: relative; z-index: 2;
+  text-align: center;
+}
+.end-tag {
+  font-size: 12px; letter-spacing: 8px; color: var(--red); font-weight: 900;
+  margin-bottom: 12px;
+}
+.end-title {
+  font-size: clamp(56px, 8vw, 110px);
+  font-weight: 900;
+  color: var(--black);
+  margin-bottom: 4px;
+  letter-spacing: -2px;
+}
+.end-title.victory { color: var(--red); }
+.end-stats {
+  display: flex; gap: 64px; margin: 32px 0 40px;
+  justify-content: center;
+}
+.end-stat {
+  display: flex; flex-direction: column; align-items: center;
+  border-top: 3px solid var(--black);
+  padding: 12px 8px 0;
+  min-width: 100px;
+}
+.end-stat-num {
+  font-size: 56px; font-weight: 900; color: var(--red);
+  line-height: 1;
+}
+.end-stat-label {
+  font-size: 11px; letter-spacing: 4px; color: var(--black);
+  margin-top: 8px;
+  font-weight: 700;
+}
+.restart-btn {
+  background: var(--black); color: var(--cream); border: none;
+  font-family: inherit; font-size: 18px; letter-spacing: 8px; font-weight: 800;
+  padding: 18px 48px; cursor: pointer;
+  position: relative;
+}
+.restart-btn::after {
+  content: '';
+  position: absolute;
+  top: 5px; left: 5px;
+  width: 100%; height: 100%;
+  background: var(--red);
+  z-index: -1;
+}
+.restart-btn:hover { background: var(--red); }
+
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div class="overlay start-screen" id="start">
+  <svg class="start-bg" viewBox="0 0 100 100" preserveAspectRatio="none">
+    <circle cx="78" cy="28" r="20" fill="#C8261C"/>
+    <polygon points="0,100 0,42 48,100" fill="#C8261C"/>
+    <polygon points="100,0 62,0 100,32" fill="#1A1A1A"/>
+    <polygon points="55,55 75,75 35,75" fill="#1A1A1A" opacity="0.15"/>
+    <circle cx="22" cy="78" r="3" fill="#1A1A1A"/>
+    <line x1="22" y1="78" x2="55" y2="55" stroke="#1A1A1A" stroke-width="0.15" stroke-dasharray="0.4,0.6"/>
+    <line x1="55" y1="55" x2="78" y2="28" stroke="#1A1A1A" stroke-width="0.15" stroke-dasharray="0.4,0.6"/>
+  </svg>
+  <div class="start-content">
+    <div>
+      <div class="brand-mark">单元 0451 · 战术模拟 / TACTICAL SIM</div>
+      <h1 class="title">未来<span class="slash">·</span><span class="red">战场</span></h1>
+      <div class="subtitle">深度 · 持久 · 无人化</div>
+      <div class="tagline">FUTURE BATTLEFIELD — DEEP / PERSISTENT / UNMANNED</div>
+    </div>
+
+    <div class="controls-grid">
+      <div class="ctrl-item"><span class="ctrl-key">WASD</span><span>移动 / 飞行</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">鼠标</span><span>瞄准 / 射击</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">R</span><span>装填弹药</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">Q</span><span>无人机侦察 UAV</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">E</span><span>FPV 自杀无人机</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">F</span><span>雷达视角 RADAR</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">T</span><span>热成像 THERMAL</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">TAB</span><span>战术指挥 RTS</span></div>
+    </div>
+
+    <div>
+      <button class="start-btn" id="startBtn">进入战场 ▶</button>
+    </div>
+
+    <div class="footer-bar">
+      <span>俄乌战争逻辑的未来延伸</span>
+      <span>SECTOR 7G · UNIT 0451</span>
+      <span>建议 1080p+ 全屏体验</span>
+    </div>
+  </div>
+</div>
+
+<div class="overlay end-screen hidden" id="end">
+  <svg class="end-bg" viewBox="0 0 100 100" preserveAspectRatio="none">
+    <polygon points="0,0 30,0 0,40" fill="#1A1A1A"/>
+    <polygon points="100,100 70,100 100,55" fill="#C8261C"/>
+    <circle cx="80" cy="20" r="10" fill="#C8261C" opacity="0.4"/>
+  </svg>
+  <div class="end-content">
+    <div class="end-tag" id="endTag">— 任务结算 —</div>
+    <div class="end-title" id="endTitle">单元失联</div>
+    <div class="end-stats">
+      <div class="end-stat"><div class="end-stat-num" id="endScore">0</div><div class="end-stat-label">总积分</div></div>
+      <div class="end-stat"><div class="end-stat-num" id="endKills">0</div><div class="end-stat-label">击杀数</div></div>
+      <div class="end-stat"><div class="end-stat-num" id="endWave">0</div><div class="end-stat-label">幸存波次</div></div>
+    </div>
+    <button class="restart-btn" id="restartBtn">重新部署</button>
+  </div>
+</div>
+
+<script>
+// ============ SETUP ============
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+let DPR = 1;
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  canvas.width = window.innerWidth * DPR;
+  canvas.height = window.innerHeight * DPR;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+const W = () => canvas.width / DPR;
+const H = () => canvas.height / DPR;
+
+const COLORS = {
+  red:  '#C8261C',
+  redBright: '#E63329',
+  redDim: '#8B1A14',
+  black: '#1A1A1A',
+  cream: '#E8E4D8',
+  creamDark: '#D4CFC0',
+  gray: '#6B6B6B',
+  lightGray: '#B8B4A8',
+};
+
+const WORLD = { w: 3200, h: 3200 };
+
+// ============ STATE ============
+const game = {
+  state: 'menu',
+  mode: 'tactical',
+  wave: 0,
+  score: 0,
+  killCount: 0,
+  time: 0,
+  waveBreak: 0,
+  message: '',
+  messageTime: 0,
+  hitFlash: 0,
+};
+
+const player = {
+  x: WORLD.w/2, y: WORLD.h/2,
+  angle: 0,
+  hp: 100, maxHp: 100,
+  ammo: 30, maxAmmo: 30, reserve: 120,
+  reloading: false, reloadTime: 0,
+  fireCooldown: 0,
+  speed: 2.8,
+  radius: 14,
+  alive: true,
+  walkPhase: 0,
+};
+
+const drone = {
+  deployed: false,
+  x: 0, y: 0,
+  battery: 100, maxBattery: 100,
+  speed: 5,
+  visionRadius: 280,
+  alt: 120,
+};
+
+const fpv = {
+  active: false,
+  available: 3, max: 3,
+  x: 0, y: 0,
+  angle: 0,
+  speed: 7,
+  trail: [],
+};
+
+const radar = {
+  sweepAngle: 0,
+};
+
+const bullets = [];
+const enemyBullets = [];
+const enemies = [];
+const enemyDrones = [];
+const explosions = [];
+const buildings = [];
+const decorations = [];
+const muzzleFlashes = [];
+const networkNodes = [];
+
+// ============ INPUT ============
+const keys = {};
+const mouse = { x: 0, y: 0, worldX: 0, worldY: 0, down: false };
+
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  keys[k] = true;
+  if (e.key === 'Tab') e.preventDefault();
+  if (game.state === 'playing') {
+    if (k === 'q') toggleDrone();
+    else if (k === 'e') launchFPV();
+    else if (k === 'f') game.mode = (game.mode === 'radar') ? 'tactical' : 'radar';
+    else if (k === 't') game.mode = (game.mode === 'thermal') ? 'tactical' : 'thermal';
+    else if (k === 'tab') { e.preventDefault(); game.mode = (game.mode === 'command') ? 'tactical' : 'command'; }
+    else if (k === 'r') startReload();
+  }
+});
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener('mousedown', e => { if (e.button === 0) mouse.down = true; });
+window.addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; });
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+// ============ GAME LIFECYCLE ============
+document.getElementById('startBtn').onclick = startGame;
+document.getElementById('restartBtn').onclick = startGame;
+
+function startGame() {
+  document.getElementById('start').classList.add('hidden');
+  document.getElementById('end').classList.add('hidden');
+
+  game.state = 'playing';
+  game.mode = 'tactical';
+  game.wave = 0;
+  game.score = 0;
+  game.killCount = 0;
+  game.time = 0;
+  game.message = '';
+  game.waveBreak = 0;
+
+  player.x = WORLD.w/2; player.y = WORLD.h/2;
+  player.hp = player.maxHp;
+  player.ammo = player.maxAmmo;
+  player.reserve = 120;
+  player.reloading = false;
+  player.alive = true;
+
+  drone.deployed = false;
+  drone.battery = drone.maxBattery;
+
+  fpv.active = false;
+  fpv.available = fpv.max;
+  fpv.trail = [];
+
+  bullets.length = 0;
+  enemyBullets.length = 0;
+  enemies.length = 0;
+  enemyDrones.length = 0;
+  explosions.length = 0;
+  muzzleFlashes.length = 0;
+
+  generateWorld();
+  startNextWave();
+}
+
+function endGame(victory) {
+  game.state = 'gameover';
+  document.getElementById('endTag').textContent = victory ? '— 任务完成 / MISSION COMPLETE —' : '— 任务结算 / MISSION END —';
+  document.getElementById('endTitle').textContent = victory ? '战场肃清' : '单元失联';
+  document.getElementById('endTitle').className = 'end-title' + (victory ? ' victory' : '');
+  document.getElementById('endScore').textContent = game.score;
+  document.getElementById('endKills').textContent = game.killCount;
+  document.getElementById('endWave').textContent = game.wave;
+  document.getElementById('end').classList.remove('hidden');
+}
+
+function startNextWave() {
+  game.wave++;
+  if (game.wave > 5) { endGame(true); return; }
+  showMessage(`第 ${game.wave} 波 · 敌方单位接近`, 120);
+  spawnWave(game.wave);
+}
+
+function showMessage(text, time = 90) {
+  game.message = text;
+  game.messageTime = time;
+}
+
+// ============ WORLD GEN ============
+function generateWorld() {
+  buildings.length = 0;
+  decorations.length = 0;
+  networkNodes.length = 0;
+
+  const gw = 9, gh = 9;
+  const cw = WORLD.w / gw, ch = WORLD.h / gh;
+  for (let i = 0; i < gw; i++) {
+    for (let j = 0; j < gh; j++) {
+      if (Math.random() < 0.55) {
+        const cx = i * cw + cw/2 + (Math.random()-0.5)*60;
+        const cy = j * ch + ch/2 + (Math.random()-0.5)*60;
+        if (Math.hypot(cx-WORLD.w/2, cy-WORLD.h/2) < 280) continue;
+        const w = 70 + Math.random()*180;
+        const h = 70 + Math.random()*180;
+        buildings.push({
+          x: cx-w/2, y: cy-h/2, w, h,
+          color: Math.random() < 0.78 ? COLORS.gray : COLORS.black,
+          shadow: true,
+          accent: Math.random() < 0.18,
+        });
+      }
+    }
+  }
+
+  for (let i = 0; i < 24; i++) {
+    decorations.push({
+      x: Math.random()*WORLD.w,
+      y: Math.random()*WORLD.h,
+      type: Math.random() < 0.45 ? 'triangle' : Math.random() < 0.6 ? 'square' : 'line',
+      size: 30 + Math.random()*60,
+      angle: Math.random()*Math.PI*2,
+      color: Math.random() < 0.55 ? COLORS.red : COLORS.black,
+      opacity: 0.25 + Math.random() * 0.35,
+    });
+  }
+
+  for (let i = 0; i < 40; i++) {
+    networkNodes.push({
+      x: Math.random()*WORLD.w,
+      y: Math.random()*WORLD.h,
+      pulse: Math.random()*Math.PI*2,
+    });
+  }
+}
+
+function spawnWave(n) {
+  const numSoldiers = 2 + n * 2;
+  const numDrones = Math.floor(n * 1.2);
+  for (let i = 0; i < numSoldiers; i++) spawnSoldier();
+  for (let i = 0; i < numDrones; i++) spawnDroneEnemy();
+}
+
+function spawnSoldier() {
+  let x, y, ok = false, tries = 0;
+  while (!ok && tries < 50) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 700 + Math.random() * 500;
+    x = player.x + Math.cos(angle)*dist;
+    y = player.y + Math.sin(angle)*dist;
+    if (x < 50 || x > WORLD.w-50 || y < 50 || y > WORLD.h-50) { tries++; continue; }
+    ok = true;
+    for (const b of buildings) {
+      if (x > b.x-20 && x < b.x+b.w+20 && y > b.y-20 && y < b.y+b.h+20) { ok = false; break; }
+    }
+    tries++;
+  }
+  if (!ok) { x = player.x + 700; y = player.y; }
+  enemies.push({
+    x, y,
+    hp: 50, maxHp: 50,
+    angle: 0,
+    fireCd: 60 + Math.random()*60,
+    radius: 13,
+    alive: true,
+    walkPhase: Math.random() * Math.PI * 2,
+    speed: 1.0 + Math.random()*0.4,
+  });
+}
+
+function spawnDroneEnemy() {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 600 + Math.random() * 400;
+  enemyDrones.push({
+    x: player.x + Math.cos(angle)*dist,
+    y: player.y + Math.sin(angle)*dist,
+    hp: 25, maxHp: 25,
+    fireCd: 60 + Math.random()*120,
+    radius: 11,
+    alive: true,
+    hoverPhase: Math.random()*Math.PI*2,
+  });
+}
+
+// ============ DRONE / FPV CONTROL ============
+function toggleDrone() {
+  if (!drone.deployed) {
+    if (drone.battery < 15) { showMessage('电池电量不足', 60); return; }
+    drone.deployed = true;
+    drone.x = player.x;
+    drone.y = player.y - 40;
+    game.mode = 'drone';
+    showMessage('UAV 已部署', 60);
+  } else {
+    game.mode = (game.mode === 'drone') ? 'tactical' : 'drone';
+  }
+}
+
+function launchFPV() {
+  if (fpv.active) return;
+  if (fpv.available <= 0) { showMessage('FPV 已耗尽', 60); return; }
+  fpv.active = true;
+  fpv.available--;
+  fpv.x = player.x + Math.cos(player.angle)*40;
+  fpv.y = player.y + Math.sin(player.angle)*40;
+  fpv.angle = player.angle;
+  fpv.trail = [];
+  game.mode = 'fpv';
+  showMessage('FPV 自杀无人机已发射', 60);
+}
+
+function startReload() {
+  if (player.reloading || player.ammo >= player.maxAmmo || player.reserve <= 0) return;
+  player.reloading = true;
+  player.reloadTime = 80;
+}
+
+// ============ AI ============
+function lineOfSight(x1, y1, x2, y2) {
+  const steps = 24;
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const x = x1 + (x2-x1)*t, y = y1 + (y2-y1)*t;
+    for (const b of buildings) {
+      if (x > b.x && x < b.x+b.w && y > b.y && y < b.y+b.h) return false;
+    }
+  }
+  return true;
+}
+
+function pushOutOfBuildings(ent, radius) {
+  for (const b of buildings) {
+    if (ent.x > b.x - radius && ent.x < b.x+b.w+radius &&
+        ent.y > b.y - radius && ent.y < b.y+b.h+radius) {
+      const cx = b.x + b.w/2, cy = b.y + b.h/2;
+      const ddx = ent.x - cx, ddy = ent.y - cy;
+      const overlapX = (b.w/2 + radius) - Math.abs(ddx);
+      const overlapY = (b.h/2 + radius) - Math.abs(ddy);
+      if (overlapX < overlapY) ent.x += ddx > 0 ? overlapX : -overlapX;
+      else ent.y += ddy > 0 ? overlapY : -overlapY;
+    }
+  }
+}
+
+function updateEnemies() {
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const dx = player.x - e.x, dy = player.y - e.y;
+    const dist = Math.hypot(dx, dy);
+    e.angle = Math.atan2(dy, dx);
+
+    if (dist > 280) {
+      e.x += Math.cos(e.angle) * e.speed;
+      e.y += Math.sin(e.angle) * e.speed;
+      e.walkPhase += 0.18;
+    } else if (dist < 180) {
+      e.x -= Math.cos(e.angle) * e.speed * 0.5;
+      e.y -= Math.sin(e.angle) * e.speed * 0.5;
+      e.walkPhase += 0.1;
+    }
+    pushOutOfBuildings(e, e.radius);
+    e.x = Math.max(20, Math.min(WORLD.w-20, e.x));
+    e.y = Math.max(20, Math.min(WORLD.h-20, e.y));
+
+    e.fireCd--;
+    if (e.fireCd <= 0 && dist < 500 && lineOfSight(e.x, e.y, player.x, player.y) && player.alive) {
+      const ang = e.angle + (Math.random()-0.5)*0.08;
+      enemyBullets.push({
+        x: e.x + Math.cos(ang)*16,
+        y: e.y + Math.sin(ang)*16,
+        vx: Math.cos(ang)*8, vy: Math.sin(ang)*8,
+        life: 70, damage: 9,
+      });
+      e.fireCd = 50 + Math.random()*40;
+    }
+  }
+
+  for (const d of enemyDrones) {
+    if (!d.alive) continue;
+    d.hoverPhase += 0.04;
+    const dx = player.x - d.x, dy = player.y - d.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 220) {
+      const a = Math.atan2(dy, dx);
+      d.x += Math.cos(a)*1.6;
+      d.y += Math.sin(a)*1.6;
+    } else if (dist < 180) {
+      const a = Math.atan2(dy, dx);
+      d.x -= Math.cos(a)*0.8;
+      d.y -= Math.sin(a)*0.8;
+    }
+    d.x += Math.cos(d.hoverPhase)*0.4;
+    d.y += Math.sin(d.hoverPhase*1.3)*0.4;
+
+    d.fireCd--;
+    if (d.fireCd <= 0 && dist < 400 && player.alive) {
+      const a = Math.atan2(dy, dx) + (Math.random()-0.5)*0.15;
+      enemyBullets.push({
+        x: d.x + Math.cos(a)*12,
+        y: d.y + Math.sin(a)*12,
+        vx: Math.cos(a)*7, vy: Math.sin(a)*7,
+        life: 60, damage: 6,
+      });
+      d.fireCd = 80 + Math.random()*60;
+    }
+  }
+}
+
+// ============ UPDATE ============
+function update() {
+  if (game.state !== 'playing') return;
+  game.time++;
+
+  if (game.message) {
+    game.messageTime--;
+    if (game.messageTime <= 0) game.message = '';
+  }
+  if (game.hitFlash > 0) game.hitFlash--;
+
+  if (game.mode === 'drone' && drone.deployed) {
+    updateDroneControl();
+    updatePlayerAux();
+  } else if (game.mode === 'fpv' && fpv.active) {
+    updatePlayerAux();
+  } else {
+    updatePlayer();
+  }
+
+  updateFPV();
+  if (drone.deployed && game.mode !== 'drone') {
+    drone.battery -= 0.025;
+    if (drone.battery <= 0) {
+      drone.deployed = false;
+      showMessage('UAV 失联', 60);
+    }
+  }
+
+  updateEnemies();
+  updateBullets();
+  updateExplosions();
+  updateRadar();
+
+  if (game.waveBreak <= 0) {
+    const aliveEnemies = enemies.filter(e => e.alive).length + enemyDrones.filter(d => d.alive).length;
+    if (aliveEnemies === 0 && player.alive) {
+      game.waveBreak = 180;
+      showMessage(`第 ${game.wave} 波 已肃清`, 120);
+    }
+  }
+  if (game.waveBreak > 0) {
+    game.waveBreak--;
+    if (game.waveBreak === 0) startNextWave();
+  }
+}
+
+function updatePlayer() {
+  if (!player.alive) return;
+  let mx = 0, my = 0;
+  if (keys['w']) my -= 1;
+  if (keys['s']) my += 1;
+  if (keys['a']) mx -= 1;
+  if (keys['d']) mx += 1;
+  if (mx || my) {
+    const len = Math.hypot(mx, my);
+    mx /= len; my /= len;
+    player.x += mx * player.speed;
+    player.y += my * player.speed;
+    player.walkPhase += 0.22;
+  }
+  pushOutOfBuildings(player, player.radius);
+  player.x = Math.max(player.radius, Math.min(WORLD.w-player.radius, player.x));
+  player.y = Math.max(player.radius, Math.min(WORLD.h-player.radius, player.y));
+
+  const wp = screenToWorld(mouse.x, mouse.y);
+  mouse.worldX = wp.x; mouse.worldY = wp.y;
+  player.angle = Math.atan2(wp.y - player.y, wp.x - player.x);
+
+  player.fireCooldown--;
+  if (mouse.down && player.fireCooldown <= 0 && player.ammo > 0 && !player.reloading) fire();
+  if (player.ammo === 0 && player.reserve > 0 && !player.reloading) startReload();
+
+  if (player.reloading) {
+    player.reloadTime--;
+    if (player.reloadTime <= 0) {
+      const need = player.maxAmmo - player.ammo;
+      const take = Math.min(need, player.reserve);
+      player.ammo += take;
+      player.reserve -= take;
+      player.reloading = false;
+    }
+  }
+}
+
+function updatePlayerAux() {
+  if (!player.alive) return;
+  if (player.reloading) {
+    player.reloadTime--;
+    if (player.reloadTime <= 0) {
+      const need = player.maxAmmo - player.ammo;
+      const take = Math.min(need, player.reserve);
+      player.ammo += take;
+      player.reserve -= take;
+      player.reloading = false;
+    }
+  }
+}
+
+function updateDroneControl() {
+  let mx = 0, my = 0;
+  if (keys['w']) my -= 1;
+  if (keys['s']) my += 1;
+  if (keys['a']) mx -= 1;
+  if (keys['d']) mx += 1;
+  if (mx || my) {
+    const len = Math.hypot(mx, my);
+    drone.x += mx/len * drone.speed;
+    drone.y += my/len * drone.speed;
+  }
+  drone.x = Math.max(20, Math.min(WORLD.w-20, drone.x));
+  drone.y = Math.max(20, Math.min(WORLD.h-20, drone.y));
+  drone.battery -= 0.07;
+  if (drone.battery <= 0) {
+    drone.deployed = false;
+    game.mode = 'tactical';
+    showMessage('UAV 电池耗尽', 90);
+  }
+}
+
+function fire() {
+  player.fireCooldown = 6;
+  player.ammo--;
+  const ang = player.angle + (Math.random()-0.5)*0.04;
+  bullets.push({
+    x: player.x + Math.cos(ang)*18,
+    y: player.y + Math.sin(ang)*18,
+    vx: Math.cos(ang)*14, vy: Math.sin(ang)*14,
+    life: 60, damage: 14,
+  });
+  muzzleFlashes.push({ x: player.x + Math.cos(ang)*22, y: player.y + Math.sin(ang)*22, angle: ang, life: 5 });
+}
+
+function updateBullets() {
+  for (let i = bullets.length-1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x += b.vx; b.y += b.vy;
+    b.life--;
+    let hit = false;
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      if (Math.hypot(b.x-e.x, b.y-e.y) < e.radius) {
+        e.hp -= b.damage;
+        if (e.hp <= 0) { e.alive = false; game.score += 100; game.killCount++; createExplosion(e.x, e.y, 'small'); }
+        hit = true; break;
+      }
+    }
+    if (!hit) for (const d of enemyDrones) {
+      if (!d.alive) continue;
+      if (Math.hypot(b.x-d.x, b.y-d.y) < d.radius) {
+        d.hp -= b.damage;
+        if (d.hp <= 0) { d.alive = false; game.score += 150; game.killCount++; createExplosion(d.x, d.y, 'small'); }
+        hit = true; break;
+      }
+    }
+    if (!hit) for (const bd of buildings) {
+      if (b.x > bd.x && b.x < bd.x+bd.w && b.y > bd.y && b.y < bd.y+bd.h) { hit = true; break; }
+    }
+    if (hit || b.life <= 0) bullets.splice(i, 1);
+  }
+  for (let i = enemyBullets.length-1; i >= 0; i--) {
+    const b = enemyBullets[i];
+    b.x += b.vx; b.y += b.vy;
+    b.life--;
+    let hit = false;
+    if (player.alive && Math.hypot(b.x-player.x, b.y-player.y) < player.radius) {
+      player.hp -= b.damage;
+      game.hitFlash = 12;
+      hit = true;
+      if (player.hp <= 0) {
+        player.hp = 0;
+        player.alive = false;
+        createExplosion(player.x, player.y, 'big');
+        setTimeout(() => endGame(false), 1500);
+      }
+    }
+    if (!hit) for (const bd of buildings) {
+      if (b.x > bd.x && b.x < bd.x+bd.w && b.y > bd.y && b.y < bd.y+bd.h) { hit = true; break; }
+    }
+    if (hit || b.life <= 0) enemyBullets.splice(i, 1);
+  }
+}
+
+function createExplosion(x, y, size) {
+  const radius = size === 'big' ? 90 : size === 'medium' ? 65 : 35;
+  const numParts = size === 'big' ? 24 : size === 'medium' ? 14 : 7;
+  explosions.push({
+    x, y, radius, life: 35, maxLife: 35,
+    particles: Array.from({length: numParts}, () => ({
+      x: 0, y: 0,
+      vx: (Math.random()-0.5)*10,
+      vy: (Math.random()-0.5)*10,
+      size: 3 + Math.random()*8,
+      angle: Math.random()*Math.PI*2,
+    })),
+  });
+  if (size !== 'small') {
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      if (Math.hypot(e.x-x, e.y-y) < radius) {
+        e.hp -= (size === 'big' ? 80 : 60);
+        if (e.hp <= 0) { e.alive = false; game.score += 100; game.killCount++; }
+      }
+    }
+    for (const d of enemyDrones) {
+      if (!d.alive) continue;
+      if (Math.hypot(d.x-x, d.y-y) < radius) {
+        d.hp -= (size === 'big' ? 80 : 60);
+        if (d.hp <= 0) { d.alive = false; game.score += 150; game.killCount++; }
+      }
+    }
+  }
+}
+
+function updateExplosions() {
+  for (let i = explosions.length-1; i >= 0; i--) {
+    const e = explosions[i];
+    e.life--;
+    for (const p of e.particles) {
+      p.x += p.vx; p.y += p.vy;
+      p.vx *= 0.94; p.vy *= 0.94;
+    }
+    if (e.life <= 0) explosions.splice(i, 1);
+  }
+  for (let i = muzzleFlashes.length-1; i >= 0; i--) {
+    muzzleFlashes[i].life--;
+    if (muzzleFlashes[i].life <= 0) muzzleFlashes.splice(i, 1);
+  }
+}
+
+function updateFPV() {
+  if (!fpv.active) return;
+  if (game.mode === 'fpv') {
+    const wp = screenToWorld(mouse.x, mouse.y);
+    const target = Math.atan2(wp.y - fpv.y, wp.x - fpv.x);
+    let diff = target - fpv.angle;
+    while (diff > Math.PI) diff -= Math.PI*2;
+    while (diff < -Math.PI) diff += Math.PI*2;
+    fpv.angle += diff * 0.08;
+  }
+  fpv.x += Math.cos(fpv.angle) * fpv.speed;
+  fpv.y += Math.sin(fpv.angle) * fpv.speed;
+  fpv.trail.push({ x: fpv.x, y: fpv.y, life: 25 });
+  for (let i = fpv.trail.length-1; i >= 0; i--) {
+    fpv.trail[i].life--;
+    if (fpv.trail[i].life <= 0) fpv.trail.splice(i, 1);
+  }
+  let exploded = false;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    if (Math.hypot(fpv.x-e.x, fpv.y-e.y) < e.radius+10) { exploded = true; break; }
+  }
+  if (!exploded) for (const d of enemyDrones) {
+    if (!d.alive) continue;
+    if (Math.hypot(fpv.x-d.x, fpv.y-d.y) < d.radius+10) { exploded = true; break; }
+  }
+  if (!exploded) for (const bd of buildings) {
+    if (fpv.x > bd.x && fpv.x < bd.x+bd.w && fpv.y > bd.y && fpv.y < bd.y+bd.h) { exploded = true; break; }
+  }
+  if (fpv.x < 0 || fpv.x > WORLD.w || fpv.y < 0 || fpv.y > WORLD.h) exploded = true;
+  if (exploded) {
+    createExplosion(fpv.x, fpv.y, 'medium');
+    fpv.active = false;
+    if (game.mode === 'fpv') game.mode = 'tactical';
+    showMessage(`FPV 命中 · 剩余 ${fpv.available}`, 60);
+  }
+}
+
+function updateRadar() {
+  radar.sweepAngle += 0.03;
+  if (radar.sweepAngle > Math.PI*2) radar.sweepAngle -= Math.PI*2;
+}
+
+// ============ CAMERA ============
+const camera = { x: 0, y: 0, scale: 1, targetScale: 1, rotation: 0, targetRotation: 0 };
+
+function updateCamera() {
+  let target;
+  if (game.mode === 'drone' && drone.deployed) {
+    target = drone;
+    camera.targetScale = 0.85;
+    camera.targetRotation = 0;
+  } else if (game.mode === 'fpv' && fpv.active) {
+    target = fpv;
+    camera.targetScale = 1.3;
+    camera.targetRotation = -fpv.angle - Math.PI/2;
+  } else if (game.mode === 'command') {
+    target = player;
+    camera.targetScale = 0.42;
+    camera.targetRotation = 0;
+  } else if (game.mode === 'radar' || game.mode === 'thermal') {
+    target = player;
+    camera.targetScale = 0.75;
+    camera.targetRotation = 0;
+  } else {
+    target = player;
+    camera.targetScale = 1;
+    camera.targetRotation = 0;
+  }
+  camera.scale += (camera.targetScale - camera.scale) * 0.1;
+  let rotDiff = camera.targetRotation - camera.rotation;
+  while (rotDiff > Math.PI) rotDiff -= Math.PI*2;
+  while (rotDiff < -Math.PI) rotDiff += Math.PI*2;
+  camera.rotation += rotDiff * 0.15;
+
+  camera.x = target.x;
+  camera.y = target.y;
+}
+
+function screenToWorld(sx, sy) {
+  const mx = (sx - W()/2) / camera.scale;
+  const my = (sy - H()/2) / camera.scale;
+  const c = Math.cos(camera.rotation), s = Math.sin(camera.rotation);
+  return {
+    x: mx*c + my*s + camera.x,
+    y: -mx*s + my*c + camera.y,
+  };
+}
+
+// ============ RENDER ============
+function render() {
+  const bgColor = (game.mode === 'thermal' || game.mode === 'radar') ? COLORS.black : COLORS.cream;
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, W(), H());
+
+  ctx.save();
+  ctx.translate(W()/2, H()/2);
+  ctx.scale(camera.scale, camera.scale);
+  ctx.rotate(camera.rotation);
+  ctx.translate(-camera.x, -camera.y);
+
+  if (game.mode === 'radar') renderRadarWorld();
+  else if (game.mode === 'thermal') renderThermalWorld();
+  else renderWorld();
+
+  ctx.restore();
+
+  renderHUD();
+}
+
+function renderWorld() {
+  // Grid (subtle)
+  ctx.strokeStyle = COLORS.creamDark;
+  ctx.lineWidth = 1;
+  const gridSize = 80;
+  const viewBuffer = 200;
+  const startX = Math.max(0, camera.x - W()/camera.scale - viewBuffer);
+  const startY = Math.max(0, camera.y - H()/camera.scale - viewBuffer);
+  const endX = Math.min(WORLD.w, camera.x + W()/camera.scale + viewBuffer);
+  const endY = Math.min(WORLD.h, camera.y + H()/camera.scale + viewBuffer);
+  ctx.beginPath();
+  for (let x = Math.floor(startX/gridSize)*gridSize; x < endX; x += gridSize) {
+    ctx.moveTo(x, startY); ctx.lineTo(x, endY);
+  }
+  for (let y = Math.floor(startY/gridSize)*gridSize; y < endY; y += gridSize) {
+    ctx.moveTo(startX, y); ctx.lineTo(endX, y);
+  }
+  ctx.stroke();
+
+  // El Lissitzky-style red wedge (large constructivist motif)
+  ctx.fillStyle = COLORS.red;
+  ctx.beginPath();
+  ctx.moveTo(WORLD.w*0.05, WORLD.h*0.95);
+  ctx.lineTo(WORLD.w*0.45, WORLD.h*0.50);
+  ctx.lineTo(WORLD.w*0.05, WORLD.h*0.50);
+  ctx.closePath();
+  ctx.fill();
+
+  // Big red sun/circle
+  ctx.beginPath();
+  ctx.arc(WORLD.w*0.72, WORLD.h*0.28, 220, 0, Math.PI*2);
+  ctx.fill();
+
+  // Black geometric corner blocks
+  ctx.fillStyle = COLORS.black;
+  ctx.beginPath();
+  ctx.moveTo(WORLD.w, 0);
+  ctx.lineTo(WORLD.w*0.65, 0);
+  ctx.lineTo(WORLD.w, WORLD.h*0.18);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(WORLD.w*0.22, 0);
+  ctx.lineTo(0, WORLD.h*0.10);
+  ctx.closePath();
+  ctx.fill();
+
+  // Diagonal red strip
+  ctx.save();
+  ctx.translate(WORLD.w*0.5, WORLD.h*0.5);
+  ctx.rotate(-Math.PI/6);
+  ctx.fillStyle = COLORS.red;
+  ctx.globalAlpha = 0.18;
+  ctx.fillRect(-2200, -8, 4400, 16);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+
+  // Decorative shapes
+  for (const d of decorations) {
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    ctx.rotate(d.angle);
+    ctx.fillStyle = d.color;
+    ctx.globalAlpha = d.opacity;
+    if (d.type === 'triangle') {
+      ctx.beginPath();
+      ctx.moveTo(0, -d.size/2);
+      ctx.lineTo(d.size/2, d.size/2);
+      ctx.lineTo(-d.size/2, d.size/2);
+      ctx.closePath();
+      ctx.fill();
+    } else if (d.type === 'square') {
+      ctx.fillRect(-d.size/2, -d.size/2, d.size, d.size);
+    } else {
+      ctx.fillRect(-d.size, -1.5, d.size*2, 3);
+    }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+
+  // Network lines
+  ctx.strokeStyle = COLORS.gray;
+  ctx.globalAlpha = 0.18;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 5]);
+  ctx.beginPath();
+  for (let i = 0; i < networkNodes.length; i++) {
+    const a = networkNodes[i];
+    for (let j = i+1; j < Math.min(networkNodes.length, i+4); j++) {
+      const b = networkNodes[j];
+      const d = Math.hypot(a.x-b.x, a.y-b.y);
+      if (d < 380) {
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      }
+    }
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  // Building shadows (offset)
+  for (const b of buildings) {
+    ctx.fillStyle = COLORS.creamDark;
+    ctx.fillRect(b.x+10, b.y+10, b.w, b.h);
+  }
+  // Buildings
+  for (const b of buildings) {
+    ctx.fillStyle = b.color;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    if (b.accent) {
+      ctx.fillStyle = COLORS.red;
+      ctx.fillRect(b.x, b.y, b.w*0.25, 14);
+    }
+    // Window pattern (top)
+    ctx.fillStyle = b.color === COLORS.gray ? COLORS.creamDark : COLORS.gray;
+    ctx.globalAlpha = 0.4;
+    for (let yy = b.y + 12; yy < b.y + b.h - 8; yy += 14) {
+      for (let xx = b.x + 8; xx < b.x + b.w - 8; xx += 14) {
+        ctx.fillRect(xx, yy, 6, 6);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Network nodes (decorative)
+  for (const n of networkNodes) {
+    n.pulse += 0.05;
+    const r = 2.5 + Math.sin(n.pulse)*1;
+    ctx.fillStyle = COLORS.gray;
+    ctx.globalAlpha = 0.45;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Bullets
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = COLORS.black;
+  for (const b of bullets) {
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x - b.vx*1.6, b.y - b.vy*1.6);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = COLORS.red;
+  for (const b of enemyBullets) {
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x - b.vx*1.6, b.y - b.vy*1.6);
+    ctx.stroke();
+  }
+
+  // Muzzle flashes
+  for (const m of muzzleFlashes) {
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    ctx.rotate(m.angle);
+    ctx.fillStyle = COLORS.red;
+    ctx.globalAlpha = m.life / 5;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(22, -7);
+    ctx.lineTo(30, 0);
+    ctx.lineTo(22, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+
+  // FPV trail
+  if (fpv.active) {
+    ctx.strokeStyle = COLORS.red;
+    ctx.lineWidth = 2;
+    for (let i = 1; i < fpv.trail.length; i++) {
+      const t = fpv.trail[i];
+      const t0 = fpv.trail[i-1];
+      ctx.globalAlpha = t.life / 25 * 0.7;
+      ctx.beginPath();
+      ctx.moveTo(t0.x, t0.y);
+      ctx.lineTo(t.x, t.y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Drone vision indicator
+  if (drone.deployed) {
+    ctx.strokeStyle = COLORS.black;
+    ctx.globalAlpha = 0.18;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.arc(drone.x, drone.y, drone.visionRadius, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  }
+
+  // Enemies
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    drawHumanoid(e.x, e.y, e.angle, e.walkPhase, COLORS.red, true);
+    if (e.hp < e.maxHp) {
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(e.x-15, e.y-26, 30, 3);
+      ctx.fillStyle = COLORS.red;
+      ctx.fillRect(e.x-15, e.y-26, 30 * e.hp/e.maxHp, 3);
+    }
+  }
+
+  // Enemy drones
+  for (const d of enemyDrones) {
+    if (!d.alive) continue;
+    drawDrone(d.x, d.y, COLORS.red, d.hoverPhase + game.time*0.2);
+    if (d.hp < d.maxHp) {
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(d.x-12, d.y-22, 24, 2);
+      ctx.fillStyle = COLORS.red;
+      ctx.fillRect(d.x-12, d.y-22, 24 * d.hp/d.maxHp, 2);
+    }
+  }
+
+  // Player
+  if (player.alive) drawHumanoid(player.x, player.y, player.angle, player.walkPhase, COLORS.black, false);
+
+  // Player drone
+  if (drone.deployed) drawDrone(drone.x, drone.y, COLORS.black, game.time * 0.25);
+
+  // FPV body
+  if (fpv.active) {
+    drawDrone(fpv.x, fpv.y, COLORS.red, game.time*0.3);
+    ctx.save();
+    ctx.translate(fpv.x, fpv.y);
+    ctx.rotate(fpv.angle);
+    ctx.fillStyle = COLORS.red;
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(8, -5);
+    ctx.lineTo(8, 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Explosions
+  for (const e of explosions) {
+    const t = e.life / e.maxLife;
+    ctx.fillStyle = COLORS.red;
+    ctx.globalAlpha = t * 0.55;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius * (1-t)*1.4, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.globalAlpha = t;
+    for (const p of e.particles) {
+      ctx.save();
+      ctx.translate(e.x + p.x, e.y + p.y);
+      ctx.rotate(p.angle);
+      ctx.fillStyle = Math.random() < 0.5 ? COLORS.black : COLORS.red;
+      ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+      ctx.restore();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawHumanoid(x, y, angle, walkPhase, color, isEnemy) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = COLORS.creamDark;
+  ctx.beginPath();
+  ctx.ellipse(2, 5, 17, 6, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.rotate(angle);
+
+  const legOffset = Math.sin(walkPhase) * 4;
+  ctx.fillStyle = color;
+  ctx.fillRect(-9, -3+legOffset, 7, 6);
+  ctx.fillRect(2, -3-legOffset, 7, 6);
+
+  ctx.fillRect(-10, -10, 16, 20);
+  ctx.fillRect(-5, -6, 10, 8);
+
+  ctx.fillStyle = isEnemy ? COLORS.redDim : COLORS.black;
+  ctx.fillRect(4, -2, 20, 4);
+
+  if (isEnemy) {
+    ctx.fillStyle = COLORS.black;
+    ctx.fillRect(-3, -6, 6, 4);
+  } else {
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(-2, 2, 4, 6);
+  }
+
+  ctx.restore();
+}
+
+function drawDrone(x, y, color, phase) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = COLORS.creamDark;
+  ctx.beginPath();
+  ctx.arc(2, 4, 10, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.strokeStyle = COLORS.gray;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const a = (i*Math.PI/2) + phase;
+    const cx = Math.cos(i*Math.PI/2 + Math.PI/4)*10;
+    const cy = Math.sin(i*Math.PI/2 + Math.PI/4)*10;
+    ctx.moveTo(cx + Math.cos(a)*5, cy + Math.sin(a)*5);
+    ctx.lineTo(cx - Math.cos(a)*5, cy - Math.sin(a)*5);
+  }
+  ctx.stroke();
+
+  ctx.fillStyle = color;
+  ctx.fillRect(-2, -10, 4, 20);
+  ctx.fillRect(-10, -2, 20, 4);
+
+  ctx.beginPath();
+  ctx.arc(0, 0, 4, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function renderRadarWorld() {
+  const cx = player.x, cy = player.y;
+  const maxR = 700;
+
+  // Concentric circles
+  ctx.strokeStyle = COLORS.red;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.4;
+  for (let r = 100; r <= maxR; r += 100) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(cx - maxR, cy); ctx.lineTo(cx + maxR, cy);
+  ctx.moveTo(cx, cy - maxR); ctx.lineTo(cx, cy + maxR);
+  ctx.stroke();
+
+  // Sweep arc
+  ctx.fillStyle = COLORS.red;
+  ctx.globalAlpha = 0.18;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.arc(cx, cy, maxR, radar.sweepAngle - 0.4, radar.sweepAngle);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = COLORS.redBright;
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(radar.sweepAngle)*maxR, cy + Math.sin(radar.sweepAngle)*maxR);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Building outlines (faint)
+  ctx.strokeStyle = COLORS.gray;
+  ctx.globalAlpha = 0.25;
+  ctx.lineWidth = 1;
+  for (const b of buildings) {
+    if (Math.hypot(b.x+b.w/2-cx, b.y+b.h/2-cy) > maxR+100) continue;
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+  }
+
+  // Pings
+  ctx.fillStyle = COLORS.redBright;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const dist = Math.hypot(e.x-cx, e.y-cy);
+    if (dist > maxR) continue;
+    const ang = Math.atan2(e.y-cy, e.x-cx);
+    let diff = ang - radar.sweepAngle;
+    while (diff > Math.PI) diff -= Math.PI*2;
+    while (diff < -Math.PI) diff += Math.PI*2;
+    const fade = Math.max(0.1, Math.min(1, 1 + diff*0.7));
+    ctx.globalAlpha = fade;
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    ctx.rotate(e.angle);
+    ctx.beginPath();
+    ctx.moveTo(8, 0);
+    ctx.lineTo(-5, 6);
+    ctx.lineTo(-5, -6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  for (const d of enemyDrones) {
+    if (!d.alive) continue;
+    const dist = Math.hypot(d.x-cx, d.y-cy);
+    if (dist > maxR) continue;
+    const ang = Math.atan2(d.y-cy, d.x-cx);
+    let diff = ang - radar.sweepAngle;
+    while (diff > Math.PI) diff -= Math.PI*2;
+    while (diff < -Math.PI) diff += Math.PI*2;
+    const fade = Math.max(0.1, Math.min(1, 1 + diff*0.7));
+    ctx.globalAlpha = fade;
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, 4, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Player center
+  ctx.fillStyle = COLORS.cream;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 6, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle = COLORS.red;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 12, 0, Math.PI*2);
+  ctx.stroke();
+
+  // Drone if deployed
+  if (drone.deployed) {
+    ctx.fillStyle = COLORS.cream;
+    ctx.fillRect(drone.x-4, drone.y-4, 8, 8);
+  }
+}
+
+function renderThermalWorld() {
+  // Cool building outlines
+  ctx.strokeStyle = '#3A3A3A';
+  ctx.lineWidth = 1;
+  for (const b of buildings) {
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = '#2A2A2A';
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+  }
+
+  // Hot units
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const grad = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, 24);
+    grad.addColorStop(0, COLORS.cream);
+    grad.addColorStop(0.5, COLORS.redBright);
+    grad.addColorStop(1, 'rgba(200,38,28,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(e.x-30, e.y-30, 60, 60);
+  }
+  for (const d of enemyDrones) {
+    if (!d.alive) continue;
+    const grad = ctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, 18);
+    grad.addColorStop(0, COLORS.cream);
+    grad.addColorStop(0.5, COLORS.redBright);
+    grad.addColorStop(1, 'rgba(200,38,28,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(d.x-22, d.y-22, 44, 44);
+  }
+  if (player.alive) {
+    const grad = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, 28);
+    grad.addColorStop(0, COLORS.cream);
+    grad.addColorStop(0.4, '#FFE890');
+    grad.addColorStop(1, 'rgba(255,232,144,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(player.x-34, player.y-34, 68, 68);
+  }
+
+  // Bullets
+  ctx.strokeStyle = COLORS.cream;
+  ctx.lineWidth = 1;
+  for (const b of [...bullets, ...enemyBullets]) {
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x - b.vx*3, b.y - b.vy*3);
+    ctx.stroke();
+  }
+
+  // Explosions hot
+  ctx.fillStyle = COLORS.cream;
+  for (const e of explosions) {
+    const t = e.life / e.maxLife;
+    ctx.globalAlpha = t;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius*(1-t)*1.3, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Scan lines
+  ctx.strokeStyle = COLORS.red;
+  ctx.globalAlpha = 0.06;
+  ctx.lineWidth = 1;
+  for (let y = 0; y < WORLD.h; y += 4) {
+    ctx.beginPath();
+    ctx.moveTo(0, y); ctx.lineTo(WORLD.w, y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ============ HUD ============
+function renderHUD() {
+  // Hit flash
+  if (game.hitFlash > 0) {
+    ctx.fillStyle = `rgba(200, 38, 28, ${game.hitFlash / 12 * 0.35})`;
+    ctx.fillRect(0, 0, W(), H());
+  }
+
+  // Top-left: status panel
+  drawHUDPanel(20, 20, 280, 130, '战场状态 / STATUS');
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(`坐标 ${player.x.toFixed(0)} · ${player.y.toFixed(0)}`, 32, 60);
+  ctx.fillText(`视角 ${getModeLabel()}`, 32, 78);
+  ctx.fillText(`波次 ${game.wave} / 5`, 32, 96);
+  const remaining = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
+  ctx.fillStyle = remaining > 0 ? COLORS.red : COLORS.gray;
+  ctx.fillText(`敌方剩余 ${remaining}`, 32, 114);
+  ctx.fillStyle = COLORS.gray;
+  ctx.font = '10px sans-serif';
+  ctx.fillText(`T+${Math.floor(game.time/60)}s`, 32, 134);
+
+  // Top-right: score
+  ctx.textAlign = 'right';
+  ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 38px sans-serif';
+  ctx.fillText(`${game.score}`, W() - 30, 60);
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText('TOTAL SCORE / 总积分', W() - 30, 78);
+  ctx.fillText(`击杀 ${game.killCount}`, W() - 30, 96);
+  ctx.textAlign = 'left';
+
+  // View mode banner (top-center)
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(W()/2 - 110, 20, 220, 4);
+  ctx.fillStyle = 'rgba(232, 228, 216, 0.92)';
+  ctx.fillRect(W()/2 - 110, 24, 220, 38);
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(W()/2 - 110, 24, 220, 38);
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(getModeLabel(), W()/2, 44);
+  ctx.font = '9px sans-serif';
+  ctx.fillStyle = COLORS.gray;
+  ctx.fillText('— VIEW MODE —', W()/2, 56);
+  ctx.textAlign = 'left';
+
+  // Bottom-left: weapon
+  const py = H() - 110;
+  drawHUDPanel(20, py, 320, 90, '武器 / WEAPON');
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 38px sans-serif';
+  ctx.fillText(`${player.ammo}`, 32, py + 70);
+  ctx.font = 'bold 16px sans-serif';
+  ctx.fillStyle = COLORS.gray;
+  ctx.fillText(`/ ${player.reserve}`, 90, py + 70);
+  if (player.reloading) {
+    ctx.fillStyle = COLORS.creamDark;
+    ctx.fillRect(160, py + 50, 140, 12);
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(160, py + 50, 140 * (1 - player.reloadTime / 80), 12);
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText('装填中 RELOADING...', 160, py + 75);
+  } else {
+    ctx.fillStyle = COLORS.gray;
+    ctx.font = '10px sans-serif';
+    ctx.fillText('R · 装填', 160, py + 60);
+    ctx.fillText('LMB · 射击', 160, py + 75);
+  }
+
+  // Center-bottom: HP
+  const hpx = 360, hpy = py;
+  drawHUDPanel(hpx, hpy, 240, 90, '生命值 / HP');
+  ctx.fillStyle = COLORS.creamDark;
+  ctx.fillRect(hpx + 12, hpy + 50, 216, 18);
+  ctx.fillStyle = player.hp > 30 ? COLORS.black : COLORS.red;
+  ctx.fillRect(hpx + 12, hpy + 50, 216 * (player.hp/player.maxHp), 18);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText(`${Math.floor(player.hp)} / ${player.maxHp}`, hpx + 18, hpy + 64);
+
+  // Drone & FPV
+  const dx = 620, dy = py;
+  drawHUDPanel(dx, dy, 220, 90, '无人机 / UAV');
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillText(`Q · 侦察 ${drone.deployed ? '部署中' : '待命'}`, dx + 12, dy + 50);
+  ctx.fillStyle = COLORS.creamDark;
+  ctx.fillRect(dx + 12, dy + 56, 196, 6);
+  ctx.fillStyle = drone.battery > 30 ? COLORS.black : COLORS.red;
+  ctx.fillRect(dx + 12, dy + 56, 196 * (drone.battery/drone.maxBattery), 6);
+  ctx.fillStyle = COLORS.black;
+  ctx.fillText(`E · FPV`, dx + 12, dy + 78);
+  // FPV pips
+  for (let i = 0; i < fpv.max; i++) {
+    ctx.fillStyle = i < fpv.available ? COLORS.red : COLORS.lightGray;
+    ctx.fillRect(dx + 60 + i*22, dy + 70, 16, 10);
+  }
+
+  // Mini-map (bottom-right)
+  const mw = 220, mh = 220;
+  const mx = W() - mw - 20, my = H() - mh - 20;
+  drawHUDPanel(mx, my, mw, mh, '战术地图 / MAP');
+  const mapPad = 12;
+  const mapX = mx + mapPad, mapY = my + 30;
+  const mapW = mw - mapPad*2, mapH = mh - 40;
+  ctx.fillStyle = COLORS.cream;
+  ctx.fillRect(mapX, mapY, mapW, mapH);
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(mapX, mapY, mapW, mapH);
+
+  const sx = mapW / WORLD.w, sy = mapH / WORLD.h;
+  // Sun on map
+  ctx.fillStyle = COLORS.red;
+  ctx.globalAlpha = 0.3;
+  ctx.beginPath();
+  ctx.arc(mapX + WORLD.w*0.72*sx, mapY + WORLD.h*0.28*sy, 220*sx, 0, Math.PI*2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  // Buildings
+  ctx.fillStyle = COLORS.lightGray;
+  for (const b of buildings) {
+    ctx.fillRect(mapX + b.x*sx, mapY + b.y*sy, Math.max(1, b.w*sx), Math.max(1, b.h*sy));
+  }
+  // Player
+  ctx.fillStyle = COLORS.black;
+  ctx.fillRect(mapX + player.x*sx - 3, mapY + player.y*sy - 3, 6, 6);
+  // Player view direction
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(mapX + player.x*sx, mapY + player.y*sy);
+  ctx.lineTo(mapX + player.x*sx + Math.cos(player.angle)*10, mapY + player.y*sy + Math.sin(player.angle)*10);
+  ctx.stroke();
+  // Enemies
+  ctx.fillStyle = COLORS.red;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    ctx.fillRect(mapX + e.x*sx - 2, mapY + e.y*sy - 2, 4, 4);
+  }
+  for (const d of enemyDrones) {
+    if (!d.alive) continue;
+    ctx.beginPath();
+    ctx.arc(mapX + d.x*sx, mapY + d.y*sy, 2, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // Drone
+  if (drone.deployed) {
+    ctx.fillStyle = COLORS.black;
+    ctx.beginPath();
+    ctx.arc(mapX + drone.x*sx, mapY + drone.y*sy, 3, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.arc(mapX + drone.x*sx, mapY + drone.y*sy, drone.visionRadius*sx, 0, Math.PI*2);
+    ctx.stroke();
+  }
+  // FPV
+  if (fpv.active) {
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(mapX + fpv.x*sx - 2, mapY + fpv.y*sy - 2, 4, 4);
+  }
+
+  // Mode-specific overlays
+  if (game.mode === 'fpv') renderFPVOverlay();
+  if (game.mode === 'drone') renderDroneOverlay();
+  if (game.mode === 'radar') renderRadarOverlay();
+  if (game.mode === 'thermal') renderThermalOverlay();
+  if (game.mode === 'command') renderCommandOverlay();
+
+  // Crosshair
+  if (game.mode !== 'fpv') {
+    ctx.strokeStyle = COLORS.red;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(mouse.x - 14, mouse.y); ctx.lineTo(mouse.x - 5, mouse.y);
+    ctx.moveTo(mouse.x + 5, mouse.y); ctx.lineTo(mouse.x + 14, mouse.y);
+    ctx.moveTo(mouse.x, mouse.y - 14); ctx.lineTo(mouse.x, mouse.y - 5);
+    ctx.moveTo(mouse.x, mouse.y + 5); ctx.lineTo(mouse.x, mouse.y + 14);
+    ctx.stroke();
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(mouse.x - 1, mouse.y - 1, 2, 2);
+  }
+
+  // Center message
+  if (game.message) {
+    ctx.save();
+    const alpha = Math.min(1, game.messageTime / 30);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = COLORS.red;
+    const msgW = Math.max(420, game.message.length * 16);
+    ctx.fillRect(W()/2 - msgW/2, H()/2 - 50, msgW, 56);
+    ctx.fillStyle = COLORS.black;
+    ctx.fillRect(W()/2 - msgW/2 + 6, H()/2 - 44, msgW, 56);
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(game.message, W()/2 + 6, H()/2 - 6);
+    ctx.textAlign = 'left';
+    ctx.restore();
+  }
+
+  // Player dead overlay
+  if (!player.alive && game.state === 'playing') {
+    ctx.fillStyle = 'rgba(200, 38, 28, 0.45)';
+    ctx.fillRect(0, 0, W(), H());
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 72px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('单元失联', W()/2, H()/2);
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('UNIT 0451 — SIGNAL LOST', W()/2, H()/2 + 28);
+    ctx.textAlign = 'left';
+  }
+}
+
+function getModeLabel() {
+  switch(game.mode) {
+    case 'tactical': return '俯视战术 TOP-DOWN';
+    case 'drone': return '无人机 UAV-RECON';
+    case 'fpv': return 'FPV 自杀无人机 KAMIKAZE';
+    case 'radar': return '雷达扫描 RADAR';
+    case 'thermal': return '热成像 THERMAL';
+    case 'command': return '指挥俯瞰 COMMAND';
+  }
+  return '';
+}
+
+function drawHUDPanel(x, y, w, h, label) {
+  ctx.fillStyle = 'rgba(232, 228, 216, 0.94)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(x, y, 4, h);
+  if (label) {
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(label, x + 12, y + 18);
+    ctx.fillRect(x + 12, y + 22, 28, 1);
+  }
+}
+
+function renderFPVOverlay() {
+  const cx = W()/2, cy = H()/2;
+  // Frame brackets
+  ctx.strokeStyle = COLORS.red;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - 30, cy); ctx.lineTo(cx - 10, cy);
+  ctx.moveTo(cx + 10, cy); ctx.lineTo(cx + 30, cy);
+  ctx.moveTo(cx, cy - 30); ctx.lineTo(cx, cy - 10);
+  ctx.moveTo(cx, cy + 10); ctx.lineTo(cx, cy + 30);
+  ctx.stroke();
+  ctx.beginPath();
+  for (const [x, y] of [[-50,-50],[50,-50],[-50,50],[50,50]]) {
+    const dirX = Math.sign(x), dirY = Math.sign(y);
+    ctx.moveTo(cx + x, cy + y - dirY*18);
+    ctx.lineTo(cx + x, cy + y);
+    ctx.lineTo(cx + x - dirX*18, cy + y);
+  }
+  ctx.stroke();
+
+  // Telemetry panel (left)
+  ctx.fillStyle = 'rgba(26, 26, 26, 0.85)';
+  ctx.fillRect(20, H()/2 - 70, 130, 140);
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(20, H()/2 - 70, 4, 140);
+  ctx.strokeStyle = COLORS.cream;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(24, H()/2 - 70, 126, 140);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 11px monospace';
+  ctx.fillText('FPV — KAMIKAZE', 32, H()/2 - 50);
+  ctx.font = 'bold 13px monospace';
+  ctx.fillText(`THR  100%`, 32, H()/2 - 26);
+  ctx.fillText(`SPD   ${(fpv.speed*45).toFixed(0)}`, 32, H()/2 - 8);
+  ctx.fillText(`ALT   080m`, 32, H()/2 + 10);
+  ctx.fillText(`GUN  ----`, 32, H()/2 + 28);
+  ctx.fillText(`RKT    01`, 32, H()/2 + 46);
+
+  // LOCK indicator
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(W()/2 + 70, H()/2 + 60, 90, 28);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('LOCK', W()/2 + 115, H()/2 + 80);
+  ctx.textAlign = 'left';
+
+  // Speed lines
+  ctx.strokeStyle = COLORS.cream;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.25;
+  for (let i = 0; i < 10; i++) {
+    const t = (game.time + i*5) % 60 / 60;
+    const x = W() * (0.05 + t*0.18);
+    const y = H() * (0.18 + i*0.07);
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 35, y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W()-x, y); ctx.lineTo(W()-x-35, y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Vignette for that "small camera" feel
+  const grad = ctx.createRadialGradient(cx, cy, Math.min(W(),H())*0.3, cx, cy, Math.max(W(),H())*0.7);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W(), H());
+}
+
+function renderDroneOverlay() {
+  // UAV HUD panel
+  ctx.fillStyle = 'rgba(232, 228, 216, 0.94)';
+  ctx.fillRect(20, H()/2 - 80, 140, 160);
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(20, H()/2 - 80, 140, 160);
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(20, H()/2 - 80, 4, 160);
+
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 11px monospace';
+  ctx.fillText('UAV — RECON', 32, H()/2 - 60);
+  ctx.fillRect(32, H()/2 - 56, 40, 1);
+  ctx.font = 'bold 13px monospace';
+  ctx.fillText(`ALT   120m`, 32, H()/2 - 32);
+  ctx.fillText(`SPD    ${drone.deployed ? 45 : 0}`, 32, H()/2 - 14);
+  ctx.fillText(`BAT   ${drone.battery.toFixed(0)}%`, 32, H()/2 + 4);
+  ctx.fillText(`SIG   STR`, 32, H()/2 + 22);
+  // Battery bar
+  ctx.fillStyle = COLORS.creamDark;
+  ctx.fillRect(32, H()/2 + 36, 110, 10);
+  ctx.fillStyle = drone.battery > 30 ? COLORS.black : COLORS.red;
+  ctx.fillRect(32, H()/2 + 36, 110 * drone.battery/drone.maxBattery, 10);
+  ctx.fillStyle = COLORS.gray;
+  ctx.font = '10px monospace';
+  ctx.fillText('Q · 切换视角', 32, H()/2 + 64);
+
+  // Frame brackets (corners)
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 2;
+  const fx = W()*0.15, fy = H()*0.15;
+  const fw = W()*0.7, fh = H()*0.7;
+  const cl = 24;
+  ctx.beginPath();
+  ctx.moveTo(fx, fy+cl); ctx.lineTo(fx, fy); ctx.lineTo(fx+cl, fy);
+  ctx.moveTo(fx+fw-cl, fy); ctx.lineTo(fx+fw, fy); ctx.lineTo(fx+fw, fy+cl);
+  ctx.moveTo(fx, fy+fh-cl); ctx.lineTo(fx, fy+fh); ctx.lineTo(fx+cl, fy+fh);
+  ctx.moveTo(fx+fw-cl, fy+fh); ctx.lineTo(fx+fw, fy+fh); ctx.lineTo(fx+fw, fy+fh-cl);
+  ctx.stroke();
+
+  // REC indicator (top-left of frame)
+  ctx.fillStyle = COLORS.red;
+  ctx.beginPath();
+  ctx.arc(fx + 16, fy + 16, 5, 0, Math.PI*2);
+  if (Math.sin(game.time*0.2) > 0) ctx.fill();
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 11px monospace';
+  ctx.fillText('REC', fx + 26, fy + 20);
+}
+
+function renderRadarOverlay() {
+  ctx.fillStyle = 'rgba(26, 26, 26, 0.9)';
+  ctx.fillRect(20, H()/2 - 60, 220, 120);
+  ctx.strokeStyle = COLORS.red;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(20, H()/2 - 60, 220, 120);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 11px monospace';
+  ctx.fillText('RADAR / 雷达扫描', 32, H()/2 - 40);
+  ctx.font = 'bold 12px monospace';
+  ctx.fillText(`SWEEP   ${(radar.sweepAngle*180/Math.PI).toFixed(0)}°`, 32, H()/2 - 16);
+  ctx.fillText(`RANGE   700m`, 32, H()/2 + 4);
+  const detected = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
+  ctx.fillStyle = COLORS.redBright;
+  ctx.fillText(`THREATS  ${detected}`, 32, H()/2 + 24);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = '9px monospace';
+  ctx.fillText('F · 关闭雷达', 32, H()/2 + 44);
+}
+
+function renderThermalOverlay() {
+  ctx.fillStyle = 'rgba(26, 26, 26, 0.85)';
+  ctx.fillRect(20, H()/2 - 50, 200, 100);
+  ctx.strokeStyle = COLORS.cream;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(20, H()/2 - 50, 200, 100);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 11px monospace';
+  ctx.fillText('THERMAL / 热成像', 32, H()/2 - 30);
+  ctx.font = 'bold 12px monospace';
+  ctx.fillStyle = COLORS.cream;
+  ctx.fillText('WHT  HUMAN', 32, H()/2 - 10);
+  ctx.fillStyle = COLORS.gray;
+  ctx.fillText('GRY  COLD', 32, H()/2 + 8);
+  ctx.fillStyle = COLORS.red;
+  ctx.fillText('RED  HOT', 32, H()/2 + 26);
+}
+
+function renderCommandOverlay() {
+  // Strategic overlay
+  ctx.fillStyle = 'rgba(232, 228, 216, 0.94)';
+  ctx.fillRect(20, H()/2 - 60, 240, 120);
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(20, H()/2 - 60, 240, 120);
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(20, H()/2 - 60, 4, 120);
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText('指挥视角 COMMAND VIEW', 32, H()/2 - 40);
+  ctx.fillRect(32, H()/2 - 36, 40, 1);
+  ctx.font = 'bold 12px monospace';
+  ctx.fillText(`SECTOR    7G`, 32, H()/2 - 14);
+  ctx.fillText(`UNITS     1 ALLY`, 32, H()/2 + 4);
+  ctx.fillStyle = COLORS.red;
+  const dt = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
+  ctx.fillText(`THREATS   ${dt}`, 32, H()/2 + 22);
+  ctx.fillStyle = COLORS.gray;
+  ctx.font = '10px sans-serif';
+  ctx.fillText('TAB · 返回战术视角', 32, H()/2 + 44);
+}
+
+// ============ MAIN LOOP ============
+function loop() {
+  update();
+  updateCamera();
+  render();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
