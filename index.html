@@ -1496,9 +1496,9 @@ const THEME_PARAMS = {
     signature: 'red_pylons',
   },
   grey_district: {
-    buildingFill: 0.42, paletteWeights: ['buildLight','buildMid','buildMid','buildDark'],
+    buildingFill: 0.30, paletteWeights: ['buildLight','buildMid','buildMid','buildDark'],
     redAccentChance: 0.10, barrelCount: 30, crateCount: 280,
-    feature: 'rubble',
+    feature: 'rubble', enterableCount: 9,
     ambient: 0xffffff, sun: 0xffffff, hemi: 0xeeeeee, hemiGround: 0x1a1a1a,
     groundColor: 0x1a1a1a, ambientDrones: 8, smokeColumns: 14, searchBeams: 4,
     signature: 'collapsed_skeleton',
@@ -1531,9 +1531,9 @@ const THEME_PARAMS = {
     signature: 'central_server_monolith',
   },
   rooftop_grid: {
-    buildingFill: 0.78, paletteWeights: ['buildLight','buildLight','buildMid','buildDark'],
+    buildingFill: 0.70, paletteWeights: ['buildLight','buildLight','buildMid','buildDark'],
     redAccentChance: 0.18, barrelCount: 18, crateCount: 120,
-    feature: 'rooftop_grid',
+    feature: 'rooftop_grid', enterableCount: 8,
     ambient: 0xc8c8d0, sun: 0xe6e6ee, hemi: 0xd0d0d8, hemiGround: 0x1a1a1a,
     groundColor: 0x141414, ambientDrones: 24, smokeColumns: 8, searchBeams: 6,
     skipCraters: true, skipBlastWalls: true,
@@ -1602,9 +1602,9 @@ const THEME_PARAMS = {
     signature: 'mega_ship_loader',
   },
   apartment: {
-    buildingFill: 0.45, paletteWeights: ['buildLight','buildMid','buildLight','buildDark'],
+    buildingFill: 0.30, paletteWeights: ['buildLight','buildMid','buildLight','buildDark'],
     redAccentChance: 0.30, barrelCount: 25, crateCount: 160,
-    feature: 'apartment',
+    feature: 'apartment', enterableCount: 14,
     ambient: 0xc8c8d0, sun: 0xd8d8e0, hemi: 0xc0c0c8, hemiGround: 0x14141a,
     groundColor: 0x1a1a1e, ambientDrones: 10, smokeColumns: 10, searchBeams: 8,
     signature: 'mega_apartment_tower',
@@ -2479,6 +2479,12 @@ function generateWorld() {
   if (!params.skipBanners) spawnPropagandaBanners(10);
   if (!params.skipWatchtowers) spawnWatchtowers(3);
   if (!params.skipCatwalks) spawnSkyCatwalks(6);
+  // Enterable buildings — playable interiors with stairs and rooms
+  let enterableCount;
+  if (params.enterableCount !== undefined) enterableCount = params.enterableCount;
+  else if (params.skipStandardBuildings) enterableCount = 0;
+  else enterableCount = 6;
+  if (enterableCount > 0) spawnEnterableBuildings(enterableCount);
   spawnSignatureLandmark(params);
 
   // ==== Theme-specific terrain features ====
@@ -3898,6 +3904,210 @@ function spawnBlastWalls(count) {
       cursorX += Math.cos(yawSeg) * len;
       cursorZ -= Math.sin(yawSeg) * len;
     }
+  }
+}
+
+function makeEnterableBuilding(cx, cz, w, d, floors, opts = {}) {
+  const fH = 3.0;
+  const wt = 0.35;
+  const totalH = floors * fH;
+  const mat = opts.mat || M.buildLight;
+  const innerMat = opts.innerMat || M.buildMid;
+  const floorMat = opts.floorMat || M.buildDark;
+  const doorH = 2.3;
+  const doorW = 1.4;
+  const stW = 1.8, stD = 2.4;
+  const stCx = cx + (Math.random() - 0.5) * (w/3);
+  const stCz = cz + d/2 - stD/2 - 0.6;
+  // === Outer walls (north has door) ===
+  const segW = (w - doorW) / 2;
+  if (segW > 0.3) {
+    const wL = makeBox(segW, totalH, wt, mat);
+    wL.position.set(cx - w/2 + segW/2, totalH/2, cz - d/2);
+    scene.add(wL);
+    buildings.push({ x: cx - w/2, z: cz - d/2 - wt/2, w: segW, d: wt, h: totalH });
+    const wR = makeBox(segW, totalH, wt, mat);
+    wR.position.set(cx + w/2 - segW/2, totalH/2, cz - d/2);
+    scene.add(wR);
+    buildings.push({ x: cx + w/2 - segW, z: cz - d/2 - wt/2, w: segW, d: wt, h: totalH });
+  }
+  if (totalH - doorH > 0.2) {
+    const lintel = makeBox(doorW, totalH - doorH, wt, mat);
+    lintel.position.set(cx, doorH + (totalH - doorH)/2, cz - d/2);
+    scene.add(lintel);
+    buildings.push({ x: cx - doorW/2, z: cz - d/2 - wt/2, w: doorW, d: wt, h: totalH });
+  }
+  // Door frame highlight
+  const fL = makeBox(0.08, doorH + 0.05, wt + 0.05, M.barrelStripe);
+  fL.position.set(cx - doorW/2 - 0.04, doorH/2, cz - d/2); scene.add(fL);
+  const fR = makeBox(0.08, doorH + 0.05, wt + 0.05, M.barrelStripe);
+  fR.position.set(cx + doorW/2 + 0.04, doorH/2, cz - d/2); scene.add(fR);
+  // Door sign
+  const sign = makeBox(0.6, 0.35, 0.05, M.barrelStripe);
+  sign.position.set(cx, doorH + 0.35, cz - d/2 - 0.04); scene.add(sign);
+  const signInner = makeBox(0.48, 0.25, 0.06, M.red);
+  signInner.position.set(cx, doorH + 0.35, cz - d/2 - 0.05); scene.add(signInner);
+  // South wall (full)
+  const wS = makeBox(w, totalH, wt, mat);
+  wS.position.set(cx, totalH/2, cz + d/2); scene.add(wS);
+  buildings.push({ x: cx - w/2, z: cz + d/2 - wt/2, w, d: wt, h: totalH });
+  // West wall
+  const wW2 = makeBox(wt, totalH, d, mat);
+  wW2.position.set(cx - w/2, totalH/2, cz); scene.add(wW2);
+  buildings.push({ x: cx - w/2 - wt/2, z: cz - d/2, w: wt, d, h: totalH });
+  // East wall
+  const wE = makeBox(wt, totalH, d, mat);
+  wE.position.set(cx + w/2, totalH/2, cz); scene.add(wE);
+  buildings.push({ x: cx + w/2 - wt/2, z: cz - d/2, w: wt, d, h: totalH });
+  // === Roof slab (walkable) ===
+  const roof = makeBox(w + 0.4, 0.3, d + 0.4, opts.roofMat || mat);
+  roof.position.set(cx, totalH + 0.15, cz); scene.add(roof);
+  buildings.push({ x: cx - w/2 - 0.2, z: cz - d/2 - 0.2, w: w + 0.4, d: d + 0.4, h: totalH + 0.3 });
+  // Roof rail
+  for (const [rx, rz, rw, rd] of [[0,-d/2-0.2,w+0.4,0.1],[0,d/2+0.2,w+0.4,0.1],[-w/2-0.2,0,0.1,d+0.4],[w/2+0.2,0,0.1,d+0.4]]) {
+    const rail = makeBox(rw, 0.5, rd, M.black);
+    rail.position.set(cx + rx, totalH + 0.55, cz + rz); scene.add(rail);
+  }
+  // === Interior floor slabs with stairwell hole ===
+  for (let f = 1; f < floors; f++) {
+    const fy = f * fH;
+    const sxL = stCx - stW/2, sxR = stCx + stW/2;
+    const szT = stCz - stD/2, szB = stCz + stD/2;
+    const leftW = sxL - (cx - w/2);
+    if (leftW > 0.3) {
+      const seg = makeBox(leftW, 0.2, d, floorMat);
+      seg.position.set(cx - w/2 + leftW/2, fy, cz); scene.add(seg);
+      buildings.push({ x: cx - w/2, z: cz - d/2, w: leftW, d, h: fy + 0.1 });
+    }
+    const rightW = (cx + w/2) - sxR;
+    if (rightW > 0.3) {
+      const seg = makeBox(rightW, 0.2, d, floorMat);
+      seg.position.set(cx + w/2 - rightW/2, fy, cz); scene.add(seg);
+      buildings.push({ x: cx + w/2 - rightW, z: cz - d/2, w: rightW, d, h: fy + 0.1 });
+    }
+    const topD = szT - (cz - d/2);
+    if (topD > 0.3) {
+      const seg = makeBox(stW, 0.2, topD, floorMat);
+      seg.position.set(stCx, fy, cz - d/2 + topD/2); scene.add(seg);
+      buildings.push({ x: stCx - stW/2, z: cz - d/2, w: stW, d: topD, h: fy + 0.1 });
+    }
+    const botD = (cz + d/2) - szB;
+    if (botD > 0.3) {
+      const seg = makeBox(stW, 0.2, botD, floorMat);
+      seg.position.set(stCx, fy, szB + botD/2); scene.add(seg);
+      buildings.push({ x: stCx - stW/2, z: szB, w: stW, d: botD, h: fy + 0.1 });
+    }
+    // Stairwell edge stripes
+    const stripe1 = makeBox(stW + 0.05, 0.05, 0.16, M.barrelStripe);
+    stripe1.position.set(stCx, fy + 0.13, szT); scene.add(stripe1);
+    const stripe2 = makeBox(stW + 0.05, 0.05, 0.16, M.barrelStripe);
+    stripe2.position.set(stCx, fy + 0.13, szB); scene.add(stripe2);
+  }
+  // === Stairs from ground all the way to roof ===
+  const stepsPerFloor = 6;
+  const stepDep = (stD - 0.2) / stepsPerFloor;
+  for (let f = 0; f < floors; f++) {
+    const stepRise = fH / stepsPerFloor;
+    for (let s = 0; s < stepsPerFloor; s++) {
+      const stepH = (s + 1) * stepRise + f * fH;
+      const sz = stCz - stD/2 + s * stepDep + stepDep/2 + 0.1;
+      const step = makeBox(stW - 0.2, stepH, stepDep, floorMat);
+      step.position.set(stCx, stepH/2, sz); scene.add(step);
+      buildings.push({ x: stCx - (stW - 0.2)/2, z: sz - stepDep/2, w: stW - 0.2, d: stepDep, h: stepH });
+    }
+  }
+  // === Windows on outer walls ===
+  for (let f = 0; f < floors; f++) {
+    const wy = f * fH + 1.4;
+    for (let x = -w/2 + 1.5; x < w/2 - 0.5; x += 2) {
+      // South
+      const winS = makeBox(0.9, 1.2, 0.06, M.buildDark);
+      winS.position.set(cx + x, wy, cz + d/2 + 0.04); scene.add(winS);
+      if (Math.random() < 0.45) {
+        const lit = makeBox(0.7, 1.0, 0.07, new THREE.MeshBasicMaterial({color: 0xfff0c0, transparent: true, opacity: 0.75}));
+        lit.position.set(cx + x, wy, cz + d/2 + 0.05); scene.add(lit);
+      }
+      // North (skip door zone)
+      if (Math.abs(x) >= doorW/2 + 0.5) {
+        const winN = makeBox(0.9, 1.2, 0.06, M.buildDark);
+        winN.position.set(cx + x, wy, cz - d/2 - 0.04); scene.add(winN);
+      }
+    }
+    for (let z = -d/2 + 1.5; z < d/2 - 0.5; z += 2) {
+      const winE = makeBox(0.06, 1.2, 0.9, M.buildDark);
+      winE.position.set(cx + w/2 + 0.04, wy, cz + z); scene.add(winE);
+      const winW3 = makeBox(0.06, 1.2, 0.9, M.buildDark);
+      winW3.position.set(cx - w/2 - 0.04, wy, cz + z); scene.add(winW3);
+    }
+  }
+  // === Ceiling lights (interior glow) ===
+  for (let f = 0; f < floors; f++) {
+    const ly = (f + 1) * fH - 0.18;
+    for (let lx = -1; lx <= 1; lx++) {
+      for (let lz = -1; lz <= 1; lz++) {
+        if (lx === 0 && lz === 0) continue;
+        const light = makeBox(0.45, 0.06, 0.45, new THREE.MeshBasicMaterial({color: 0xfff0d0}));
+        light.position.set(cx + lx * w/3.5, ly, cz + lz * d/3.5);
+        // Skip if too close to stairwell
+        if (Math.abs(light.position.x - stCx) < stW/2 + 0.3 &&
+            Math.abs(light.position.z - stCz) < stD/2 + 0.3) continue;
+        scene.add(light);
+      }
+    }
+  }
+  // === Random partition wall (one per floor) — splits into rooms ===
+  for (let f = 0; f < floors; f++) {
+    if (Math.random() > 0.55) continue;
+    const fy = f * fH;
+    const partH = fH - 0.3;
+    const horizontal = Math.random() < 0.5;
+    if (horizontal) {
+      const partLen = w * 0.5;
+      const partZ = cz + (Math.random() - 0.5) * (d - 1.5);
+      // Skip if crosses stairwell
+      if (Math.abs(partZ - stCz) < stD/2 + 0.6) continue;
+      const partX = cx + (Math.random() - 0.5) * w * 0.3;
+      const part = makeBox(partLen, partH, 0.18, innerMat);
+      part.position.set(partX, fy + partH/2, partZ); scene.add(part);
+      buildings.push({ x: partX - partLen/2, z: partZ - 0.09, w: partLen, d: 0.18, h: fy + partH });
+    } else {
+      const partLen = d * 0.5;
+      const partX = cx + (Math.random() - 0.5) * (w - 1.5);
+      if (Math.abs(partX - stCx) < stW/2 + 0.6) continue;
+      const partZ = cz + (Math.random() - 0.5) * d * 0.3;
+      const part = makeBox(0.18, partH, partLen, innerMat);
+      part.position.set(partX, fy + partH/2, partZ); scene.add(part);
+      buildings.push({ x: partX - 0.09, z: partZ - partLen/2, w: 0.18, d: partLen, h: fy + partH });
+    }
+  }
+  // === Roof access cube ===
+  const access = makeBox(2.4, 1.6, 2.6, mat);
+  access.position.set(stCx, totalH + 0.8, stCz);
+  scene.add(access);
+  buildings.push({ x: stCx - 1.2, z: stCz - 1.3, w: 2.4, d: 2.6, h: totalH + 1.6 });
+  // Top antenna
+  const ant = makeBox(0.18, 3, 0.18, M.black);
+  ant.position.set(cx + w/4, totalH + 1.5, cz - d/4); scene.add(ant);
+  const beacon = makeBox(0.4, 0.4, 0.4, M.redBright);
+  beacon.position.set(cx + w/4, totalH + 3.2, cz - d/4); scene.add(beacon);
+}
+
+function spawnEnterableBuildings(count) {
+  for (let n = 0; n < count; n++) {
+    let cx, cz, ok = false, tries = 0;
+    let w, d, floors;
+    while (!ok && tries < 30) {
+      cx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      cz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(cx, cz) < 16) { tries++; continue; }
+      w = 7 + Math.floor(Math.random() * 6);
+      d = 6 + Math.floor(Math.random() * 5);
+      floors = 2 + Math.floor(Math.random() * 4);
+      if (!checkCollisionAt(cx, cz, Math.max(w, d) / 2 + 1.5)) { ok = true; break; }
+      tries++;
+    }
+    if (!ok) continue;
+    makeEnterableBuilding(cx, cz, w, d, floors);
   }
 }
 
