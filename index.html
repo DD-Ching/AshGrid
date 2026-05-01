@@ -1470,6 +1470,11 @@ const MAP_THEMES = {
   industrial: { name: 'INDUSTRIAL', cn: '工业区',   fog: 0x33291a, sky: { top: 0x1a1a14, bottom: 0x3a2a18 }, accent: 'yellow' },
   metro:      { name: 'METRO', cn: '地下地铁',     fog: 0x0d0d0d, sky: { top: 0x000000, bottom: 0x1a0808 }, accent: 'red' },
   data_core:  { name: 'DATA CORE', cn: '资料中心', fog: 0x18222e, sky: { top: 0x0a1018, bottom: 0x1a2838 }, accent: 'blue' },
+  rooftop_grid:  { name: 'ROOFTOP GRID', cn: '屋顶网格', fog: 0x2c2c2c, sky: { top: 0x141414, bottom: 0x383838 }, accent: 'grey' },
+  bridge_sector: { name: 'BRIDGE SECTOR', cn: '桥梁区',  fog: 0x2a2a30, sky: { top: 0x14141a, bottom: 0x303038 }, accent: 'grey' },
+  drone_yard:    { name: 'DRONE YARD', cn: '无人机停放区', fog: 0x282828, sky: { top: 0x101010, bottom: 0x303030 }, accent: 'yellow' },
+  power_station: { name: 'POWER STATION', cn: '电力站',   fog: 0x252830, sky: { top: 0x0a0d12, bottom: 0x282c34 }, accent: 'blue' },
+  command_core:  { name: 'COMMAND CORE', cn: '指挥核心', fog: 0x1a0a0a, sky: { top: 0x000000, bottom: 0x180808 }, accent: 'red' },
 };
 
 // Per-theme generation parameters — controls which features the map gets.
@@ -1505,6 +1510,37 @@ const THEME_PARAMS = {
     redAccentChance: 0.04, barrelCount: 22, crateCount: 200,
     feature: 'server_racks', blueAccent: true,
     ambient: 0xb0c0e0, sun: 0xc0d0ff, hemi: 0xb8cce0, hemiGround: 0x101820,
+  },
+  rooftop_grid: {
+    buildingFill: 0.72, paletteWeights: ['buildLight','buildLight','buildMid','buildDark'],
+    redAccentChance: 0.18, barrelCount: 35, crateCount: 240,
+    feature: 'rooftop_grid',
+    ambient: 0xc8c8d0, sun: 0xe6e6ee, hemi: 0xd0d0d8, hemiGround: 0x1a1a1a,
+  },
+  bridge_sector: {
+    buildingFill: 0.30, paletteWeights: ['buildMid','buildDark','buildLight','buildMid'],
+    redAccentChance: 0.20, barrelCount: 25, crateCount: 130,
+    feature: 'bridges',
+    ambient: 0xc0c0c8, sun: 0xd6d6e0, hemi: 0xc8c8d0, hemiGround: 0x1a1a20,
+  },
+  drone_yard: {
+    buildingFill: 0.20, paletteWeights: ['buildLight','buildMid','buildLight','barrelStripe'],
+    redAccentChance: 0.10, barrelCount: 15, crateCount: 100,
+    feature: 'drone_yard',
+    ambient: 0xc8c8c8, sun: 0xeeeeee, hemi: 0xcccccc, hemiGround: 0x161616,
+  },
+  power_station: {
+    buildingFill: 0.40, paletteWeights: ['buildDark','buildMid','barrelStripe','buildDark'],
+    redAccentChance: 0.30, barrelCount: 40, crateCount: 160,
+    feature: 'power_grid',
+    ambient: 0xa8b0c0, sun: 0xc0c8d8, hemi: 0xb0b8c8, hemiGround: 0x14181c,
+  },
+  command_core: {
+    buildingFill: 0.45, paletteWeights: ['buildDark','black','buildMid','buildDark'],
+    redAccentChance: 0.65, barrelCount: 30, crateCount: 180,
+    feature: 'command_core', extraHive: 1,
+    ambient: 0x885050, sun: 0xa07060, hemi: 0x603030, hemiGround: 0x080404,
+    fogFar: 320,
   },
 };
 function applyLoadout() {
@@ -2125,7 +2161,7 @@ function generateWorld() {
   scene.add(hemi);
 
   // Pick theme — randomized when gv_theme is 'random'
-  const themeKeys = ['red_zone','grey_district','industrial','metro','data_core'];
+  const themeKeys = ['red_zone','grey_district','industrial','metro','data_core','rooftop_grid','bridge_sector','drone_yard','power_station','command_core'];
   let themeKey = settings.mapTheme;
   if (themeKey === 'random') themeKey = themeKeys[Math.floor(Math.random()*themeKeys.length)];
   game.activeTheme = themeKey;
@@ -2451,6 +2487,326 @@ function generateWorld() {
       const top = makeBox(0.4, 0.4, 0.4, M.redBright);
       top.position.set(sx, 3.2, sz);
       scene.add(top);
+    }
+  }
+  if (params.feature === 'rooftop_grid') {
+    // ROOFTOP GRID — clusters of tall stepped buildings with antennas, encourages parkour
+    for (let i = 0; i < 16; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(sx, sz) < 14) continue;
+      if (checkCollisionAt(sx, sz, 3.5)) continue;
+      const sw = 4 + Math.random() * 3;
+      const sh = 10 + Math.random() * 12;
+      const tower = makeBox(sw, sh, sw, M.buildLight);
+      tower.position.set(sx, sh/2, sz);
+      scene.add(tower);
+      buildings.push({ x: sx - sw/2, z: sz - sw/2, w: sw, d: sw, h: sh });
+      // Roof access cube
+      const access = makeBox(1.6, 1.4, 1.6, M.buildDark);
+      access.position.set(sx + sw*0.25, sh + 0.7, sz + sw*0.25);
+      scene.add(access);
+      buildings.push({ x: sx + sw*0.25 - 0.8, z: sz + sw*0.25 - 0.8, w: 1.6, d: 1.6, h: sh + 1.4 });
+      // Antenna mast
+      const ant = makeBox(0.18, 4 + Math.random()*3, 0.18, M.black);
+      ant.position.set(sx, sh + ant.geometry.parameters.height/2, sz);
+      scene.add(ant);
+      // Red beacon
+      const beacon = makeBox(0.4, 0.4, 0.4, M.redBright);
+      beacon.position.set(sx, sh + 4.5, sz);
+      scene.add(beacon);
+      // Bridge plank to a nearby tower (parkour aid)
+      if (Math.random() < 0.35) {
+        const ang = Math.random() * Math.PI * 2;
+        const plankLen = 4 + Math.random() * 3;
+        const plank = makeBox(plankLen, 0.18, 0.7, M.buildDark);
+        plank.position.set(sx + Math.cos(ang) * (sw/2 + plankLen/2), sh, sz + Math.sin(ang) * (sw/2 + plankLen/2));
+        plank.rotation.y = ang;
+        scene.add(plank);
+      }
+    }
+    // Antenna forest scattered
+    for (let i = 0; i < 18; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      if (Math.hypot(sx, sz) < 6) continue;
+      const ah = 2 + Math.random() * 4;
+      const a = makeBox(0.08, ah, 0.08, M.black);
+      a.position.set(sx, ah/2, sz);
+      scene.add(a);
+    }
+  }
+  if (params.feature === 'bridges') {
+    // BRIDGE SECTOR — long elevated platforms with support pillars
+    for (let i = 0; i < 7; i++) {
+      const ang = Math.random() * Math.PI;
+      const baseR = 30 + Math.random() * 60;
+      const ax = Math.cos(ang) * baseR;
+      const az = Math.sin(ang) * baseR;
+      if (Math.abs(ax) > WORLD_SIZE - 12 || Math.abs(az) > WORLD_SIZE - 12) continue;
+      const length = 16 + Math.random() * 14;
+      const width = 3.4;
+      const height = 4 + Math.random() * 3;
+      const yaw = Math.random() * Math.PI;
+      const cs = Math.cos(yaw), sn = Math.sin(yaw);
+      const platform = makeBox(length, 0.5, width, M.buildMid);
+      platform.position.set(ax, height, az);
+      platform.rotation.y = yaw;
+      scene.add(platform);
+      // 3 support pillars (start, mid, end)
+      for (const t of [-0.45, 0, 0.45]) {
+        const px = ax + cs * length * t;
+        const pz = az - sn * length * t; // careful with sign
+        const pillar = makeBox(0.7, height, 0.7, M.buildDark);
+        pillar.position.set(px, height/2, pz);
+        scene.add(pillar);
+        buildings.push({ x: px - 0.35, z: pz - 0.35, w: 0.7, d: 0.7, h: height });
+        // Pillar accent (red stripe)
+        if (Math.random() < 0.4) {
+          const accent = makeBox(0.75, 0.3, 0.05, M.red);
+          accent.position.set(px, height * 0.6, pz + 0.4);
+          scene.add(accent);
+        }
+      }
+      // Side rails (low wall to walk against)
+      const railH = 0.7;
+      const rail1 = makeBox(length, railH, 0.15, M.black);
+      rail1.position.set(ax + sn * (width/2 - 0.07), height + 0.6, az + cs * (width/2 - 0.07));
+      rail1.rotation.y = yaw;
+      scene.add(rail1);
+      const rail2 = makeBox(length, railH, 0.15, M.black);
+      rail2.position.set(ax - sn * (width/2 - 0.07), height + 0.6, az - cs * (width/2 - 0.07));
+      rail2.rotation.y = yaw;
+      scene.add(rail2);
+      // Approximate AABB for collision/platform — register as walkable building
+      const aabbW = Math.abs(length * cs) + Math.abs(width * sn);
+      const aabbD = Math.abs(length * sn) + Math.abs(width * cs);
+      buildings.push({ x: ax - aabbW/2, z: az - aabbD/2, w: aabbW, d: aabbD, h: height + 0.5 });
+      // Stair-up to the bridge end
+      const stairs = 4;
+      for (let s = 0; s < stairs; s++) {
+        const sh = (s + 1) * (height / stairs);
+        const sx = ax + cs * (length/2 + 0.7 + s * 0.9);
+        const sz = az - sn * (length/2 + 0.7 + s * 0.9);
+        const step = makeBox(1.0, sh, 1.0, M.buildLight);
+        step.position.set(sx, sh/2, sz);
+        scene.add(step);
+        buildings.push({ x: sx - 0.5, z: sz - 0.5, w: 1.0, d: 1.0, h: sh });
+      }
+    }
+  }
+  if (params.feature === 'drone_yard') {
+    // DRONE YARD — large open space, parked drones, hangars, runway markings
+    // Hangar buildings
+    for (let i = 0; i < 5; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(sx, sz) < 18) continue;
+      if (checkCollisionAt(sx, sz, 5)) continue;
+      const hw = 9 + Math.random() * 5;
+      const hd = 4.5;
+      const hh = 4;
+      const hangar = makeBox(hw, hh, hd, M.buildLight);
+      hangar.position.set(sx, hh/2, sz);
+      scene.add(hangar);
+      buildings.push({ x: sx - hw/2, z: sz - hd/2, w: hw, d: hd, h: hh });
+      // Hazard stripe on top
+      const stripe = makeBox(hw - 1, 0.3, 0.05, M.barrelStripe);
+      stripe.position.set(sx, hh - 0.8, sz + hd/2 + 0.04);
+      scene.add(stripe);
+      // Number panel
+      const num = makeBox(0.8, 0.8, 0.05, M.barrelStripe);
+      num.position.set(sx + hw*0.35, hh*0.5, sz + hd/2 + 0.04);
+      scene.add(num);
+    }
+    // Parked drones with landing pads
+    for (let i = 0; i < 14; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.6;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.6;
+      if (Math.hypot(sx, sz) < 8) continue;
+      if (checkCollisionAt(sx, sz, 1.5)) continue;
+      // Landing pad
+      const pad = makeBox(2.4, 0.05, 2.4, M.barrelStripe);
+      pad.position.set(sx, 0.025, sz);
+      scene.add(pad);
+      const padInner = makeBox(2.0, 0.06, 2.0, M.chargerDark);
+      padInner.position.set(sx, 0.05, sz);
+      scene.add(padInner);
+      const cv = makeBox(0.18, 0.07, 1.6, M.barrelStripe);
+      cv.position.set(sx, 0.06, sz); scene.add(cv);
+      const ch = makeBox(1.6, 0.07, 0.18, M.barrelStripe);
+      ch.position.set(sx, 0.06, sz); scene.add(ch);
+      // Parked drone
+      const dProp = makeDroneModel(false);
+      dProp.position.set(sx, 0.32, sz);
+      dProp.scale.setScalar(1.4);
+      dProp.rotation.y = Math.random() * Math.PI * 2;
+      scene.add(dProp);
+    }
+    // Tall radio masts at corners
+    for (let i = 0; i < 4; i++) {
+      const ang = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const r = 65 + Math.random() * 20;
+      const mx = Math.cos(ang) * r;
+      const mz = Math.sin(ang) * r;
+      if (Math.abs(mx) > WORLD_SIZE - 4 || Math.abs(mz) > WORLD_SIZE - 4) continue;
+      const mast = makeBox(0.32, 14, 0.32, M.buildDark);
+      mast.position.set(mx, 7, mz);
+      scene.add(mast);
+      const mb = makeBox(0.6, 0.6, 0.6, M.redBright);
+      mb.position.set(mx, 14.5, mz);
+      scene.add(mb);
+      buildings.push({ x: mx - 0.16, z: mz - 0.16, w: 0.32, d: 0.32, h: 14 });
+    }
+    // Runway lines (yellow paint stripes on ground)
+    for (let i = -8; i <= 8; i++) {
+      const stripe = makeBox(2.4, 0.04, 0.25, M.barrelStripe);
+      stripe.position.set(i * 4, 0.02, 0);
+      scene.add(stripe);
+    }
+  }
+  if (params.feature === 'power_grid') {
+    // POWER STATION — lattice towers + transformer blocks + cables
+    for (let i = 0; i < 9; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
+      if (Math.hypot(sx, sz) < 14) continue;
+      if (checkCollisionAt(sx, sz, 1.8)) continue;
+      const towerH = 14 + Math.random() * 6;
+      // Lattice frame approximated as horizontal squares stacked, each smaller toward top
+      for (let cy = 0; cy < towerH; cy += 1.6) {
+        const fW = 2.4 - (cy / towerH) * 1.4;
+        const f1 = makeBox(fW, 0.12, 0.1, M.black);
+        f1.position.set(sx, cy, sz - fW/2 + 0.05); scene.add(f1);
+        const f2 = makeBox(fW, 0.12, 0.1, M.black);
+        f2.position.set(sx, cy, sz + fW/2 - 0.05); scene.add(f2);
+        const f3 = makeBox(0.1, 0.12, fW, M.black);
+        f3.position.set(sx - fW/2 + 0.05, cy, sz); scene.add(f3);
+        const f4 = makeBox(0.1, 0.12, fW, M.black);
+        f4.position.set(sx + fW/2 - 0.05, cy, sz); scene.add(f4);
+      }
+      // 4 corner posts (full height)
+      for (const [px, pz] of [[-1,-1],[1,-1],[-1,1],[1,1]]) {
+        const post = makeBox(0.14, towerH, 0.14, M.black);
+        post.position.set(sx + px*1.05, towerH/2, sz + pz*1.05);
+        scene.add(post);
+      }
+      // Cross arms at top with insulators
+      const arm = makeBox(5.5, 0.4, 0.4, M.buildDark);
+      arm.position.set(sx, towerH, sz);
+      scene.add(arm);
+      for (const p of [-1, 0, 1]) {
+        const insul = makeBox(0.32, 0.7, 0.32, M.buildLight);
+        insul.position.set(sx + p * 1.9, towerH - 0.7, sz);
+        scene.add(insul);
+      }
+      buildings.push({ x: sx - 1.2, z: sz - 1.2, w: 2.4, d: 2.4, h: 0.4 });
+    }
+    // Transformer blocks with hazard markings
+    for (let i = 0; i < 8; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(sx, sz) < 12) continue;
+      if (checkCollisionAt(sx, sz, 2.2)) continue;
+      const tw = 3 + Math.random()*1.5, th = 2.5 + Math.random()*0.8, td = 3 + Math.random()*1.5;
+      const trans = makeBox(tw, th, td, M.buildDark);
+      trans.position.set(sx, th/2, sz);
+      scene.add(trans);
+      const cap = makeBox(tw + 0.1, 0.25, td + 0.1, M.barrelStripe);
+      cap.position.set(sx, th, sz);
+      scene.add(cap);
+      // Triangle hazard symbol on side
+      const warn = makeBox(0.6, 0.6, 0.05, M.barrelStripe);
+      warn.position.set(sx, th * 0.55, sz + td/2 + 0.04);
+      scene.add(warn);
+      const triInner = makeBox(0.35, 0.35, 0.06, M.black);
+      triInner.position.set(sx, th * 0.55, sz + td/2 + 0.045);
+      triInner.rotation.z = Math.PI/4;
+      scene.add(triInner);
+      buildings.push({ x: sx - tw/2, z: sz - td/2, w: tw, d: td, h: th });
+    }
+    // Hanging power cables (sagging black lines between random tower tops)
+    // skip — visually noisy without proper curve
+  }
+  if (params.feature === 'command_core') {
+    // COMMAND CORE — central red monolith with concentric defensive walls
+    const cx = 0, cz = -45;
+    // Central monolith
+    const core = makeBox(8, 12, 8, M.buildDark);
+    core.position.set(cx, 6, cz);
+    scene.add(core);
+    buildings.push({ x: cx - 4, z: cz - 4, w: 8, d: 8, h: 12 });
+    // Recessed face cavity (visual only)
+    const cavity = makeBox(5, 7, 0.5, M.black);
+    cavity.position.set(cx, 5, cz + 4.05);
+    scene.add(cavity);
+    // Glowing red core inside cavity
+    const coreInner = makeBox(2.4, 3.5, 0.3, M.redBright);
+    coreInner.position.set(cx, 5, cz + 4.18);
+    scene.add(coreInner);
+    // Top spire
+    const spire = makeBox(0.6, 8, 0.6, M.black);
+    spire.position.set(cx, 16, cz);
+    scene.add(spire);
+    const spireBeacon = makeBox(0.9, 0.9, 0.9, M.redBright);
+    spireBeacon.position.set(cx, 20.5, cz);
+    scene.add(spireBeacon);
+    // Concentric wall rings (with gaps for entry points)
+    for (let ring = 0; ring < 3; ring++) {
+      const rr = 14 + ring * 7;
+      const segs = 16 + ring * 4;
+      for (let s = 0; s < segs; s++) {
+        if (Math.random() < 0.28) continue; // entry gaps
+        const ang = (s / segs) * Math.PI * 2;
+        const wx = cx + Math.cos(ang) * rr;
+        const wz = cz + Math.sin(ang) * rr;
+        const ww = 3.4, wh = 1.8 + ring * 0.3, wd = 0.55;
+        const wall = makeBox(ww, wh, wd, M.buildMid);
+        const yawW = ang + Math.PI/2;
+        wall.position.set(wx, wh/2, wz);
+        wall.rotation.y = yawW;
+        scene.add(wall);
+        // Red top stripe
+        const stripe = makeBox(ww + 0.05, 0.2, wd + 0.05, M.red);
+        stripe.position.set(wx, wh - 0.05, wz);
+        stripe.rotation.y = yawW;
+        scene.add(stripe);
+        // Bounding-box approximation
+        const cs = Math.abs(Math.cos(yawW)), sn = Math.abs(Math.sin(yawW));
+        const aabbW = ww * cs + wd * sn;
+        const aabbD = ww * sn + wd * cs;
+        buildings.push({ x: wx - aabbW/2, z: wz - aabbD/2, w: aabbW, d: aabbD, h: wh });
+      }
+    }
+    // Red ground beacons around the core
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 2;
+      const r = 6.5;
+      const bx = cx + Math.cos(ang) * r;
+      const bz = cz + Math.sin(ang) * r;
+      const beacon = makeBox(0.5, 0.7, 0.5, M.redBright);
+      beacon.position.set(bx, 0.35, bz);
+      scene.add(beacon);
+    }
+    // Black geometric monoliths around the periphery
+    for (let i = 0; i < 6; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const r = 38 + Math.random() * 10;
+      const mx = cx + Math.cos(ang) * r;
+      const mz = cz + Math.sin(ang) * r;
+      if (checkCollisionAt(mx, mz, 1.5)) continue;
+      const mh = 5 + Math.random() * 5;
+      const mw = 2 + Math.random() * 2;
+      const mono = makeBox(mw, mh, mw, M.black);
+      mono.position.set(mx, mh/2, mz);
+      scene.add(mono);
+      buildings.push({ x: mx - mw/2, z: mz - mw/2, w: mw, d: mw, h: mh });
+      // Red eye on each monolith facing center
+      const eye = makeBox(0.6, 0.3, 0.05, M.redBright);
+      const fx = (cx - mx) / r, fz = (cz - mz) / r;
+      eye.position.set(mx + fx * (mw/2 + 0.04), mh * 0.6, mz + fz * (mw/2 + 0.04));
+      eye.lookAt(cx, mh*0.6, cz);
+      scene.add(eye);
     }
   }
   if (params.feature === 'rubble') {
@@ -3146,7 +3502,10 @@ function makeAutoTurret() {
 }
 
 function spawnDroneHives() {
-  const count = settings.gameMode === 'hive_raid' ? 3 : (settings.gameMode === 'drone_hunt' ? 2 : 1);
+  const themeKey = game.activeTheme || 'grey_district';
+  const themeBonus = (THEME_PARAMS[themeKey] || {}).extraHive || 0;
+  const baseCount = settings.gameMode === 'hive_raid' ? 3 : (settings.gameMode === 'drone_hunt' ? 2 : 1);
+  const count = baseCount + themeBonus;
   for (let i = 0; i < count; i++) {
     let x, z, ok = false, tries = 0;
     while (!ok && tries < 30) {
