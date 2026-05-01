@@ -122,6 +122,38 @@ canvas#game { display: block; position: fixed; inset: 0; }
   border-left: 3px solid var(--red);
   padding-left: 14px;
 }
+.deploy-config-status {
+  display: block;
+  width: 100%;
+  max-width: 540px;
+  margin-top: 28px;
+  padding: 16px 20px;
+  background: var(--panel);
+  border: 1px solid var(--line-bright);
+  border-left: 3px solid var(--red);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+.deploy-config-status:hover { background: var(--bg-lighter); border-color: var(--text-dim); }
+.config-row { display: flex; gap: 14px; align-items: baseline; margin-bottom: 4px; }
+.config-label {
+  font-size: 9px; letter-spacing: 4px;
+  color: var(--text-dim); font-weight: 700;
+  min-width: 60px;
+}
+.config-val {
+  font-size: 12px; font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text);
+}
+.config-hint {
+  font-size: 10px; letter-spacing: 4px;
+  color: var(--red); font-weight: 700;
+  margin-top: 8px;
+}
 .controls-grid {
   margin-top: 40px;
   display: grid;
@@ -988,6 +1020,13 @@ body.trackpad-mode .cursor-soft { display: none !important; }
       </div>
       <div class="preview-headline">未来<span class="red">战场</span><br>3D · 体素</div>
       <div class="preview-tagline">VOXEL · TACTICAL · TPP / FPS / FPV / UAV</div>
+      <button class="deploy-config-status" id="deployConfigStatus">
+        <div class="config-row"><span class="config-label">MODE</span><span class="config-val" id="cfgMode">WAVE DEFENSE · 波次防御</span></div>
+        <div class="config-row"><span class="config-label">MAP</span><span class="config-val" id="cfgMap">RANDOM · 随机</span></div>
+        <div class="config-row"><span class="config-label">LOADOUT</span><span class="config-val" id="cfgLoadout">ASSAULT · 突击型</span></div>
+        <div class="config-row"><span class="config-label">UNIT</span><span class="config-val" id="cfgUnit">UNIT-0451 · 人形</span></div>
+        <div class="config-hint">点击切换 · CLICK TO RECONFIGURE</div>
+      </button>
     </div>
     <div>
       <div class="controls-grid">
@@ -5209,6 +5248,7 @@ document.querySelectorAll('.settings-opt[data-character]').forEach(b => {
     settings.character = b.dataset.character;
     refreshSettingsUI();
     saveSettings();
+    refreshDeployConfig();
     showToast(settings.character === 'wolf' ? 'M-WLF 机器狼 · 重新部署生效' : 'UNIT-0451 · 重新部署生效');
   });
 });
@@ -5257,6 +5297,7 @@ function refreshModePills() {
       settings.gameMode = id;
       saveSettings();
       refreshModePills();
+      refreshDeployConfig();
       showToast(`${m.cn} · ${m.desc}`, 2200);
     });
     wrap.appendChild(btn);
@@ -5273,9 +5314,24 @@ function refreshThemePills() {
       settings.mapTheme = id;
       saveSettings();
       refreshThemePills();
+      refreshDeployConfig();
     });
     wrap.appendChild(btn);
   }
+}
+
+function refreshDeployConfig() {
+  const m = GAME_MODES[settings.gameMode] || GAME_MODES.wave;
+  const t = MAP_THEMES[settings.mapTheme] || MAP_THEMES.random;
+  const ld = LOADOUTS[settings.loadout] || LOADOUTS.assault;
+  const cm = document.getElementById('cfgMode');
+  const cmap = document.getElementById('cfgMap');
+  const cl = document.getElementById('cfgLoadout');
+  const cu = document.getElementById('cfgUnit');
+  if (cm) cm.textContent = `${m.name} · ${m.cn}`;
+  if (cmap) cmap.textContent = `${t.name} · ${t.cn}`;
+  if (cl) cl.textContent = `${ld.name} · ${ld.cn}`;
+  if (cu) cu.textContent = settings.character === 'wolf' ? 'M-WLF · 机器狼' : 'UNIT-0451 · 人形';
 }
 
 function refreshLoadoutCards() {
@@ -5316,6 +5372,7 @@ function refreshLoadoutCards() {
       settings.loadout = id;
       saveSettings();
       refreshLoadoutCards();
+      refreshDeployConfig();
       const cur = LOADOUTS[settings.loadout];
       document.getElementById('loadoutCurrentName').textContent = cur.name;
       document.getElementById('loadoutCurrentDesc').textContent = `${cur.cn} · ${cur.desc}`;
@@ -5326,12 +5383,16 @@ function refreshLoadoutCards() {
   document.getElementById('loadoutCurrentName').textContent = cur.name;
   document.getElementById('loadoutCurrentDesc').textContent = `${cur.cn} · ${cur.desc}`;
 }
-document.getElementById('loadoutClose').onclick = closeLoadoutModal;
-document.getElementById('loadoutCancel').onclick = closeLoadoutModal;
+document.getElementById('loadoutClose').onclick = () => { closeLoadoutModal(); refreshDeployConfig(); };
+document.getElementById('loadoutCancel').onclick = () => { closeLoadoutModal(); refreshDeployConfig(); };
 document.getElementById('loadoutDeploy').onclick = () => {
   closeLoadoutModal();
+  refreshDeployConfig();
   startGame();
 };
+const deployConfigBtn = document.getElementById('deployConfigStatus');
+if (deployConfigBtn) deployConfigBtn.addEventListener('click', () => openLoadoutModal());
+refreshDeployConfig();
 
 function startGame() {
   document.getElementById('start').classList.add('hidden');
