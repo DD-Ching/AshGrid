@@ -977,6 +977,7 @@ body.trackpad-mode .cursor-soft { display: none !important; }
         <div class="ctrl"><span class="ctrl-key">Q</span><span class="ctrl-label">侦察无人机 UAV</span></div>
         <div class="ctrl"><span class="ctrl-key">E</span><span class="ctrl-label">FPV 自杀无人机</span></div>
         <div class="ctrl"><span class="ctrl-key">T</span><span class="ctrl-label">热成像 THERMAL</span></div>
+        <div class="ctrl"><span class="ctrl-key">G</span><span class="ctrl-label">部署砲塔 (ENGINEER)</span></div>
         <div class="ctrl"><span class="ctrl-key">TAB</span><span class="ctrl-label">战术地图 RTS</span></div>
         <div class="ctrl"><span class="ctrl-key">ESC</span><span class="ctrl-label">释放鼠标</span></div>
       </div>
@@ -1102,6 +1103,7 @@ body.trackpad-mode .cursor-soft { display: none !important; }
     <div class="pause-ctrl"><span class="pause-ctrl-key">E</span><span class="pause-ctrl-label">FPV 自杀无人机</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">TAB</span><span class="pause-ctrl-label">战术地图</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">T</span><span class="pause-ctrl-label">热成像 THERMAL</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">G</span><span class="pause-ctrl-label">部署自动砲塔 (ENGINEER)</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">光标</span><span class="pause-ctrl-label">触摸板模式视角 (移至屏幕边缘)</span></div>
   </div>
   <div class="pause-actions">
@@ -1239,14 +1241,14 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setClearColor(0x202020);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x2a1f1d, 60, 320);
+scene.fog = new THREE.Fog(0x2a1f1d, 80, 480);
 scene.background = new THREE.Color(0x202020);
 
 // Cameras
-const fpsCamera = new THREE.PerspectiveCamera(78, window.innerWidth/window.innerHeight, 0.1, 600);
-const tppCamera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 600);
-const droneCamera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.1, 600);
-const fpvCamera = new THREE.PerspectiveCamera(88, window.innerWidth/window.innerHeight, 0.05, 600);
+const fpsCamera = new THREE.PerspectiveCamera(78, window.innerWidth/window.innerHeight, 0.1, 800);
+const tppCamera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 800);
+const droneCamera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.1, 800);
+const fpvCamera = new THREE.PerspectiveCamera(88, window.innerWidth/window.innerHeight, 0.05, 800);
 const mapCamera = new THREE.OrthographicCamera(-60, 60, 45, -45, 0.1, 600);
 mapCamera.position.set(0, 100, 0);
 mapCamera.lookAt(0, 0, 0);
@@ -1394,6 +1396,7 @@ function applyLoadout() {
   fpv.max = ld.fpvMax;
   fpv.available = ld.fpvMax;
   player.canDeployTurret = !!ld.deployTurret;
+  player.turretCharges = ld.deployTurret ? 3 : 0;
 }
 function applyControlMode() {
   document.body.classList.toggle('trackpad-mode', settings.controlMode === 'trackpad');
@@ -1455,6 +1458,7 @@ const player = {
   weaponProfile: null,
   fireRate: 0.1, heatPerShot: 1.8, spread: 0.012,
   canDeployTurret: false,
+  turretCharges: 0,
   aiming: false,
 };
 
@@ -1498,8 +1502,9 @@ const barrels = [];
 const pickups = [];
 const chargingStations = [];
 const capturePoints = [];
+const turrets = [];
 
-const WORLD_SIZE = 100;
+const WORLD_SIZE = 150;
 
 // ============ INPUT ============
 const keys = {};
@@ -1522,6 +1527,7 @@ window.addEventListener('keydown', e => {
   if (k === 'r') startReload();
   if (k === 't') toggleThermal();
   if (k === 'f') player.aimToggle = !player.aimToggle;
+  if (k === 'g') deployTurret();
 });
 
 function togglePause() {
@@ -1583,7 +1589,84 @@ function makeBox(w, h, d, mat) {
   return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
 }
 
-function makeRobot(bodyMat, accentMat) {
+function makeWeaponModel(weaponName) {
+  const g = new THREE.Group();
+  if (weaponName === 'DMR-44') {
+    // Sniper rifle: long barrel + large scope + bipod + stock
+    const wBody = makeBox(0.13, 0.13, 1.5, M.black);
+    g.add(wBody);
+    const wMag = makeBox(0.13, 0.32, 0.13, M.robotJoint);
+    wMag.position.set(0, -0.18, 0.0); g.add(wMag);
+    const wScope = makeBox(0.12, 0.16, 0.45, M.robotJoint);
+    wScope.position.set(0, 0.16, -0.05); g.add(wScope);
+    const wScopeFront = makeBox(0.16, 0.16, 0.06, M.redBright);
+    wScopeFront.position.set(0, 0.16, 0.18); g.add(wScopeFront);
+    const wMuzzle = makeBox(0.16, 0.16, 0.18, M.black);
+    wMuzzle.position.set(0, 0, 0.85); g.add(wMuzzle);
+    const stock = makeBox(0.18, 0.2, 0.4, M.black);
+    stock.position.set(0, -0.05, -0.85); g.add(stock);
+    // Bipod
+    const bp1 = makeBox(0.04, 0.22, 0.04, M.robotJoint);
+    bp1.position.set(-0.08, -0.22, 0.5); bp1.rotation.x = -0.3; g.add(bp1);
+    const bp2 = makeBox(0.04, 0.22, 0.04, M.robotJoint);
+    bp2.position.set(0.08, -0.22, 0.5); bp2.rotation.x = -0.3; g.add(bp2);
+  } else if (weaponName === 'SMG-9') {
+    // Short SMG: stubby body + drum mag + side rail
+    const wBody = makeBox(0.18, 0.2, 0.55, M.black);
+    g.add(wBody);
+    const wDrum = makeBox(0.32, 0.32, 0.16, M.red);
+    wDrum.position.set(0, -0.22, 0.0); g.add(wDrum);
+    const wMuzzle = makeBox(0.1, 0.1, 0.1, M.black);
+    wMuzzle.position.set(0, 0, 0.35); g.add(wMuzzle);
+    const wRail = makeBox(0.06, 0.06, 0.4, M.robotJoint);
+    wRail.position.set(0, 0.13, 0.0); g.add(wRail);
+    const stock = makeBox(0.1, 0.12, 0.18, M.black);
+    stock.position.set(0, -0.05, -0.36); g.add(stock);
+  } else if (weaponName === 'LMG-15') {
+    // Heavy MG: thick barrel + ammo box + bipod
+    const wBody = makeBox(0.24, 0.22, 0.95, M.black);
+    g.add(wBody);
+    const wBarrel = makeBox(0.18, 0.18, 0.5, M.robotJoint);
+    wBarrel.position.set(0, 0, 0.7); g.add(wBarrel);
+    // Heat sink fins
+    for (let i = 0; i < 5; i++) {
+      const fin = makeBox(0.22, 0.22, 0.04, M.black);
+      fin.position.set(0, 0, 0.55 + i*0.08); g.add(fin);
+    }
+    const wMuzzle = makeBox(0.16, 0.16, 0.16, M.black);
+    wMuzzle.position.set(0, 0, 1.05); g.add(wMuzzle);
+    // Big ammo box
+    const wBox = makeBox(0.36, 0.34, 0.32, M.robotJoint);
+    wBox.position.set(0, -0.24, -0.05); g.add(wBox);
+    const wBoxStripe = makeBox(0.37, 0.06, 0.33, M.barrelStripe);
+    wBoxStripe.position.set(0, -0.18, -0.05); g.add(wBoxStripe);
+    // Bipod
+    const bp1 = makeBox(0.05, 0.3, 0.05, M.robotJoint);
+    bp1.position.set(-0.14, -0.27, 0.45); bp1.rotation.x = -0.4; g.add(bp1);
+    const bp2 = makeBox(0.05, 0.3, 0.05, M.robotJoint);
+    bp2.position.set(0.14, -0.27, 0.45); bp2.rotation.x = -0.4; g.add(bp2);
+    // Carry handle
+    const handle = makeBox(0.06, 0.12, 0.3, M.black);
+    handle.position.set(0, 0.16, 0.05); g.add(handle);
+  } else {
+    // AR-30 default — assault rifle
+    const wBody = makeBox(0.16, 0.18, 0.95, M.black);
+    g.add(wBody);
+    const wMag = makeBox(0.14, 0.32, 0.14, M.robotJoint);
+    wMag.position.set(0, -0.2, 0.05); g.add(wMag);
+    const wScope = makeBox(0.08, 0.1, 0.18, M.robotJoint);
+    wScope.position.set(0, 0.13, -0.05); g.add(wScope);
+    const wDot = makeBox(0.05, 0.05, 0.04, M.redBright);
+    wDot.position.set(0, 0.13, 0.03); g.add(wDot);
+    const wMuzzle = makeBox(0.1, 0.1, 0.12, M.black);
+    wMuzzle.position.set(0, 0, 0.55); g.add(wMuzzle);
+    const stock = makeBox(0.12, 0.16, 0.32, M.black);
+    stock.position.set(0, -0.05, -0.62); g.add(stock);
+  }
+  return g;
+}
+
+function makeRobot(bodyMat, accentMat, weaponName) {
   const g = new THREE.Group();
   // Hip
   const hip = makeBox(0.6, 0.2, 0.4, M.robotJoint);
@@ -1630,16 +1713,8 @@ function makeRobot(bodyMat, accentMat) {
   // Antenna
   const ant = makeBox(0.04, 0.3, 0.04, M.black);
   ant.position.set(0.18, 2.55, -0.1); g.add(ant);
-  // Weapon
-  const weapon = new THREE.Group();
-  const wBody = makeBox(0.16, 0.16, 0.95, M.black);
-  weapon.add(wBody);
-  const wMag = makeBox(0.14, 0.3, 0.14, M.robotJoint);
-  wMag.position.set(0, -0.18, 0.05); weapon.add(wMag);
-  const wScope = makeBox(0.08, 0.12, 0.18, M.robotJoint);
-  wScope.position.set(0, 0.13, 0.0); weapon.add(wScope);
-  const wMuzzle = makeBox(0.1, 0.1, 0.1, M.black);
-  wMuzzle.position.set(0, 0, 0.55); weapon.add(wMuzzle);
+  // Weapon (per loadout)
+  const weapon = makeWeaponModel(weaponName || 'AR-30');
   weapon.position.set(0.32, 1.5, 0.55);
   g.add(weapon);
   g.userData.weapon = weapon;
@@ -1773,7 +1848,7 @@ function makeFpvPickup() {
   return g;
 }
 
-function makeWolf(bodyMat, accentMat) {
+function makeWolf(bodyMat, accentMat, weaponName) {
   const g = new THREE.Group();
   // Main body (horizontal)
   const body = makeBox(0.55, 0.5, 1.5, bodyMat);
@@ -1850,12 +1925,9 @@ function makeWolf(bodyMat, accentMat) {
   const turret = makeBox(0.3, 0.18, 0.4, M.robotJoint);
   turret.position.set(0, 1.12, 0.25);
   g.add(turret);
-  // Weapon barrel (forward)
-  const weapon = new THREE.Group();
-  const wBody = makeBox(0.18, 0.18, 1.0, M.black);
-  weapon.add(wBody);
-  const wMuzzle = makeBox(0.1, 0.1, 0.1, M.black);
-  wMuzzle.position.set(0, 0, 0.55); weapon.add(wMuzzle);
+  // Weapon barrel (forward, per loadout)
+  const weapon = makeWeaponModel(weaponName || 'AR-30');
+  weapon.scale.setScalar(0.85);
   weapon.position.set(0, 1.16, 0.75);
   g.add(weapon);
   g.userData.weapon = weapon;
@@ -1943,8 +2015,8 @@ function generateWorld() {
     line2.position.set(0, 0.02, i); scene.add(line2);
   }
 
-  // Building grid
-  const grid = 9;
+  // Building grid (denser for bigger world)
+  const grid = 13;
   const cellSize = (WORLD_SIZE * 1.7) / grid;
   for (let i = 0; i < grid; i++) {
     for (let j = 0; j < grid; j++) {
@@ -1994,7 +2066,7 @@ function generateWorld() {
   }
 
   // Charging stations (yellow pads — recharge battery + slow HP regen)
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 9; i++) {
     let cx2, cz2, ok = false, tries = 0;
     while (!ok && tries < 30) {
       cx2 = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
@@ -2015,9 +2087,9 @@ function generateWorld() {
 
   // Capture points (DOMINATION mode — A / B / C)
   const capPositions = [
-    { id: 'A', x: -28, z: -28 },
-    { id: 'B', x:  28, z: -22 },
-    { id: 'C', x:   2, z:  32 },
+    { id: 'A', x: -55, z: -45 },
+    { id: 'B', x:  55, z: -40 },
+    { id: 'C', x:   5, z:  60 },
   ];
   for (const cp of capPositions) {
     let cx2 = cp.x, cz2 = cp.z;
@@ -2048,7 +2120,7 @@ function generateWorld() {
   }
 
   // Explosive barrels (red hazard barrels — shoot to detonate)
-  for (let i = 0; i < 28; i++) {
+  for (let i = 0; i < 50; i++) {
     let bx, bz, ok = false, tries = 0;
     while (!ok && tries < 30) {
       bx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
@@ -2083,7 +2155,7 @@ function generateWorld() {
   }
 
   // Decorative crates / cubes — also stack as parkour platforms
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 200; i++) {
     const x = (Math.random()-0.5) * WORLD_SIZE * 1.7;
     const z = (Math.random()-0.5) * WORLD_SIZE * 1.7;
     if (Math.hypot(x, z) < 5) continue;
@@ -2275,9 +2347,11 @@ void main(){
   sunGlow.position.copy(sunMesh.position);
   scene.add(sunGlow);
 
-  // Player model — humanoid or quadruped wolf
+  // Player model — humanoid or quadruped wolf, with loadout-specific weapon
+  const ldNow = LOADOUTS[settings.loadout] || LOADOUTS.assault;
+  const playerWeapon = ldNow.weapon.name;
   if (settings.character === 'wolf') {
-    player.group = makeWolf(M.robotBody, M.robotEye);
+    player.group = makeWolf(M.robotBody, M.robotEye, playerWeapon);
     player.height = 1.0;
     player.eyeY = 0.85;
     player.tppDist = 4.2;
@@ -2286,7 +2360,7 @@ void main(){
     player.speed = 9;
     player.radius = 0.5;
   } else {
-    player.group = makeRobot(M.robotBody, M.robotEye);
+    player.group = makeRobot(M.robotBody, M.robotEye, playerWeapon);
     player.height = 1.75;
     player.eyeY = 1.75;
     player.tppDist = 4.5;
@@ -2591,6 +2665,129 @@ function checkChargingStation(pos) {
   return null;
 }
 
+function makeAutoTurret() {
+  const g = new THREE.Group();
+  // Tripod base
+  const base = makeBox(0.8, 0.12, 0.8, M.robotJoint);
+  base.position.y = 0.06; g.add(base);
+  // 3 legs
+  for (let i = 0; i < 3; i++) {
+    const ang = (i / 3) * Math.PI * 2;
+    const leg = makeBox(0.14, 0.7, 0.14, M.black);
+    leg.position.set(Math.cos(ang) * 0.5, 0.35, Math.sin(ang) * 0.5);
+    leg.rotation.x = Math.cos(ang) * 0.18;
+    leg.rotation.z = -Math.sin(ang) * 0.18;
+    g.add(leg);
+  }
+  // Pillar
+  const pillar = makeBox(0.32, 0.5, 0.32, M.robotJoint);
+  pillar.position.y = 0.85; g.add(pillar);
+  // Turret head (rotates)
+  const head = new THREE.Group();
+  head.position.y = 1.18;
+  const headBox = makeBox(0.55, 0.4, 0.55, M.black);
+  head.add(headBox);
+  // Sensor band (red)
+  const sensor = makeBox(0.25, 0.08, 0.05, M.redBright);
+  sensor.position.set(0, 0.06, 0.28); head.add(sensor);
+  // Twin barrels
+  const barrelL = makeBox(0.1, 0.1, 0.65, M.black);
+  barrelL.position.set(-0.12, 0, 0.55); head.add(barrelL);
+  const barrelR = makeBox(0.1, 0.1, 0.65, M.black);
+  barrelR.position.set(0.12, 0, 0.55); head.add(barrelR);
+  // Top vent
+  const vent = makeBox(0.4, 0.06, 0.4, M.barrelStripe);
+  vent.position.set(0, 0.23, 0); head.add(vent);
+  g.add(head);
+  g.userData.head = head;
+  return g;
+}
+
+function deployTurret() {
+  if (!player.canDeployTurret) { showToast('需要 ENGINEER 配置才能部署砲塔'); return; }
+  if (player.turretCharges <= 0) { showToast('砲塔已耗尽'); return; }
+  if (player.battery < 15) { showToast('单元电池不足以部署砲塔'); return; }
+  // Place 2.5m in front of player
+  const fx = -Math.sin(player.yaw);
+  const fz = -Math.cos(player.yaw);
+  const px = player.pos.x + fx * 2.5;
+  const pz = player.pos.z + fz * 2.5;
+  if (checkCollisionAt(px, pz, 0.7) || checkBarrelCollision(px, pz, 0.7)) {
+    showToast('部署位置受阻');
+    return;
+  }
+  player.turretCharges--;
+  player.battery = Math.max(0, player.battery - 15);
+  const mesh = makeAutoTurret();
+  const baseY = getGroundY(px, pz);
+  mesh.position.set(px, baseY, pz);
+  scene.add(mesh);
+  turrets.push({
+    pos: new THREE.Vector3(px, baseY, pz),
+    mesh, hp: 120, maxHp: 120,
+    fireCd: 0.6, alive: true, yaw: player.yaw,
+    radius: 0.5,
+  });
+  showToast(`部署自动砲塔 · 剩余 ${player.turretCharges}`);
+  game.shake = Math.max(game.shake, 0.06);
+}
+
+function updateTurrets(dt) {
+  for (let i = turrets.length - 1; i >= 0; i--) {
+    const t = turrets[i];
+    if (!t.alive) {
+      scene.remove(t.mesh);
+      turrets.splice(i, 1);
+      continue;
+    }
+    // Find nearest enemy in range with LOS
+    let nearest = null, nearestDist = 28;
+    const eyePos = new THREE.Vector3(t.pos.x, t.pos.y + 1.2, t.pos.z);
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const d = e.pos.distanceTo(t.pos);
+      if (d < nearestDist) {
+        const ePos = new THREE.Vector3(e.pos.x, e.pos.y + (e.type==='drone'?0:1.2), e.pos.z);
+        if (lineOfSight(eyePos, ePos)) {
+          nearest = e; nearestDist = d;
+        }
+      }
+    }
+    if (nearest) {
+      // Aim at target
+      const dx = nearest.pos.x - t.pos.x;
+      const dz = nearest.pos.z - t.pos.z;
+      t.yaw = Math.atan2(dx, dz);
+      if (t.mesh.userData.head) t.mesh.userData.head.rotation.y = t.yaw + Math.PI;
+      // Fire
+      t.fireCd -= dt;
+      if (t.fireCd <= 0) {
+        t.fireCd = 0.45;
+        const ePos = new THREE.Vector3(nearest.pos.x, nearest.pos.y + (nearest.type==='drone'?0:1.2), nearest.pos.z);
+        const dir = new THREE.Vector3().subVectors(ePos, eyePos).normalize();
+        const tracer = makeTracer(eyePos, dir, nearestDist, 0x4d7eb8);
+        scene.add(tracer.line);
+        tracer.life = 0.06;
+        tracers.push(tracer);
+        nearest.hp -= 14;
+        if (nearest.hp <= 0 && nearest.alive) {
+          nearest.alive = false;
+          scene.remove(nearest.group);
+          const scoreByType = { drone: 80, sniper: 130, heavy: 110, soldier: 50 };
+          game.score += scoreByType[nearest.type] || 50;
+          game.killCount++;
+          addKillFeed('TURRET', nearest.type === 'drone' ? 'DRONE' : 'ROBOT-X');
+          rollPickupDrop(nearest.pos);
+        }
+      }
+    } else {
+      // Idle slow scan
+      t.yaw += dt * 0.6;
+      if (t.mesh.userData.head) t.mesh.userData.head.rotation.y = t.yaw + Math.PI;
+    }
+  }
+}
+
 function makeBombModel() {
   const g = new THREE.Group();
   const body = makeBox(0.32, 0.55, 0.32, M.red);
@@ -2846,7 +3043,7 @@ function spawnHeavyEnemy() {
     tries++;
   }
   if (!ok) return;
-  const group = makeRobot(M.enemyBody, M.enemyAccent);
+  const group = makeRobot(M.enemyBody, M.enemyAccent, 'LMG-15');
   group.scale.set(1.3, 1.2, 1.3); // chunkier
   group.position.set(x, 0, z);
   scene.add(group);
@@ -2881,7 +3078,7 @@ function spawnSniperEnemy() {
     tries++;
   }
   if (!ok) return;
-  const group = makeRobot(M.enemyBody, M.enemyAccent);
+  const group = makeRobot(M.enemyBody, M.enemyAccent, 'DMR-44');
   group.scale.set(0.9, 1.15, 0.9); // taller, thinner
   group.position.set(x, 0, z);
   scene.add(group);
@@ -3157,6 +3354,22 @@ function updateEnemyBullets(dt) {
         if (b.pos.distanceTo(bar.pos) < bar.radius + 0.25) {
           bar.hp -= b.damage;
           if (bar.hp <= 0) explodeBarrel(bar);
+          hit = true;
+          break;
+        }
+      }
+    }
+    // Auto-turret hit
+    if (!hit) {
+      for (const tr of turrets) {
+        if (!tr.alive) continue;
+        const trEye = new THREE.Vector3(tr.pos.x, tr.pos.y + 1.0, tr.pos.z);
+        if (b.pos.distanceTo(trEye) < tr.radius + 0.4) {
+          tr.hp -= b.damage;
+          if (tr.hp <= 0) {
+            tr.alive = false;
+            createExplosion(tr.pos, 'small');
+          }
           hit = true;
           break;
         }
@@ -4434,6 +4647,8 @@ function startGame() {
   pickups.length = 0;
   chargingStations.length = 0;
   capturePoints.length = 0;
+  for (const tr of turrets) scene.remove(tr.mesh);
+  turrets.length = 0;
   game.usCaps = 0; game.themCaps = 0;
 
   generateWorld();
@@ -4540,6 +4755,7 @@ function update(dt) {
   updateChargingStations(dt);
   updateCapturePoints(dt);
   updateDroneBombs(dt);
+  updateTurrets(dt);
 
   // Deploy countdown ticking
   if (game.deployCountdown > 0) {
