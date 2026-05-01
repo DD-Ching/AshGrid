@@ -298,6 +298,8 @@ canvas#game { display: block; position: fixed; inset: 0; }
   transition: width 0.2s, background 0.2s;
 }
 .hp-bar-fill.low { background: var(--red); }
+.hp-bar-fill.armor { background: #6b8aaa; }
+.hp-bar-fill.armor.depleted { background: var(--text-faint); }
 .hp-bar-fill.battery { background: #5d99dd; }
 .hp-bar-fill.battery.low { background: #e6b840; }
 .hp-bar-fill.battery.critical { background: var(--red); }
@@ -619,6 +621,119 @@ canvas#game { display: block; position: fixed; inset: 0; }
 }
 .toast.on { opacity: 1; }
 
+.loadout-modal {
+  position: fixed; inset: 0;
+  background: rgba(15, 15, 15, 0.92);
+  z-index: 250;
+  display: flex; flex-direction: column;
+  cursor: default;
+  overflow: hidden;
+}
+.loadout-modal.hidden { display: none; }
+.loadout-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 24px 36px;
+  border-bottom: 1px solid var(--line);
+}
+.loadout-title { font-size: 22px; letter-spacing: 8px; font-weight: 800; }
+.loadout-title .accent { color: var(--red); margin-right: 8px; }
+.loadout-help {
+  padding: 8px 36px 0;
+  font-size: 11px; letter-spacing: 4px; color: var(--text-dim);
+  font-family: "JetBrains Mono", monospace;
+}
+.loadout-cards {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+  padding: 24px 36px;
+  overflow-y: auto;
+}
+@media (max-width: 1100px) { .loadout-cards { grid-template-columns: repeat(2, 1fr); } }
+.loadout-card-big {
+  background: var(--bg-light);
+  border: 1px solid var(--line-bright);
+  border-left: 3px solid var(--line-bright);
+  padding: 18px 16px;
+  cursor: pointer;
+  display: flex; flex-direction: column;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.loadout-card-big:hover { background: var(--bg-lighter); border-color: var(--text-dim); transform: translateY(-2px); }
+.loadout-card-big.active { background: rgba(200, 38, 28, 0.18); border-left-color: var(--red); border-color: var(--red); }
+.loadout-card-name { font-size: 18px; font-weight: 900; letter-spacing: 4px; }
+.loadout-card-cn { font-size: 12px; color: var(--text-dim); letter-spacing: 4px; margin-top: 2px; }
+.loadout-card-big.active .loadout-card-name { color: var(--red); }
+.loadout-card-weapon {
+  margin-top: 14px; padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+.loadout-card-weapon-name {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px; font-weight: 700; letter-spacing: 2px;
+}
+.loadout-card-weapon-cn { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.loadout-card-stats {
+  margin-top: 14px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.loadout-stat-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 10px; letter-spacing: 2px;
+}
+.loadout-stat-label { width: 38px; color: var(--text-dim); font-weight: 700; }
+.loadout-stat-bar {
+  flex: 1; height: 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  display: flex;
+  gap: 2px;
+}
+.loadout-stat-pip {
+  flex: 1;
+  background: transparent;
+  margin: 1px;
+}
+.loadout-stat-pip.on { background: var(--red); }
+.loadout-card-big.active .loadout-stat-pip.on { background: #ffa090; }
+.loadout-card-desc {
+  margin-top: auto;
+  padding-top: 12px;
+  font-size: 10px; letter-spacing: 2px; color: var(--text-dim);
+  border-top: 1px solid var(--line);
+}
+.loadout-card-num {
+  display: flex; gap: 8px; margin-top: 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px; color: var(--text);
+}
+.loadout-card-num span { color: var(--text-dim); margin-right: 2px; }
+.loadout-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 36px;
+  border-top: 1px solid var(--line);
+}
+.loadout-current {
+  font-size: 12px; letter-spacing: 4px; color: var(--text-dim);
+  font-family: "JetBrains Mono", monospace;
+}
+.loadout-current .accent { color: var(--red); margin-right: 8px; font-weight: 800; }
+.loadout-actions { display: flex; gap: 12px; }
+.loadout-btn {
+  background: var(--bg-light); color: var(--text);
+  border: 1px solid var(--line-bright);
+  font-family: inherit; font-size: 12px; font-weight: 700;
+  letter-spacing: 4px; padding: 10px 22px;
+  cursor: pointer;
+}
+.loadout-btn:hover { background: var(--bg-lighter); }
+.loadout-btn.primary {
+  background: var(--red); border-color: var(--red-bright);
+}
+.loadout-btn.primary:hover { background: var(--red-bright); }
+
 .deploy-banner {
   position: fixed; top: 28%; left: 50%;
   transform: translate(-50%, -50%);
@@ -658,6 +773,46 @@ canvas#game { display: block; position: fixed; inset: 0; }
     radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.55) 100%);
 }
 .thermal-overlay.on { display: block; }
+
+.scope-overlay {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 0.18s;
+  background: radial-gradient(circle at center, transparent 35%, rgba(0,0,0,0.55) 100%);
+}
+.scope-overlay.on { opacity: 1; }
+.scope-overlay.sniper {
+  background:
+    radial-gradient(circle at center, transparent 16%, rgba(0,0,0,0.97) 28%);
+}
+.scope-overlay.sniper::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 1px; height: 100vh;
+  margin: -50vh 0 0 -0.5px;
+  background: rgba(255,255,255,0.45);
+}
+.scope-overlay.sniper::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 0;
+  width: 100vw; height: 1px;
+  margin-top: -0.5px;
+  background: rgba(255,255,255,0.45);
+}
+.scope-overlay.std::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 6px; height: 6px;
+  margin: -3px 0 0 -3px;
+  background: var(--red);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(200,38,28,0.7);
+}
 .thermal-overlay::before {
   content: 'THERMAL · 热成像';
   position: absolute;
@@ -812,7 +967,8 @@ body.trackpad-mode .cursor-soft { display: none !important; }
       <div class="controls-grid">
         <div class="ctrl"><span class="ctrl-key">WASD</span><span class="ctrl-label">移动</span></div>
         <div class="ctrl"><span class="ctrl-key">MOUSE</span><span class="ctrl-label">视角 / 瞄准</span></div>
-        <div class="ctrl"><span class="ctrl-key">LMB</span><span class="ctrl-label">射击</span></div>
+        <div class="ctrl"><span class="ctrl-key">LMB</span><span class="ctrl-label">射击 / UAV 投弹</span></div>
+        <div class="ctrl"><span class="ctrl-key">RMB / F</span><span class="ctrl-label">瞄准 ADS</span></div>
         <div class="ctrl"><span class="ctrl-key">SHIFT</span><span class="ctrl-label">冲刺 / 加速</span></div>
         <div class="ctrl"><span class="ctrl-key">SPACE</span><span class="ctrl-label">跳跃 / 长按喷射器</span></div>
         <div class="ctrl"><span class="ctrl-key">CTRL</span><span class="ctrl-label">下降 (无人机)</span></div>
@@ -870,6 +1026,7 @@ body.trackpad-mode .cursor-soft { display: none !important; }
     <div class="drone-status-title">// DRONE</div>
     <div class="drone-row"><span>UAV</span><span class="v" id="uavStat">READY</span></div>
     <div class="drone-row"><span>BAT</span><span id="uavBat">100%</span></div>
+    <div class="drone-row"><span>BOMB</span><span class="v" id="uavBomb">4 / 4</span></div>
     <div class="drone-row"><span>FPV</span><span class="v" id="fpvStat">3 / 3</span></div>
   </div>
 </div>
@@ -879,6 +1036,8 @@ body.trackpad-mode .cursor-soft { display: none !important; }
   <div class="hp-block">
     <div class="hp-label"><span>HP</span><span id="hpText">100 / 100</span></div>
     <div class="hp-bar"><div class="hp-bar-fill" id="hpFill" style="width: 100%;"></div></div>
+    <div class="hp-label" style="margin-top: 6px;" id="armorRow"><span>ARMOR</span><span id="armorText">30 / 30</span></div>
+    <div class="hp-bar" id="armorBar"><div class="hp-bar-fill armor" id="armorFill" style="width: 100%;"></div></div>
     <div class="hp-label" style="margin-top: 6px;"><span>BATTERY</span><span id="batteryText">100%</span></div>
     <div class="hp-bar"><div class="hp-bar-fill battery" id="batteryFill" style="width: 100%;"></div></div>
     <div class="hp-label" style="margin-top: 6px;"><span>HEAT</span><span id="heatText">0%</span></div>
@@ -932,7 +1091,8 @@ body.trackpad-mode .cursor-soft { display: none !important; }
   <div class="pause-controls">
     <div class="pause-ctrl"><span class="pause-ctrl-key">WASD</span><span class="pause-ctrl-label">移动</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">MOUSE</span><span class="pause-ctrl-label">视角 / 瞄准</span></div>
-    <div class="pause-ctrl"><span class="pause-ctrl-key">LMB</span><span class="pause-ctrl-label">射击</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">LMB</span><span class="pause-ctrl-label">射击 (UAV模式 = 投弹)</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">RMB / F</span><span class="pause-ctrl-label">瞄准 ADS / 切换</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">SHIFT</span><span class="pause-ctrl-label">冲刺</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">SPACE</span><span class="pause-ctrl-label">跳跃 / 长按空中喷射器 (耗电池)</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">CTRL</span><span class="pause-ctrl-label">下降 (无人机)</span></div>
@@ -948,6 +1108,23 @@ body.trackpad-mode .cursor-soft { display: none !important; }
     <button class="pause-btn primary" id="resumeBtn">继续 RESUME</button>
     <button class="pause-btn" id="pauseSettingsBtn">设置</button>
     <button class="pause-btn" id="exitBtn">退出至主菜单</button>
+  </div>
+</div>
+
+<!-- Loadout modal -->
+<div class="loadout-modal hidden" id="loadoutModal">
+  <div class="loadout-header">
+    <div class="loadout-title"><span class="accent">//</span>LOADOUT · 装备配置</div>
+    <button class="loadout-btn" id="loadoutClose">✕ 关闭</button>
+  </div>
+  <div class="loadout-help">// 选择部署装备 · 重量 ↑ 敏捷 ↓ · 重武器精准下降 · 装甲承担伤害</div>
+  <div class="loadout-cards" id="loadoutCards"></div>
+  <div class="loadout-footer">
+    <div class="loadout-current"><span class="accent" id="loadoutCurrentName">ASSAULT</span><span id="loadoutCurrentDesc">突击型 · 平衡</span></div>
+    <div class="loadout-actions">
+      <button class="loadout-btn" id="loadoutCancel">返回</button>
+      <button class="loadout-btn primary" id="loadoutDeploy">DEPLOY · 部署 ▶</button>
+    </div>
   </div>
 </div>
 
@@ -1042,6 +1219,7 @@ body.trackpad-mode .cursor-soft { display: none !important; }
 
 <div class="toast" id="toast"></div>
 <div class="thermal-overlay" id="thermalOverlay"></div>
+<div class="scope-overlay" id="scopeOverlay"></div>
 
 <script type="importmap">
 {
@@ -1134,6 +1312,51 @@ const M = {
   capRing: new THREE.MeshLambertMaterial({ color: 0x8a8a8a, emissive: 0x1a1a1a }),
 };
 
+// ============ LOADOUTS ============
+const LOADOUTS = {
+  assault: {
+    name: 'ASSAULT', cn: '突击型',
+    desc: '正面推进 · 平衡 · 易上手',
+    weapon: { name: 'AR-30', cn: '突击步枪', damage: 26, fireRate: 0.1, heat: 1.8, spread: 0.012, magazine: 30, reserve: 180, reloadDur: 1.2, aimFov: 48, scope: 'std' },
+    hp: 120, armor: 30, speed: 7, sprintMul: 1.75,
+    fpvMax: 3,
+    stats: { weight: 3, agility: 3, accuracy: 3, firepower: 3, armor: 3 },
+  },
+  recon: {
+    name: 'RECON', cn: '侦察型',
+    desc: '速度快 · 远距精准 · 装甲薄',
+    weapon: { name: 'DMR-44', cn: '精准步枪', damage: 65, fireRate: 0.55, heat: 9, spread: 0.0025, magazine: 8, reserve: 64, reloadDur: 1.5, aimFov: 18, scope: 'sniper' },
+    hp: 80, armor: 10, speed: 9, sprintMul: 2.0,
+    fpvMax: 2,
+    stats: { weight: 1, agility: 5, accuracy: 5, firepower: 3, armor: 1 },
+  },
+  drone_op: {
+    name: 'DRONE OP', cn: '无人机操作',
+    desc: '多无人机 · 后排支援 · 本体脆弱',
+    weapon: { name: 'SMG-9', cn: '短突击', damage: 14, fireRate: 0.06, heat: 1.0, spread: 0.028, magazine: 40, reserve: 240, reloadDur: 1.0, aimFov: 56, scope: 'std' },
+    hp: 100, armor: 20, speed: 7, sprintMul: 1.7,
+    fpvMax: 6,
+    stats: { weight: 2, agility: 4, accuracy: 2, firepower: 2, armor: 2 },
+  },
+  heavy: {
+    name: 'HEAVY', cn: '重装型',
+    desc: '高装甲 · 高火力 · 慢',
+    weapon: { name: 'LMG-15', cn: '重机枪', damage: 22, fireRate: 0.07, heat: 1.4, spread: 0.045, magazine: 80, reserve: 320, reloadDur: 1.8, aimFov: 52, scope: 'std' },
+    hp: 180, armor: 80, speed: 5, sprintMul: 1.25,
+    fpvMax: 2,
+    stats: { weight: 5, agility: 1, accuracy: 2, firepower: 5, armor: 5 },
+  },
+  engineer: {
+    name: 'ENGINEER', cn: '工程支援',
+    desc: '部署砲塔 · 修复 · 充电',
+    weapon: { name: 'AR-30', cn: '突击步枪', damage: 22, fireRate: 0.1, heat: 1.8, spread: 0.014, magazine: 30, reserve: 220, reloadDur: 1.1, aimFov: 48, scope: 'std' },
+    hp: 130, armor: 40, speed: 7, sprintMul: 1.6,
+    fpvMax: 3,
+    deployTurret: true,
+    stats: { weight: 3, agility: 3, accuracy: 3, firepower: 3, armor: 4 },
+  },
+};
+
 // ============ SETTINGS ============
 const settings = {
   controlMode: localStorage.getItem('gv_ctrl') || 'mouse',
@@ -1141,6 +1364,7 @@ const settings = {
   invertY: localStorage.getItem('gv_invy') === 'true',
   aimAssist: localStorage.getItem('gv_aim') !== 'false',
   character: localStorage.getItem('gv_char') || 'human',
+  loadout: localStorage.getItem('gv_loadout') || 'assault',
 };
 function saveSettings() {
   localStorage.setItem('gv_ctrl', settings.controlMode);
@@ -1148,6 +1372,28 @@ function saveSettings() {
   localStorage.setItem('gv_invy', settings.invertY);
   localStorage.setItem('gv_aim', settings.aimAssist);
   localStorage.setItem('gv_char', settings.character);
+  localStorage.setItem('gv_loadout', settings.loadout);
+}
+function applyLoadout() {
+  const ld = LOADOUTS[settings.loadout] || LOADOUTS.assault;
+  player.maxHp = ld.hp;
+  player.hp = ld.hp;
+  player.maxArmor = ld.armor;
+  player.armor = ld.armor;
+  player.speed = ld.speed;
+  player.sprintMul = ld.sprintMul;
+  player.weaponProfile = ld.weapon;
+  player.damage = ld.weapon.damage;
+  player.fireRate = ld.weapon.fireRate;
+  player.heatPerShot = ld.weapon.heat;
+  player.spread = ld.weapon.spread;
+  player.maxAmmo = ld.weapon.magazine;
+  player.ammo = ld.weapon.magazine;
+  player.reserve = ld.weapon.reserve;
+  player.reloadDuration = ld.weapon.reloadDur;
+  fpv.max = ld.fpvMax;
+  fpv.available = ld.fpvMax;
+  player.canDeployTurret = !!ld.deployTurret;
 }
 function applyControlMode() {
   document.body.classList.toggle('trackpad-mode', settings.controlMode === 'trackpad');
@@ -1205,6 +1451,11 @@ const player = {
   battery: 100, maxBattery: 100,
   heat: 0, maxHeat: 100,
   overheated: false, overheatTimer: 0,
+  armor: 30, maxArmor: 30,
+  weaponProfile: null,
+  fireRate: 0.1, heatPerShot: 1.8, spread: 0.012,
+  canDeployTurret: false,
+  aiming: false,
 };
 
 const drone = {
@@ -1214,7 +1465,10 @@ const drone = {
   battery: 100, maxBattery: 100,
   group: null,
   speed: 14,
+  bombs: 4, maxBombs: 4, bombCd: 0,
 };
+
+const droneBombs = [];
 
 const fpv = {
   active: false,
@@ -1249,7 +1503,7 @@ const WORLD_SIZE = 100;
 
 // ============ INPUT ============
 const keys = {};
-const mouse = { dx: 0, dy: 0, down: false, locked: false, clientX: 0, clientY: 0 };
+const mouse = { dx: 0, dy: 0, down: false, right: false, locked: false, clientX: 0, clientY: 0 };
 
 window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
@@ -1267,6 +1521,7 @@ window.addEventListener('keydown', e => {
   if (k === 'v') togglePerspective();
   if (k === 'r') startReload();
   if (k === 't') toggleThermal();
+  if (k === 'f') player.aimToggle = !player.aimToggle;
 });
 
 function togglePause() {
@@ -1305,9 +1560,14 @@ canvas.addEventListener('mousedown', e => {
     if (settings.controlMode === 'mouse' && !mouse.locked && game.view !== 'map') {
       canvas.requestPointerLock();
     }
+  } else if (e.button === 2) {
+    mouse.right = true;
   }
 });
-window.addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; });
+window.addEventListener('mouseup', e => {
+  if (e.button === 0) mouse.down = false;
+  if (e.button === 2) mouse.right = false;
+});
 window.addEventListener('mousemove', e => {
   mouse.clientX = e.clientX;
   mouse.clientY = e.clientY;
@@ -2243,15 +2503,7 @@ function explodeBarrel(barrel) {
   // Damage player
   if (player.alive && player.pos.distanceTo(bp) < 4.2) {
     const d = player.pos.distanceTo(bp);
-    player.hp -= 35 * (1 - d/4.2);
-    player.lastHitTime = player.regenDelay;
-    flashHit();
-    if (player.hp <= 0) {
-      player.hp = 0; player.alive = false;
-      allies[0].alive = false; allies[0].hp = 0;
-      createExplosion(player.pos, 'big');
-      setTimeout(() => endGame(false), 1500);
-    }
+    damagePlayer(35 * (1 - d/4.2));
   }
   // Chain reaction
   for (const other of barrels) {
@@ -2337,6 +2589,98 @@ function checkChargingStation(pos) {
     if (Math.hypot(dx, dz) < cs.radius) return cs;
   }
   return null;
+}
+
+function makeBombModel() {
+  const g = new THREE.Group();
+  const body = makeBox(0.32, 0.55, 0.32, M.red);
+  g.add(body);
+  const nose = makeBox(0.18, 0.18, 0.18, M.black);
+  nose.position.y = -0.3;
+  g.add(nose);
+  // tail fins
+  const fin = makeBox(0.45, 0.04, 0.04, M.black);
+  fin.position.y = 0.25; g.add(fin);
+  const fin2 = makeBox(0.04, 0.04, 0.45, M.black);
+  fin2.position.y = 0.25; g.add(fin2);
+  // yellow stripe
+  const stripe = makeBox(0.34, 0.06, 0.34, M.barrelStripe);
+  stripe.position.y = 0.05;
+  g.add(stripe);
+  return g;
+}
+
+function dropBomb() {
+  if (drone.bombs <= 0 || drone.bombCd > 0 || !drone.active) return;
+  drone.bombs--;
+  drone.bombCd = 0.5;
+  const mesh = makeBombModel();
+  mesh.position.copy(drone.pos);
+  scene.add(mesh);
+  droneBombs.push({
+    pos: drone.pos.clone(),
+    vy: -1,           // small initial down velocity
+    vx: 0, vz: 0,
+    mesh,
+    spin: 0,
+  });
+  game.shake = Math.max(game.shake, 0.04);
+  showToast(`投弹 · 剩余 ${drone.bombs}`);
+}
+
+function updateDroneBombs(dt) {
+  for (let i = droneBombs.length - 1; i >= 0; i--) {
+    const b = droneBombs[i];
+    b.vy -= 18 * dt;
+    b.pos.y += b.vy * dt;
+    b.pos.x += b.vx * dt;
+    b.pos.z += b.vz * dt;
+    b.mesh.position.copy(b.pos);
+    b.spin += dt * 6;
+    b.mesh.rotation.x = b.spin * 0.3;
+    b.mesh.rotation.z = Math.sin(b.spin) * 0.05;
+
+    let exploded = false;
+    // Ground / building
+    const groundY = getGroundY(b.pos.x, b.pos.z);
+    if (b.pos.y <= groundY + 0.05) exploded = true;
+    if (b.pos.y < -2) exploded = true;
+    // Enemy hit
+    if (!exploded) {
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        const ePos = new THREE.Vector3(e.pos.x, e.pos.y + (e.type==='drone'?0:1), e.pos.z);
+        if (b.pos.distanceTo(ePos) < 1.3) { exploded = true; break; }
+      }
+    }
+    if (exploded) {
+      createExplosion(b.pos.clone(), 'medium');
+      game.shake = Math.max(game.shake, 0.25);
+      // Damage enemies in 4m radius
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        const d = e.pos.distanceTo(b.pos);
+        if (d < 4) {
+          e.hp -= 75 * (1 - d/4);
+          if (e.hp <= 0 && e.alive) {
+            e.alive = false;
+            scene.remove(e.group);
+            game.score += e.type === 'drone' ? 150 : (e.type === 'sniper' ? 250 : (e.type === 'heavy' ? 220 : 100));
+            game.killCount++;
+            addKillFeed('UAV BOMB', e.type === 'drone' ? 'DRONE' : 'ROBOT-X');
+            rollPickupDrop(e.pos);
+          }
+        }
+      }
+      // Hit player too if too close
+      if (player.alive && player.pos.distanceTo(b.pos) < 3) {
+        const d = player.pos.distanceTo(b.pos);
+        damagePlayer(20 * (1 - d/3));
+      }
+      scene.remove(b.mesh);
+      droneBombs.splice(i, 1);
+    }
+  }
 }
 
 function updateChargingStations(dt) {
@@ -2490,19 +2834,92 @@ function spawnEnemyDrone() {
   });
 }
 
+function spawnHeavyEnemy() {
+  let x, z, ok = false, tries = 0;
+  while (!ok && tries < 30) {
+    const ang = Math.random() * Math.PI * 2;
+    const dist = 30 + Math.random() * 22;
+    x = player.pos.x + Math.cos(ang)*dist;
+    z = player.pos.z + Math.sin(ang)*dist;
+    if (Math.abs(x) > WORLD_SIZE-2 || Math.abs(z) > WORLD_SIZE-2) { tries++; continue; }
+    if (!checkCollisionAt(x, z, 0.9)) ok = true;
+    tries++;
+  }
+  if (!ok) return;
+  const group = makeRobot(M.enemyBody, M.enemyAccent);
+  group.scale.set(1.3, 1.2, 1.3); // chunkier
+  group.position.set(x, 0, z);
+  scene.add(group);
+  enemies.push({
+    pos: new THREE.Vector3(x, 0, z),
+    yaw: Math.random() * Math.PI * 2,
+    hp: 130, maxHp: 130,
+    fireCd: 2.0 + Math.random()*1.5,
+    walkPhase: Math.random()*Math.PI*2,
+    alive: true,
+    group, type: 'heavy',
+    speed: 1.6 + Math.random()*0.3,
+    radius: 0.6,
+    state: 'patrol',
+    spawnPos: new THREE.Vector3(x, 0, z),
+    patrolTarget: null,
+    patrolWait: 0.5 + Math.random() * 1.5,
+    patrolLookDir: Math.random() < 0.5 ? -1 : 1,
+    fireDamage: 11, fireSpread: 0.16, bulletSpeed: 28, fireCdRange: [2.0, 3.0],
+  });
+}
+
+function spawnSniperEnemy() {
+  let x, z, ok = false, tries = 0;
+  while (!ok && tries < 30) {
+    const ang = Math.random() * Math.PI * 2;
+    const dist = 45 + Math.random() * 18;
+    x = player.pos.x + Math.cos(ang)*dist;
+    z = player.pos.z + Math.sin(ang)*dist;
+    if (Math.abs(x) > WORLD_SIZE-2 || Math.abs(z) > WORLD_SIZE-2) { tries++; continue; }
+    if (!checkCollisionAt(x, z, 0.6)) ok = true;
+    tries++;
+  }
+  if (!ok) return;
+  const group = makeRobot(M.enemyBody, M.enemyAccent);
+  group.scale.set(0.9, 1.15, 0.9); // taller, thinner
+  group.position.set(x, 0, z);
+  scene.add(group);
+  enemies.push({
+    pos: new THREE.Vector3(x, 0, z),
+    yaw: Math.random() * Math.PI * 2,
+    hp: 35, maxHp: 35,
+    fireCd: 4.0 + Math.random()*2.0,
+    walkPhase: Math.random()*Math.PI*2,
+    alive: true,
+    group, type: 'sniper',
+    speed: 2.0,
+    radius: 0.4,
+    state: 'patrol',
+    spawnPos: new THREE.Vector3(x, 0, z),
+    patrolTarget: null,
+    patrolWait: 1.0 + Math.random() * 2.0,
+    patrolLookDir: Math.random() < 0.5 ? -1 : 1,
+    fireDamage: 28, fireSpread: 0.025, bulletSpeed: 42, fireCdRange: [3.5, 5.5],
+    sniperPreferDist: 35,
+  });
+}
+
 function startNextWave() {
   game.wave++;
   if (game.wave > 5) { endGame(true); return; }
   const waveDef = [null,
-    { s: 2, d: 0 },  // wave 1: gentle intro
-    { s: 3, d: 1 },  // wave 2: first drone
-    { s: 3, d: 2 },  // wave 3
-    { s: 4, d: 2 },  // wave 4
-    { s: 5, d: 3 },  // wave 5: finale
+    { s: 2, d: 0, h: 0, n: 0 },  // wave 1: gentle intro
+    { s: 2, d: 1, h: 0, n: 1 },  // wave 2: first drone + sniper
+    { s: 3, d: 1, h: 1, n: 1 },  // wave 3: first heavy
+    { s: 3, d: 2, h: 1, n: 1 },  // wave 4
+    { s: 4, d: 3, h: 2, n: 2 },  // wave 5: finale
   ];
-  const w = waveDef[game.wave] || { s: 5, d: 3 };
+  const w = waveDef[game.wave] || { s: 5, d: 3, h: 2, n: 2 };
   for (let i = 0; i < w.s; i++) spawnEnemy();
   for (let i = 0; i < w.d; i++) spawnEnemyDrone();
+  for (let i = 0; i < (w.h||0); i++) spawnHeavyEnemy();
+  for (let i = 0; i < (w.n||0); i++) spawnSniperEnemy();
   game.deployCountdown = game.wave === 1 ? 5 : 2.5;
   updateDeployBanner(true);
 }
@@ -2535,16 +2952,27 @@ function updateEnemies(dt) {
     if (e.state === 'engage') {
       // Engaged AI: track, move, shoot
       e.yaw = Math.atan2(dx, dz);
-      if (e.type === 'soldier') {
+      if (e.type === 'soldier' || e.type === 'heavy') {
+        const sm = e.type === 'heavy' ? 0.85 : 1; // heavy walks even slower in engage
         if (dist > 12) {
-          moveWithCollision(e.pos, (dx/dist) * e.speed * dt, (dz/dist) * e.speed * dt, e.radius);
-          e.walkPhase += dt * 8;
+          moveWithCollision(e.pos, (dx/dist) * e.speed * sm * dt, (dz/dist) * e.speed * sm * dt, e.radius);
+          e.walkPhase += dt * (e.type === 'heavy' ? 6 : 8);
         } else if (dist < 6) {
           moveWithCollision(e.pos, -(dx/dist) * e.speed * 0.5 * dt, -(dz/dist) * e.speed * 0.5 * dt, e.radius);
           e.walkPhase += dt * 5;
         } else {
           const sang = Math.atan2(dx, dz) + Math.PI/2;
           moveWithCollision(e.pos, Math.cos(sang)*1.5*dt, Math.sin(sang)*1.5*dt, e.radius);
+        }
+      } else if (e.type === 'sniper') {
+        const preferred = e.sniperPreferDist || 35;
+        if (dist < preferred - 5) {
+          // Retreat to keep range
+          moveWithCollision(e.pos, -(dx/dist) * e.speed * dt, -(dz/dist) * e.speed * dt, e.radius);
+          e.walkPhase += dt * 6;
+        } else if (dist > preferred + 8) {
+          moveWithCollision(e.pos, (dx/dist) * e.speed * 0.6 * dt, (dz/dist) * e.speed * 0.6 * dt, e.radius);
+          e.walkPhase += dt * 4;
         }
       } else if (e.type === 'drone') {
         e.hoverPhase += dt * 2;
@@ -2561,30 +2989,36 @@ function updateEnemies(dt) {
         e.pos.z = Math.max(-WORLD_SIZE+2, Math.min(WORLD_SIZE-2, e.pos.z));
       }
 
-      // Fire
+      // Fire — use per-enemy weapon profile
       e.fireCd -= dt;
       const eyePos = new THREE.Vector3(e.pos.x, e.pos.y + (e.type==='drone'?0:1.7), e.pos.z);
       const playerEye = new THREE.Vector3(player.pos.x, player.pos.y+1.2, player.pos.z);
-      if (e.fireCd <= 0 && dist < 30 && lineOfSight(eyePos, playerEye) && player.alive) {
+      const fireRange = e.type === 'sniper' ? 70 : (e.type === 'heavy' ? 35 : 30);
+      if (e.fireCd <= 0 && dist < fireRange && lineOfSight(eyePos, playerEye) && player.alive) {
         const dir = new THREE.Vector3().subVectors(playerEye, eyePos).normalize();
-        dir.x += (Math.random()-0.5)*0.12;
-        dir.y += (Math.random()-0.5)*0.10;
-        dir.z += (Math.random()-0.5)*0.12;
+        const sp = e.fireSpread != null ? e.fireSpread : (e.type === 'drone' ? 0.10 : 0.12);
+        dir.x += (Math.random()-0.5)*sp;
+        dir.y += (Math.random()-0.5)*sp*0.8;
+        dir.z += (Math.random()-0.5)*sp;
         dir.normalize();
+        const bs = e.bulletSpeed || 26;
+        const dmgDefault = e.type === 'drone' ? 4 : 6;
         enemyBullets.push({
-          pos: eyePos.clone(), dir, speed: 26, life: 1.6,
-          damage: e.type === 'drone' ? 4 : 6,
+          pos: eyePos.clone(), dir, speed: bs, life: 1.8,
+          damage: e.fireDamage != null ? e.fireDamage : dmgDefault,
         });
-        e.fireCd = e.type === 'drone' ? 2.5 + Math.random()*1.5 : 1.6 + Math.random()*1.0;
-        const tracer = makeTracer(eyePos, dir, 26*1.6, 0xc8261c);
+        const cdRange = e.fireCdRange || (e.type === 'drone' ? [2.5, 4.0] : [1.6, 2.6]);
+        e.fireCd = cdRange[0] + Math.random() * (cdRange[1] - cdRange[0]);
+        const tracerCol = e.type === 'sniper' ? 0xffd44d : 0xc8261c;
+        const tracer = makeTracer(eyePos, dir, bs * 1.8, tracerCol);
         scene.add(tracer.line);
-        tracer.life = 0.06;
+        tracer.life = e.type === 'sniper' ? 0.12 : 0.06;
         tracers.push(tracer);
       }
     } else {
       // PATROL — wander around spawn point, look for player passively
-      const detRange = e.type === 'drone' ? 28 : 22;
-      const detFov = e.type === 'drone' ? Math.PI : Math.PI * 0.7;
+      const detRange = e.type === 'drone' ? 28 : (e.type === 'sniper' ? 50 : (e.type === 'heavy' ? 26 : 22));
+      const detFov = e.type === 'drone' ? Math.PI : (e.type === 'sniper' ? Math.PI * 0.5 : Math.PI * 0.7);
       if (canSeePlayer(e, detRange, detFov)) {
         e.state = 'engage';
         alertNearby(e, 14);
@@ -2703,17 +3137,9 @@ function updateEnemyBullets(dt) {
       const dy = b.pos.y - (player.pos.y + 1.2);
       const dz = b.pos.z - player.pos.z;
       if (Math.hypot(dx, dy, dz) < player.radius + 0.4) {
-        player.hp -= b.damage;
-        player.lastHitTime = player.regenDelay;
-        flashHit();
+        damagePlayer(b.damage);
         game.shake = Math.max(game.shake, 0.4);
         hit = true;
-        if (player.hp <= 0) {
-          player.hp = 0; player.alive = false;
-          allies[0].alive = false; allies[0].hp = 0;
-          createExplosion(player.pos, 'big');
-          setTimeout(() => endGame(false), 1500);
-        }
       }
     }
     // Building hit
@@ -2757,9 +3183,10 @@ function updatePlayerMovement(dt) {
   if (keys['a']) { mx -= rx; mz -= rz; }
   if (keys['d']) { mx += rx; mz += rz; }
   const mag = Math.hypot(mx, mz);
-  // Sprint requires battery
-  const sprinting = keys['shift'] && player.battery > 1 && mag > 0;
+  // Sprint requires battery and is disabled while aiming
+  const sprinting = keys['shift'] && !player.aiming && player.battery > 1 && mag > 0;
   let speed = player.speed * (sprinting ? player.sprintMul : 1);
+  if (player.aiming) speed *= 0.55;
   if (mag > 0) {
     mx /= mag; mz /= mag;
     moveWithCollision(player.pos, mx * speed * dt, mz * speed * dt, player.radius, player.pos.y);
@@ -2874,14 +3301,33 @@ function updatePlayerMovement(dt) {
   }
 }
 
+function damagePlayer(amount) {
+  if (!player.alive) return;
+  let dmg = amount;
+  if (player.armor > 0) {
+    const abs = Math.min(dmg, player.armor);
+    player.armor -= abs;
+    dmg -= abs;
+  }
+  player.hp -= dmg;
+  player.lastHitTime = player.regenDelay;
+  flashHit();
+  if (player.hp <= 0) {
+    player.hp = 0; player.alive = false;
+    allies[0].alive = false; allies[0].hp = 0;
+    createExplosion(player.pos, 'big');
+    setTimeout(() => endGame(false), 1500);
+  }
+}
+
 function fire() {
   if (player.overheated) return;
-  player.fireCd = 0.1;
+  player.fireCd = player.fireRate;
   player.ammo--;
   player.recoil = 0.4;
   game.shake = Math.max(game.shake, 0.06);
   // Heat accumulation; overheat at maxHeat → forced cooldown
-  player.heat = Math.min(player.maxHeat, player.heat + 1.8);
+  player.heat = Math.min(player.maxHeat, player.heat + (player.heatPerShot || 1.8));
   if (player.heat >= player.maxHeat) {
     player.overheated = true;
     player.overheatTimer = 2.0;
@@ -2918,8 +3364,10 @@ function fire() {
       dir.lerp(newDir, 0.7).normalize();
     }
   }
-  // small spread
-  const spread = settings.controlMode === 'trackpad' ? 0.005 : 0.01;
+  // Weapon-specific spread (ADS tightens it; trackpad mode gets a bit more accurate)
+  const baseSpread = player.spread || 0.012;
+  const aimMul = player.aiming ? 0.28 : 1;
+  const spread = baseSpread * aimMul * (settings.controlMode === 'trackpad' ? 0.55 : 1);
   dir.x += (Math.random()-0.5)*spread;
   dir.y += (Math.random()-0.5)*spread;
   dir.z += (Math.random()-0.5)*spread;
@@ -2997,9 +3445,11 @@ function fire() {
     showHitMarker();
     if (hitEnemy.hp <= 0 && hitEnemy.alive) {
       hitEnemy.alive = false;
-      game.score += hitEnemy.type === 'drone' ? 150 : 100;
+      const scoreByType = { drone: 150, sniper: 250, heavy: 220, soldier: 100 };
+      game.score += scoreByType[hitEnemy.type] || 100;
       game.killCount++;
-      addKillFeed('ALPHA-1', hitEnemy.type === 'drone' ? 'DRONE' : 'ROBOT-X');
+      const tag = hitEnemy.type === 'drone' ? 'DRONE' : hitEnemy.type === 'sniper' ? 'SNIPER' : hitEnemy.type === 'heavy' ? 'HEAVY' : 'ROBOT-X';
+      addKillFeed('ALPHA-1', tag);
       createExplosion(new THREE.Vector3(hitEnemy.pos.x, hitEnemy.pos.y + 1, hitEnemy.pos.z), 'small');
       scene.remove(hitEnemy.group);
       rollPickupDrop(hitEnemy.pos);
@@ -3065,6 +3515,8 @@ function toggleDrone() {
     if (player.battery < 12) { showToast('单元电池不足以部署 UAV'); return; }
     player.battery = Math.max(0, player.battery - 12);
     drone.active = true;
+    drone.bombs = drone.maxBombs;
+    drone.bombCd = 0;
     drone.pos.set(player.pos.x, player.pos.y + 4, player.pos.z);
     drone.yaw = player.yaw;
     drone.group.visible = true;
@@ -3109,6 +3561,11 @@ function updateDroneControl(dt) {
   drone.group.rotation.y = drone.yaw;
   if (drone.group.userData.rotors) {
     for (const r of drone.group.userData.rotors) r.rotation.y += dt * 35;
+  }
+  // Bomb drop — LMB to release ordinance, with small cooldown
+  if (drone.bombCd > 0) drone.bombCd -= dt;
+  if (mouse.down && drone.bombCd <= 0 && drone.bombs > 0) {
+    dropBomb();
   }
   if (drone.battery <= 0) recallDrone();
 }
@@ -3340,6 +3797,20 @@ function updateCameras(dt) {
     mapCamera.position.set(player.pos.x, 80, player.pos.z);
     mapCamera.lookAt(player.pos.x, 0, player.pos.z);
   }
+
+  // ADS — lerp the relevant camera's FOV toward the weapon's aim FOV
+  const baseFps = 78, baseTpp = 70;
+  const aimFov = (player.weaponProfile && player.weaponProfile.aimFov) || 50;
+  const fpsTarget = player.aiming ? aimFov : baseFps;
+  const tppTarget = player.aiming ? Math.max(46, aimFov + 14) : baseTpp;
+  if (Math.abs(fpsCamera.fov - fpsTarget) > 0.05) {
+    fpsCamera.fov += (fpsTarget - fpsCamera.fov) * 0.18;
+    fpsCamera.updateProjectionMatrix();
+  }
+  if (Math.abs(tppCamera.fov - tppTarget) > 0.05) {
+    tppCamera.fov += (tppTarget - tppCamera.fov) * 0.18;
+    tppCamera.updateProjectionMatrix();
+  }
 }
 
 // ============ VIEW ============
@@ -3394,8 +3865,35 @@ function updateHUD() {
   document.getElementById('clock').textContent = `${mm}:${ss}`;
   // HP
   document.getElementById('hpFill').style.width = `${(player.hp/player.maxHp)*100}%`;
-  document.getElementById('hpFill').classList.toggle('low', player.hp < 35);
+  document.getElementById('hpFill').classList.toggle('low', player.hp < player.maxHp * 0.3);
   document.getElementById('hpText').textContent = `${Math.max(0,Math.floor(player.hp))} / ${player.maxHp}`;
+  // Armor
+  const armorRow = document.getElementById('armorRow');
+  const armorBar = document.getElementById('armorBar');
+  if (player.maxArmor > 0) {
+    armorRow.style.display = '';
+    armorBar.style.display = '';
+    const armorPct = (player.armor/player.maxArmor)*100;
+    const armorEl = document.getElementById('armorFill');
+    armorEl.style.width = `${armorPct}%`;
+    armorEl.classList.toggle('depleted', player.armor <= 0);
+    document.getElementById('armorText').textContent = `${Math.max(0,Math.floor(player.armor))} / ${player.maxArmor}`;
+  } else {
+    armorRow.style.display = 'none';
+    armorBar.style.display = 'none';
+  }
+  // Weapon name from current loadout profile
+  if (player.weaponProfile) {
+    document.getElementById('weaponName').textContent = `${player.weaponProfile.name} · ${player.weaponProfile.cn}`;
+  }
+  // Scope overlay
+  const scopeEl = document.getElementById('scopeOverlay');
+  if (scopeEl) {
+    scopeEl.classList.toggle('on', !!player.aiming);
+    const scopeKind = (player.weaponProfile && player.weaponProfile.scope) || 'std';
+    scopeEl.classList.toggle('sniper', scopeKind === 'sniper');
+    scopeEl.classList.toggle('std', scopeKind !== 'sniper');
+  }
   // Battery
   const batPct = (player.battery/player.maxBattery)*100;
   const batEl = document.getElementById('batteryFill');
@@ -3426,6 +3924,7 @@ function updateHUD() {
   document.getElementById('uavStat').textContent = drone.active ? 'ACTIVE' : (drone.battery > 15 ? 'READY' : 'LOW');
   document.getElementById('uavStat').className = drone.active ? 'v' : '';
   document.getElementById('uavBat').textContent = `${Math.floor(drone.battery)}%`;
+  document.getElementById('uavBomb').textContent = `${drone.bombs} / ${drone.maxBombs}`;
   document.getElementById('fpvStat').textContent = `${fpv.available} / ${fpv.max}`;
   // Unit list
   const ul = document.getElementById('unitList');
@@ -3704,6 +4203,7 @@ function returnToMenu() {
   document.getElementById('tacOverlay').classList.remove('on');
   document.getElementById('cursorSoft').classList.remove('show');
   document.getElementById('deployBanner').classList.remove('on');
+  document.getElementById('loadoutModal').classList.add('hidden');
   setView('tpp');
   tppCamera.position.set(8, 6, 12);
   tppCamera.lookAt(0, 1, 0);
@@ -3720,7 +4220,7 @@ document.querySelectorAll('.start-menu-item').forEach(btn => {
     btn.classList.add('active');
     switch (action) {
       case 'deploy': startGame(); break;
-      case 'loadout': showToast('LOADOUT · 装备配置即将开放'); break;
+      case 'loadout': openLoadoutModal(); break;
       case 'customize': showToast('CUSTOMIZE · 涂装系统即将开放'); break;
       case 'bp': showToast('BATTLE PASS · 通行证即将开放'); break;
       case 'settings': openSettings(); break;
@@ -3803,10 +4303,80 @@ document.getElementById('assistToggle').addEventListener('click', () => {
 });
 applyControlMode();
 
+// ============ LOADOUT MODAL ============
+function openLoadoutModal() {
+  document.getElementById('loadoutModal').classList.remove('hidden');
+  refreshLoadoutCards();
+}
+function closeLoadoutModal() {
+  document.getElementById('loadoutModal').classList.add('hidden');
+}
+function pipBar(value) {
+  let html = '<div class="loadout-stat-bar">';
+  for (let i = 1; i <= 5; i++) {
+    html += `<div class="loadout-stat-pip${i <= value ? ' on' : ''}"></div>`;
+  }
+  html += '</div>';
+  return html;
+}
+function refreshLoadoutCards() {
+  const grid = document.getElementById('loadoutCards');
+  grid.innerHTML = '';
+  for (const [id, ld] of Object.entries(LOADOUTS)) {
+    const isActive = id === settings.loadout;
+    const card = document.createElement('div');
+    card.className = 'loadout-card-big' + (isActive ? ' active' : '');
+    card.dataset.loadout = id;
+    card.innerHTML = `
+      <div>
+        <div class="loadout-card-name">${ld.name}</div>
+        <div class="loadout-card-cn">${ld.cn}</div>
+      </div>
+      <div class="loadout-card-weapon">
+        <div class="loadout-card-weapon-name">${ld.weapon.name}</div>
+        <div class="loadout-card-weapon-cn">${ld.weapon.cn}</div>
+      </div>
+      <div class="loadout-card-stats">
+        <div class="loadout-stat-row"><span class="loadout-stat-label">重量</span>${pipBar(ld.stats.weight)}</div>
+        <div class="loadout-stat-row"><span class="loadout-stat-label">敏捷</span>${pipBar(ld.stats.agility)}</div>
+        <div class="loadout-stat-row"><span class="loadout-stat-label">精准</span>${pipBar(ld.stats.accuracy)}</div>
+        <div class="loadout-stat-row"><span class="loadout-stat-label">火力</span>${pipBar(ld.stats.firepower)}</div>
+        <div class="loadout-stat-row"><span class="loadout-stat-label">装甲</span>${pipBar(ld.stats.armor)}</div>
+      </div>
+      <div class="loadout-card-num">
+        <div><span>HP</span>${ld.hp}</div>
+        <div><span>ARM</span>${ld.armor}</div>
+        <div><span>SPD</span>${ld.speed.toFixed(1)}</div>
+        <div><span>DMG</span>${ld.weapon.damage}</div>
+      </div>
+      <div class="loadout-card-desc">${ld.desc}</div>
+    `;
+    card.addEventListener('click', () => {
+      settings.loadout = id;
+      saveSettings();
+      refreshLoadoutCards();
+      const cur = LOADOUTS[settings.loadout];
+      document.getElementById('loadoutCurrentName').textContent = cur.name;
+      document.getElementById('loadoutCurrentDesc').textContent = `${cur.cn} · ${cur.desc}`;
+    });
+    grid.appendChild(card);
+  }
+  const cur = LOADOUTS[settings.loadout] || LOADOUTS.assault;
+  document.getElementById('loadoutCurrentName').textContent = cur.name;
+  document.getElementById('loadoutCurrentDesc').textContent = `${cur.cn} · ${cur.desc}`;
+}
+document.getElementById('loadoutClose').onclick = closeLoadoutModal;
+document.getElementById('loadoutCancel').onclick = closeLoadoutModal;
+document.getElementById('loadoutDeploy').onclick = () => {
+  closeLoadoutModal();
+  startGame();
+};
+
 function startGame() {
   document.getElementById('start').classList.add('hidden');
   document.getElementById('end').classList.add('hidden');
   document.getElementById('settingsModal').classList.add('hidden');
+  document.getElementById('loadoutModal').classList.add('hidden');
   document.getElementById('pauseTip').classList.remove('on');
   game.state = 'playing';
   game.view = 'tpp';
@@ -3830,6 +4400,9 @@ function startGame() {
   player.alive = true;
   player.reloading = false;
   player.lastHitTime = 0;
+  player.aiming = false;
+  player.aimToggle = false;
+  applyLoadout();
   player.battery = player.maxBattery;
   player.heat = 0;
   player.overheated = false;
@@ -3837,6 +4410,10 @@ function startGame() {
 
   drone.active = false;
   drone.battery = drone.maxBattery;
+  drone.bombs = drone.maxBombs;
+  drone.bombCd = 0;
+  for (const b of droneBombs) scene.remove(b.mesh);
+  droneBombs.length = 0;
 
   fpv.active = false;
   fpv.available = fpv.max;
@@ -3892,6 +4469,8 @@ function update(dt) {
     return;
   }
   game.elapsed += dt;
+  // ADS / aim state — right-click hold OR F-toggle, only in TPP/FPS, not while overheated
+  player.aiming = (mouse.right || player.aimToggle) && (game.view === 'tpp' || game.view === 'fps') && player.alive && !player.overheated;
 
   // Mouse look (mouse mode only, while locked)
   if (mouse.locked && settings.controlMode === 'mouse') {
@@ -3960,6 +4539,7 @@ function update(dt) {
   updatePickups(dt);
   updateChargingStations(dt);
   updateCapturePoints(dt);
+  updateDroneBombs(dt);
 
   // Deploy countdown ticking
   if (game.deployCountdown > 0) {
