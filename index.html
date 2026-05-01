@@ -2370,6 +2370,13 @@ function generateWorld() {
     buildings.push({ x: s.x - 0.65, z: s.z - 0.65, w: 1.3, d: 1.3, h: s.h });
   }
 
+  // ==== Universal scene enrichers (every map gets these) ====
+  spawnWreckage(10);
+  spawnContainers(7);
+  spawnCraters(6);
+  spawnBlastWalls(10);
+  spawnPropagandaBanners(10);
+
   // ==== Theme-specific terrain features ====
   if (params.feature === 'smokestacks') {
     // INDUSTRIAL — tall cylindrical smokestacks with hazard bands
@@ -2884,7 +2891,7 @@ function generateWorld() {
   }
 
   // Hovering ambient drones (cosmetic, distant)
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 16; i++) {
     const angle = Math.random() * Math.PI * 2;
     const r = WORLD_SIZE * 0.7 + Math.random() * 30;
     const x = Math.cos(angle)*r;
@@ -2905,7 +2912,7 @@ function generateWorld() {
   }
 
   // Smoke / signal columns rising in the distance
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 14; i++) {
     const angle = Math.random() * Math.PI * 2;
     const r = WORLD_SIZE * 0.5 + Math.random() * WORLD_SIZE * 0.4;
     const x = Math.cos(angle)*r, z = Math.sin(angle)*r;
@@ -2924,7 +2931,7 @@ function generateWorld() {
   }
 
   // Vertical light shafts (search beams)
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 8; i++) {
     const angle = Math.random() * Math.PI * 2;
     const r = WORLD_SIZE * 0.6 + Math.random() * 40;
     const x = Math.cos(angle)*r, z = Math.sin(angle)*r;
@@ -2936,7 +2943,7 @@ function generateWorld() {
   }
 
   // Tracer streaks in the sky (faint distant combat)
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 28; i++) {
     const x = (Math.random()-0.5) * WORLD_SIZE * 1.4;
     const z = (Math.random()-0.5) * WORLD_SIZE * 1.4;
     if (Math.hypot(x, z) < WORLD_SIZE * 0.5) continue;
@@ -3044,11 +3051,322 @@ void main(){
   scene.add(fpv.group);
 }
 
+function spawnWreckage(count) {
+  for (let i = 0; i < count; i++) {
+    let wx, wz, ok = false, tries = 0;
+    while (!ok && tries < 25) {
+      wx = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      wz = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      if (Math.hypot(wx, wz) < 8) { tries++; continue; }
+      if (!checkCollisionAt(wx, wz, 1.8)) ok = true;
+      tries++;
+    }
+    if (!ok) continue;
+    const wYaw = Math.random() * Math.PI * 2;
+    const tilt = (Math.random() - 0.5) * 0.4;
+    const r = Math.random();
+    if (r < 0.45) {
+      // Abandoned car — chassis + cabin + 4 wheels (broken posture)
+      const chassis = makeBox(2.4, 0.5, 1.2, M.buildDark);
+      chassis.position.set(wx, 0.25, wz);
+      chassis.rotation.set(0, wYaw, tilt * 0.6);
+      scene.add(chassis);
+      const cabin = makeBox(1.5, 0.6, 1.0, M.buildMid);
+      cabin.position.set(wx, 0.85, wz);
+      cabin.rotation.set(0, wYaw, tilt);
+      scene.add(cabin);
+      // Broken windshield (red marker)
+      const wind = makeBox(1.4, 0.05, 0.7, M.black);
+      wind.position.set(wx, 1.2, wz);
+      wind.rotation.set(0, wYaw, tilt);
+      scene.add(wind);
+      // Wheels
+      for (const [px, pz] of [[-0.9, -0.45], [0.9, -0.45], [-0.9, 0.45], [0.9, 0.45]]) {
+        const wheel = makeBox(0.35, 0.35, 0.25, M.black);
+        wheel.position.set(
+          wx + px * Math.cos(wYaw) - pz * Math.sin(wYaw),
+          0.18,
+          wz + px * Math.sin(wYaw) + pz * Math.cos(wYaw)
+        );
+        scene.add(wheel);
+      }
+      buildings.push({ x: wx - 1.2, z: wz - 0.6, w: 2.4, d: 1.2, h: 1.4 });
+    } else if (r < 0.78) {
+      // Tank wreck — body + turret + broken barrel
+      const body = makeBox(3.2, 1.2, 2.0, M.buildDark);
+      body.position.set(wx, 0.6, wz);
+      body.rotation.y = wYaw;
+      scene.add(body);
+      // Track caps
+      const trkL = makeBox(3.4, 0.5, 0.4, M.black);
+      trkL.position.set(wx, 0.25, wz - 0.85);
+      trkL.rotation.y = wYaw;
+      scene.add(trkL);
+      const trkR = makeBox(3.4, 0.5, 0.4, M.black);
+      trkR.position.set(wx, 0.25, wz + 0.85);
+      trkR.rotation.y = wYaw;
+      scene.add(trkR);
+      const turret = makeBox(1.7, 0.85, 1.4, M.buildMid);
+      turret.position.set(wx, 1.6, wz);
+      turret.rotation.y = wYaw + (Math.random() - 0.5) * 0.6;
+      scene.add(turret);
+      // Drooping barrel (broken)
+      const barrel = new THREE.Group();
+      barrel.position.set(wx, 1.7, wz);
+      barrel.rotation.y = turret.rotation.y;
+      const bShaft = makeBox(0.42, 0.42, 1.8, M.black);
+      bShaft.position.z = 0.9;
+      barrel.add(bShaft);
+      barrel.rotation.x = -0.35; // sag
+      scene.add(barrel);
+      // Red side panel
+      const accent = makeBox(0.15, 0.4, 1.6, M.red);
+      accent.position.set(wx, 1.0, wz);
+      accent.rotation.y = wYaw;
+      scene.add(accent);
+      buildings.push({ x: wx - 1.6, z: wz - 1.0, w: 3.2, d: 2.0, h: 1.8 });
+    } else {
+      // Crashed enemy drone — half-buried with twisted arms
+      const body = makeBox(0.9, 0.32, 0.9, M.red);
+      body.position.set(wx, 0.16, wz);
+      body.rotation.set(tilt * 1.5, wYaw, tilt);
+      scene.add(body);
+      const arm1 = makeBox(1.4, 0.1, 0.1, M.black);
+      arm1.position.set(wx, 0.22, wz);
+      arm1.rotation.y = wYaw + Math.PI / 4;
+      arm1.rotation.z = -0.3;
+      scene.add(arm1);
+      const arm2 = makeBox(0.9, 0.1, 0.1, M.black);
+      arm2.position.set(wx + 0.5, 0.18, wz - 0.2);
+      arm2.rotation.y = wYaw - Math.PI / 4;
+      scene.add(arm2);
+      // Scorch around
+      const scorch = makeBox(2.5, 0.04, 2.5, new THREE.MeshLambertMaterial({ color: 0x080808 }));
+      scorch.position.set(wx, 0.018, wz);
+      scene.add(scorch);
+    }
+  }
+}
+
+function spawnContainers(count) {
+  const containerColors = [
+    new THREE.MeshLambertMaterial({ color: 0xc8261c }), // red
+    new THREE.MeshLambertMaterial({ color: 0xe6b840 }), // yellow
+    new THREE.MeshLambertMaterial({ color: 0x4d7eb8 }), // blue
+    new THREE.MeshLambertMaterial({ color: 0x6a6a6a }), // grey
+    new THREE.MeshLambertMaterial({ color: 0x357a4a }), // green
+    new THREE.MeshLambertMaterial({ color: 0xa8a8a8 }), // light grey
+  ];
+  for (let i = 0; i < count; i++) {
+    let cx, cz, ok = false, tries = 0;
+    while (!ok && tries < 25) {
+      cx = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      cz = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      if (Math.hypot(cx, cz) < 9) { tries++; continue; }
+      if (!checkCollisionAt(cx, cz, 3.2)) ok = true;
+      tries++;
+    }
+    if (!ok) continue;
+    const stackCount = 1 + Math.floor(Math.random() * 3); // 1-3 high
+    const yawC = Math.random() < 0.5 ? 0 : Math.PI / 2;
+    const cw = 5.4, ch = 2.4, cd = 2.4;
+    for (let s = 0; s < stackCount; s++) {
+      const mat = containerColors[Math.floor(Math.random() * containerColors.length)];
+      const offset = (s > 0) ? (Math.random() - 0.5) * 0.6 : 0; // slight stagger when stacked
+      const cont = makeBox(cw, ch, cd, mat);
+      cont.position.set(cx + offset, ch * (s + 0.5), cz);
+      cont.rotation.y = yawC;
+      scene.add(cont);
+      // Top frame stripe
+      const frame = makeBox(cw + 0.05, 0.18, cd + 0.05, M.black);
+      frame.position.set(cx + offset, ch * (s + 1) - 0.08, cz);
+      frame.rotation.y = yawC;
+      scene.add(frame);
+      // Door corrugation lines (vertical thin strips)
+      for (let dl = -2; dl <= 2; dl++) {
+        const line = makeBox(0.08, ch - 0.4, 0.04, M.black);
+        line.position.set(cx + offset, ch * (s + 0.5), cz);
+        const along = dl * 0.85;
+        line.position.x += Math.cos(yawC) * 0 + Math.sin(yawC) * along;
+        line.position.z += Math.cos(yawC) * along - Math.sin(yawC) * 0;
+        line.position.x += (Math.cos(yawC) * cd + Math.sin(yawC) * 0) / 2 + 0.01 * Math.cos(yawC);
+        line.position.z += (Math.cos(yawC) * 0 - Math.sin(yawC) * cd) / 2 - 0.01 * Math.sin(yawC);
+        line.rotation.y = yawC;
+        scene.add(line);
+      }
+      // Number panel (red square with stripe)
+      if (s === 0) {
+        const panel = makeBox(0.7, 0.7, 0.04, M.barrelStripe);
+        panel.position.set(cx + offset, ch * (s + 0.5), cz);
+        panel.position.x += Math.sin(yawC) * (cd / 2 + 0.04);
+        panel.position.z += Math.cos(yawC) * (cd / 2 + 0.04);
+        panel.position.x -= cw * 0.32 * Math.cos(yawC);
+        panel.position.z += cw * 0.32 * Math.sin(yawC);
+        panel.rotation.y = yawC;
+        scene.add(panel);
+      }
+    }
+    // Add to buildings as one stack (approx AABB)
+    const cosY = Math.abs(Math.cos(yawC)), sinY = Math.abs(Math.sin(yawC));
+    buildings.push({
+      x: cx - (cw * cosY + cd * sinY) / 2,
+      z: cz - (cw * sinY + cd * cosY) / 2,
+      w: cw * cosY + cd * sinY,
+      d: cw * sinY + cd * cosY,
+      h: ch * stackCount,
+    });
+  }
+}
+
+function spawnCraters(count) {
+  for (let i = 0; i < count; i++) {
+    let cx, cz, ok = false, tries = 0;
+    while (!ok && tries < 25) {
+      cx = (Math.random() - 0.5) * WORLD_SIZE * 1.6;
+      cz = (Math.random() - 0.5) * WORLD_SIZE * 1.6;
+      if (Math.hypot(cx, cz) < 8) { tries++; continue; }
+      if (!checkCollisionAt(cx, cz, 3)) ok = true;
+      tries++;
+    }
+    if (!ok) continue;
+    // Scorch patch
+    const scorch = makeBox(5.5, 0.04, 5.5, new THREE.MeshLambertMaterial({ color: 0x080808 }));
+    scorch.position.set(cx, 0.015, cz);
+    scene.add(scorch);
+    // Crater pit (dark inset)
+    const pit = makeBox(2.6, 0.05, 2.6, new THREE.MeshLambertMaterial({ color: 0x040404 }));
+    pit.position.set(cx, 0.02, cz);
+    scene.add(pit);
+    // Rim fragments
+    for (let j = 0; j < 10; j++) {
+      const ang = (j / 10) * Math.PI * 2 + Math.random() * 0.3;
+      const r = 1.6 + Math.random() * 0.7;
+      const fs = 0.3 + Math.random() * 0.6;
+      const frag = makeBox(fs, fs * 0.7, fs, Math.random() < 0.7 ? M.buildDark : M.buildMid);
+      frag.position.set(cx + Math.cos(ang) * r, fs * 0.35, cz + Math.sin(ang) * r);
+      frag.rotation.y = Math.random() * Math.PI;
+      frag.rotation.z = (Math.random() - 0.5) * 0.4;
+      scene.add(frag);
+    }
+    // Smoke column above (semi-transparent dark stack)
+    const smokeMat = new THREE.MeshLambertMaterial({ color: 0x0a0a0a, transparent: true, opacity: 0.35 });
+    for (let s = 0; s < 5; s++) {
+      const sy = 1 + s * 1.6;
+      const sw = 0.7 + s * 0.55;
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(sw, sw - 0.15, 1.6, 8), smokeMat);
+      seg.position.set(cx + (Math.random() - 0.5) * 0.5, sy, cz + (Math.random() - 0.5) * 0.5);
+      scene.add(seg);
+    }
+    // Glowing ember at center
+    const ember = makeBox(0.6, 0.15, 0.6, M.redBright);
+    ember.position.set(cx, 0.1, cz);
+    scene.add(ember);
+  }
+}
+
+function spawnBlastWalls(count) {
+  for (let i = 0; i < count; i++) {
+    let bwx, bwz, ok = false, tries = 0;
+    while (!ok && tries < 25) {
+      bwx = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      bwz = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      if (Math.hypot(bwx, bwz) < 7) { tries++; continue; }
+      if (!checkCollisionAt(bwx, bwz, 2.5)) ok = true;
+      tries++;
+    }
+    if (!ok) continue;
+    // Form a small zigzag of 2-3 segments — looks like an actual barrier line
+    const segments = 2 + Math.floor(Math.random() * 2);
+    const baseYaw = Math.random() * Math.PI;
+    let cursorX = bwx, cursorZ = bwz;
+    for (let s = 0; s < segments; s++) {
+      const len = 3 + Math.random() * 2;
+      const yawSeg = baseYaw + (s > 0 ? (Math.random() - 0.5) * 0.6 : 0);
+      const wallH = 1.6;
+      const wallD = 0.55;
+      const wall = makeBox(len, wallH, wallD, M.buildLight);
+      wall.position.set(cursorX, wallH / 2, cursorZ);
+      wall.rotation.y = yawSeg;
+      scene.add(wall);
+      // Hazard-stripe top
+      const stripe = makeBox(len + 0.05, 0.22, wallD + 0.05, M.barrelStripe);
+      stripe.position.set(cursorX, wallH - 0.1, cursorZ);
+      stripe.rotation.y = yawSeg;
+      scene.add(stripe);
+      // Black tip cap
+      const cap = makeBox(len * 0.96, 0.06, 0.06, M.black);
+      cap.position.set(cursorX, wallH + 0.02, cursorZ);
+      cap.rotation.y = yawSeg;
+      scene.add(cap);
+      // Add as building (approx AABB)
+      const cs = Math.abs(Math.cos(yawSeg)), sn = Math.abs(Math.sin(yawSeg));
+      buildings.push({
+        x: cursorX - (len * cs + wallD * sn) / 2,
+        z: cursorZ - (len * sn + wallD * cs) / 2,
+        w: len * cs + wallD * sn,
+        d: len * sn + wallD * cs,
+        h: wallH,
+      });
+      // Move cursor along the wall direction for next segment
+      cursorX += Math.cos(yawSeg) * len;
+      cursorZ -= Math.sin(yawSeg) * len;
+    }
+  }
+}
+
+function spawnPropagandaBanners(count) {
+  // Picks tall buildings and hangs a vertical banner from them
+  const tall = buildings.filter(b => b.h >= 5 && !b._hive);
+  if (tall.length === 0) return;
+  const used = new Set();
+  for (let i = 0; i < count; i++) {
+    let pick = null;
+    for (let t = 0; t < 8; t++) {
+      const idx = Math.floor(Math.random() * tall.length);
+      if (used.has(idx)) continue;
+      pick = tall[idx]; used.add(idx); break;
+    }
+    if (!pick) continue;
+    const cx = pick.x + pick.w / 2;
+    const cz = pick.z + pick.d / 2;
+    const side = Math.floor(Math.random() * 4);
+    const bw = 0.7 + Math.random() * 0.5;
+    const bh = Math.min(pick.h * 0.7, 4.5);
+    const banner = makeBox(bw, bh, 0.08, M.red);
+    let bx = cx, bz = cz, ry = 0;
+    if (side === 0) { bx = cx + (Math.random() - 0.5) * pick.w * 0.5; bz = pick.z - 0.06; }
+    else if (side === 1) { bx = cx + (Math.random() - 0.5) * pick.w * 0.5; bz = pick.z + pick.d + 0.06; }
+    else if (side === 2) { bx = pick.x - 0.06; bz = cz + (Math.random() - 0.5) * pick.d * 0.5; ry = Math.PI / 2; }
+    else { bx = pick.x + pick.w + 0.06; bz = cz + (Math.random() - 0.5) * pick.d * 0.5; ry = Math.PI / 2; }
+    banner.position.set(bx, pick.h * 0.55, bz);
+    banner.rotation.y = ry;
+    scene.add(banner);
+    // Black header band
+    const header = makeBox(bw, bh * 0.18, 0.09, M.black);
+    header.position.set(bx, pick.h * 0.55 + bh * 0.4, bz);
+    header.rotation.y = ry;
+    scene.add(header);
+    // White "text" stripes
+    for (let t = 0; t < 3; t++) {
+      const stripe = makeBox(bw * 0.55, 0.1, 0.07, M.buildLight);
+      stripe.position.set(bx, pick.h * 0.55 + bh * 0.05 - t * 0.55, bz);
+      stripe.rotation.y = ry;
+      scene.add(stripe);
+    }
+    // Yellow accent band at bottom
+    const accent = makeBox(bw, bh * 0.12, 0.09, M.barrelStripe);
+    accent.position.set(bx, pick.h * 0.55 - bh * 0.42, bz);
+    accent.rotation.y = ry;
+    scene.add(accent);
+  }
+}
+
 function buildVoxelStructure(cx, cz, params) {
   params = params || THEME_PARAMS.grey_district;
   const baseW = 4 + Math.floor(Math.random()*5);
   const baseD = 4 + Math.floor(Math.random()*5);
-  const baseH = 3 + Math.floor(Math.random()*9);
+  // 15% chance of an extra-tall landmark tower (3-25m vs 3-11m baseline)
+  const baseH = 3 + Math.floor(Math.random()*9) + (Math.random() < 0.15 ? Math.floor(Math.random() * 14) : 0);
   const palette = params.paletteWeights || ['buildLight','buildMid','buildDark'];
   const mainColor = M[palette[Math.floor(Math.random() * palette.length)]] || M.buildMid;
 
