@@ -1108,6 +1108,12 @@ const M = {
   drone: new THREE.MeshLambertMaterial({ color: 0x2a2a2a }),
   rotor: new THREE.MeshLambertMaterial({ color: 0x444444, transparent: true, opacity: 0.5 }),
   yellow: new THREE.MeshBasicMaterial({ color: 0xffd44d }),
+  barrel: new THREE.MeshLambertMaterial({ color: 0xb83a25, emissive: 0x2a0a08 }),
+  barrelStripe: new THREE.MeshLambertMaterial({ color: 0xe6b13a }),
+  hpGreen: new THREE.MeshLambertMaterial({ color: 0x35b05a, emissive: 0x114420 }),
+  ammoYellow: new THREE.MeshLambertMaterial({ color: 0xe6b840, emissive: 0x3a2c0a }),
+  pickupRed: new THREE.MeshLambertMaterial({ color: 0xe63329, emissive: 0x3a0808 }),
+  white: new THREE.MeshBasicMaterial({ color: 0xffffff }),
 };
 
 // ============ SETTINGS ============
@@ -1213,6 +1219,8 @@ const tracers = [];
 const muzzleFlashes = [];
 const explosions = [];
 const buildings = [];
+const barrels = [];
+const pickups = [];
 
 const WORLD_SIZE = 100;
 
@@ -1355,6 +1363,69 @@ function makeRobot(bodyMat, accentMat) {
   // Red marker on shoulder
   const marker = makeBox(0.06, 0.06, 0.06, M.enemyAccent);
   marker.position.set(-0.45, 2.0, 0.12); g.add(marker);
+  return g;
+}
+
+function makeBarrel() {
+  const g = new THREE.Group();
+  const body = makeBox(0.65, 1.0, 0.65, M.barrel);
+  body.position.y = 0;
+  g.add(body);
+  const top = makeBox(0.7, 0.1, 0.7, M.black);
+  top.position.y = 0.55;
+  g.add(top);
+  const bottom = makeBox(0.7, 0.1, 0.7, M.black);
+  bottom.position.y = -0.45;
+  g.add(bottom);
+  // Hazard band
+  const band = makeBox(0.66, 0.15, 0.66, M.barrelStripe);
+  band.position.y = 0.15;
+  g.add(band);
+  // Warning marker
+  const warn = makeBox(0.4, 0.4, 0.04, M.black);
+  warn.position.set(0, 0, 0.34);
+  g.add(warn);
+  const x1 = makeBox(0.32, 0.06, 0.04, M.barrelStripe);
+  x1.position.set(0, 0, 0.36); x1.rotation.z = Math.PI/4; g.add(x1);
+  const x2 = makeBox(0.32, 0.06, 0.04, M.barrelStripe);
+  x2.position.set(0, 0, 0.36); x2.rotation.z = -Math.PI/4; g.add(x2);
+  return g;
+}
+
+function makeHpPickup() {
+  const g = new THREE.Group();
+  const box = makeBox(0.45, 0.45, 0.45, M.hpGreen);
+  g.add(box);
+  const cv = makeBox(0.10, 0.32, 0.46, M.white);
+  g.add(cv);
+  const ch = makeBox(0.32, 0.10, 0.46, M.white);
+  g.add(ch);
+  return g;
+}
+
+function makeAmmoPickup() {
+  const g = new THREE.Group();
+  const box = makeBox(0.5, 0.36, 0.4, M.ammoYellow);
+  g.add(box);
+  for (let i = -1; i <= 1; i++) {
+    const b = makeBox(0.07, 0.05, 0.18, M.black);
+    b.position.set(i * 0.13, 0.21, 0);
+    g.add(b);
+  }
+  const stripe = makeBox(0.51, 0.05, 0.41, M.black);
+  stripe.position.y = -0.04;
+  g.add(stripe);
+  return g;
+}
+
+function makeFpvPickup() {
+  const g = new THREE.Group();
+  const box = makeBox(0.5, 0.32, 0.5, M.pickupRed);
+  g.add(box);
+  const mini = makeDroneModel(false);
+  mini.scale.setScalar(0.32);
+  mini.position.y = 0.32;
+  g.add(mini);
   return g;
 }
 
@@ -1575,6 +1646,41 @@ function generateWorld() {
       const accent = makeBox(0.4, 0.4, 0.05, M.red);
       accent.position.set(c.x, c.h * 0.7, c.z + c.d/2 + 0.04);
       scene.add(accent);
+    }
+  }
+
+  // Explosive barrels (red hazard barrels — shoot to detonate)
+  for (let i = 0; i < 28; i++) {
+    let bx, bz, ok = false, tries = 0;
+    while (!ok && tries < 30) {
+      bx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      bz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(bx, bz) < 8) { tries++; continue; }
+      if (!checkCollisionAt(bx, bz, 0.7)) ok = true;
+      tries++;
+    }
+    if (!ok) continue;
+    // Cluster bias — sometimes spawn pair
+    const barrel = makeBarrel();
+    barrel.position.set(bx, 0.5, bz);
+    scene.add(barrel);
+    barrels.push({
+      pos: new THREE.Vector3(bx, 0.5, bz),
+      mesh: barrel,
+      hp: 8, alive: true, radius: 0.45,
+    });
+    if (Math.random() < 0.3) {
+      const ang = Math.random() * Math.PI * 2;
+      const ox = bx + Math.cos(ang) * 1.2, oz = bz + Math.sin(ang) * 1.2;
+      if (!checkCollisionAt(ox, oz, 0.7)) {
+        const b2 = makeBarrel();
+        b2.position.set(ox, 0.5, oz);
+        scene.add(b2);
+        barrels.push({
+          pos: new THREE.Vector3(ox, 0.5, oz),
+          mesh: b2, hp: 8, alive: true, radius: 0.45,
+        });
+      }
     }
   }
 
@@ -1883,11 +1989,21 @@ function checkCollisionAt(x, z, radius) {
   return null;
 }
 
+function checkBarrelCollision(x, z, radius) {
+  for (const bar of barrels) {
+    if (!bar.alive) continue;
+    const dx = x - bar.pos.x;
+    const dz = z - bar.pos.z;
+    if (Math.hypot(dx, dz) < radius + bar.radius) return bar;
+  }
+  return null;
+}
+
 function moveWithCollision(pos, dx, dz, radius) {
   let nx = pos.x + dx;
-  if (!checkCollisionAt(nx, pos.z, radius)) pos.x = nx;
+  if (!checkCollisionAt(nx, pos.z, radius) && !checkBarrelCollision(nx, pos.z, radius)) pos.x = nx;
   let nz = pos.z + dz;
-  if (!checkCollisionAt(pos.x, nz, radius)) pos.z = nz;
+  if (!checkCollisionAt(pos.x, nz, radius) && !checkBarrelCollision(pos.x, nz, radius)) pos.z = nz;
   pos.x = Math.max(-WORLD_SIZE+1, Math.min(WORLD_SIZE-1, pos.x));
   pos.z = Math.max(-WORLD_SIZE+1, Math.min(WORLD_SIZE-1, pos.z));
 }
@@ -1921,6 +2037,123 @@ function canSeePlayer(e, range, fovRad) {
   const forward = new THREE.Vector3(Math.sin(e.yaw), 0, Math.cos(e.yaw));
   const dot = toPlayer.dot(forward);
   return dot > Math.cos(fovRad / 2);
+}
+
+function explodeBarrel(barrel) {
+  if (!barrel.alive) return;
+  barrel.alive = false;
+  scene.remove(barrel.mesh);
+  createExplosion(barrel.pos.clone(), 'big');
+  game.shake = Math.max(game.shake, 0.45);
+  const bp = barrel.pos;
+  const radius = 6;
+  // Damage enemies
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const d = e.pos.distanceTo(bp);
+    if (d < radius) {
+      e.hp -= 90 * (1 - d/radius);
+      if (e.hp <= 0) {
+        e.alive = false;
+        scene.remove(e.group);
+        game.score += e.type === 'drone' ? 150 : 100;
+        game.killCount++;
+        addKillFeed('BARREL', e.type === 'drone' ? 'DRONE' : 'ROBOT-X');
+        rollPickupDrop(e.pos);
+      } else {
+        e.state = 'engage';
+        e.fireCd = 1 + Math.random();
+      }
+    }
+  }
+  // Damage player
+  if (player.alive && player.pos.distanceTo(bp) < 4.2) {
+    const d = player.pos.distanceTo(bp);
+    player.hp -= 35 * (1 - d/4.2);
+    player.lastHitTime = player.regenDelay;
+    flashHit();
+    if (player.hp <= 0) {
+      player.hp = 0; player.alive = false;
+      allies[0].alive = false; allies[0].hp = 0;
+      createExplosion(player.pos, 'big');
+      setTimeout(() => endGame(false), 1500);
+    }
+  }
+  // Chain reaction
+  for (const other of barrels) {
+    if (!other.alive || other === barrel) continue;
+    if (other.pos.distanceTo(bp) < 5) {
+      setTimeout(() => explodeBarrel(other), 180 + Math.random()*220);
+    }
+  }
+  game.score += 25;
+}
+
+function rollPickupDrop(pos) {
+  const r = Math.random();
+  if (r < 0.32) spawnPickup(pos, 'hp');
+  else if (r < 0.58) spawnPickup(pos, 'ammo');
+  else if (r < 0.66) spawnPickup(pos, 'fpv');
+}
+
+function spawnPickup(pos, type) {
+  let mesh;
+  if (type === 'hp') mesh = makeHpPickup();
+  else if (type === 'ammo') mesh = makeAmmoPickup();
+  else mesh = makeFpvPickup();
+  mesh.position.set(pos.x, 0.65, pos.z);
+  scene.add(mesh);
+  pickups.push({
+    pos: mesh.position,
+    mesh, type,
+    bobPhase: Math.random() * Math.PI * 2,
+    life: 35,
+  });
+}
+
+function updatePickups(dt) {
+  for (let i = pickups.length-1; i >= 0; i--) {
+    const p = pickups[i];
+    p.bobPhase += dt * 2;
+    p.mesh.position.y = 0.65 + Math.sin(p.bobPhase) * 0.18;
+    p.mesh.rotation.y += dt * 1.4;
+    p.life -= dt;
+    if (player.alive) {
+      const dx = p.mesh.position.x - player.pos.x;
+      const dz = p.mesh.position.z - player.pos.z;
+      if (Math.hypot(dx, dz) < 1.5) {
+        collectPickup(p);
+        scene.remove(p.mesh);
+        pickups.splice(i, 1);
+        continue;
+      }
+    }
+    if (p.life <= 0) {
+      // Fade-out blink in last 4s
+      if (p.life > -0.1) {
+        const blink = Math.sin(p.life * 25) > 0;
+        p.mesh.visible = blink;
+      }
+      if (p.life < -0.5) {
+        scene.remove(p.mesh);
+        pickups.splice(i, 1);
+      }
+    }
+  }
+}
+
+function collectPickup(p) {
+  if (p.type === 'hp') {
+    player.hp = Math.min(player.maxHp, player.hp + 30);
+    showToast('+30 HP · 生命补充');
+  } else if (p.type === 'ammo') {
+    player.reserve = Math.min(240, player.reserve + 40);
+    showToast('+40 弹药 · AMMO');
+  } else if (p.type === 'fpv') {
+    fpv.available = Math.min(fpv.max, fpv.available + 1);
+    showToast('+1 FPV 自杀无人机');
+  }
+  game.shake = Math.max(game.shake, 0.04);
 }
 
 function alertNearby(source, range) {
@@ -2230,6 +2463,18 @@ function updateEnemyBullets(dt) {
         }
       }
     }
+    // Barrel hit (chain reaction-friendly)
+    if (!hit) {
+      for (const bar of barrels) {
+        if (!bar.alive) continue;
+        if (b.pos.distanceTo(bar.pos) < bar.radius + 0.25) {
+          bar.hp -= b.damage;
+          if (bar.hp <= 0) explodeBarrel(bar);
+          hit = true;
+          break;
+        }
+      }
+    }
     if (b.pos.y < 0) hit = true;
     if (hit || b.life <= 0) enemyBullets.splice(i, 1);
   }
@@ -2395,12 +2640,27 @@ function fire() {
       hitPoint = closest;
     }
   }
+  // Barrel check (ray-sphere)
+  let hitBarrel = null;
+  for (const bar of barrels) {
+    if (!bar.alive) continue;
+    const v = bar.pos.clone().sub(origin);
+    const t = v.dot(dir);
+    if (t < 0 || t > bestT) continue;
+    const closest = origin.clone().addScaledVector(dir, t);
+    const distSq = closest.distanceToSquared(bar.pos);
+    if (distSq < (bar.radius + 0.2) * (bar.radius + 0.2)) {
+      bestT = t;
+      hitEnemy = null;
+      hitBarrel = bar;
+      hitPoint = closest;
+    }
+  }
   // Building check
   let buildingHitT = Infinity;
   let buildingHitPoint = null;
   for (let bi = 0; bi < buildings.length; bi++) {
     const b = buildings[bi];
-    // AABB ray intersection
     const tMin = rayBoxIntersect(origin, dir, b);
     if (tMin !== null && tMin < buildingHitT) {
       buildingHitT = tMin;
@@ -2410,6 +2670,7 @@ function fire() {
   if (buildingHitT < bestT) {
     bestT = buildingHitT;
     hitEnemy = null;
+    hitBarrel = null;
     hitPoint = buildingHitPoint;
   }
   if (bestT === Infinity) {
@@ -2436,6 +2697,13 @@ function fire() {
       addKillFeed('ALPHA-1', hitEnemy.type === 'drone' ? 'DRONE' : 'ROBOT-X');
       createExplosion(new THREE.Vector3(hitEnemy.pos.x, hitEnemy.pos.y + 1, hitEnemy.pos.z), 'small');
       scene.remove(hitEnemy.group);
+      rollPickupDrop(hitEnemy.pos);
+    }
+  } else if (hitBarrel) {
+    hitBarrel.hp -= player.damage;
+    showHitMarker();
+    if (hitBarrel.hp <= 0) {
+      explodeBarrel(hitBarrel);
     }
   }
 }
@@ -2628,6 +2896,13 @@ function updateFPVControl(dt) {
 // ============ EXPLOSIONS ============
 function createExplosion(pos, size) {
   const radius = size === 'big' ? 5 : size === 'medium' ? 3 : 1.5;
+  // Chain barrels in blast radius
+  for (const bar of barrels) {
+    if (!bar.alive) continue;
+    if (bar.pos.distanceTo(pos) < radius + 0.5) {
+      setTimeout(() => explodeBarrel(bar), 100 + Math.random()*200);
+    }
+  }
   const numParts = size === 'big' ? 18 : size === 'medium' ? 12 : 6;
   const group = new THREE.Group();
   const sphereMat = new THREE.MeshBasicMaterial({ color: 0xffd44d, transparent: true, opacity: 0.9 });
@@ -3222,6 +3497,9 @@ function startGame() {
   muzzleFlashes.length = 0;
   for (const e of explosions) scene.remove(e.group);
   explosions.length = 0;
+  barrels.length = 0;
+  for (const p of pickups) scene.remove(p.mesh);
+  pickups.length = 0;
 
   generateWorld();
   setView('tpp');
@@ -3321,6 +3599,7 @@ function update(dt) {
   updateTracers(dt);
   updateMuzzleFlashes(dt);
   updateExplosions(dt);
+  updatePickups(dt);
 
   // Deploy countdown ticking
   if (game.deployCountdown > 0) {
