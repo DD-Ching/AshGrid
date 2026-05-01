@@ -814,7 +814,7 @@ body.trackpad-mode .cursor-soft { display: none !important; }
         <div class="ctrl"><span class="ctrl-key">MOUSE</span><span class="ctrl-label">视角 / 瞄准</span></div>
         <div class="ctrl"><span class="ctrl-key">LMB</span><span class="ctrl-label">射击</span></div>
         <div class="ctrl"><span class="ctrl-key">SHIFT</span><span class="ctrl-label">冲刺 / 加速</span></div>
-        <div class="ctrl"><span class="ctrl-key">SPACE</span><span class="ctrl-label">跳跃 / 上升</span></div>
+        <div class="ctrl"><span class="ctrl-key">SPACE</span><span class="ctrl-label">跳跃 / 长按喷射器</span></div>
         <div class="ctrl"><span class="ctrl-key">CTRL</span><span class="ctrl-label">下降 (无人机)</span></div>
         <div class="ctrl"><span class="ctrl-key">R</span><span class="ctrl-label">装填弹药</span></div>
         <div class="ctrl"><span class="ctrl-key">V</span><span class="ctrl-label">切换 FPS / TPP</span></div>
@@ -934,7 +934,7 @@ body.trackpad-mode .cursor-soft { display: none !important; }
     <div class="pause-ctrl"><span class="pause-ctrl-key">MOUSE</span><span class="pause-ctrl-label">视角 / 瞄准</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">LMB</span><span class="pause-ctrl-label">射击</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">SHIFT</span><span class="pause-ctrl-label">冲刺</span></div>
-    <div class="pause-ctrl"><span class="pause-ctrl-key">SPACE</span><span class="pause-ctrl-label">跳跃 / 上升</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">SPACE</span><span class="pause-ctrl-label">跳跃 / 长按空中喷射器 (耗电池)</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">CTRL</span><span class="pause-ctrl-label">下降 (无人机)</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">R</span><span class="pause-ctrl-label">装填</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">V</span><span class="pause-ctrl-label">切换 FPS / TPP</span></div>
@@ -1822,7 +1822,7 @@ function generateWorld() {
     }
   }
 
-  // Decorative crates / cubes
+  // Decorative crates / cubes — also stack as parkour platforms
   for (let i = 0; i < 100; i++) {
     const x = (Math.random()-0.5) * WORLD_SIZE * 1.7;
     const z = (Math.random()-0.5) * WORLD_SIZE * 1.7;
@@ -1835,6 +1835,22 @@ function generateWorld() {
     c.position.set(x, s/2, z);
     if (Math.random() < 0.3) c.rotation.y = Math.random() * Math.PI;
     scene.add(c);
+    // Crates >= 0.8m become walkable platforms (jumping puzzles / parkour)
+    if (s >= 0.8) {
+      buildings.push({ x: x - s/2, z: z - s/2, w: s, d: s, h: s });
+    }
+  }
+  // Add a few stair-step ramps near origin so the player can mount roofs
+  const stairs = [
+    { x: 10, z: -2, h: 0.8 }, { x: 11.4, z: -2, h: 1.6 }, { x: 12.8, z: -2, h: 2.4 },
+    { x: -10, z: 6, h: 0.8 }, { x: -11.4, z: 6, h: 1.6 }, { x: -12.8, z: 6, h: 2.4 },
+  ];
+  for (const s of stairs) {
+    if (checkCollisionAt(s.x, s.z, 0.7)) continue;
+    const step = makeBox(1.3, s.h, 1.3, M.buildLight);
+    step.position.set(s.x, s.h/2, s.z);
+    scene.add(step);
+    buildings.push({ x: s.x - 0.65, z: s.z - 0.65, w: 1.3, d: 1.3, h: s.h });
   }
 
   // Far skyline monoliths (denser, more variety)
@@ -2117,19 +2133,39 @@ function buildVoxelStructure(cx, cz) {
 }
 
 // ============ COLLISION ============
-function checkCollisionAt(x, z, radius) {
+function checkCollisionAt(x, z, radius, atY = 0) {
   for (const b of buildings) {
     if (x + radius > b.x && x - radius < b.x + b.w &&
         z + radius > b.z && z - radius < b.z + b.d) {
-      return b;
+      // Allow walking over a building if feet are at or above its top
+      if (atY < b.h - 0.1) return b;
     }
   }
   return null;
 }
 
-function checkBarrelCollision(x, z, radius) {
+function getGroundY(x, z) {
+  let gy = 0;
+  for (const b of buildings) {
+    if (x > b.x && x < b.x + b.w && z > b.z && z < b.z + b.d) {
+      if (b.h > gy) gy = b.h;
+    }
+  }
   for (const bar of barrels) {
     if (!bar.alive) continue;
+    const dx = x - bar.pos.x;
+    const dz = z - bar.pos.z;
+    if (Math.hypot(dx, dz) < bar.radius + 0.05) {
+      if (1.0 > gy) gy = 1.0;
+    }
+  }
+  return gy;
+}
+
+function checkBarrelCollision(x, z, radius, atY = 0) {
+  for (const bar of barrels) {
+    if (!bar.alive) continue;
+    if (atY >= 0.9) continue; // above the barrel top, no XZ block
     const dx = x - bar.pos.x;
     const dz = z - bar.pos.z;
     if (Math.hypot(dx, dz) < radius + bar.radius) return bar;
@@ -2137,11 +2173,11 @@ function checkBarrelCollision(x, z, radius) {
   return null;
 }
 
-function moveWithCollision(pos, dx, dz, radius) {
+function moveWithCollision(pos, dx, dz, radius, atY = 0) {
   let nx = pos.x + dx;
-  if (!checkCollisionAt(nx, pos.z, radius) && !checkBarrelCollision(nx, pos.z, radius)) pos.x = nx;
+  if (!checkCollisionAt(nx, pos.z, radius, atY) && !checkBarrelCollision(nx, pos.z, radius, atY)) pos.x = nx;
   let nz = pos.z + dz;
-  if (!checkCollisionAt(pos.x, nz, radius) && !checkBarrelCollision(pos.x, nz, radius)) pos.z = nz;
+  if (!checkCollisionAt(pos.x, nz, radius, atY) && !checkBarrelCollision(pos.x, nz, radius, atY)) pos.z = nz;
   pos.x = Math.max(-WORLD_SIZE+1, Math.min(WORLD_SIZE-1, pos.x));
   pos.z = Math.max(-WORLD_SIZE+1, Math.min(WORLD_SIZE-1, pos.z));
 }
@@ -2726,16 +2762,26 @@ function updatePlayerMovement(dt) {
   let speed = player.speed * (sprinting ? player.sprintMul : 1);
   if (mag > 0) {
     mx /= mag; mz /= mag;
-    moveWithCollision(player.pos, mx * speed * dt, mz * speed * dt, player.radius);
+    moveWithCollision(player.pos, mx * speed * dt, mz * speed * dt, player.radius, player.pos.y);
     player.walkPhase += dt * (sprinting ? 12 : 8);
     if (sprinting) player.battery = Math.max(0, player.battery - 10 * dt);
   }
 
-  // Jumping (single jump, costs battery)
+  // Initial jump impulse (single press from ground / platform)
   if (keys[' '] && player.onGround && player.battery > 4) {
-    player.vy = 8;
+    player.vy = 13;
     player.onGround = false;
     player.battery = Math.max(0, player.battery - 4);
+  }
+  // Mid-air thruster — hold Space to ascend further (drains battery)
+  if (!player.onGround && keys[' '] && player.battery > 0.5) {
+    player.vy += 32 * dt;
+    if (player.vy > 9) player.vy = 9;
+    player.battery = Math.max(0, player.battery - 22 * dt);
+  }
+  // If we were standing but the floor under us dropped (walked off ledge), fall
+  if (player.onGround && player.pos.y > getGroundY(player.pos.x, player.pos.z) + 0.05) {
+    player.onGround = false;
   }
 
   // Battery passive recharge / charging station boost
@@ -2758,12 +2804,13 @@ function updatePlayerMovement(dt) {
       player.heat = 35;
     }
   }
-  // Gravity
+  // Gravity + ground / platform snapping (uses building & barrel tops)
   if (!player.onGround || player.vy > 0) {
     player.vy -= 25 * dt;
     player.pos.y += player.vy * dt;
-    if (player.pos.y <= 0) {
-      player.pos.y = 0;
+    const groundY = getGroundY(player.pos.x, player.pos.z);
+    if (player.pos.y <= groundY && player.vy <= 0) {
+      player.pos.y = groundY;
       player.vy = 0;
       player.onGround = true;
     }
