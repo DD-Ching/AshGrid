@@ -642,12 +642,38 @@ canvas#game { display: block; position: fixed; inset: 0; }
   font-size: 11px; letter-spacing: 4px; color: var(--text-dim);
   font-family: "JetBrains Mono", monospace;
 }
+.loadout-config {
+  padding: 4px 36px 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 24px;
+  border-bottom: 1px solid var(--line);
+}
+.loadout-config-section { display: flex; flex-direction: column; gap: 6px; }
+.loadout-config-label {
+  font-size: 9px; letter-spacing: 4px; color: var(--text-dim); font-weight: 700;
+}
+.loadout-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.loadout-pill {
+  background: var(--bg);
+  border: 1px solid var(--line-bright);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px; letter-spacing: 2px; font-weight: 700;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.loadout-pill:hover { background: var(--bg-lighter); border-color: var(--text-dim); }
+.loadout-pill.active { background: var(--red); border-color: var(--red-bright); color: var(--text); }
+.loadout-pill .pill-cn { color: var(--text-dim); margin-left: 6px; font-weight: 500; }
+.loadout-pill.active .pill-cn { color: rgba(255,255,255,0.85); }
+
 .loadout-cards {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 14px;
-  padding: 24px 36px;
+  padding: 16px 36px 24px;
   overflow-y: auto;
 }
 @media (max-width: 1100px) { .loadout-cards { grid-template-columns: repeat(2, 1fr); } }
@@ -1120,6 +1146,16 @@ body.trackpad-mode .cursor-soft { display: none !important; }
     <button class="loadout-btn" id="loadoutClose">✕ 关闭</button>
   </div>
   <div class="loadout-help">// 选择部署装备 · 重量 ↑ 敏捷 ↓ · 重武器精准下降 · 装甲承担伤害</div>
+  <div class="loadout-config">
+    <div class="loadout-config-section">
+      <div class="loadout-config-label">// 任务模式 · GAME MODE</div>
+      <div class="loadout-pills" id="modePills"></div>
+    </div>
+    <div class="loadout-config-section">
+      <div class="loadout-config-label">// 地图风格 · MAP THEME</div>
+      <div class="loadout-pills" id="themePills"></div>
+    </div>
+  </div>
   <div class="loadout-cards" id="loadoutCards"></div>
   <div class="loadout-footer">
     <div class="loadout-current"><span class="accent" id="loadoutCurrentName">ASSAULT</span><span id="loadoutCurrentDesc">突击型 · 平衡</span></div>
@@ -1367,6 +1403,8 @@ const settings = {
   aimAssist: localStorage.getItem('gv_aim') !== 'false',
   character: localStorage.getItem('gv_char') || 'human',
   loadout: localStorage.getItem('gv_loadout') || 'assault',
+  gameMode: localStorage.getItem('gv_mode') || 'wave',
+  mapTheme: localStorage.getItem('gv_theme') || 'random',
 };
 function saveSettings() {
   localStorage.setItem('gv_ctrl', settings.controlMode);
@@ -1375,7 +1413,25 @@ function saveSettings() {
   localStorage.setItem('gv_aim', settings.aimAssist);
   localStorage.setItem('gv_char', settings.character);
   localStorage.setItem('gv_loadout', settings.loadout);
+  localStorage.setItem('gv_mode', settings.gameMode);
+  localStorage.setItem('gv_theme', settings.mapTheme);
 }
+
+const GAME_MODES = {
+  wave:       { name: 'WAVE DEFENSE', cn: '波次防御', desc: '5 波递增敌人 · 击退所有进攻者' },
+  domination: { name: 'DOMINATION', cn: '占领模式', desc: '占领并守住 A/B/C 控制点 · 先到 1500 分获胜' },
+  drone_hunt: { name: 'DRONE HUNT', cn: '猎杀无人机', desc: '5 分钟内击落最多无人机 · 蜂巢持续生产' },
+  hive_raid:  { name: 'HIVE RAID', cn: '蜂巢突袭', desc: '摧毁地图上所有无人机蜂巢' },
+};
+
+const MAP_THEMES = {
+  random:     { name: 'RANDOM', cn: '随机',       fog: 0x2a1f1d, sky: { top: 0x141414, bottom: 0x3a2422 }, accent: 'mixed' },
+  red_zone:   { name: 'RED ZONE', cn: '红色封锁区', fog: 0x3a1818, sky: { top: 0x1a0a0a, bottom: 0x4a1414 }, accent: 'red' },
+  grey_district: { name: 'GREY DISTRICT', cn: '灰色废墟', fog: 0x252525, sky: { top: 0x141414, bottom: 0x2a2a2a }, accent: 'grey' },
+  industrial: { name: 'INDUSTRIAL', cn: '工业区',   fog: 0x33291a, sky: { top: 0x1a1a14, bottom: 0x3a2a18 }, accent: 'yellow' },
+  metro:      { name: 'METRO', cn: '地下地铁',     fog: 0x0d0d0d, sky: { top: 0x000000, bottom: 0x1a0808 }, accent: 'red' },
+  data_core:  { name: 'DATA CORE', cn: '资料中心', fog: 0x18222e, sky: { top: 0x0a1018, bottom: 0x1a2838 }, accent: 'blue' },
+};
 function applyLoadout() {
   const ld = LOADOUTS[settings.loadout] || LOADOUTS.assault;
   player.maxHp = ld.hp;
@@ -1503,6 +1559,9 @@ const pickups = [];
 const chargingStations = [];
 const capturePoints = [];
 const turrets = [];
+const droneHives = [];
+const signalTowers = [];
+const supplyPods = [];
 
 const WORLD_SIZE = 150;
 
@@ -1990,6 +2049,14 @@ function generateWorld() {
   scene.add(sun);
   scene.add(hemi);
 
+  // Pick theme — randomized when gv_theme is 'random'
+  const themeKeys = ['red_zone','grey_district','industrial','metro','data_core'];
+  let themeKey = settings.mapTheme;
+  if (themeKey === 'random') themeKey = themeKeys[Math.floor(Math.random()*themeKeys.length)];
+  game.activeTheme = themeKey;
+  const theme = MAP_THEMES[themeKey] || MAP_THEMES.grey_district;
+  scene.fog.color.setHex(theme.fog);
+
   buildings.length = 0;
 
   // Ground
@@ -2311,8 +2378,8 @@ function generateWorld() {
   const skyGeom = new THREE.SphereGeometry(WORLD_SIZE * 3, 32, 16);
   const skyMat = new THREE.ShaderMaterial({
     uniforms: {
-      topColor:    { value: new THREE.Color(0x141414) },
-      bottomColor: { value: new THREE.Color(0x3a2422) },
+      topColor:    { value: new THREE.Color(theme.sky.top) },
+      bottomColor: { value: new THREE.Color(theme.sky.bottom) },
       offset:      { value: 30 },
       exponent:    { value: 0.6 },
     },
@@ -2346,6 +2413,10 @@ void main(){
   const sunGlow = new THREE.Mesh(new THREE.SphereGeometry(50, 24, 16), sunGlowMat);
   sunGlow.position.copy(sunMesh.position);
   scene.add(sunGlow);
+
+  // Drone Hives & Signal Towers (urban facilities)
+  spawnDroneHives();
+  placeSignalTowers();
 
   // Player model — humanoid or quadruped wolf, with loadout-specific weapon
   const ldNow = LOADOUTS[settings.loadout] || LOADOUTS.assault;
@@ -2665,6 +2736,138 @@ function checkChargingStation(pos) {
   return null;
 }
 
+function makeDroneHive() {
+  const g = new THREE.Group();
+  // Wide base
+  const base = makeBox(5.4, 1.2, 5.4, M.buildDark);
+  base.position.y = 0.6; g.add(base);
+  // Hex column (cylinder of 6 sides)
+  const col = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.6, 2.9, 6, 6),
+    M.buildMid
+  );
+  col.position.y = 4.5; g.add(col);
+  // Top opening (darker)
+  const top = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.4, 2.6, 1, 6),
+    M.black
+  );
+  top.position.y = 8.0; g.add(top);
+  // Glowing red eyes on each face
+  const eyes = [];
+  for (let i = 0; i < 6; i++) {
+    const ang = (i / 6) * Math.PI * 2;
+    const e = makeBox(1.3, 0.5, 0.2, M.redBright);
+    e.position.set(Math.sin(ang) * 2.65, 4.5, Math.cos(ang) * 2.65);
+    e.lookAt(Math.sin(ang) * 5, 4.5, Math.cos(ang) * 5);
+    g.add(e); eyes.push(e);
+  }
+  g.userData.eyes = eyes;
+  // Antenna on top
+  const ant = makeBox(0.35, 4, 0.35, M.black);
+  ant.position.y = 10.5; g.add(ant);
+  // Beacon
+  const beacon = makeBox(0.5, 0.5, 0.5, M.redBright);
+  beacon.position.y = 12.5; g.add(beacon);
+  g.userData.beacon = beacon;
+  // Hazard stripes around base
+  const stripe = makeBox(5.5, 0.2, 5.5, M.barrelStripe);
+  stripe.position.y = 1.3; g.add(stripe);
+  return g;
+}
+
+function makeSignalTower() {
+  const g = new THREE.Group();
+  // Base
+  const base = makeBox(2.8, 0.5, 2.8, M.buildDark);
+  base.position.y = 0.25; g.add(base);
+  // Hazard stripe band
+  const band = makeBox(2.85, 0.12, 2.85, M.barrelStripe);
+  band.position.y = 0.35; g.add(band);
+  // Tall pole
+  const pole = makeBox(0.55, 8, 0.55, M.buildLight);
+  pole.position.y = 4.5; g.add(pole);
+  // Cross supports
+  const cross1 = makeBox(1.6, 0.12, 0.12, M.black);
+  cross1.position.y = 5; g.add(cross1);
+  const cross2 = makeBox(0.12, 0.12, 1.6, M.black);
+  cross2.position.y = 5; g.add(cross2);
+  const cross3 = makeBox(2.0, 0.12, 0.12, M.black);
+  cross3.position.y = 7; g.add(cross3);
+  // Side antennas
+  for (let i = 0; i < 3; i++) {
+    const ant = makeBox(0.06, 1.3, 0.06, M.black);
+    ant.position.set(0.4, 6.2 - i*0.5, 0);
+    ant.rotation.z = -0.4;
+    g.add(ant);
+  }
+  // Dish (rotates)
+  const dish = new THREE.Group();
+  dish.position.y = 8.6;
+  const dishCol = makeBox(0.3, 0.5, 0.3, M.robotJoint);
+  dish.add(dishCol);
+  // Dish back plate
+  const dishBack = makeBox(1.6, 0.18, 1.6, M.buildLight);
+  dishBack.position.y = 0.45;
+  dish.add(dishBack);
+  // Dish cone (cylinder)
+  const dishCone = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.85, 0.1, 1.0, 8, 1, true),
+    M.buildLight
+  );
+  dishCone.material = M.buildLight.clone();
+  dishCone.material.side = THREE.DoubleSide;
+  dishCone.position.y = 1.0;
+  dishCone.rotation.x = -Math.PI / 5;
+  dish.add(dishCone);
+  // Beacon on top
+  const beacon = makeBox(0.3, 0.3, 0.3, M.redBright);
+  beacon.position.y = 1.7;
+  dish.add(beacon);
+  g.add(dish);
+  g.userData.dish = dish;
+  g.userData.beacon = beacon;
+  return g;
+}
+
+function makeSupplyPod() {
+  const g = new THREE.Group();
+  // Pod body
+  const body = makeBox(1.4, 1.6, 1.4, M.buildLight);
+  body.position.y = 0; g.add(body);
+  const stripe1 = makeBox(1.45, 0.18, 1.45, M.red);
+  stripe1.position.y = 0.5; g.add(stripe1);
+  const stripe2 = makeBox(1.45, 0.18, 1.45, M.red);
+  stripe2.position.y = -0.5; g.add(stripe2);
+  // Top cap
+  const cap = makeBox(1.0, 0.2, 1.0, M.black);
+  cap.position.y = 0.9; g.add(cap);
+  // Cross marker
+  const cv = makeBox(0.18, 0.6, 0.05, M.barrelStripe);
+  cv.position.set(0, 0, 0.73); g.add(cv);
+  const ch = makeBox(0.6, 0.18, 0.05, M.barrelStripe);
+  ch.position.set(0, 0, 0.73); g.add(ch);
+  // Parachute (removable)
+  const chute = new THREE.Group();
+  chute.position.y = 4.5;
+  const canopy = new THREE.Mesh(
+    new THREE.SphereGeometry(2.2, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshLambertMaterial({ color: 0xc8261c, side: THREE.DoubleSide })
+  );
+  canopy.scale.y = 0.55;
+  chute.add(canopy);
+  // Lines
+  for (let i = 0; i < 4; i++) {
+    const ang = (i / 4) * Math.PI * 2;
+    const line = makeBox(0.04, 4.5, 0.04, M.black);
+    line.position.set(Math.cos(ang) * 0.7, -2.3, Math.sin(ang) * 0.7);
+    chute.add(line);
+  }
+  g.add(chute);
+  g.userData.chute = chute;
+  return g;
+}
+
 function makeAutoTurret() {
   const g = new THREE.Group();
   // Tripod base
@@ -2701,6 +2904,217 @@ function makeAutoTurret() {
   g.add(head);
   g.userData.head = head;
   return g;
+}
+
+function spawnDroneHives() {
+  const count = settings.gameMode === 'hive_raid' ? 3 : (settings.gameMode === 'drone_hunt' ? 2 : 1);
+  for (let i = 0; i < count; i++) {
+    let x, z, ok = false, tries = 0;
+    while (!ok && tries < 30) {
+      const ang = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+      const dist = 70 + Math.random() * 40;
+      x = Math.cos(ang) * dist;
+      z = Math.sin(ang) * dist;
+      if (Math.abs(x) > WORLD_SIZE - 8 || Math.abs(z) > WORLD_SIZE - 8) { tries++; continue; }
+      if (!checkCollisionAt(x, z, 3.5)) ok = true;
+      tries++;
+    }
+    if (!ok) continue;
+    const mesh = makeDroneHive();
+    mesh.position.set(x, 0, z);
+    scene.add(mesh);
+    const buildingEntry = { x: x - 2.7, z: z - 2.7, w: 5.4, d: 5.4, h: 8, _hive: true };
+    buildings.push(buildingEntry);
+    droneHives.push({
+      pos: new THREE.Vector3(x, 0, z),
+      mesh, buildingEntry,
+      hp: 800, maxHp: 800,
+      alive: true,
+      spawnTimer: 6 + Math.random() * 4,
+      pulse: 0,
+      radius: 3,
+    });
+  }
+}
+
+function updateDroneHives(dt) {
+  for (let i = droneHives.length - 1; i >= 0; i--) {
+    const h = droneHives[i];
+    if (!h.alive) continue;
+    h.pulse += dt * 4;
+    // Pulse beacon
+    if (h.mesh.userData.beacon) {
+      h.mesh.userData.beacon.scale.setScalar(1 + Math.sin(h.pulse) * 0.4);
+    }
+    // Spawn drones periodically
+    if (game.deployCountdown <= 0) {
+      h.spawnTimer -= dt;
+      if (h.spawnTimer <= 0) {
+        const ang = Math.random() * Math.PI * 2;
+        const sx = h.pos.x + Math.cos(ang) * 5;
+        const sz = h.pos.z + Math.sin(ang) * 5;
+        const sy = 8;
+        const dgroup = makeDroneModel(true);
+        dgroup.position.set(sx, sy, sz);
+        dgroup.scale.setScalar(0.85);
+        scene.add(dgroup);
+        enemies.push({
+          pos: new THREE.Vector3(sx, sy, sz),
+          yaw: Math.random() * Math.PI * 2,
+          hp: 22, maxHp: 22,
+          fireCd: 2.5 + Math.random() * 2,
+          hoverPhase: Math.random() * Math.PI * 2,
+          alive: true,
+          group: dgroup, type: 'drone',
+          speed: 4, radius: 0.5,
+          state: 'engage',
+          spawnPos: new THREE.Vector3(sx, sy, sz),
+          patrolTarget: null, patrolWait: 0, patrolLookDir: 1,
+        });
+        h.spawnTimer = 6 + Math.random() * 5;
+      }
+    }
+  }
+}
+
+function destroyDroneHive(h) {
+  if (!h.alive) return;
+  h.alive = false;
+  scene.remove(h.mesh);
+  // Remove from buildings array
+  const idx = buildings.indexOf(h.buildingEntry);
+  if (idx !== -1) buildings.splice(idx, 1);
+  // Big explosion + secondary
+  createExplosion(h.pos.clone(), 'big');
+  createExplosion(new THREE.Vector3(h.pos.x, h.pos.y + 5, h.pos.z), 'big');
+  game.score += 1500;
+  game.shake = Math.max(game.shake, 0.7);
+  showMessage('蜂巢已摧毁 · +1500', 2.5);
+  addKillFeed('ALPHA-1', 'DRONE HIVE');
+}
+
+function placeSignalTowers() {
+  const positions = [
+    { x: -75, z:  55 },
+    { x:  75, z: -50 },
+    { x:   0, z: -85 },
+  ];
+  for (const p of positions) {
+    let px = p.x, pz = p.z;
+    if (Math.abs(px) > WORLD_SIZE - 4 || Math.abs(pz) > WORLD_SIZE - 4) continue;
+    if (checkCollisionAt(px, pz, 1.8)) {
+      let nudged = false;
+      for (let s = 0; s < 8; s++) {
+        const ang = (s / 8) * Math.PI * 2;
+        const tx = px + Math.cos(ang) * 4, tz = pz + Math.sin(ang) * 4;
+        if (!checkCollisionAt(tx, tz, 1.8)) { px = tx; pz = tz; nudged = true; break; }
+      }
+      if (!nudged) continue;
+    }
+    const mesh = makeSignalTower();
+    mesh.position.set(px, 0, pz);
+    scene.add(mesh);
+    signalTowers.push({
+      pos: new THREE.Vector3(px, 0, pz),
+      mesh, dish: mesh.userData.dish, beacon: mesh.userData.beacon,
+      radius: 6, active: false, pulse: 0,
+    });
+    buildings.push({ x: px - 1.4, z: pz - 1.4, w: 2.8, d: 2.8, h: 0.5 });
+  }
+}
+
+function updateSignalTowers(dt) {
+  let anyActive = false;
+  for (const st of signalTowers) {
+    st.dish.rotation.y += dt * 0.8;
+    st.pulse += dt * 3;
+    const dx = player.pos.x - st.pos.x;
+    const dz = player.pos.z - st.pos.z;
+    const dist = Math.hypot(dx, dz);
+    const playerNear = dist < st.radius;
+    st.active = playerNear;
+    if (playerNear) {
+      anyActive = true;
+      // Buff: heat dissipation and reload speedup, slow HP regen
+      player.heat = Math.max(0, player.heat - 6 * dt);
+      if (player.hp < player.maxHp) player.hp = Math.min(player.maxHp, player.hp + 4 * dt);
+      if (player.reloading) player.reloadTime = Math.max(0, player.reloadTime - dt * 1.5);
+    }
+    // Beacon pulse, color reflects active
+    if (st.beacon) {
+      st.beacon.material = playerNear ? M.barrelStripe : M.redBright;
+      st.beacon.scale.setScalar(1 + Math.sin(st.pulse) * 0.3);
+    }
+  }
+  game.signalBoost = anyActive;
+}
+
+let supplyPodTimer = 30;
+function spawnSupplyPod() {
+  let x, z, ok = false, tries = 0;
+  while (!ok && tries < 25) {
+    x = (Math.random() - 0.5) * WORLD_SIZE * 1.2;
+    z = (Math.random() - 0.5) * WORLD_SIZE * 1.2;
+    if (Math.hypot(x, z) > WORLD_SIZE * 0.85) { tries++; continue; }
+    if (Math.hypot(x - player.pos.x, z - player.pos.z) < 25) { tries++; continue; }
+    if (!checkCollisionAt(x, z, 1.5)) ok = true;
+    tries++;
+  }
+  if (!ok) return;
+  const mesh = makeSupplyPod();
+  mesh.position.set(x, 50, z);
+  scene.add(mesh);
+  supplyPods.push({
+    pos: new THREE.Vector3(x, 50, z),
+    mesh, vy: -1, landed: false, opened: false, spin: 0,
+  });
+  showMessage('补给艙空投中 · 区域已标记', 1.8);
+}
+
+function updateSupplyPods(dt) {
+  if (game.deployCountdown <= 0) {
+    supplyPodTimer -= dt;
+    if (supplyPodTimer <= 0) {
+      spawnSupplyPod();
+      supplyPodTimer = 38 + Math.random() * 18;
+    }
+  }
+  for (let i = supplyPods.length - 1; i >= 0; i--) {
+    const p = supplyPods[i];
+    if (!p.landed) {
+      p.vy = Math.max(-3.5, p.vy - dt * 0.6);
+      p.pos.y += p.vy * dt;
+      const groundY = getGroundY(p.pos.x, p.pos.z);
+      if (p.pos.y <= groundY + 0.8) {
+        p.pos.y = groundY + 0.8;
+        p.landed = true;
+        if (p.mesh.userData.chute) p.mesh.remove(p.mesh.userData.chute);
+        showToast('补给艙抵达 · 接近以收集');
+      }
+      p.spin += dt;
+      p.mesh.rotation.y = p.spin * 0.3;
+    }
+    p.mesh.position.copy(p.pos);
+    if (p.landed && !p.opened) {
+      const dx = p.pos.x - player.pos.x;
+      const dz = p.pos.z - player.pos.z;
+      if (Math.hypot(dx, dz) < 2.5 && Math.abs(p.pos.y - player.pos.y - 0.8) < 3) {
+        p.opened = true;
+        const count = 4 + Math.floor(Math.random() * 3);
+        for (let j = 0; j < count; j++) {
+          const r = Math.random();
+          const type = r < 0.4 ? 'hp' : (r < 0.78 ? 'ammo' : 'fpv');
+          const a2 = Math.random() * Math.PI * 2;
+          const offset = new THREE.Vector3(Math.cos(a2)*1.5, 0, Math.sin(a2)*1.5);
+          spawnPickup(p.pos.clone().add(offset), type);
+        }
+        showToast(`补给艙开启 · +${count} 物资`);
+        scene.remove(p.mesh);
+        supplyPods.splice(i, 1);
+        game.shake = Math.max(game.shake, 0.06);
+      }
+    }
+  }
 }
 
 function deployTurret() {
@@ -3103,6 +3517,23 @@ function spawnSniperEnemy() {
 }
 
 function startNextWave() {
+  if (settings.gameMode !== 'wave') {
+    // Non-wave modes: small kickoff burst, hives keep producing
+    game.wave = 1;
+    if (settings.gameMode === 'domination') {
+      for (let i = 0; i < 3; i++) spawnEnemy();
+      spawnEnemyDrone();
+    } else if (settings.gameMode === 'drone_hunt') {
+      for (let i = 0; i < 5; i++) spawnEnemyDrone();
+    } else if (settings.gameMode === 'hive_raid') {
+      for (let i = 0; i < 4; i++) spawnEnemy();
+      for (let i = 0; i < 2; i++) spawnEnemyDrone();
+      spawnSniperEnemy();
+    }
+    game.deployCountdown = 4;
+    updateDeployBanner(true);
+    return;
+  }
   game.wave++;
   if (game.wave > 5) { endGame(true); return; }
   const waveDef = [null,
@@ -3622,11 +4053,26 @@ function fire() {
       hitPoint = closest;
     }
   }
+  // Drone hive check (ray-AABB on hive footprint)
+  let hitHive = null;
+  for (const h of droneHives) {
+    if (!h.alive) continue;
+    const hb = { x: h.pos.x - 2.7, z: h.pos.z - 2.7, w: 5.4, d: 5.4, h: 8 };
+    const tMin = rayBoxIntersect(origin, dir, hb);
+    if (tMin !== null && tMin < bestT) {
+      bestT = tMin;
+      hitEnemy = null;
+      hitBarrel = null;
+      hitHive = h;
+      hitPoint = origin.clone().addScaledVector(dir, tMin);
+    }
+  }
   // Building check
   let buildingHitT = Infinity;
   let buildingHitPoint = null;
   for (let bi = 0; bi < buildings.length; bi++) {
     const b = buildings[bi];
+    if (b._hive) continue; // hives handled above
     const tMin = rayBoxIntersect(origin, dir, b);
     if (tMin !== null && tMin < buildingHitT) {
       buildingHitT = tMin;
@@ -3637,6 +4083,7 @@ function fire() {
     bestT = buildingHitT;
     hitEnemy = null;
     hitBarrel = null;
+    hitHive = null;
     hitPoint = buildingHitPoint;
   }
   if (bestT === Infinity) {
@@ -3673,6 +4120,10 @@ function fire() {
     if (hitBarrel.hp <= 0) {
       explodeBarrel(hitBarrel);
     }
+  } else if (hitHive) {
+    hitHive.hp -= player.damage;
+    showHitMarker();
+    if (hitHive.hp <= 0) destroyDroneHive(hitHive);
   }
 }
 
@@ -3880,6 +4331,15 @@ function createExplosion(pos, size) {
     if (!bar.alive) continue;
     if (bar.pos.distanceTo(pos) < radius + 0.5) {
       setTimeout(() => explodeBarrel(bar), 100 + Math.random()*200);
+    }
+  }
+  // Damage drone hives in blast radius
+  for (const h of droneHives) {
+    if (!h.alive) continue;
+    const d = h.pos.distanceTo(pos);
+    if (d < radius + 1) {
+      h.hp -= (size === 'big' ? 120 : 60);
+      if (h.hp <= 0) destroyDroneHive(h);
     }
   }
   const numParts = size === 'big' ? 18 : size === 'medium' ? 12 : 6;
@@ -4211,6 +4671,53 @@ function renderMinimap() {
     const cz = py + (cs.pos.z - player.pos.z)*sy;
     mmCtx.fillRect(cx - 3, cz - 3, 6, 6);
   }
+  // Drone hives (large red diamonds)
+  for (const h of droneHives) {
+    if (!h.alive) continue;
+    const hx = px + (h.pos.x - player.pos.x)*sx;
+    const hz = py + (h.pos.z - player.pos.z)*sy;
+    mmCtx.fillStyle = '#e63329';
+    mmCtx.save();
+    mmCtx.translate(hx, hz);
+    mmCtx.rotate(Math.PI/4);
+    mmCtx.fillRect(-5, -5, 10, 10);
+    mmCtx.restore();
+    // Hive label
+    mmCtx.fillStyle = '#fff';
+    mmCtx.font = 'bold 8px monospace';
+    mmCtx.fillText('H', hx - 2, hz + 2);
+  }
+  // Signal towers (blue circle when active)
+  for (const st of signalTowers) {
+    const sxp = px + (st.pos.x - player.pos.x)*sx;
+    const szp = py + (st.pos.z - player.pos.z)*sy;
+    mmCtx.strokeStyle = st.active ? '#5d99dd' : '#888';
+    mmCtx.lineWidth = 1.5;
+    mmCtx.beginPath();
+    mmCtx.arc(sxp, szp, 5, 0, Math.PI * 2);
+    mmCtx.stroke();
+    mmCtx.fillStyle = st.active ? '#5d99dd' : '#666';
+    mmCtx.fillRect(sxp - 1, szp - 1, 2, 2);
+  }
+  // Supply pods (yellow X)
+  for (const sp of supplyPods) {
+    const spx = px + (sp.pos.x - player.pos.x)*sx;
+    const spz = py + (sp.pos.z - player.pos.z)*sy;
+    mmCtx.strokeStyle = sp.landed ? '#ffd44d' : '#888';
+    mmCtx.lineWidth = 2;
+    mmCtx.beginPath();
+    mmCtx.moveTo(spx - 3, spz - 3); mmCtx.lineTo(spx + 3, spz + 3);
+    mmCtx.moveTo(spx + 3, spz - 3); mmCtx.lineTo(spx - 3, spz + 3);
+    mmCtx.stroke();
+  }
+  // Auto turrets (blue square)
+  for (const tr of turrets) {
+    if (!tr.alive) continue;
+    const tx = px + (tr.pos.x - player.pos.x)*sx;
+    const tz = py + (tr.pos.z - player.pos.z)*sy;
+    mmCtx.fillStyle = '#5d99dd';
+    mmCtx.fillRect(tx - 2, tz - 2, 4, 4);
+  }
   // Capture points
   for (const cp of capturePoints) {
     let color = '#b0b0b0';
@@ -4290,14 +4797,20 @@ function showHitMarker() {
 function updateDeployBanner(forceShow) {
   const el = document.getElementById('deployBanner');
   if (!el) return;
+  const mode = GAME_MODES[settings.gameMode] || GAME_MODES.wave;
+  const themeName = game.activeTheme && MAP_THEMES[game.activeTheme] ? MAP_THEMES[game.activeTheme].cn : '';
+  const headLine = settings.gameMode === 'wave'
+    ? `WAVE ${game.wave} · 第 ${game.wave} 波`
+    : `${mode.name} · ${mode.cn}`;
+  const subLine = themeName ? `部署中 · ${themeName}` : '部署中 · DEPLOYING';
   if (game.deployCountdown > 0) {
-    document.getElementById('deployWave').textContent = `WAVE ${game.wave} · 第 ${game.wave} 波`;
+    document.getElementById('deployWave').textContent = headLine;
     document.getElementById('deployNum').textContent = Math.ceil(game.deployCountdown);
     document.getElementById('deployNum').classList.remove('go');
-    document.getElementById('deployStatus').textContent = '部署中 · DEPLOYING';
+    document.getElementById('deployStatus').textContent = subLine;
     el.classList.add('on');
   } else if (game.engageBannerTimer > 0) {
-    document.getElementById('deployWave').textContent = `WAVE ${game.wave}`;
+    document.getElementById('deployWave').textContent = headLine;
     document.getElementById('deployNum').textContent = 'ENGAGE';
     document.getElementById('deployNum').classList.add('go');
     document.getElementById('deployStatus').textContent = '交战 · GO';
@@ -4532,7 +5045,42 @@ function pipBar(value) {
   html += '</div>';
   return html;
 }
+function refreshModePills() {
+  const wrap = document.getElementById('modePills');
+  wrap.innerHTML = '';
+  for (const [id, m] of Object.entries(GAME_MODES)) {
+    const btn = document.createElement('button');
+    btn.className = 'loadout-pill' + (id === settings.gameMode ? ' active' : '');
+    btn.innerHTML = `${m.name}<span class="pill-cn">${m.cn}</span>`;
+    btn.title = m.desc;
+    btn.addEventListener('click', () => {
+      settings.gameMode = id;
+      saveSettings();
+      refreshModePills();
+      showToast(`${m.cn} · ${m.desc}`, 2200);
+    });
+    wrap.appendChild(btn);
+  }
+}
+function refreshThemePills() {
+  const wrap = document.getElementById('themePills');
+  wrap.innerHTML = '';
+  for (const [id, t] of Object.entries(MAP_THEMES)) {
+    const btn = document.createElement('button');
+    btn.className = 'loadout-pill' + (id === settings.mapTheme ? ' active' : '');
+    btn.innerHTML = `${t.name}<span class="pill-cn">${t.cn}</span>`;
+    btn.addEventListener('click', () => {
+      settings.mapTheme = id;
+      saveSettings();
+      refreshThemePills();
+    });
+    wrap.appendChild(btn);
+  }
+}
+
 function refreshLoadoutCards() {
+  refreshModePills();
+  refreshThemePills();
   const grid = document.getElementById('loadoutCards');
   grid.innerHTML = '';
   for (const [id, ld] of Object.entries(LOADOUTS)) {
@@ -4649,6 +5197,14 @@ function startGame() {
   capturePoints.length = 0;
   for (const tr of turrets) scene.remove(tr.mesh);
   turrets.length = 0;
+  for (const h of droneHives) scene.remove(h.mesh);
+  droneHives.length = 0;
+  for (const s of signalTowers) scene.remove(s.mesh);
+  signalTowers.length = 0;
+  for (const p of supplyPods) scene.remove(p.mesh);
+  supplyPods.length = 0;
+  supplyPodTimer = 30;
+  game.signalBoost = false;
   game.usCaps = 0; game.themCaps = 0;
 
   generateWorld();
@@ -4756,6 +5312,9 @@ function update(dt) {
   updateCapturePoints(dt);
   updateDroneBombs(dt);
   updateTurrets(dt);
+  updateDroneHives(dt);
+  updateSignalTowers(dt);
+  updateSupplyPods(dt);
 
   // Deploy countdown ticking
   if (game.deployCountdown > 0) {
@@ -4771,30 +5330,58 @@ function update(dt) {
     if (game.engageBannerTimer <= 0) updateDeployBanner();
   }
 
-  // Wave check
-  if (game.waveBreakTimer <= 0 && game.deployCountdown <= 0) {
-    const aliveEnemies = enemies.filter(e => e.alive).length;
-    if (aliveEnemies === 0 && player.alive) {
-      if (game.wave >= 5) { endGame(true); return; }
-      game.waveBreakTimer = 3.5;
-      // Wave clear bonuses
-      const hpBefore = player.hp;
-      player.hp = Math.min(player.maxHp, player.hp + 40);
-      const hpGained = Math.floor(player.hp - hpBefore);
-      player.ammo = player.maxAmmo;
-      player.reserve = Math.min(240, player.reserve + 60);
-      fpv.available = Math.min(fpv.max, fpv.available + 1);
-      drone.battery = Math.min(drone.maxBattery, drone.battery + 30);
-      const bonusBits = [];
-      if (hpGained > 0) bonusBits.push(`+${hpGained}HP`);
-      bonusBits.push('弹药已补充');
-      bonusBits.push('+1 FPV');
-      showMessage(`WAVE ${game.wave} 完成 · ${bonusBits.join(' · ')}`, 3);
-    }
-  } else if (game.waveBreakTimer > 0) {
-    game.waveBreakTimer -= dt;
-    if (game.waveBreakTimer <= 0 && game.state === 'playing') {
-      startNextWave();
+  // Mode-specific victory / spawn logic
+  if (game.deployCountdown <= 0) {
+    if (settings.gameMode === 'wave') {
+      if (game.waveBreakTimer <= 0) {
+        const aliveEnemies = enemies.filter(e => e.alive).length;
+        if (aliveEnemies === 0 && player.alive) {
+          if (game.wave >= 5) { endGame(true); return; }
+          game.waveBreakTimer = 3.5;
+          const hpBefore = player.hp;
+          player.hp = Math.min(player.maxHp, player.hp + 40);
+          const hpGained = Math.floor(player.hp - hpBefore);
+          player.ammo = player.maxAmmo;
+          player.reserve = Math.min(240, player.reserve + 60);
+          fpv.available = Math.min(fpv.max, fpv.available + 1);
+          drone.battery = Math.min(drone.maxBattery, drone.battery + 30);
+          const bonusBits = [];
+          if (hpGained > 0) bonusBits.push(`+${hpGained}HP`);
+          bonusBits.push('弹药已补充');
+          bonusBits.push('+1 FPV');
+          showMessage(`WAVE ${game.wave} 完成 · ${bonusBits.join(' · ')}`, 3);
+        }
+      } else {
+        game.waveBreakTimer -= dt;
+        if (game.waveBreakTimer <= 0 && game.state === 'playing') startNextWave();
+      }
+    } else if (settings.gameMode === 'domination') {
+      if (game.score >= 1500) { endGame(true); return; }
+      if (game.scoreEnemy >= 1500) { endGame(false); return; }
+      // Maintain enemy presence around capture points
+      const aliveCount = enemies.filter(e => e.alive).length;
+      if (aliveCount < 6 && Math.random() < dt * 0.5) {
+        const r = Math.random();
+        if (r < 0.55) spawnEnemy();
+        else if (r < 0.8) spawnEnemyDrone();
+        else if (r < 0.92) spawnHeavyEnemy();
+        else spawnSniperEnemy();
+      }
+    } else if (settings.gameMode === 'drone_hunt') {
+      if (game.killCount >= 30) { endGame(true); return; }
+      if (game.elapsed >= 300) { endGame(false); return; }
+      // Drones primarily come from hives, top off if few alive
+      const aliveDrones = enemies.filter(e => e.alive && e.type === 'drone').length;
+      if (aliveDrones < 4 && Math.random() < dt * 0.6) spawnEnemyDrone();
+    } else if (settings.gameMode === 'hive_raid') {
+      const aliveHives = droneHives.filter(h => h.alive).length;
+      if (aliveHives === 0) { endGame(true); return; }
+      // Light enemy maintenance
+      const aliveCount = enemies.filter(e => e.alive).length;
+      if (aliveCount < 5 && Math.random() < dt * 0.4) {
+        if (Math.random() < 0.5) spawnEnemy();
+        else spawnEnemyDrone();
+      }
     }
   }
 
