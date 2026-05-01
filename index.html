@@ -451,7 +451,29 @@ canvas#game { display: block; position: fixed; inset: 0; }
   opacity: 0;
   transition: opacity 0.2s;
 }
-.pause-tip.on { opacity: 1; }
+.pause-tip.on { opacity: 1; pointer-events: auto; }
+.pause-actions {
+  display: flex; gap: 12px;
+  margin-top: 18px;
+  justify-content: center;
+}
+.pause-btn {
+  background: var(--bg-light);
+  color: var(--text);
+  border: 1px solid var(--line-bright);
+  padding: 10px 22px;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 3px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pause-btn:hover { background: var(--bg-lighter); border-color: var(--text-dim); }
+.pause-btn.primary {
+  background: var(--red);
+  border-color: var(--red-bright);
+}
+.pause-btn.primary:hover { background: var(--red-bright); }
 .pause-tip-title {
   font-size: 16px; letter-spacing: 6px; font-weight: 800;
   color: var(--text);
@@ -538,6 +560,35 @@ canvas#game { display: block; position: fixed; inset: 0; }
   cursor: pointer;
 }
 .restart-btn:hover { background: var(--red-bright); }
+.restart-btn.secondary {
+  background: var(--bg-light);
+  color: var(--text);
+  border: 1px solid var(--line-bright);
+}
+.restart-btn.secondary:hover { background: var(--bg-lighter); border-color: var(--text-dim); }
+.end-actions {
+  display: flex; gap: 12px;
+  justify-content: center;
+}
+
+.toast {
+  position: fixed;
+  bottom: 40px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel-solid);
+  border: 1px solid var(--line-bright);
+  border-left: 3px solid var(--red);
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 4px;
+  padding: 10px 24px;
+  font-weight: 700;
+  pointer-events: none;
+  z-index: 300;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.toast.on { opacity: 1; }
 </style>
 </head>
 <body>
@@ -552,12 +603,12 @@ canvas#game { display: block; position: fixed; inset: 0; }
       <div class="start-cn">机器战争 · 战术 · 在线</div>
     </div>
     <div class="start-menu-list">
-      <button class="start-menu-item active" id="startBtn">DEPLOY · 部署</button>
-      <div class="start-menu-item">LOADOUT · 装备</div>
-      <div class="start-menu-item">CUSTOMIZE · 涂装</div>
-      <div class="start-menu-item">BATTLE PASS · 通行证</div>
-      <div class="start-menu-item">SETTINGS · 设置</div>
-      <div class="start-menu-item">EXIT · 退出</div>
+      <button class="start-menu-item active" id="startBtn" data-action="deploy">DEPLOY · 部署</button>
+      <button class="start-menu-item" data-action="loadout">LOADOUT · 装备</button>
+      <button class="start-menu-item" data-action="customize">CUSTOMIZE · 涂装</button>
+      <button class="start-menu-item" data-action="bp">BATTLE PASS · 通行证</button>
+      <button class="start-menu-item" data-action="settings">SETTINGS · 设置</button>
+      <button class="start-menu-item" data-action="exit">EXIT · 退出</button>
     </div>
   </div>
   <div class="start-preview">
@@ -683,8 +734,12 @@ canvas#game { display: block; position: fixed; inset: 0; }
 
 <!-- Pause tip -->
 <div class="pause-tip" id="pauseTip">
-  <div class="pause-tip-title">CLICK TO RESUME</div>
-  <div class="pause-tip-sub">点击屏幕重新进入瞄准模式</div>
+  <div class="pause-tip-title">已暂停 · PAUSED</div>
+  <div class="pause-tip-sub">点击下方按钮或屏幕继续</div>
+  <div class="pause-actions">
+    <button class="pause-btn primary" id="resumeBtn">继续 RESUME</button>
+    <button class="pause-btn" id="exitBtn">退出至主菜单</button>
+  </div>
 </div>
 
 <!-- Tactical overlay -->
@@ -703,8 +758,13 @@ canvas#game { display: block; position: fixed; inset: 0; }
     <div class="end-stat"><div class="end-stat-num" id="endWave">0</div><div class="end-stat-label">WAVE</div></div>
     <div class="end-stat"><div class="end-stat-num" id="endTime">00:00</div><div class="end-stat-label">TIME</div></div>
   </div>
-  <button class="restart-btn" id="restartBtn">REDEPLOY · 重新部署</button>
+  <div class="end-actions">
+    <button class="restart-btn" id="restartBtn">REDEPLOY · 重新部署</button>
+    <button class="restart-btn secondary" id="endMenuBtn">返回主菜单</button>
+  </div>
 </div>
+
+<div class="toast" id="toast"></div>
 
 <script type="importmap">
 {
@@ -869,6 +929,7 @@ window.addEventListener('keydown', e => {
   keys[k] = true;
   if (game.state !== 'playing') return;
   if (e.code === 'Tab') { e.preventDefault(); toggleMap(); }
+  if (k === 'escape' && game.view === 'map') { toggleMap(); return; }
   if (k === 'q') toggleDrone();
   if (k === 'e') launchFPV();
   if (k === 'v') togglePerspective();
@@ -2145,8 +2206,53 @@ function addKillFeed(killer, victim) {
 }
 
 // ============ GAME LIFECYCLE ============
-document.getElementById('startBtn').onclick = startGame;
+function showToast(text, dur=1600) {
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.classList.add('on');
+  clearTimeout(showToast._tid);
+  showToast._tid = setTimeout(() => t.classList.remove('on'), dur);
+}
+
+function returnToMenu() {
+  game.state = 'menu';
+  if (document.pointerLockElement) document.exitPointerLock();
+  document.getElementById('start').classList.remove('hidden');
+  document.getElementById('end').classList.add('hidden');
+  document.getElementById('pauseTip').classList.remove('on');
+  document.getElementById('tacOverlay').classList.remove('on');
+  document.getElementById('cursorSoft').classList.remove('show');
+  setView('tpp');
+  tppCamera.position.set(8, 6, 12);
+  tppCamera.lookAt(0, 1, 0);
+  activeCamera = tppCamera;
+  // Reset menu active state
+  document.querySelectorAll('.start-menu-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('startBtn').classList.add('active');
+}
+
+document.querySelectorAll('.start-menu-item').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const action = btn.dataset.action;
+    document.querySelectorAll('.start-menu-item').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    switch (action) {
+      case 'deploy': startGame(); break;
+      case 'loadout': showToast('LOADOUT · 装备配置即将开放'); break;
+      case 'customize': showToast('CUSTOMIZE · 涂装系统即将开放'); break;
+      case 'bp': showToast('BATTLE PASS · 通行证即将开放'); break;
+      case 'settings': showToast('SETTINGS · 设置即将开放'); break;
+      case 'exit': showToast('请关闭浏览器窗口以退出'); break;
+    }
+  });
+});
+
 document.getElementById('restartBtn').onclick = startGame;
+document.getElementById('endMenuBtn').onclick = returnToMenu;
+document.getElementById('resumeBtn').onclick = () => {
+  if (game.state === 'playing') canvas.requestPointerLock();
+};
+document.getElementById('exitBtn').onclick = returnToMenu;
 
 function startGame() {
   document.getElementById('start').classList.add('hidden');
@@ -2212,6 +2318,11 @@ function endGame(victory) {
 // ============ MAIN UPDATE ============
 function update(dt) {
   if (game.state !== 'playing') return;
+  // Freeze gameplay while paused (pointer unlocked outside map view)
+  if (!mouse.locked && game.view !== 'map') {
+    updateHUD();
+    return;
+  }
   game.elapsed += dt;
 
   // Mouse look
