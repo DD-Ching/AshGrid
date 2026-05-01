@@ -894,7 +894,7 @@ body.trackpad-mode .cursor-soft { display: none !important; }
     <div class="pause-ctrl"><span class="pause-ctrl-key">Q</span><span class="pause-ctrl-label">侦察无人机</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">E</span><span class="pause-ctrl-label">FPV 自杀无人机</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">TAB</span><span class="pause-ctrl-label">战术地图</span></div>
-    <div class="pause-ctrl"><span class="pause-ctrl-key">↑↓←→</span><span class="pause-ctrl-label">触摸板模式视角</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">光标</span><span class="pause-ctrl-label">触摸板模式视角 (移至屏幕边缘)</span></div>
   </div>
   <div class="pause-actions">
     <button class="pause-btn primary" id="resumeBtn">继续 RESUME</button>
@@ -942,7 +942,7 @@ body.trackpad-mode .cursor-soft { display: none !important; }
     </div>
     <div class="settings-help">
       <div class="settings-help-title">// TRACKPAD 操作 · 不需鼠标</div>
-      <div class="settings-help-row"><span class="key">↑↓←→</span><span>视角旋转 (上下俯仰 / 左右转身)</span></div>
+      <div class="settings-help-row"><span class="key">移动光标</span><span>视角旋转 (光标越接近屏幕边缘旋转越快,中央有死区)</span></div>
       <div class="settings-help-row"><span class="key">WASD</span><span>角色移动</span></div>
       <div class="settings-help-row"><span class="key">CLICK</span><span>射击 (无需指针锁定)</span></div>
       <div class="settings-help-row"><span class="key">ESC</span><span>暂停 / 显示选单</span></div>
@@ -2931,24 +2931,28 @@ function update(dt) {
     mouse.dx = 0; mouse.dy = 0;
   }
 
-  // Keyboard look (trackpad mode)
+  // Cursor-position look (trackpad mode) — move cursor away from screen center to rotate
   if (settings.controlMode === 'trackpad' && game.view !== 'map') {
-    const yawSpeed = 2.4 * settings.sensitivity;
-    const pitchSpeed = 1.8 * settings.sensitivity;
-    let yawIn = 0, pitchIn = 0;
-    if (keys['arrowleft']) yawIn += 1;
-    if (keys['arrowright']) yawIn -= 1;
-    if (keys['arrowup']) pitchIn += 1;
-    if (keys['arrowdown']) pitchIn -= 1;
-    if (settings.invertY) pitchIn = -pitchIn;
+    const cw = window.innerWidth, ch = window.innerHeight;
+    let nx = (mouse.clientX - cw/2) / (cw/2);
+    let ny = (mouse.clientY - ch/2) / (ch/2);
+    const dead = 0.1;
+    const sx = Math.sign(nx), sy = Math.sign(ny);
+    nx = Math.abs(nx) < dead ? 0 : sx * (Math.abs(nx) - dead) / (1 - dead);
+    ny = Math.abs(ny) < dead ? 0 : sy * (Math.abs(ny) - dead) / (1 - dead);
+    nx = Math.max(-1, Math.min(1, nx));
+    ny = Math.max(-1, Math.min(1, ny));
+    const yawSpeed = 2.6 * settings.sensitivity;
+    const pitchSpeed = 1.7 * settings.sensitivity;
+    const invY = settings.invertY ? 1 : -1;
     if (game.view === 'fpv' && fpv.active) {
-      fpv.yaw += yawIn * yawSpeed * dt;
-      fpv.pitch = Math.max(-Math.PI/2.2, Math.min(Math.PI/2.2, fpv.pitch + pitchIn * pitchSpeed * dt));
+      fpv.yaw -= nx * yawSpeed * dt;
+      fpv.pitch = Math.max(-Math.PI/2.2, Math.min(Math.PI/2.2, fpv.pitch + ny * pitchSpeed * dt * invY));
     } else if (game.view === 'drone' && drone.active) {
-      drone.yaw += yawIn * yawSpeed * dt;
+      drone.yaw -= nx * yawSpeed * dt;
     } else {
-      player.yaw += yawIn * yawSpeed * dt;
-      player.pitch = Math.max(-Math.PI/2.2, Math.min(Math.PI/2.2, player.pitch + pitchIn * pitchSpeed * dt));
+      player.yaw -= nx * yawSpeed * dt;
+      player.pitch = Math.max(-Math.PI/2.2, Math.min(Math.PI/2.2, player.pitch + ny * pitchSpeed * dt * invY));
     }
   }
 
