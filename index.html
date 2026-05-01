@@ -1492,106 +1492,151 @@ const THEME_PARAMS = {
     feature: 'red_barriers',
     ambient: 0xc0a090, sun: 0xffc0a0, hemi: 0xeec0b0, hemiGround: 0x2a1010,
     extraHive: 1,
+    groundColor: 0x2a1414, ambientDrones: 22, smokeColumns: 18, searchBeams: 14,
+    signature: 'red_pylons',
   },
   grey_district: {
     buildingFill: 0.42, paletteWeights: ['buildLight','buildMid','buildMid','buildDark'],
     redAccentChance: 0.10, barrelCount: 30, crateCount: 280,
     feature: 'rubble',
     ambient: 0xffffff, sun: 0xffffff, hemi: 0xeeeeee, hemiGround: 0x1a1a1a,
+    groundColor: 0x1a1a1a, ambientDrones: 8, smokeColumns: 14, searchBeams: 4,
+    signature: 'collapsed_skeleton',
   },
   industrial: {
     buildingFill: 0.50, paletteWeights: ['buildMid','buildMid','buildDark','barrelStripe'],
     redAccentChance: 0.18, barrelCount: 90, crateCount: 160,
     feature: 'smokestacks',
     ambient: 0xe6d090, sun: 0xffe6a0, hemi: 0xeed8a0, hemiGround: 0x2a2010,
+    groundColor: 0x202018, ambientDrones: 10, smokeColumns: 26, searchBeams: 6,
+    signature: 'mega_cooling_tower',
   },
   metro: {
-    buildingFill: 0.70, paletteWeights: ['buildDark','buildDark','black','buildMid'],
-    redAccentChance: 0.55, barrelCount: 25, crateCount: 200,
+    buildingFill: 0.0, paletteWeights: ['buildDark','buildDark','black','buildMid'],
+    redAccentChance: 0.55, barrelCount: 12, crateCount: 100,
     feature: 'metro_lights',
     ambient: 0x6a4444, sun: 0x886060, hemi: 0x553030, hemiGround: 0x100404,
-    fogFar: 200,
+    fogFar: 180,
+    groundColor: 0x080808, ambientDrones: 0, smokeColumns: 0, searchBeams: 0, skylineMonoliths: 0,
+    skipStandardBuildings: true, skipWatchtowers: true, skipCatwalks: true, skipBanners: true,
+    signature: 'metro_concourse',
   },
   data_core: {
-    buildingFill: 0.62, paletteWeights: ['buildLight','buildWhite','buildLight','buildMid'],
-    redAccentChance: 0.04, barrelCount: 22, crateCount: 200,
+    buildingFill: 0.0, paletteWeights: ['buildLight','buildWhite','buildLight','buildMid'],
+    redAccentChance: 0.04, barrelCount: 12, crateCount: 60,
     feature: 'server_racks', blueAccent: true,
     ambient: 0xb0c0e0, sun: 0xc0d0ff, hemi: 0xb8cce0, hemiGround: 0x101820,
+    groundColor: 0x1a2028, ambientDrones: 4, smokeColumns: 0, searchBeams: 0, skylineMonoliths: 0,
+    skipStandardBuildings: true, skipWatchtowers: true, skipBanners: true, skipWreckage: true, skipCraters: true, skipBlastWalls: true,
+    signature: 'central_server_monolith',
   },
   rooftop_grid: {
-    buildingFill: 0.72, paletteWeights: ['buildLight','buildLight','buildMid','buildDark'],
-    redAccentChance: 0.18, barrelCount: 35, crateCount: 240,
+    buildingFill: 0.78, paletteWeights: ['buildLight','buildLight','buildMid','buildDark'],
+    redAccentChance: 0.18, barrelCount: 18, crateCount: 120,
     feature: 'rooftop_grid',
     ambient: 0xc8c8d0, sun: 0xe6e6ee, hemi: 0xd0d0d8, hemiGround: 0x1a1a1a,
+    groundColor: 0x141414, ambientDrones: 24, smokeColumns: 8, searchBeams: 6,
+    skipCraters: true, skipBlastWalls: true,
+    signature: 'mega_skybridge',
   },
   bridge_sector: {
-    buildingFill: 0.30, paletteWeights: ['buildMid','buildDark','buildLight','buildMid'],
-    redAccentChance: 0.20, barrelCount: 25, crateCount: 130,
+    buildingFill: 0.18, paletteWeights: ['buildMid','buildDark','buildLight','buildMid'],
+    redAccentChance: 0.20, barrelCount: 18, crateCount: 80,
     feature: 'bridges',
     ambient: 0xc0c0c8, sun: 0xd6d6e0, hemi: 0xc8c8d0, hemiGround: 0x1a1a20,
+    groundColor: 0x12141a, ambientDrones: 12, smokeColumns: 6, searchBeams: 4,
+    skipWatchtowers: true,
+    signature: 'mega_arch_bridge',
   },
   drone_yard: {
-    buildingFill: 0.20, paletteWeights: ['buildLight','buildMid','buildLight','barrelStripe'],
-    redAccentChance: 0.10, barrelCount: 15, crateCount: 100,
+    buildingFill: 0.0, paletteWeights: ['buildLight','buildMid','buildLight','barrelStripe'],
+    redAccentChance: 0.10, barrelCount: 8, crateCount: 40,
     feature: 'drone_yard',
     ambient: 0xc8c8c8, sun: 0xeeeeee, hemi: 0xcccccc, hemiGround: 0x161616,
+    groundColor: 0x141414, ambientDrones: 32, smokeColumns: 4, searchBeams: 8,
+    skipStandardBuildings: true, skipWatchtowers: true, skipBanners: true, skipBlastWalls: true,
+    signature: 'mega_control_tower',
   },
   power_station: {
-    buildingFill: 0.40, paletteWeights: ['buildDark','buildMid','barrelStripe','buildDark'],
-    redAccentChance: 0.30, barrelCount: 40, crateCount: 160,
+    buildingFill: 0.30, paletteWeights: ['buildDark','buildMid','barrelStripe','buildDark'],
+    redAccentChance: 0.30, barrelCount: 40, crateCount: 130,
     feature: 'power_grid',
     ambient: 0xa8b0c0, sun: 0xc0c8d8, hemi: 0xb0b8c8, hemiGround: 0x14181c,
+    groundColor: 0x141820, ambientDrones: 6, smokeColumns: 12, searchBeams: 16,
+    signature: 'mega_cooling_silo',
   },
   command_core: {
-    buildingFill: 0.45, paletteWeights: ['buildDark','black','buildMid','buildDark'],
-    redAccentChance: 0.65, barrelCount: 30, crateCount: 180,
+    buildingFill: 0.30, paletteWeights: ['buildDark','black','buildMid','buildDark'],
+    redAccentChance: 0.65, barrelCount: 18, crateCount: 100,
     feature: 'command_core', extraHive: 1,
     ambient: 0x885050, sun: 0xa07060, hemi: 0x603030, hemiGround: 0x080404,
     fogFar: 320,
+    groundColor: 0x0a0606, ambientDrones: 14, smokeColumns: 8, searchBeams: 18,
+    skipBanners: true,
+    signature: null,
   },
   nuclear_pool: {
-    buildingFill: 0.32, paletteWeights: ['buildDark','buildMid','black','buildDark'],
-    redAccentChance: 0.20, barrelCount: 30, crateCount: 130,
+    buildingFill: 0.18, paletteWeights: ['buildDark','buildMid','black','buildDark'],
+    redAccentChance: 0.10, barrelCount: 22, crateCount: 80,
     feature: 'nuclear_pool',
     ambient: 0x8aa890, sun: 0xa0c0a0, hemi: 0x88a890, hemiGround: 0x081208,
+    groundColor: 0x0e1810, ambientDrones: 8, smokeColumns: 4, searchBeams: 4,
+    skipStandardBuildings: true, skipBanners: true, skipBlastWalls: true,
+    signature: null,
   },
   steel_mill: {
-    buildingFill: 0.45, paletteWeights: ['buildDark','black','buildMid','barrelStripe'],
-    redAccentChance: 0.45, barrelCount: 70, crateCount: 150,
+    buildingFill: 0.32, paletteWeights: ['buildDark','black','buildMid','barrelStripe'],
+    redAccentChance: 0.30, barrelCount: 70, crateCount: 110,
     feature: 'steel_mill',
     ambient: 0xc8a47a, sun: 0xe8a070, hemi: 0xc89070, hemiGround: 0x2a1a08,
+    groundColor: 0x1a0e08, ambientDrones: 8, smokeColumns: 22, searchBeams: 6,
+    signature: 'mega_blast_furnace',
   },
   container_port: {
-    buildingFill: 0.28, paletteWeights: ['buildDark','buildMid','buildLight','buildLight'],
-    redAccentChance: 0.15, barrelCount: 35, crateCount: 90,
+    buildingFill: 0.0, paletteWeights: ['buildDark','buildMid','buildLight','buildLight'],
+    redAccentChance: 0.15, barrelCount: 30, crateCount: 60,
     feature: 'container_port',
     ambient: 0xb0b8c0, sun: 0xc8d0d8, hemi: 0xb8c0c8, hemiGround: 0x141820,
+    groundColor: 0x14181e, ambientDrones: 14, smokeColumns: 6, searchBeams: 6,
+    skipStandardBuildings: true, skipWatchtowers: true,
+    signature: 'mega_ship_loader',
   },
   apartment: {
-    buildingFill: 0.66, paletteWeights: ['buildLight','buildMid','buildLight','buildDark'],
-    redAccentChance: 0.30, barrelCount: 25, crateCount: 200,
+    buildingFill: 0.45, paletteWeights: ['buildLight','buildMid','buildLight','buildDark'],
+    redAccentChance: 0.30, barrelCount: 25, crateCount: 160,
     feature: 'apartment',
     ambient: 0xc8c8d0, sun: 0xd8d8e0, hemi: 0xc0c0c8, hemiGround: 0x14141a,
+    groundColor: 0x1a1a1e, ambientDrones: 10, smokeColumns: 10, searchBeams: 8,
+    signature: 'mega_apartment_tower',
   },
   junkyard: {
-    buildingFill: 0.32, paletteWeights: ['buildDark','buildMid','barrelStripe','black'],
-    redAccentChance: 0.32, barrelCount: 50, crateCount: 260,
+    buildingFill: 0.20, paletteWeights: ['buildDark','buildMid','barrelStripe','black'],
+    redAccentChance: 0.32, barrelCount: 45, crateCount: 200,
     feature: 'junkyard',
     ambient: 0xc8b890, sun: 0xe0c898, hemi: 0xc0b080, hemiGround: 0x1a1408,
+    groundColor: 0x18140a, ambientDrones: 6, smokeColumns: 14, searchBeams: 4,
+    skipBanners: true, skipBlastWalls: true,
+    signature: 'mega_dismantler',
   },
   subway_hub: {
-    buildingFill: 0.55, paletteWeights: ['buildDark','black','buildMid','buildDark'],
-    redAccentChance: 0.55, barrelCount: 25, crateCount: 200,
+    buildingFill: 0.0, paletteWeights: ['buildDark','black','buildMid','buildDark'],
+    redAccentChance: 0.55, barrelCount: 12, crateCount: 80,
     feature: 'subway_hub',
     ambient: 0x655050, sun: 0x886060, hemi: 0x553030, hemiGround: 0x100404,
     fogFar: 240,
+    groundColor: 0x0a0a0a, ambientDrones: 0, smokeColumns: 0, searchBeams: 0, skylineMonoliths: 0,
+    skipStandardBuildings: true, skipWatchtowers: true, skipCatwalks: true, skipBanners: true,
+    signature: 'subway_concourse',
   },
   sewers: {
-    buildingFill: 0.40, paletteWeights: ['buildDark','black','buildMid','buildDark'],
-    redAccentChance: 0.10, barrelCount: 25, crateCount: 130,
+    buildingFill: 0.0, paletteWeights: ['buildDark','black','buildMid','buildDark'],
+    redAccentChance: 0.10, barrelCount: 20, crateCount: 80,
     feature: 'sewers',
     ambient: 0x607060, sun: 0x809080, hemi: 0x607060, hemiGround: 0x081008,
-    fogFar: 280,
+    fogFar: 220,
+    groundColor: 0x0e1410, ambientDrones: 0, smokeColumns: 0, searchBeams: 0, skylineMonoliths: 0,
+    skipStandardBuildings: true, skipWatchtowers: true, skipCatwalks: true, skipBanners: true, skipCraters: true,
+    signature: 'mega_drainage_pit',
   },
 };
 function applyLoadout() {
@@ -2228,8 +2273,11 @@ function generateWorld() {
 
   buildings.length = 0;
 
-  // Ground
-  const ground = makeBox(WORLD_SIZE*2, 0.5, WORLD_SIZE*2, M.groundDark);
+  // Ground (theme-tinted)
+  const groundMat = params.groundColor !== undefined
+    ? new THREE.MeshLambertMaterial({ color: params.groundColor })
+    : M.groundDark;
+  const ground = makeBox(WORLD_SIZE*2, 0.5, WORLD_SIZE*2, groundMat);
   ground.position.y = -0.25;
   scene.add(ground);
 
@@ -2251,16 +2299,18 @@ function generateWorld() {
     line2.position.set(0, 0.02, i); scene.add(line2);
   }
 
-  // Building grid (denser for bigger world; density per theme)
-  const grid = 13;
-  const cellSize = (WORLD_SIZE * 1.7) / grid;
-  for (let i = 0; i < grid; i++) {
-    for (let j = 0; j < grid; j++) {
-      if (Math.random() < params.buildingFill) {
-        const cx = -WORLD_SIZE*0.85 + i * cellSize + cellSize/2 + (Math.random()-0.5)*2;
-        const cz = -WORLD_SIZE*0.85 + j * cellSize + cellSize/2 + (Math.random()-0.5)*2;
-        if (Math.hypot(cx, cz) < 8) continue;
-        buildVoxelStructure(cx, cz, params);
+  // Building grid (denser for bigger world; density per theme; some themes skip entirely)
+  if (!params.skipStandardBuildings && params.buildingFill > 0) {
+    const grid = 13;
+    const cellSize = (WORLD_SIZE * 1.7) / grid;
+    for (let i = 0; i < grid; i++) {
+      for (let j = 0; j < grid; j++) {
+        if (Math.random() < params.buildingFill) {
+          const cx = -WORLD_SIZE*0.85 + i * cellSize + cellSize/2 + (Math.random()-0.5)*2;
+          const cz = -WORLD_SIZE*0.85 + j * cellSize + cellSize/2 + (Math.random()-0.5)*2;
+          if (Math.hypot(cx, cz) < 8) continue;
+          buildVoxelStructure(cx, cz, params);
+        }
       }
     }
   }
@@ -2421,14 +2471,15 @@ function generateWorld() {
     buildings.push({ x: s.x - 0.65, z: s.z - 0.65, w: 1.3, d: 1.3, h: s.h });
   }
 
-  // ==== Universal scene enrichers (every map gets these) ====
-  spawnWreckage(10);
-  spawnContainers(7);
-  spawnCraters(6);
-  spawnBlastWalls(10);
-  spawnPropagandaBanners(10);
-  spawnWatchtowers(3);
-  spawnSkyCatwalks(6);
+  // ==== Universal scene enrichers (gated per-theme) ====
+  if (!params.skipWreckage) spawnWreckage(10);
+  if (!params.skipContainers) spawnContainers(7);
+  if (!params.skipCraters) spawnCraters(6);
+  if (!params.skipBlastWalls) spawnBlastWalls(10);
+  if (!params.skipBanners) spawnPropagandaBanners(10);
+  if (!params.skipWatchtowers) spawnWatchtowers(3);
+  if (!params.skipCatwalks) spawnSkyCatwalks(6);
+  spawnSignatureLandmark(params);
 
   // ==== Theme-specific terrain features ====
   if (params.feature === 'smokestacks') {
@@ -3382,8 +3433,9 @@ function generateWorld() {
     }
   }
 
-  // Far skyline monoliths (denser, more variety)
-  for (let i = 0; i < 36; i++) {
+  // Far skyline monoliths (count per theme)
+  const skylineCount = params.skylineMonoliths !== undefined ? params.skylineMonoliths : 36;
+  for (let i = 0; i < skylineCount; i++) {
     const angle = (i / 36) * Math.PI * 2 + (Math.random()-0.5)*0.1;
     const r = WORLD_SIZE + 30 + Math.random()*60;
     const x = Math.cos(angle)*r, z = Math.sin(angle)*r;
@@ -3422,8 +3474,9 @@ function generateWorld() {
     }
   }
 
-  // Hovering ambient drones (cosmetic, distant)
-  for (let i = 0; i < 16; i++) {
+  // Hovering ambient drones (count per theme)
+  const ambientDroneCount = params.ambientDrones !== undefined ? params.ambientDrones : 16;
+  for (let i = 0; i < ambientDroneCount; i++) {
     const angle = Math.random() * Math.PI * 2;
     const r = WORLD_SIZE * 0.7 + Math.random() * 30;
     const x = Math.cos(angle)*r;
@@ -3443,8 +3496,9 @@ function generateWorld() {
     scene.add(new THREE.Line(lineGeom, lineMat));
   }
 
-  // Smoke / signal columns rising in the distance
-  for (let i = 0; i < 14; i++) {
+  // Smoke / signal columns rising in the distance (count per theme)
+  const smokeCount = params.smokeColumns !== undefined ? params.smokeColumns : 14;
+  for (let i = 0; i < smokeCount; i++) {
     const angle = Math.random() * Math.PI * 2;
     const r = WORLD_SIZE * 0.5 + Math.random() * WORLD_SIZE * 0.4;
     const x = Math.cos(angle)*r, z = Math.sin(angle)*r;
@@ -3462,8 +3516,9 @@ function generateWorld() {
     }
   }
 
-  // Vertical light shafts (search beams)
-  for (let i = 0; i < 8; i++) {
+  // Vertical light shafts (count per theme)
+  const beamCount = params.searchBeams !== undefined ? params.searchBeams : 8;
+  for (let i = 0; i < beamCount; i++) {
     const angle = Math.random() * Math.PI * 2;
     const r = WORLD_SIZE * 0.6 + Math.random() * 40;
     const x = Math.cos(angle)*r, z = Math.sin(angle)*r;
@@ -3843,6 +3898,347 @@ function spawnBlastWalls(count) {
       cursorX += Math.cos(yawSeg) * len;
       cursorZ -= Math.sin(yawSeg) * len;
     }
+  }
+}
+
+function spawnSignatureLandmark(params) {
+  if (!params.signature) return;
+  const sig = params.signature;
+  const cx = 0, cz = -55;
+
+  if (sig === 'mega_cooling_tower') {
+    // Industrial: hourglass cooling tower, ~50m tall
+    const c1 = new THREE.Mesh(new THREE.CylinderGeometry(8, 9, 18, 12), M.buildLight);
+    c1.position.set(cx, 9, cz); scene.add(c1);
+    const c2 = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 8, 14, 12), M.buildLight);
+    c2.position.set(cx, 25, cz); scene.add(c2);
+    const c3 = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 5.5, 18, 12), M.buildLight);
+    c3.position.set(cx, 41, cz); scene.add(c3);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(7.6, 7.6, 0.6, 12), M.barrelStripe);
+    cap.position.set(cx, 50.3, cz); scene.add(cap);
+    for (let s = 0; s < 6; s++) {
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(3 + s, 2 + s, 2, 8),
+        new THREE.MeshLambertMaterial({color: 0x808080, transparent: true, opacity: 0.45 - s*0.06}));
+      seg.position.set(cx + (Math.random()-0.5)*1.5, 51 + s*2, cz + (Math.random()-0.5)*1.5);
+      scene.add(seg);
+    }
+    buildings.push({ x: cx - 8, z: cz - 8, w: 16, d: 16, h: 50 });
+  } else if (sig === 'mega_blast_furnace') {
+    const fH = 40, fR = 4.5;
+    const furnace = new THREE.Mesh(new THREE.CylinderGeometry(fR, fR + 1, fH, 8), M.buildDark);
+    furnace.position.set(cx, fH/2, cz); scene.add(furnace);
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(fR-0.5, fR+0.5, 3, 8), new THREE.MeshBasicMaterial({color: 0xff5520}));
+    core.position.set(cx, 1.5, cz); scene.add(core);
+    for (const fy of [10, 20, 30]) {
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(fR + 0.3, fR + 0.3, 0.6, 8), M.barrelStripe);
+      band.position.set(cx, fy, cz); scene.add(band);
+    }
+    const exh = new THREE.Mesh(new THREE.CylinderGeometry(fR - 0.5, fR + 0.5, 1, 8), M.black);
+    exh.position.set(cx, fH + 0.5, cz); scene.add(exh);
+    for (let i = 0; i < 4; i++) {
+      const ang = (i / 4) * Math.PI * 2;
+      const pipe = makeBox(0.25, fH * 0.8, 0.25, M.black);
+      pipe.position.set(cx + Math.cos(ang) * (fR + 0.5), fH * 0.4, cz + Math.sin(ang) * (fR + 0.5));
+      scene.add(pipe);
+    }
+    const halo = new THREE.Mesh(new THREE.CylinderGeometry(fR + 4, fR + 4, 0.04, 16), new THREE.MeshBasicMaterial({color: 0xff4010}));
+    halo.position.set(cx, 0.02, cz); scene.add(halo);
+    buildings.push({ x: cx - fR, z: cz - fR, w: fR*2, d: fR*2, h: fH });
+  } else if (sig === 'mega_apartment_tower') {
+    const cz2 = -60;
+    const bw = 12, bd = 9, bh = 60;
+    const block = makeBox(bw, bh, bd, M.buildLight);
+    block.position.set(cx, bh/2, cz2); scene.add(block);
+    buildings.push({ x: cx - bw/2, z: cz2 - bd/2, w: bw, d: bd, h: bh });
+    for (let f = 1; f < 24; f++) {
+      const wy = f * 2.5;
+      for (let wx = -bw/2 + 0.7; wx < bw/2 - 0.5; wx += 1.2) {
+        const w1 = makeBox(0.6, 0.9, 0.05, M.buildDark);
+        w1.position.set(cx + wx, wy, cz2 + bd/2 + 0.04); scene.add(w1);
+        const w2 = makeBox(0.6, 0.9, 0.05, M.buildDark);
+        w2.position.set(cx + wx, wy, cz2 - bd/2 - 0.04); scene.add(w2);
+      }
+    }
+    const ant = makeBox(0.3, 6, 0.3, M.black);
+    ant.position.set(cx, bh + 3, cz2); scene.add(ant);
+    const beacon = makeBox(0.6, 0.6, 0.6, M.redBright);
+    beacon.position.set(cx, bh + 6.3, cz2); scene.add(beacon);
+  } else if (sig === 'mega_ship_loader') {
+    const legH = 26, legSpread = 11;
+    for (const [px, pz] of [[-legSpread, -legSpread], [legSpread, -legSpread], [-legSpread, legSpread], [legSpread, legSpread]]) {
+      const leg = makeBox(0.8, legH, 0.8, M.buildDark);
+      leg.position.set(cx + px, legH/2, cz + pz); scene.add(leg);
+      buildings.push({ x: cx + px - 0.4, z: cz + pz - 0.4, w: 0.8, d: 0.8, h: legH });
+    }
+    const beam = makeBox(legSpread * 2 + 2, 1.0, 1.8, M.buildMid);
+    beam.position.set(cx, legH, cz); scene.add(beam);
+    const beamStripe = makeBox(legSpread * 2 + 2.05, 0.25, 1.85, M.barrelStripe);
+    beamStripe.position.set(cx, legH + 0.5, cz); scene.add(beamStripe);
+    const arm = makeBox(0.6, 0.6, legSpread * 3, M.barrelStripe);
+    arm.position.set(cx, legH - 1.5, cz); scene.add(arm);
+    const hook = makeBox(0.8, 2, 0.8, M.black);
+    hook.position.set(cx, legH - 7, cz - legSpread * 1.2); scene.add(hook);
+    const cab = makeBox(2.5, 1.5, 1.8, M.buildDark);
+    cab.position.set(cx + 4, legH + 1.4, cz); scene.add(cab);
+    const cabWindow = makeBox(2.4, 0.8, 0.06, new THREE.MeshBasicMaterial({color: 0x4d99dd}));
+    cabWindow.position.set(cx + 4, legH + 1.6, cz - 0.92); scene.add(cabWindow);
+  } else if (sig === 'mega_skybridge') {
+    const tH = 40;
+    const t1x = -25, t1z = -50, t2x = 25, t2z = -50;
+    const t1 = makeBox(7, tH, 7, M.buildLight);
+    t1.position.set(t1x, tH/2, t1z); scene.add(t1);
+    buildings.push({ x: t1x - 3.5, z: t1z - 3.5, w: 7, d: 7, h: tH });
+    const t2 = makeBox(7, tH, 7, M.buildLight);
+    t2.position.set(t2x, tH/2, t2z); scene.add(t2);
+    buildings.push({ x: t2x - 3.5, z: t2z - 3.5, w: 7, d: 7, h: tH });
+    const bridge = makeBox(50, 1.2, 4.5, M.buildDark);
+    bridge.position.set(0, 30, -50); scene.add(bridge);
+    buildings.push({ x: -25, z: -52.25, w: 50, d: 4.5, h: 30.6 });
+    const line = makeBox(50, 0.06, 0.4, M.barrelStripe);
+    line.position.set(0, 30.6, -50); scene.add(line);
+    for (const side of [-1, 1]) {
+      const rail = makeBox(50, 0.9, 0.12, M.black);
+      rail.position.set(0, 31, -50 + side * 2.25); scene.add(rail);
+    }
+    for (const [tx, tz] of [[t1x, t1z], [t2x, t2z]]) {
+      const cap = makeBox(8, 1.2, 8, M.buildDark);
+      cap.position.set(tx, tH + 0.6, tz); scene.add(cap);
+      const ant = makeBox(0.25, 6, 0.25, M.black);
+      ant.position.set(tx, tH + 4, tz); scene.add(ant);
+      const beacon = makeBox(0.6, 0.6, 0.6, M.redBright);
+      beacon.position.set(tx, tH + 7.3, tz); scene.add(beacon);
+    }
+  } else if (sig === 'mega_arch_bridge') {
+    const deck = makeBox(60, 0.8, 6, M.buildMid);
+    deck.position.set(cx, 12, cz); scene.add(deck);
+    buildings.push({ x: cx - 30, z: cz - 3, w: 60, d: 6, h: 12.4 });
+    for (let i = 0; i < 7; i++) {
+      const t = (i - 3) / 3;
+      const px = cx + t * 25;
+      const post = makeBox(1.0, 12, 1.0, M.buildDark);
+      post.position.set(px, 6, cz - 4); scene.add(post);
+      buildings.push({ x: px - 0.5, z: cz - 4.5, w: 1.0, d: 1.0, h: 12 });
+    }
+    for (const side of [-1, 1]) {
+      const rail = makeBox(60, 1.0, 0.15, M.black);
+      rail.position.set(cx, 12.9, cz + side * 2.95); scene.add(rail);
+    }
+    for (let i = 0; i < 13; i++) {
+      const t = (i - 6) / 6;
+      const px = cx + t * 28;
+      const archH = 12 + Math.cos(t * Math.PI / 2) * 14;
+      const seg = makeBox(2, 0.4, 0.6, M.buildDark);
+      seg.position.set(px, archH, cz); scene.add(seg);
+      if (Math.abs(t) < 0.85) {
+        const hanger = makeBox(0.18, archH - 12, 0.18, M.black);
+        hanger.position.set(px, (archH + 12)/2, cz); scene.add(hanger);
+      }
+    }
+    for (let s = 0; s < 12; s++) {
+      const sh = (s + 1) * 1.0;
+      const step = makeBox(2.5, sh, 1.0, M.buildLight);
+      step.position.set(cx + 30 + s * 1.0, sh/2, cz);
+      scene.add(step);
+      buildings.push({ x: cx + 30 + s * 1.0 - 1.25, z: cz - 0.5, w: 2.5, d: 1.0, h: sh });
+    }
+  } else if (sig === 'mega_control_tower') {
+    const towerH = 32;
+    const towerBody = makeBox(3, towerH, 3, M.buildLight);
+    towerBody.position.set(cx, towerH/2, cz); scene.add(towerBody);
+    buildings.push({ x: cx - 1.5, z: cz - 1.5, w: 3, d: 3, h: towerH });
+    const base = makeBox(4, 0.5, 4, M.barrelStripe);
+    base.position.set(cx, 0.25, cz); scene.add(base);
+    const deck = makeBox(7, 1.5, 7, M.buildDark);
+    deck.position.set(cx, towerH + 0.75, cz); scene.add(deck);
+    buildings.push({ x: cx - 3.5, z: cz - 3.5, w: 7, d: 7, h: towerH + 1.5 });
+    const glass = makeBox(7, 1.2, 7, new THREE.MeshBasicMaterial({color: 0x305080, transparent: true, opacity: 0.7}));
+    glass.position.set(cx, towerH + 2.1, cz); scene.add(glass);
+    const roof = makeBox(7.5, 0.4, 7.5, M.buildDark);
+    roof.position.set(cx, towerH + 2.9, cz); scene.add(roof);
+    const ant = makeBox(0.25, 6, 0.25, M.black);
+    ant.position.set(cx, towerH + 5.9, cz); scene.add(ant);
+    for (const fy of [4, 6, 8]) {
+      const beacon = makeBox(0.4, 0.4, 0.4, M.redBright);
+      beacon.position.set(cx, towerH + fy, cz); scene.add(beacon);
+    }
+  } else if (sig === 'mega_dismantler') {
+    const legH = 18;
+    for (const [px, pz] of [[-9,-7], [9,-7], [-9,7], [9,7]]) {
+      const post = makeBox(1.0, legH, 1.0, M.buildDark);
+      post.position.set(cx + px, legH/2, cz + pz); scene.add(post);
+      buildings.push({ x: cx + px - 0.5, z: cz + pz - 0.5, w: 1.0, d: 1.0, h: legH });
+    }
+    const beam1 = makeBox(20, 0.6, 1.4, M.buildMid);
+    beam1.position.set(cx, legH, cz); scene.add(beam1);
+    const beam2 = makeBox(1.4, 0.6, 16, M.buildMid);
+    beam2.position.set(cx, legH, cz); scene.add(beam2);
+    const cap1 = makeBox(20.05, 0.2, 1.45, M.barrelStripe);
+    cap1.position.set(cx, legH + 0.4, cz); scene.add(cap1);
+    for (let i = 0; i < 3; i++) {
+      const hx = cx + (i - 1) * 6;
+      const hl = 4 + Math.random() * 4;
+      const chain = makeBox(0.18, hl, 0.18, M.black);
+      chain.position.set(hx, legH - hl/2 - 0.3, cz); scene.add(chain);
+      const hook = makeBox(1.0, 1.0, 1.0, M.black);
+      hook.position.set(hx, legH - hl - 0.6, cz); scene.add(hook);
+      if (i === 1) {
+        const scrap = makeBox(1.5, 1.5, 1.0, M.red);
+        scrap.position.set(hx, legH - hl - 1.6, cz); scene.add(scrap);
+        const scrapEye = makeBox(0.4, 0.15, 0.05, M.redBright);
+        scrapEye.position.set(hx, legH - hl - 1.6, cz + 0.51); scene.add(scrapEye);
+      }
+    }
+    const belt = makeBox(0.8, 0.3, 16, M.buildDark);
+    belt.position.set(cx + 10, 2, cz); scene.add(belt);
+    const beltTop = makeBox(0.8, 0.06, 16, M.barrelStripe);
+    beltTop.position.set(cx + 10, 2.18, cz); scene.add(beltTop);
+    for (let i = 0; i < 4; i++) {
+      const ore = makeBox(0.5, 0.5, 0.5, M.buildDark);
+      ore.position.set(cx + 10, 2.5, cz - 6 + i * 4); scene.add(ore);
+    }
+  } else if (sig === 'mega_cooling_silo') {
+    for (let i = -1; i <= 1; i++) {
+      const sx = cx + i * 8;
+      const sH = 35 + (i === 0 ? 8 : 0);
+      const silo = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.4, sH, 12), M.buildDark);
+      silo.position.set(sx, sH/2, cz); scene.add(silo);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 0.6, 12), M.barrelStripe);
+      band.position.set(sx, sH * 0.75, cz); scene.add(band);
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(3, 12, 6, 0, Math.PI*2, 0, Math.PI/2), M.buildDark);
+      dome.position.set(sx, sH, cz); scene.add(dome);
+      buildings.push({ x: sx - 3, z: cz - 3, w: 6, d: 6, h: sH });
+    }
+    const topPipe = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 16, 8), M.buildLight);
+    topPipe.position.set(cx, 38, cz); topPipe.rotation.z = Math.PI/2; scene.add(topPipe);
+  } else if (sig === 'collapsed_skeleton') {
+    const base = makeBox(8, 16, 8, M.buildMid);
+    base.position.set(cx, 8, cz); scene.add(base);
+    buildings.push({ x: cx - 4, z: cz - 4, w: 8, d: 8, h: 16 });
+    const upper = new THREE.Group();
+    upper.position.set(cx, 16, cz);
+    upper.rotation.z = -0.4;
+    const upperBody = makeBox(7, 12, 7, M.buildLight);
+    upperBody.position.set(0, 6, 0);
+    upper.add(upperBody);
+    scene.add(upper);
+    for (let f = 0; f < 4; f++) {
+      const fh = 5 + f * 4;
+      const slab = makeBox(11, 0.4, 5, M.buildDark);
+      slab.position.set(cx + (f%2)*1.5, fh, cz);
+      slab.rotation.y = (Math.random() - 0.5) * 0.3;
+      slab.rotation.z = (Math.random() - 0.5) * 0.2;
+      scene.add(slab);
+    }
+    for (let i = 0; i < 8; i++) {
+      const rh = 1 + Math.random() * 2;
+      const rebar = makeBox(0.1, rh, 0.1, M.black);
+      rebar.position.set(cx + (Math.random()-0.5)*8, rh/2, cz + (Math.random()-0.5)*8);
+      rebar.rotation.x = (Math.random() - 0.5) * 0.4;
+      scene.add(rebar);
+    }
+    for (let i = 0; i < 30; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const r = 5 + Math.random() * 4;
+      const rs = 0.4 + Math.random() * 0.8;
+      const rub = makeBox(rs, rs, rs, M.buildMid);
+      rub.position.set(cx + Math.cos(ang)*r, rs/2, cz + Math.sin(ang)*r);
+      rub.rotation.y = Math.random() * Math.PI;
+      scene.add(rub);
+    }
+  } else if (sig === 'red_pylons') {
+    for (let i = -1; i <= 1; i++) {
+      const px = cx + i * 6;
+      const pH = 24 + (i === 0 ? 6 : 0);
+      const pylon = makeBox(2.5, pH, 0.8, M.red);
+      pylon.position.set(px, pH/2, cz); scene.add(pylon);
+      buildings.push({ x: px - 1.25, z: cz - 0.4, w: 2.5, d: 0.8, h: pH });
+      const header = makeBox(2.55, pH * 0.15, 0.85, M.black);
+      header.position.set(px, pH * 0.85, cz); scene.add(header);
+      for (let s = 0; s < 4; s++) {
+        const stripe = makeBox(2.0, 0.3, 0.05, M.buildLight);
+        stripe.position.set(px, pH * (0.3 + s * 0.1), cz + 0.45); scene.add(stripe);
+      }
+      const beacon = makeBox(0.6, 0.6, 0.6, M.redBright);
+      beacon.position.set(px, pH + 0.5, cz); scene.add(beacon);
+    }
+    for (let i = -1; i < 1; i++) {
+      const cable = makeBox(6, 0.06, 0.06, M.black);
+      cable.position.set(cx + i * 3, 25, cz); scene.add(cable);
+    }
+  } else if (sig === 'central_server_monolith') {
+    const sw = 14, sd = 10, sH = 30;
+    const stack = makeBox(sw, sH, sd, M.buildMid);
+    stack.position.set(cx, sH/2, cz); scene.add(stack);
+    buildings.push({ x: cx - sw/2, z: cz - sd/2, w: sw, d: sd, h: sH });
+    for (let f = 0; f < 12; f++) {
+      const fy = 1 + f * 2.4;
+      for (let wx = -sw/2 + 1; wx < sw/2 - 0.8; wx += 1.4) {
+        const led = makeBox(1.0, 0.5, 0.05, new THREE.MeshBasicMaterial({color: 0x4d99dd}));
+        led.position.set(cx + wx, fy, cz + sd/2 + 0.04); scene.add(led);
+        const led2 = makeBox(1.0, 0.5, 0.05, new THREE.MeshBasicMaterial({color: 0x4d99dd}));
+        led2.position.set(cx + wx, fy, cz - sd/2 - 0.04); scene.add(led2);
+      }
+    }
+    const ant = makeBox(0.3, 5, 0.3, M.black);
+    ant.position.set(cx, sH + 2.5, cz); scene.add(ant);
+    const beacon = makeBox(0.6, 0.6, 0.6, M.redBright);
+    beacon.position.set(cx, sH + 5.5, cz); scene.add(beacon);
+  } else if (sig === 'metro_concourse' || sig === 'subway_concourse') {
+    const platLen = 80;
+    for (let s = -platLen/2; s < platLen/2; s += 2.5) {
+      const sleeper = makeBox(2.4, 0.1, 0.4, M.buildDark);
+      sleeper.position.set(0, 0.05, s); scene.add(sleeper);
+    }
+    for (const side of [-1, 1]) {
+      const track = makeBox(0.4, 0.04, platLen, new THREE.MeshLambertMaterial({color: 0x484848}));
+      track.position.set(side * 0.9, 0.06, 0); scene.add(track);
+    }
+    const plat = makeBox(6, 1.2, platLen, M.buildLight);
+    plat.position.set(7, 0.6, 0); scene.add(plat);
+    buildings.push({ x: 4, z: -platLen/2, w: 6, d: platLen, h: 1.2 });
+    const platStripe = makeBox(0.4, 0.05, platLen, M.barrelStripe);
+    platStripe.position.set(4.2, 1.23, 0); scene.add(platStripe);
+    for (let i = -3; i <= 3; i++) {
+      const pillar = makeBox(1.2, 5, 1.2, M.buildDark);
+      pillar.position.set(8.5, 2.5, i * 12); scene.add(pillar);
+      buildings.push({ x: 7.9, z: i*12 - 0.6, w: 1.2, d: 1.2, h: 5 });
+      const sign = makeBox(1.0, 1.0, 0.05, M.barrelStripe);
+      sign.position.set(8.5, 4, i * 12 + 0.62); scene.add(sign);
+      const inner = makeBox(0.85, 0.85, 0.06, M.red);
+      inner.position.set(8.5, 4, i * 12 + 0.65); scene.add(inner);
+    }
+    for (let i = -4; i <= 4; i++) {
+      const light = makeBox(2.0, 0.2, 0.4, new THREE.MeshBasicMaterial({color: 0xfff0d0}));
+      light.position.set(0, 5.5, i * 8); scene.add(light);
+    }
+    const wallL = makeBox(0.4, 6, platLen, M.buildDark);
+    wallL.position.set(-12, 3, 0); scene.add(wallL);
+    buildings.push({ x: -12.2, z: -platLen/2, w: 0.4, d: platLen, h: 6 });
+    const tunnelEnd = makeBox(20, 6, 0.5, M.black);
+    tunnelEnd.position.set(0, 3, -platLen/2); scene.add(tunnelEnd);
+  } else if (sig === 'mega_drainage_pit') {
+    const pitFloor = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 0.4, 16), new THREE.MeshLambertMaterial({color: 0x101410}));
+    pitFloor.position.set(cx, 0.02, cz); scene.add(pitFloor);
+    const slime = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 7.5, 0.05, 16), new THREE.MeshBasicMaterial({color: 0x33aa55}));
+    slime.position.set(cx, 0.05, cz); scene.add(slime);
+    for (let r = 1; r <= 3; r++) {
+      const ringR = 8 - r * 2;
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(ringR + 0.1, ringR + 0.1, 0.3, 16, 1, true), M.buildDark);
+      ring.position.set(cx, 0.15, cz); scene.add(ring);
+    }
+    for (let i = 0; i < 4; i++) {
+      const ang = (i / 4) * Math.PI * 2;
+      const ex = cx + Math.cos(ang) * (8 + 6);
+      const ez = cz + Math.sin(ang) * (8 + 6);
+      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 12, 12), M.buildDark);
+      pipe.position.set(ex, 1.5, ez);
+      pipe.rotation.z = Math.PI/2;
+      pipe.rotation.y = ang;
+      scene.add(pipe);
+    }
+    const column = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 12, 12), M.buildLight);
+    column.position.set(cx, 6, cz); scene.add(column);
+    buildings.push({ x: cx - 2, z: cz - 2, w: 4, d: 4, h: 12 });
   }
 }
 
