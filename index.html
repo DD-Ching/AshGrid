@@ -1475,6 +1475,13 @@ const MAP_THEMES = {
   drone_yard:    { name: 'DRONE YARD', cn: '无人机停放区', fog: 0x282828, sky: { top: 0x101010, bottom: 0x303030 }, accent: 'yellow' },
   power_station: { name: 'POWER STATION', cn: '电力站',   fog: 0x252830, sky: { top: 0x0a0d12, bottom: 0x282c34 }, accent: 'blue' },
   command_core:  { name: 'COMMAND CORE', cn: '指挥核心', fog: 0x1a0a0a, sky: { top: 0x000000, bottom: 0x180808 }, accent: 'red' },
+  nuclear_pool:  { name: 'NUCLEAR POOL', cn: '核池',     fog: 0x152018, sky: { top: 0x081008, bottom: 0x123018 }, accent: 'green' },
+  steel_mill:    { name: 'STEEL MILL', cn: '炼钢厂',     fog: 0x3a2818, sky: { top: 0x1a1208, bottom: 0x4a2810 }, accent: 'orange' },
+  container_port:{ name: 'CONTAINER PORT', cn: '货柜港', fog: 0x252830, sky: { top: 0x101218, bottom: 0x2a2e36 }, accent: 'mixed' },
+  apartment:     { name: 'APARTMENT', cn: '公寓大厦',   fog: 0x2a2830, sky: { top: 0x141420, bottom: 0x2c2c34 }, accent: 'grey' },
+  junkyard:      { name: 'JUNKYARD', cn: '机器人回收厂', fog: 0x2a261c, sky: { top: 0x141008, bottom: 0x3a2818 }, accent: 'yellow' },
+  subway_hub:    { name: 'SUBWAY HUB', cn: '地铁转运站', fog: 0x141414, sky: { top: 0x000000, bottom: 0x1c0a0a }, accent: 'red' },
+  sewers:        { name: 'SEWERS', cn: '下水道',         fog: 0x18221a, sky: { top: 0x080a08, bottom: 0x1a221a }, accent: 'green' },
 };
 
 // Per-theme generation parameters — controls which features the map gets.
@@ -1541,6 +1548,50 @@ const THEME_PARAMS = {
     feature: 'command_core', extraHive: 1,
     ambient: 0x885050, sun: 0xa07060, hemi: 0x603030, hemiGround: 0x080404,
     fogFar: 320,
+  },
+  nuclear_pool: {
+    buildingFill: 0.32, paletteWeights: ['buildDark','buildMid','black','buildDark'],
+    redAccentChance: 0.20, barrelCount: 30, crateCount: 130,
+    feature: 'nuclear_pool',
+    ambient: 0x8aa890, sun: 0xa0c0a0, hemi: 0x88a890, hemiGround: 0x081208,
+  },
+  steel_mill: {
+    buildingFill: 0.45, paletteWeights: ['buildDark','black','buildMid','barrelStripe'],
+    redAccentChance: 0.45, barrelCount: 70, crateCount: 150,
+    feature: 'steel_mill',
+    ambient: 0xc8a47a, sun: 0xe8a070, hemi: 0xc89070, hemiGround: 0x2a1a08,
+  },
+  container_port: {
+    buildingFill: 0.28, paletteWeights: ['buildDark','buildMid','buildLight','buildLight'],
+    redAccentChance: 0.15, barrelCount: 35, crateCount: 90,
+    feature: 'container_port',
+    ambient: 0xb0b8c0, sun: 0xc8d0d8, hemi: 0xb8c0c8, hemiGround: 0x141820,
+  },
+  apartment: {
+    buildingFill: 0.66, paletteWeights: ['buildLight','buildMid','buildLight','buildDark'],
+    redAccentChance: 0.30, barrelCount: 25, crateCount: 200,
+    feature: 'apartment',
+    ambient: 0xc8c8d0, sun: 0xd8d8e0, hemi: 0xc0c0c8, hemiGround: 0x14141a,
+  },
+  junkyard: {
+    buildingFill: 0.32, paletteWeights: ['buildDark','buildMid','barrelStripe','black'],
+    redAccentChance: 0.32, barrelCount: 50, crateCount: 260,
+    feature: 'junkyard',
+    ambient: 0xc8b890, sun: 0xe0c898, hemi: 0xc0b080, hemiGround: 0x1a1408,
+  },
+  subway_hub: {
+    buildingFill: 0.55, paletteWeights: ['buildDark','black','buildMid','buildDark'],
+    redAccentChance: 0.55, barrelCount: 25, crateCount: 200,
+    feature: 'subway_hub',
+    ambient: 0x655050, sun: 0x886060, hemi: 0x553030, hemiGround: 0x100404,
+    fogFar: 240,
+  },
+  sewers: {
+    buildingFill: 0.40, paletteWeights: ['buildDark','black','buildMid','buildDark'],
+    redAccentChance: 0.10, barrelCount: 25, crateCount: 130,
+    feature: 'sewers',
+    ambient: 0x607060, sun: 0x809080, hemi: 0x607060, hemiGround: 0x081008,
+    fogFar: 280,
   },
 };
 function applyLoadout() {
@@ -2161,7 +2212,7 @@ function generateWorld() {
   scene.add(hemi);
 
   // Pick theme — randomized when gv_theme is 'random'
-  const themeKeys = ['red_zone','grey_district','industrial','metro','data_core','rooftop_grid','bridge_sector','drone_yard','power_station','command_core'];
+  const themeKeys = ['red_zone','grey_district','industrial','metro','data_core','rooftop_grid','bridge_sector','drone_yard','power_station','command_core','nuclear_pool','steel_mill','container_port','apartment','junkyard','subway_hub','sewers'];
   let themeKey = settings.mapTheme;
   if (themeKey === 'random') themeKey = themeKeys[Math.floor(Math.random()*themeKeys.length)];
   game.activeTheme = themeKey;
@@ -2376,6 +2427,8 @@ function generateWorld() {
   spawnCraters(6);
   spawnBlastWalls(10);
   spawnPropagandaBanners(10);
+  spawnWatchtowers(3);
+  spawnSkyCatwalks(6);
 
   // ==== Theme-specific terrain features ====
   if (params.feature === 'smokestacks') {
@@ -2814,6 +2867,485 @@ function generateWorld() {
       eye.position.set(mx + fx * (mw/2 + 0.04), mh * 0.6, mz + fz * (mw/2 + 0.04));
       eye.lookAt(cx, mh*0.6, cz);
       scene.add(eye);
+    }
+  }
+  if (params.feature === 'nuclear_pool') {
+    // NUCLEAR POOL — central reactor with green glow + 4 cooling towers + warning fence
+    const px = 0, pz = -32, pR = 7;
+    const pool = new THREE.Mesh(new THREE.CylinderGeometry(pR, pR, 0.4, 16), new THREE.MeshLambertMaterial({ color: 0x041008 }));
+    pool.position.set(px, -0.18, pz); scene.add(pool);
+    const glow = new THREE.Mesh(new THREE.CylinderGeometry(pR - 1.2, pR - 1.2, 0.05, 16), new THREE.MeshBasicMaterial({ color: 0x00cc55 }));
+    glow.position.set(px, 0.05, pz); scene.add(glow);
+    // Reactor cylinder
+    const reactor = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 6, 12), M.buildDark);
+    reactor.position.set(px, 3, pz); scene.add(reactor);
+    const reactCore = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 5.5, 8), new THREE.MeshBasicMaterial({ color: 0x00ee66 }));
+    reactCore.position.set(px, 3, pz); scene.add(reactCore);
+    const reactCap = makeBox(3, 0.6, 3, M.buildDark);
+    reactCap.position.set(px, 6.4, pz); scene.add(reactCap);
+    buildings.push({ x: px - 1.5, z: pz - 1.5, w: 3, d: 3, h: 6.5 });
+    // 4 huge cooling towers around the pool
+    for (let i = 0; i < 4; i++) {
+      const ang = (i / 4) * Math.PI * 2 + Math.PI/4;
+      const r = pR + 5;
+      const cx = px + Math.cos(ang) * r;
+      const cz = pz + Math.sin(ang) * r;
+      const cH = 22;
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.4, cH, 10), M.buildLight);
+      tower.position.set(cx, cH/2, cz); scene.add(tower);
+      const exh = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 0.5, 10), M.barrelStripe);
+      exh.position.set(cx, cH, cz); scene.add(exh);
+      // Steam emission (green tint)
+      for (let s = 0; s < 4; s++) {
+        const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.8 + s*0.4, 0.6 + s*0.4, 1.2, 8),
+          new THREE.MeshLambertMaterial({ color: 0x40a060, transparent: true, opacity: 0.3 }));
+        seg.position.set(cx + (Math.random()-0.5)*0.4, cH + 1 + s*1.2, cz + (Math.random()-0.5)*0.4);
+        scene.add(seg);
+      }
+      buildings.push({ x: cx - 2, z: cz - 2, w: 4, d: 4, h: cH });
+    }
+    // Warning fence around pool
+    for (let i = 0; i < 16; i++) {
+      const ang = (i / 16) * Math.PI * 2;
+      const fx = px + Math.cos(ang) * (pR + 1.2);
+      const fz = pz + Math.sin(ang) * (pR + 1.2);
+      const post = makeBox(0.18, 1.4, 0.18, M.barrelStripe);
+      post.position.set(fx, 0.7, fz); scene.add(post);
+    }
+    // Crossbars
+    for (let i = 0; i < 16; i++) {
+      const a1 = (i / 16) * Math.PI * 2;
+      const a2 = ((i + 1) / 16) * Math.PI * 2;
+      const x1 = px + Math.cos(a1) * (pR + 1.2);
+      const z1 = pz + Math.sin(a1) * (pR + 1.2);
+      const x2 = px + Math.cos(a2) * (pR + 1.2);
+      const z2 = pz + Math.sin(a2) * (pR + 1.2);
+      const len = Math.hypot(x2 - x1, z2 - z1);
+      const yaw = Math.atan2(x2 - x1, z2 - z1);
+      const bar = makeBox(0.1, 0.1, len, M.barrelStripe);
+      bar.position.set((x1+x2)/2, 0.9, (z1+z2)/2);
+      bar.rotation.y = yaw; scene.add(bar);
+    }
+    // Trefoil radioactive symbol on ground (3 black wedges around center)
+    const trefoil = makeBox(0.4, 0.05, 0.4, M.black);
+    trefoil.position.set(px, 0.04, pz); scene.add(trefoil);
+  }
+  if (params.feature === 'steel_mill') {
+    // STEEL MILL — blast furnaces + conveyor belts + glowing molten interior
+    for (let i = 0; i < 7; i++) {
+      let sx, sz, ok = false, tries = 0;
+      while (!ok && tries < 25) {
+        sx = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
+        sz = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
+        if (Math.hypot(sx, sz) < 14) { tries++; continue; }
+        if (!checkCollisionAt(sx, sz, 3)) ok = true;
+        tries++;
+      }
+      if (!ok) continue;
+      const fH = 18 + Math.random() * 8;
+      const furnace = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.6, fH, 8), M.buildDark);
+      furnace.position.set(sx, fH/2, sz); scene.add(furnace);
+      // Glowing core base (molten metal)
+      const core = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.0, 1.5, 8), new THREE.MeshBasicMaterial({ color: 0xff6028 }));
+      core.position.set(sx, 0.8, sz); scene.add(core);
+      const vent = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2.1, 0.5, 8), M.black);
+      vent.position.set(sx, fH + 0.3, sz); scene.add(vent);
+      // Mid hazard band
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 0.5, 8), M.barrelStripe);
+      band.position.set(sx, fH * 0.5, sz); scene.add(band);
+      // Side access ladder visual (vertical strip)
+      const ladder = makeBox(0.3, fH - 1, 0.05, M.black);
+      ladder.position.set(sx, fH/2, sz - 2.2); scene.add(ladder);
+      buildings.push({ x: sx - 2.0, z: sz - 2.0, w: 4.0, d: 4.0, h: fH });
+    }
+    // Conveyor belts (long elevated rails with ore boxes)
+    for (let i = 0; i < 5; i++) {
+      let sx, sz, ok = false, tries = 0, yaw = 0;
+      while (!ok && tries < 25) {
+        sx = (Math.random() - 0.5) * WORLD_SIZE * 1.2;
+        sz = (Math.random() - 0.5) * WORLD_SIZE * 1.2;
+        yaw = Math.random() * Math.PI;
+        ok = !checkCollisionAt(sx, sz, 1) && Math.hypot(sx, sz) >= 10;
+        tries++;
+      }
+      if (!ok) continue;
+      const cl = 14 + Math.random() * 8;
+      const ch = 3.5 + Math.random() * 1.5;
+      const belt = makeBox(0.8, 0.3, cl, M.buildDark);
+      belt.position.set(sx, ch, sz); belt.rotation.y = yaw; scene.add(belt);
+      const beltTop = makeBox(0.8, 0.06, cl, M.barrelStripe);
+      beltTop.position.set(sx, ch + 0.18, sz); beltTop.rotation.y = yaw; scene.add(beltTop);
+      // Cargo cubes on belt
+      for (let c = 0; c < 4; c++) {
+        const t = (c - 1.5) / 4;
+        const cs = Math.cos(yaw), sn = Math.sin(yaw);
+        const ore = makeBox(0.6, 0.6, 0.6, new THREE.MeshLambertMaterial({ color: 0x553828 }));
+        ore.position.set(sx + sn * cl * t, ch + 0.5, sz + cs * cl * t);
+        ore.rotation.y = Math.random() * Math.PI;
+        scene.add(ore);
+      }
+      // Support pillars
+      const cs = Math.cos(yaw), sn = Math.sin(yaw);
+      for (const t of [-0.45, 0, 0.45]) {
+        const ppx = sx + sn * cl * t;
+        const ppz = sz + cs * cl * t;
+        const pillar = makeBox(0.3, ch, 0.3, M.black);
+        pillar.position.set(ppx, ch/2, ppz); scene.add(pillar);
+        buildings.push({ x: ppx - 0.15, z: ppz - 0.15, w: 0.3, d: 0.3, h: ch });
+      }
+    }
+    // Slag pools (red glowing puddles on ground)
+    for (let i = 0; i < 8; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      if (Math.hypot(sx, sz) < 8) continue;
+      const slag = makeBox(2 + Math.random()*1.5, 0.06, 2 + Math.random()*1.5, new THREE.MeshBasicMaterial({ color: 0xff5020 }));
+      slag.position.set(sx, 0.04, sz);
+      slag.rotation.y = Math.random() * Math.PI;
+      scene.add(slag);
+    }
+  }
+  if (params.feature === 'container_port') {
+    // CONTAINER PORT — stacks of colored containers (3-5 high) + 2 gantry cranes
+    const colorOptions = [0xc8261c, 0xe6b840, 0x4d7eb8, 0x6a6a6a, 0x357a4a, 0xa8a8a8];
+    for (let i = 0; i < 18; i++) {
+      let sx, sz, ok = false, tries = 0;
+      while (!ok && tries < 25) {
+        sx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+        sz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+        if (Math.hypot(sx, sz) < 10) { tries++; continue; }
+        if (!checkCollisionAt(sx, sz, 4)) ok = true;
+        tries++;
+      }
+      if (!ok) continue;
+      const yaw = Math.random() < 0.5 ? 0 : Math.PI/2;
+      const stackCount = 3 + Math.floor(Math.random() * 3); // 3-5 high
+      const cw = 5.4, ch = 2.4, cd = 2.4;
+      for (let s = 0; s < stackCount; s++) {
+        const offset = (s > 0) ? (Math.random() - 0.5) * 0.7 : 0;
+        const mat = new THREE.MeshLambertMaterial({ color: colorOptions[Math.floor(Math.random() * colorOptions.length)] });
+        const cont = makeBox(cw, ch, cd, mat);
+        cont.position.set(sx + offset, ch * (s + 0.5), sz);
+        cont.rotation.y = yaw; scene.add(cont);
+        const frame = makeBox(cw + 0.05, 0.18, cd + 0.05, M.black);
+        frame.position.set(sx + offset, ch * (s + 1) - 0.08, sz);
+        frame.rotation.y = yaw; scene.add(frame);
+      }
+      const cosY = Math.abs(Math.cos(yaw)), sinY = Math.abs(Math.sin(yaw));
+      buildings.push({
+        x: sx - (cw * cosY + cd * sinY) / 2,
+        z: sz - (cw * sinY + cd * cosY) / 2,
+        w: cw * cosY + cd * sinY,
+        d: cw * sinY + cd * cosY,
+        h: ch * stackCount,
+      });
+    }
+    // Gantry cranes (large straddle structures)
+    for (let i = 0; i < 2; i++) {
+      const cgx = (Math.random() - 0.5) * 80;
+      const cgz = (Math.random() - 0.5) * 80;
+      const legH = 18, legSpread = 8;
+      for (const [px, pz] of [[-legSpread, -legSpread], [legSpread, -legSpread], [-legSpread, legSpread], [legSpread, legSpread]]) {
+        const leg = makeBox(0.6, legH, 0.6, M.buildDark);
+        leg.position.set(cgx + px, legH/2, cgz + pz); scene.add(leg);
+        buildings.push({ x: cgx + px - 0.3, z: cgz + pz - 0.3, w: 0.6, d: 0.6, h: legH });
+      }
+      const beam = makeBox(legSpread * 2 + 1, 0.7, 1.4, M.buildMid);
+      beam.position.set(cgx, legH, cgz); scene.add(beam);
+      const beamStripe = makeBox(legSpread * 2 + 1.05, 0.18, 1.45, M.barrelStripe);
+      beamStripe.position.set(cgx, legH + 0.35, cgz); scene.add(beamStripe);
+      const arm = makeBox(0.45, 0.45, legSpread * 2.5, M.barrelStripe);
+      arm.position.set(cgx, legH - 1.2, cgz); scene.add(arm);
+      const hook = makeBox(0.5, 1.2, 0.5, M.black);
+      hook.position.set(cgx, legH - 5, cgz - legSpread); scene.add(hook);
+    }
+  }
+  if (params.feature === 'apartment') {
+    // APARTMENT — very tall residential blocks with balconies
+    for (let i = 0; i < 14; i++) {
+      let sx, sz, ok = false, tries = 0;
+      while (!ok && tries < 25) {
+        sx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+        sz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+        if (Math.hypot(sx, sz) < 14) { tries++; continue; }
+        if (!checkCollisionAt(sx, sz, 4)) ok = true;
+        tries++;
+      }
+      if (!ok) continue;
+      const bw = 5 + Math.random() * 3;
+      const bd = 4 + Math.random() * 2;
+      const bh = 18 + Math.random() * 12;
+      const block = makeBox(bw, bh, bd, M.buildLight);
+      block.position.set(sx, bh/2, sz); scene.add(block);
+      buildings.push({ x: sx - bw/2, z: sz - bd/2, w: bw, d: bd, h: bh });
+      // Window grid (lots of small dark squares on each face)
+      const floors = Math.floor(bh / 2.5);
+      for (let f = 1; f < floors; f++) {
+        const wy = f * 2.5;
+        for (let wx = -bw/2 + 0.6; wx < bw/2 - 0.4; wx += 1.2) {
+          const w = makeBox(0.5, 0.6, 0.05, M.buildDark);
+          w.position.set(sx + wx, wy, sz + bd/2 + 0.04); scene.add(w);
+          const w2 = makeBox(0.5, 0.6, 0.05, M.buildDark);
+          w2.position.set(sx + wx, wy, sz - bd/2 - 0.04); scene.add(w2);
+        }
+        for (let wz = -bd/2 + 0.6; wz < bd/2 - 0.4; wz += 1.2) {
+          const w = makeBox(0.05, 0.6, 0.5, M.buildDark);
+          w.position.set(sx - bw/2 - 0.04, wy, sz + wz); scene.add(w);
+          const w2 = makeBox(0.05, 0.6, 0.5, M.buildDark);
+          w2.position.set(sx + bw/2 + 0.04, wy, sz + wz); scene.add(w2);
+        }
+        // Random balcony (jutting out)
+        if (Math.random() < 0.3) {
+          const side = Math.floor(Math.random() * 4);
+          const balW = 1.5, balD = 0.7, balH = 0.15;
+          const bal = makeBox(balW, balH, balD, M.buildDark);
+          let bx = sx, bz = sz;
+          if (side === 0) bz = sz + bd/2 + balD/2;
+          else if (side === 1) bz = sz - bd/2 - balD/2;
+          else if (side === 2) { bx = sx + bw/2 + balD/2; bal.rotation.y = Math.PI/2; }
+          else { bx = sx - bw/2 - balD/2; bal.rotation.y = Math.PI/2; }
+          bal.position.set(bx, wy - 0.2, bz); scene.add(bal);
+          // Balcony rail
+          const balRail = makeBox(balW, 0.4, 0.06, M.black);
+          if (side >= 2) balRail.rotation.y = Math.PI/2;
+          balRail.position.copy(bal.position);
+          balRail.position.y += 0.3;
+          if (side === 0) balRail.position.z += balD/2 - 0.03;
+          else if (side === 1) balRail.position.z -= balD/2 - 0.03;
+          else if (side === 2) balRail.position.x += balD/2 - 0.03;
+          else balRail.position.x -= balD/2 - 0.03;
+          scene.add(balRail);
+        }
+      }
+      // Roof access cube
+      const access = makeBox(1.6, 1.6, 1.6, M.buildDark);
+      access.position.set(sx + bw*0.2, bh + 0.8, sz + bd*0.2); scene.add(access);
+      buildings.push({ x: sx + bw*0.2 - 0.8, z: sz + bd*0.2 - 0.8, w: 1.6, d: 1.6, h: bh + 1.6 });
+      // Antenna
+      const ant = makeBox(0.15, 3, 0.15, M.black);
+      ant.position.set(sx, bh + 1.5, sz); scene.add(ant);
+    }
+  }
+  if (params.feature === 'junkyard') {
+    // JUNKYARD — piles of robot parts + crusher towers + scorched ground
+    for (let i = 0; i < 22; i++) {
+      let sx, sz, ok = false, tries = 0;
+      while (!ok && tries < 20) {
+        sx = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+        sz = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+        if (Math.hypot(sx, sz) < 10) { tries++; continue; }
+        if (!checkCollisionAt(sx, sz, 2)) ok = true;
+        tries++;
+      }
+      if (!ok) continue;
+      // Pile of robot parts
+      const partCount = 7 + Math.floor(Math.random() * 7);
+      for (let j = 0; j < partCount; j++) {
+        const ang = Math.random() * Math.PI * 2;
+        const r = Math.random() * 2.0;
+        const ppx = sx + Math.cos(ang) * r;
+        const ppz = sz + Math.sin(ang) * r;
+        const partType = Math.random();
+        let part;
+        if (partType < 0.4) {
+          const ps = 0.3 + Math.random() * 0.6;
+          const matChoice = Math.random();
+          const mat = matChoice < 0.3 ? M.red : (matChoice < 0.55 ? M.buildDark : (matChoice < 0.8 ? M.buildMid : M.barrelStripe));
+          part = makeBox(ps, ps, ps, mat);
+          part.position.set(ppx, ps/2 + Math.random() * 0.3, ppz);
+        } else if (partType < 0.7) {
+          part = makeBox(0.15, 0.7, 0.15, M.buildDark);
+          part.position.set(ppx, 0.3 + Math.random() * 0.3, ppz);
+          part.rotation.y = Math.random() * Math.PI;
+          part.rotation.x = (Math.random() - 0.5) * 0.6;
+        } else {
+          part = makeBox(0.7, 0.08, 0.7, M.buildLight);
+          part.position.set(ppx, 0.06 + Math.random() * 0.4, ppz);
+          part.rotation.y = Math.random() * Math.PI;
+          part.rotation.z = (Math.random() - 0.5) * 0.5;
+        }
+        scene.add(part);
+      }
+      // Glowing red eye in pile
+      if (Math.random() < 0.6) {
+        const eye = makeBox(0.18, 0.08, 0.04, M.redBright);
+        eye.position.set(sx + (Math.random()-0.5)*0.7, 0.4 + Math.random()*0.7, sz + (Math.random()-0.5)*0.7);
+        eye.rotation.y = Math.random() * Math.PI * 2;
+        scene.add(eye);
+      }
+      // Scorch patch
+      const scorch = makeBox(3, 0.04, 3, new THREE.MeshLambertMaterial({ color: 0x0a0a0a }));
+      scorch.position.set(sx, 0.018, sz); scene.add(scorch);
+    }
+    // Crusher towers (industrial demolition)
+    for (let i = 0; i < 4; i++) {
+      let sx, sz, ok = false, tries = 0;
+      while (!ok && tries < 20) {
+        sx = (Math.random() - 0.5) * WORLD_SIZE * 1.2;
+        sz = (Math.random() - 0.5) * WORLD_SIZE * 1.2;
+        if (Math.hypot(sx, sz) < 14) { tries++; continue; }
+        if (!checkCollisionAt(sx, sz, 3)) ok = true;
+        tries++;
+      }
+      if (!ok) continue;
+      const cH = 11;
+      const tower = makeBox(2.6, cH, 2.6, M.buildDark);
+      tower.position.set(sx, cH/2, sz); scene.add(tower);
+      const top = makeBox(2.7, 0.4, 2.7, M.barrelStripe);
+      top.position.set(sx, cH, sz); scene.add(top);
+      const arm = makeBox(0.6, 0.6, 4.5, M.barrelStripe);
+      arm.position.set(sx, cH - 1.5, sz - 2.3); scene.add(arm);
+      const hook = makeBox(1.2, 1.7, 1.2, M.black);
+      hook.position.set(sx, cH - 4, sz - 4.4); scene.add(hook);
+      // Hook chain
+      const chain = makeBox(0.1, 1.5, 0.1, M.black);
+      chain.position.set(sx, cH - 2.7, sz - 4.4); scene.add(chain);
+      buildings.push({ x: sx - 1.3, z: sz - 1.3, w: 2.6, d: 2.6, h: cH });
+    }
+  }
+  if (params.feature === 'subway_hub') {
+    // SUBWAY HUB — station letter signs + concrete pillars + red emergency lights + benches
+    for (let i = 0; i < 28; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(sx, sz) < 6) continue;
+      if (checkCollisionAt(sx, sz, 0.8)) continue;
+      const sh = 5 + Math.random() * 4;
+      const pillar = makeBox(1.2, sh, 1.2, M.buildDark);
+      pillar.position.set(sx, sh/2, sz); scene.add(pillar);
+      buildings.push({ x: sx - 0.6, z: sz - 0.6, w: 1.2, d: 1.2, h: sh });
+      // Red station letter on side (e.g. "A")
+      if (Math.random() < 0.35) {
+        const side = Math.floor(Math.random() * 4);
+        const sign = makeBox(0.7, 0.7, 0.05, M.barrelStripe);
+        const signInner = makeBox(0.55, 0.55, 0.06, M.red);
+        const signY = sh * 0.7;
+        if (side === 0) { sign.position.set(sx, signY, sz + 0.62); signInner.position.set(sx, signY, sz + 0.65); }
+        else if (side === 1) { sign.position.set(sx, signY, sz - 0.62); signInner.position.set(sx, signY, sz - 0.65); }
+        else if (side === 2) { sign.position.set(sx + 0.62, signY, sz); sign.rotation.y = Math.PI/2; signInner.position.set(sx + 0.65, signY, sz); signInner.rotation.y = Math.PI/2; }
+        else { sign.position.set(sx - 0.62, signY, sz); sign.rotation.y = Math.PI/2; signInner.position.set(sx - 0.65, signY, sz); signInner.rotation.y = Math.PI/2; }
+        scene.add(sign); scene.add(signInner);
+      }
+    }
+    // Suspended ceiling lights (long flat fluorescent panels)
+    for (let i = 0; i < 12; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.2;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.2;
+      if (Math.hypot(sx, sz) < 8) continue;
+      const panel = makeBox(2.0, 0.2, 0.4, new THREE.MeshBasicMaterial({ color: 0xfff0d0 }));
+      panel.position.set(sx, 4 + Math.random() * 2, sz);
+      panel.rotation.y = Math.random() * Math.PI;
+      scene.add(panel);
+    }
+    // Red emergency floor strips (long thin rectangles)
+    for (let i = 0; i < 16; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(sx, sz) < 4) continue;
+      const strip = makeBox(2.5, 0.04, 0.15, M.redBright);
+      strip.position.set(sx, 0.025, sz);
+      strip.rotation.y = Math.random() * Math.PI;
+      scene.add(strip);
+    }
+    // Subway benches (long flat dark boxes)
+    for (let i = 0; i < 10; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
+      if (Math.hypot(sx, sz) < 6) continue;
+      if (checkCollisionAt(sx, sz, 1)) continue;
+      const bench = makeBox(2.2, 0.5, 0.6, M.buildMid);
+      bench.position.set(sx, 0.25, sz);
+      bench.rotation.y = Math.random() * Math.PI;
+      scene.add(bench);
+      // Backrest
+      const back = makeBox(2.2, 0.5, 0.1, M.buildDark);
+      back.position.copy(bench.position);
+      back.position.y = 0.65;
+      back.position.z -= 0.25;
+      back.rotation.y = bench.rotation.y;
+      scene.add(back);
+    }
+  }
+  if (params.feature === 'sewers') {
+    // SEWERS — large pipes at various heights + drainage channels + green slime puddles
+    for (let i = 0; i < 18; i++) {
+      let sx, sz, ok = false, tries = 0, yaw = 0;
+      while (!ok && tries < 25) {
+        sx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+        sz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+        yaw = Math.random() * Math.PI;
+        ok = !checkCollisionAt(sx, sz, 1.5) && Math.hypot(sx, sz) >= 8;
+        tries++;
+      }
+      if (!ok) continue;
+      const pLen = 6 + Math.random() * 8;
+      const pR = 0.6 + Math.random() * 0.5;
+      const pY = 1.2 + Math.random() * 3;
+      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(pR, pR, pLen, 8), M.buildDark);
+      pipe.position.set(sx, pY, sz);
+      pipe.rotation.z = Math.PI/2;
+      pipe.rotation.y = yaw;
+      scene.add(pipe);
+      // Pipe joint flanges at both ends
+      const cs = Math.cos(yaw), sn = Math.sin(yaw);
+      for (const sign of [-1, 1]) {
+        const fx = sx + sn * (pLen/2) * sign;
+        const fz = sz + cs * (pLen/2) * sign;
+        const flange = new THREE.Mesh(new THREE.CylinderGeometry(pR + 0.2, pR + 0.2, 0.2, 8), M.black);
+        flange.position.set(fx, pY, fz);
+        flange.rotation.z = Math.PI/2;
+        flange.rotation.y = yaw;
+        scene.add(flange);
+        // Vertical leg if low pipe
+        if (pY < 2.5) {
+          const leg = makeBox(0.25, pY, 0.25, M.black);
+          leg.position.set(fx, pY/2, fz); scene.add(leg);
+          buildings.push({ x: fx - 0.12, z: fz - 0.12, w: 0.25, d: 0.25, h: pY });
+        }
+      }
+      // Add pipe collision (approx box)
+      const aabbW = Math.abs(pLen * sn) + pR * 2 * Math.abs(cs);
+      const aabbD = Math.abs(pLen * cs) + pR * 2 * Math.abs(sn);
+      buildings.push({ x: sx - aabbW/2, z: sz - aabbD/2, w: aabbW, d: aabbD, h: pY + pR });
+    }
+    // Drainage channels (long thin recessed strips with green slime)
+    for (let i = 0; i < 12; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(sx, sz) < 6) continue;
+      const cl = 4 + Math.random() * 4;
+      const yaw = Math.random() * Math.PI;
+      const channel = makeBox(0.8, 0.04, cl, new THREE.MeshLambertMaterial({ color: 0x081a0a }));
+      channel.position.set(sx, 0.022, sz);
+      channel.rotation.y = yaw; scene.add(channel);
+      const slime = makeBox(0.6, 0.06, cl - 0.4, new THREE.MeshBasicMaterial({ color: 0x33aa55 }));
+      slime.position.set(sx, 0.04, sz);
+      slime.rotation.y = yaw; scene.add(slime);
+    }
+    // Manhole covers
+    for (let i = 0; i < 8; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
+      if (Math.hypot(sx, sz) < 6) continue;
+      const cover = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.06, 12), M.buildDark);
+      cover.position.set(sx, 0.03, sz); scene.add(cover);
+      // Center cross marking
+      const cross1 = makeBox(0.6, 0.04, 0.08, M.black);
+      cross1.position.set(sx, 0.07, sz); scene.add(cross1);
+      const cross2 = makeBox(0.08, 0.04, 0.6, M.black);
+      cross2.position.set(sx, 0.07, sz); scene.add(cross2);
+    }
+    // Steam vents (rising green vapor)
+    for (let i = 0; i < 6; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
+      if (Math.hypot(sx, sz) < 8) continue;
+      for (let s = 0; s < 4; s++) {
+        const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.3 + s*0.2, 0.2 + s*0.2, 1.0, 8),
+          new THREE.MeshLambertMaterial({ color: 0x40a060, transparent: true, opacity: 0.3 - s*0.06 }));
+        seg.position.set(sx + (Math.random()-0.5)*0.3, 0.5 + s*1.0, sz + (Math.random()-0.5)*0.3);
+        scene.add(seg);
+      }
     }
   }
   if (params.feature === 'rubble') {
@@ -3311,6 +3843,125 @@ function spawnBlastWalls(count) {
       cursorX += Math.cos(yawSeg) * len;
       cursorZ -= Math.sin(yawSeg) * len;
     }
+  }
+}
+
+function spawnWatchtowers(count) {
+  // Multi-deck observation scaffold — three platforms reachable by external ramp
+  for (let n = 0; n < count; n++) {
+    let cx, cz, ok = false, tries = 0;
+    while (!ok && tries < 30) {
+      cx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      cz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(cx, cz) < 18) { tries++; continue; }
+      if (!checkCollisionAt(cx, cz, 4)) ok = true;
+      tries++;
+    }
+    if (!ok) continue;
+    const totalH = 12;
+    // 4 corner posts
+    for (const [px, pz] of [[-1.8,-1.8],[1.8,-1.8],[-1.8,1.8],[1.8,1.8]]) {
+      const post = makeBox(0.28, totalH, 0.28, M.black);
+      post.position.set(cx + px, totalH/2, cz + pz);
+      scene.add(post);
+    }
+    // X braces on each face at mid heights
+    for (const fy of [3, 7, 11]) {
+      for (const yawSeg of [0, Math.PI/2, Math.PI, -Math.PI/2]) {
+        const cs = Math.cos(yawSeg), sn = Math.sin(yawSeg);
+        const brace = makeBox(0.08, 0.08, 5, M.black);
+        brace.position.set(cx + sn * 1.8, fy, cz + cs * 1.8);
+        brace.rotation.y = yawSeg;
+        brace.rotation.x = 0.7;
+        scene.add(brace);
+      }
+    }
+    // 3 deck platforms at 4 / 8 / 12 m
+    for (const fy of [4, 8, 12]) {
+      const deck = makeBox(4, 0.22, 4, M.buildLight);
+      deck.position.set(cx, fy, cz);
+      scene.add(deck);
+      buildings.push({ x: cx - 2, z: cz - 2, w: 4, d: 4, h: fy + 0.11 });
+      // Yellow safety stripes around perimeter
+      for (const [ex, ez, sw, sd] of [[0,-2,4,0.18],[0,2,4,0.18],[-2,0,0.18,4],[2,0,0.18,4]]) {
+        const stripe = makeBox(sw, 0.07, sd, M.barrelStripe);
+        stripe.position.set(cx + ex, fy + 0.16, cz + ez);
+        scene.add(stripe);
+      }
+      // Rails on three sides (south side left open for stair access)
+      for (const [rx, rz, rw, rd] of [[0,2,4,0.1],[-2,0,0.1,4],[2,0,0.1,4]]) {
+        const rail = makeBox(rw, 0.7, rd, M.black);
+        rail.position.set(cx + rx, fy + 0.55, cz + rz);
+        scene.add(rail);
+      }
+    }
+    // Stairs to first deck on the south side
+    for (let s = 0; s < 8; s++) {
+      const sh = (s + 1) * 0.55;
+      const sx = cx;
+      const sz = cz - 2.6 - s * 0.7;
+      const step = makeBox(1.6, sh, 0.7, M.buildLight);
+      step.position.set(sx, sh/2, sz);
+      scene.add(step);
+      buildings.push({ x: sx - 0.8, z: sz - 0.35, w: 1.6, d: 0.7, h: sh });
+    }
+    // Top beacon + antenna
+    const beacon = makeBox(0.55, 0.55, 0.55, M.redBright);
+    beacon.position.set(cx, totalH + 0.55, cz);
+    scene.add(beacon);
+    const ant = makeBox(0.16, 3, 0.16, M.black);
+    ant.position.set(cx, totalH + 2.5, cz);
+    scene.add(ant);
+  }
+}
+
+function spawnSkyCatwalks(count) {
+  // Connect random tall building tops with catwalks (high level traversal)
+  const tall = buildings.filter(b => b.h >= 8 && b.h <= 26);
+  if (tall.length < 2) return;
+  let placed = 0;
+  for (let i = 0; i < count * 3 && placed < count; i++) {
+    const a = tall[Math.floor(Math.random() * tall.length)];
+    const b = tall[Math.floor(Math.random() * tall.length)];
+    if (a === b) continue;
+    const ax = a.x + a.w/2, az = a.z + a.d/2;
+    const bx = b.x + b.w/2, bz = b.z + b.d/2;
+    const dist = Math.hypot(bx - ax, bz - az);
+    if (dist < 6 || dist > 24) continue;
+    const height = Math.min(a.h, b.h) - 0.3;
+    if (height < 5) continue;
+    const dx = bx - ax, dz = bz - az;
+    const yaw = Math.atan2(dx, dz);
+    const cs = Math.cos(yaw), sn = Math.sin(yaw);
+    const midX = (ax + bx) / 2;
+    const midZ = (az + bz) / 2;
+    // Plank
+    const plank = makeBox(1.5, 0.2, dist, M.buildDark);
+    plank.position.set(midX, height, midZ);
+    plank.rotation.y = yaw;
+    scene.add(plank);
+    // Center yellow line
+    const line = makeBox(0.2, 0.05, dist - 0.5, M.barrelStripe);
+    line.position.set(midX, height + 0.13, midZ);
+    line.rotation.y = yaw;
+    scene.add(line);
+    // Side rails
+    for (const side of [-1, 1]) {
+      const rail = makeBox(0.08, 0.7, dist, M.black);
+      rail.position.set(midX + sn * side * 0.7, height + 0.55, midZ + cs * side * 0.7);
+      rail.rotation.y = yaw;
+      scene.add(rail);
+    }
+    // Add as walkable building (AABB approximation)
+    const aabbW = Math.abs(dist * sn) + 1.5 * Math.abs(cs);
+    const aabbD = Math.abs(dist * cs) + 1.5 * Math.abs(sn);
+    buildings.push({
+      x: midX - aabbW/2,
+      z: midZ - aabbD/2,
+      w: aabbW, d: aabbD,
+      h: height + 0.2,
+    });
+    placed++;
   }
 }
 
