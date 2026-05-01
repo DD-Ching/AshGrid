@@ -2916,7 +2916,7 @@ function renderMinimap() {
   // Player + view cone
   mmCtx.save();
   mmCtx.translate(px, py);
-  mmCtx.rotate(player.yaw);
+  mmCtx.rotate(-player.yaw);
   mmCtx.fillStyle = 'rgba(255,255,255,0.15)';
   mmCtx.beginPath();
   mmCtx.moveTo(0, 0);
