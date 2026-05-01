@@ -474,6 +474,27 @@ canvas#game { display: block; position: fixed; inset: 0; }
   border-color: var(--red-bright);
 }
 .pause-btn.primary:hover { background: var(--red-bright); }
+.pause-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 8px 24px;
+  margin: 18px 0 4px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.pause-ctrl {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 11px; letter-spacing: 1px;
+}
+.pause-ctrl-key {
+  font-family: "JetBrains Mono", monospace;
+  background: var(--bg); border: 1px solid var(--line-bright);
+  padding: 4px 8px; min-width: 50px; text-align: center;
+  font-size: 10px; font-weight: 700; color: var(--text);
+}
+.pause-ctrl-label { color: var(--text); }
 .pause-tip-title {
   font-size: 16px; letter-spacing: 6px; font-weight: 800;
   color: var(--text);
@@ -861,6 +882,20 @@ body.trackpad-mode .cursor-soft { display: none !important; }
 <div class="pause-tip" id="pauseTip">
   <div class="pause-tip-title">已暂停 · PAUSED</div>
   <div class="pause-tip-sub">点击下方按钮或屏幕继续</div>
+  <div class="pause-controls">
+    <div class="pause-ctrl"><span class="pause-ctrl-key">WASD</span><span class="pause-ctrl-label">移动</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">MOUSE</span><span class="pause-ctrl-label">视角 / 瞄准</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">LMB</span><span class="pause-ctrl-label">射击</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">SHIFT</span><span class="pause-ctrl-label">冲刺</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">SPACE</span><span class="pause-ctrl-label">跳跃 / 上升</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">CTRL</span><span class="pause-ctrl-label">下降 (无人机)</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">R</span><span class="pause-ctrl-label">装填</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">V</span><span class="pause-ctrl-label">切换 FPS / TPP</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">Q</span><span class="pause-ctrl-label">侦察无人机</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">E</span><span class="pause-ctrl-label">FPV 自杀无人机</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">TAB</span><span class="pause-ctrl-label">战术地图</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">↑↓←→</span><span class="pause-ctrl-label">触摸板模式视角</span></div>
+  </div>
   <div class="pause-actions">
     <button class="pause-btn primary" id="resumeBtn">继续 RESUME</button>
     <button class="pause-btn" id="pauseSettingsBtn">设置</button>
@@ -964,7 +999,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setClearColor(0x202020);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x202020, 50, 220);
+scene.fog = new THREE.Fog(0x2a1f1d, 60, 320);
 scene.background = new THREE.Color(0x202020);
 
 // Cameras
@@ -1411,17 +1446,167 @@ function generateWorld() {
     scene.add(c);
   }
 
-  // Far skyline monoliths
-  for (let i = 0; i < 16; i++) {
-    const angle = (i / 16) * Math.PI * 2;
-    const r = WORLD_SIZE + 35 + Math.random()*25;
+  // Far skyline monoliths (denser, more variety)
+  for (let i = 0; i < 36; i++) {
+    const angle = (i / 36) * Math.PI * 2 + (Math.random()-0.5)*0.1;
+    const r = WORLD_SIZE + 30 + Math.random()*60;
     const x = Math.cos(angle)*r, z = Math.sin(angle)*r;
-    const h = 30 + Math.random()*60;
-    const w = 14 + Math.random()*18;
-    const m = makeBox(w, h, w, M.buildDark);
+    const h = 25 + Math.random()*90;
+    const w = 10 + Math.random()*22;
+    const d = 10 + Math.random()*22;
+    const tone = Math.random();
+    const mat = tone < 0.6 ? M.buildDark : (tone < 0.85 ? M.buildMid : M.groundLight);
+    const m = makeBox(w, h, d, mat);
     m.position.set(x, h/2, z);
     scene.add(m);
+    // Step on top
+    if (Math.random() < 0.5) {
+      const sw = w * 0.4, sd = d * 0.4, sh = 4 + Math.random()*8;
+      const top = makeBox(sw, sh, sd, mat);
+      top.position.set(x + (Math.random()-0.5)*w*0.2, h + sh/2, z + (Math.random()-0.5)*d*0.2);
+      scene.add(top);
+    }
+    // Antenna
+    if (Math.random() < 0.4) {
+      const ant = makeBox(0.4, 6 + Math.random()*8, 0.4, M.black);
+      ant.position.set(x, h + ant.geometry.parameters.height/2, z);
+      scene.add(ant);
+    }
+    // Red beacon
+    if (Math.random() < 0.55) {
+      const beacon = makeBox(0.8, 0.8, 0.8, M.redBright);
+      beacon.position.set(x + (Math.random()-0.5)*w*0.3, h + 0.5, z + (Math.random()-0.5)*d*0.3);
+      scene.add(beacon);
+    }
+    // Glowing windows (red panel)
+    if (Math.random() < 0.4) {
+      const panel = makeBox(w*0.3, h*0.15, 0.3, M.redBright);
+      panel.position.set(x, h*0.6, z + d/2 + 0.2);
+      scene.add(panel);
+    }
   }
+
+  // Hovering ambient drones (cosmetic, distant)
+  for (let i = 0; i < 6; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r = WORLD_SIZE * 0.7 + Math.random() * 30;
+    const x = Math.cos(angle)*r;
+    const z = Math.sin(angle)*r;
+    const y = 25 + Math.random() * 30;
+    const ad = makeBox(1.4, 0.4, 1.4, M.buildDark);
+    ad.position.set(x, y, z);
+    scene.add(ad);
+    const led = makeBox(0.3, 0.15, 0.3, M.redBright);
+    led.position.set(x, y - 0.2, z);
+    scene.add(led);
+    // Faint connection lines (signal)
+    const lineGeom = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x, y, z), new THREE.Vector3(x + (Math.random()-0.5)*40, y - 5, z + (Math.random()-0.5)*40)
+    ]);
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x4d7eb8, transparent: true, opacity: 0.25 });
+    scene.add(new THREE.Line(lineGeom, lineMat));
+  }
+
+  // Smoke / signal columns rising in the distance
+  for (let i = 0; i < 8; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r = WORLD_SIZE * 0.5 + Math.random() * WORLD_SIZE * 0.4;
+    const x = Math.cos(angle)*r, z = Math.sin(angle)*r;
+    const colHeight = 30 + Math.random()*50;
+    const segs = 6 + Math.floor(Math.random()*5);
+    for (let s = 0; s < segs; s++) {
+      const sy = (s / segs) * colHeight + Math.random()*2;
+      const sw = 0.6 + (s/segs) * 4.5 + Math.random()*1.5;
+      const seg = makeBox(sw, 2.5, sw, M.buildDark);
+      seg.material = M.buildDark.clone();
+      seg.material.transparent = true;
+      seg.material.opacity = 0.55 - (s/segs)*0.4;
+      seg.position.set(x + (Math.random()-0.5)*sw*0.5, sy, z + (Math.random()-0.5)*sw*0.5);
+      scene.add(seg);
+    }
+  }
+
+  // Vertical light shafts (search beams)
+  for (let i = 0; i < 4; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r = WORLD_SIZE * 0.6 + Math.random() * 40;
+    const x = Math.cos(angle)*r, z = Math.sin(angle)*r;
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0xc8261c, transparent: true, opacity: 0.18 });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 2.5, 80, 8, 1, true), beamMat);
+    beam.position.set(x, 40, z);
+    beam.rotation.z = (Math.random()-0.5)*0.2;
+    scene.add(beam);
+  }
+
+  // Tracer streaks in the sky (faint distant combat)
+  for (let i = 0; i < 14; i++) {
+    const x = (Math.random()-0.5) * WORLD_SIZE * 1.4;
+    const z = (Math.random()-0.5) * WORLD_SIZE * 1.4;
+    if (Math.hypot(x, z) < WORLD_SIZE * 0.5) continue;
+    const y = 18 + Math.random() * 28;
+    const ang = Math.random() * Math.PI * 2;
+    const len = 4 + Math.random()*7;
+    const streakGeom = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x, y, z),
+      new THREE.Vector3(x + Math.cos(ang)*len, y - 0.5 - Math.random()*1.5, z + Math.sin(ang)*len),
+    ]);
+    const streakMat = new THREE.LineBasicMaterial({ color: 0xffd44d, transparent: true, opacity: 0.6 });
+    scene.add(new THREE.Line(streakGeom, streakMat));
+  }
+
+  // Ground debris (low scatter)
+  for (let i = 0; i < 60; i++) {
+    const x = (Math.random()-0.5) * WORLD_SIZE * 1.6;
+    const z = (Math.random()-0.5) * WORLD_SIZE * 1.6;
+    if (Math.hypot(x, z) < 6) continue;
+    const w = 0.2 + Math.random()*0.6;
+    const h = 0.1 + Math.random()*0.3;
+    const d = 0.2 + Math.random()*0.6;
+    const c = makeBox(w, h, d, Math.random() < 0.05 ? M.red : M.buildDark);
+    c.position.set(x, h/2, z);
+    c.rotation.y = Math.random() * Math.PI;
+    scene.add(c);
+  }
+
+  // Sky dome (subtle gradient via large inverted box with vertex tint)
+  const skyGeom = new THREE.SphereGeometry(WORLD_SIZE * 3, 32, 16);
+  const skyMat = new THREE.ShaderMaterial({
+    uniforms: {
+      topColor:    { value: new THREE.Color(0x141414) },
+      bottomColor: { value: new THREE.Color(0x3a2422) },
+      offset:      { value: 30 },
+      exponent:    { value: 0.6 },
+    },
+    vertexShader: `varying vec3 vWorldPosition;
+void main(){
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vWorldPosition = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`,
+    fragmentShader: `uniform vec3 topColor;
+uniform vec3 bottomColor;
+uniform float offset;
+uniform float exponent;
+varying vec3 vWorldPosition;
+void main(){
+  float h = normalize(vWorldPosition + vec3(0., offset, 0.)).y;
+  gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+}`,
+    side: THREE.BackSide,
+  });
+  const sky = new THREE.Mesh(skyGeom, skyMat);
+  scene.add(sky);
+
+  // Distant red sun
+  const sunMat = new THREE.MeshBasicMaterial({ color: 0xc8261c });
+  const sunGeo = new THREE.SphereGeometry(28, 24, 16);
+  const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+  sunMesh.position.set(WORLD_SIZE * 1.6, 90, -WORLD_SIZE * 1.4);
+  scene.add(sunMesh);
+  const sunGlowMat = new THREE.MeshBasicMaterial({ color: 0xc8261c, transparent: true, opacity: 0.18 });
+  const sunGlow = new THREE.Mesh(new THREE.SphereGeometry(50, 24, 16), sunGlowMat);
+  sunGlow.position.copy(sunMesh.position);
+  scene.add(sunGlow);
 
   // Player robot model
   player.group = makeRobot(M.robotBody, M.robotEye);
@@ -2117,7 +2302,7 @@ function updateFPVControl(dt) {
   // Forward direction
   const cy = Math.cos(fpv.yaw), sy = Math.sin(fpv.yaw);
   const cp = Math.cos(fpv.pitch), sp = Math.sin(fpv.pitch);
-  const dir = new THREE.Vector3(sy*cp, sp, cy*cp);
+  const dir = new THREE.Vector3(-sy*cp, sp, -cy*cp);
   fpv.pos.addScaledVector(dir, fpv.speed * dt);
 
   fpv.group.position.copy(fpv.pos);
@@ -2252,7 +2437,7 @@ function updateCameras(dt) {
   const tppOffsetSide = 0.7;
   const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw);
   // Want camera to be behind player (opposite forward)
-  const back = new THREE.Vector3(-sy, 0, -cy);
+  const back = new THREE.Vector3(sy, 0, cy);
   const right = new THREE.Vector3(cy, 0, -sy);
   const targetPos = new THREE.Vector3()
     .copy(player.pos)
@@ -2286,8 +2471,8 @@ function updateCameras(dt) {
   if (drone.active) {
     const dy = Math.cos(drone.yaw), dx = Math.sin(drone.yaw);
     const dronePos = drone.pos.clone();
-    droneCamera.position.set(dronePos.x - dx*4, dronePos.y + 2.5, dronePos.z - dy*4);
-    droneCamera.lookAt(dronePos.x + dx*4, dronePos.y - 1, dronePos.z + dy*4);
+    droneCamera.position.set(dronePos.x + dx*4, dronePos.y + 2.5, dronePos.z + dy*4);
+    droneCamera.lookAt(dronePos.x - dx*4, dronePos.y - 1, dronePos.z - dy*4);
   }
 
   // FPV camera (first person on FPV drone)
