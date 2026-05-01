@@ -590,6 +590,35 @@ canvas#game { display: block; position: fixed; inset: 0; }
 }
 .toast.on { opacity: 1; }
 
+.deploy-banner {
+  position: fixed; top: 28%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 8;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.deploy-banner.on { opacity: 1; }
+.deploy-wave {
+  font-size: 13px; letter-spacing: 8px;
+  color: var(--red); font-weight: 800;
+  margin-bottom: 6px;
+}
+.deploy-num {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 88px; font-weight: 900;
+  color: var(--text);
+  line-height: 1;
+  text-shadow: 0 0 16px rgba(0,0,0,0.6);
+}
+.deploy-num.go { color: var(--red); font-size: 56px; letter-spacing: 10px; }
+.deploy-status {
+  font-size: 11px; letter-spacing: 6px;
+  color: var(--text-dim); font-weight: 700;
+  margin-top: 8px;
+}
+
 body.trackpad-mode { cursor: default !important; }
 body.trackpad-mode .cursor-soft { display: none !important; }
 
@@ -886,6 +915,13 @@ body.trackpad-mode .cursor-soft { display: none !important; }
   </div>
 </div>
 
+<!-- Deploy banner (wave countdown) -->
+<div class="deploy-banner" id="deployBanner">
+  <div class="deploy-wave" id="deployWave">WAVE 1</div>
+  <div class="deploy-num" id="deployNum">5</div>
+  <div class="deploy-status" id="deployStatus">DEPLOYING · 准备</div>
+</div>
+
 <!-- Tactical overlay -->
 <div class="tac-overlay" id="tacOverlay">
   <div class="tac-corners"><div class="tl"></div><div class="tr"></div><div class="bl"></div><div class="br"></div></div>
@@ -1024,8 +1060,11 @@ const game = {
   message: '',
   messageTime: 0,
   waveBreakTimer: 0,
+  deployCountdown: 0,
+  engageBannerTimer: 0,
   paused: false,
   killFeed: [],
+  shake: 0,
 };
 
 const player = {
@@ -1033,20 +1072,24 @@ const player = {
   vel: new THREE.Vector3(),
   yaw: 0,
   pitch: 0,
-  hp: 100, maxHp: 100,
+  hp: 120, maxHp: 120,
   alive: true,
-  ammo: 30, maxAmmo: 30, reserve: 120,
-  reloading: false, reloadTime: 0,
+  ammo: 30, maxAmmo: 30, reserve: 180,
+  reloading: false, reloadTime: 0, reloadDuration: 1.2,
   fireCd: 0,
   walkPhase: 0,
   speed: 7,
-  sprintMul: 1.7,
+  sprintMul: 1.75,
   height: 1.75,
   radius: 0.45,
   group: null,
   vy: 0,
   onGround: true,
   recoil: 0,
+  damage: 26,
+  lastHitTime: 0,
+  regenDelay: 3.5,
+  regenRate: 9,
 };
 
 const drone = {
@@ -1332,6 +1375,27 @@ function generateWorld() {
     buildings.push({ x: x-w, z: z-d, w: w*2, d: d*2, h: wallH });
   }
 
+  // Spawn cover near origin (gives the player something to hide behind on deploy)
+  const spawnCovers = [
+    { x: 4.5, z: 5, w: 4, h: 1.6, d: 0.8 },
+    { x: -4, z: 3.5, w: 0.8, h: 1.8, d: 4 },
+    { x: -3.5, z: -6, w: 4, h: 1.5, d: 0.8 },
+    { x: 6, z: -3, w: 1.0, h: 2.0, d: 3 },
+    { x: 0, z: 8, w: 2.4, h: 1.2, d: 1.0 },
+    { x: -7, z: -1, w: 1.5, h: 1.8, d: 1.5 },
+  ];
+  for (const c of spawnCovers) {
+    const cover = makeBox(c.w, c.h, c.d, M.buildMid);
+    cover.position.set(c.x, c.h/2, c.z);
+    scene.add(cover);
+    buildings.push({ x: c.x - c.w/2, z: c.z - c.d/2, w: c.w, d: c.d, h: c.h });
+    if (Math.random() < 0.4) {
+      const accent = makeBox(0.4, 0.4, 0.05, M.red);
+      accent.position.set(c.x, c.h * 0.7, c.z + c.d/2 + 0.04);
+      scene.add(accent);
+    }
+  }
+
   // Decorative crates / cubes
   for (let i = 0; i < 100; i++) {
     const x = (Math.random()-0.5) * WORLD_SIZE * 1.7;
@@ -1498,7 +1562,7 @@ function spawnEnemy() {
   let x, z, ok = false, tries = 0;
   while (!ok && tries < 30) {
     const angle = Math.random() * Math.PI * 2;
-    const dist = 22 + Math.random() * 30;
+    const dist = 30 + Math.random() * 28;
     x = player.pos.x + Math.cos(angle)*dist;
     z = player.pos.z + Math.sin(angle)*dist;
     if (Math.abs(x) > WORLD_SIZE-2 || Math.abs(z) > WORLD_SIZE-2) { tries++; continue; }
@@ -1512,19 +1576,19 @@ function spawnEnemy() {
   enemies.push({
     pos: new THREE.Vector3(x, 0, z),
     yaw: 0,
-    hp: 60, maxHp: 60,
-    fireCd: 1 + Math.random(),
+    hp: 50, maxHp: 50,
+    fireCd: 1.5 + Math.random()*1.5,
     walkPhase: Math.random()*Math.PI*2,
     alive: true,
     group, type: 'soldier',
-    speed: 3.2 + Math.random()*0.6,
+    speed: 2.6 + Math.random()*0.4,
     radius: 0.45,
   });
 }
 
 function spawnEnemyDrone() {
   const angle = Math.random() * Math.PI * 2;
-  const dist = 28 + Math.random() * 25;
+  const dist = 32 + Math.random() * 24;
   const x = player.pos.x + Math.cos(angle)*dist;
   const z = player.pos.z + Math.sin(angle)*dist;
   const y = 6 + Math.random() * 5;
@@ -1535,12 +1599,12 @@ function spawnEnemyDrone() {
   enemies.push({
     pos: new THREE.Vector3(x, y, z),
     yaw: 0,
-    hp: 30, maxHp: 30,
-    fireCd: 1.5 + Math.random()*1.5,
+    hp: 22, maxHp: 22,
+    fireCd: 2.5 + Math.random()*2,
     hoverPhase: Math.random()*Math.PI*2,
     alive: true,
     group, type: 'drone',
-    speed: 5,
+    speed: 4,
     radius: 0.5,
   });
 }
@@ -1548,21 +1612,45 @@ function spawnEnemyDrone() {
 function startNextWave() {
   game.wave++;
   if (game.wave > 5) { endGame(true); return; }
-  showMessage(`第 ${game.wave} 波 · WAVE ${game.wave}`, 2);
-  const numSoldiers = 2 + game.wave * 2;
-  const numDrones = Math.floor(game.wave * 1.2);
-  for (let i = 0; i < numSoldiers; i++) spawnEnemy();
-  for (let i = 0; i < numDrones; i++) spawnEnemyDrone();
+  const waveDef = [null,
+    { s: 2, d: 0 },  // wave 1: gentle intro
+    { s: 3, d: 1 },  // wave 2: first drone
+    { s: 3, d: 2 },  // wave 3
+    { s: 4, d: 2 },  // wave 4
+    { s: 5, d: 3 },  // wave 5: finale
+  ];
+  const w = waveDef[game.wave] || { s: 5, d: 3 };
+  for (let i = 0; i < w.s; i++) spawnEnemy();
+  for (let i = 0; i < w.d; i++) spawnEnemyDrone();
+  game.deployCountdown = game.wave === 1 ? 5 : 2.5;
+  updateDeployBanner(true);
 }
 
 // ============ AI ============
 function updateEnemies(dt) {
+  // During deploy countdown, enemies stay idle (visible but not aggressive)
+  const idle = game.deployCountdown > 0;
   for (const e of enemies) {
     if (!e.alive) continue;
     const dx = player.pos.x - e.pos.x;
     const dz = player.pos.z - e.pos.z;
     const dist = Math.hypot(dx, dz);
     e.yaw = Math.atan2(dx, dz);
+
+    if (idle) {
+      // Idle pose
+      if (e.type === 'drone') {
+        e.hoverPhase = (e.hoverPhase || 0) + dt * 2;
+        const targetY = 5 + Math.sin(e.hoverPhase) * 0.4;
+        e.pos.y += (targetY - e.pos.y) * dt * 2;
+      }
+      e.group.position.copy(e.pos);
+      e.group.rotation.y = e.yaw;
+      if (e.type === 'drone' && e.group.userData.rotors) {
+        for (const r of e.group.userData.rotors) r.rotation.y += dt * 25;
+      }
+      continue;
+    }
 
     if (e.type === 'soldier') {
       if (dist > 12) {
@@ -1615,22 +1703,22 @@ function updateEnemies(dt) {
     e.fireCd -= dt;
     const eyePos = new THREE.Vector3(e.pos.x, e.pos.y + (e.type==='drone'?0:1.7), e.pos.z);
     const playerEye = new THREE.Vector3(player.pos.x, player.pos.y+1.2, player.pos.z);
-    if (e.fireCd <= 0 && dist < 35 && lineOfSight(eyePos, playerEye) && player.alive) {
+    if (e.fireCd <= 0 && dist < 30 && lineOfSight(eyePos, playerEye) && player.alive) {
       const dir = new THREE.Vector3().subVectors(playerEye, eyePos).normalize();
-      // Add small spread
-      dir.x += (Math.random()-0.5)*0.04;
-      dir.y += (Math.random()-0.5)*0.04;
-      dir.z += (Math.random()-0.5)*0.04;
+      // Larger spread (less accurate so player can dodge)
+      dir.x += (Math.random()-0.5)*0.12;
+      dir.y += (Math.random()-0.5)*0.10;
+      dir.z += (Math.random()-0.5)*0.12;
       dir.normalize();
       enemyBullets.push({
         pos: eyePos.clone(),
-        dir, speed: 35,
-        life: 1.5,
-        damage: e.type === 'drone' ? 6 : 9,
+        dir, speed: 26,
+        life: 1.6,
+        damage: e.type === 'drone' ? 4 : 6,
       });
-      e.fireCd = e.type === 'drone' ? 1.5 + Math.random() : 0.9 + Math.random()*0.6;
+      e.fireCd = e.type === 'drone' ? 2.5 + Math.random()*1.5 : 1.6 + Math.random()*1.0;
       // Visual tracer
-      const tracer = makeTracer(eyePos, dir, 35*1.5, 0xc8261c);
+      const tracer = makeTracer(eyePos, dir, 26*1.6, 0xc8261c);
       scene.add(tracer.line);
       tracer.life = 0.06;
       tracers.push(tracer);
@@ -1697,7 +1785,9 @@ function updateEnemyBullets(dt) {
       const dz = b.pos.z - player.pos.z;
       if (Math.hypot(dx, dy, dz) < player.radius + 0.4) {
         player.hp -= b.damage;
+        player.lastHitTime = player.regenDelay;
         flashHit();
+        game.shake = Math.max(game.shake, 0.4);
         hit = true;
         if (player.hp <= 0) {
           player.hp = 0; player.alive = false;
@@ -1762,6 +1852,12 @@ function updatePlayerMovement(dt) {
   if (player.fireCd > 0) player.fireCd -= dt;
   if (player.recoil > 0) player.recoil -= dt * 6;
 
+  // HP regen (after a few seconds without taking damage)
+  if (player.lastHitTime > 0) player.lastHitTime -= dt;
+  if (player.lastHitTime <= 0 && player.alive && player.hp < player.maxHp) {
+    player.hp = Math.min(player.maxHp, player.hp + player.regenRate * dt);
+  }
+
   // Reload
   if (player.reloading) {
     player.reloadTime -= dt;
@@ -1806,6 +1902,7 @@ function fire() {
   player.fireCd = 0.1;
   player.ammo--;
   player.recoil = 0.4;
+  game.shake = Math.max(game.shake, 0.06);
   // Raycast from camera forward
   const origin = activeCamera.getWorldPosition(new THREE.Vector3());
   const dir = new THREE.Vector3();
@@ -1887,7 +1984,7 @@ function fire() {
   makeMuzzleFlash(startPoint, dir);
 
   if (hitEnemy) {
-    hitEnemy.hp -= 18;
+    hitEnemy.hp -= player.damage;
     showHitMarker();
     if (hitEnemy.hp <= 0 && hitEnemy.alive) {
       hitEnemy.alive = false;
@@ -1942,7 +2039,7 @@ function weaponMuzzlePos() {
 function startReload() {
   if (player.reloading || player.ammo >= player.maxAmmo || player.reserve <= 0) return;
   player.reloading = true;
-  player.reloadTime = 1.6;
+  player.reloadTime = player.reloadDuration;
 }
 
 // ============ DRONE / FPV ============
@@ -2269,7 +2366,7 @@ function updateHUD() {
   // Reload
   if (player.reloading) {
     document.getElementById('reloadBar').style.display = 'block';
-    document.getElementById('reloadFill').style.width = `${(1 - player.reloadTime/1.6)*100}%`;
+    document.getElementById('reloadFill').style.width = `${(1 - player.reloadTime/player.reloadDuration)*100}%`;
   } else {
     document.getElementById('reloadBar').style.display = 'none';
   }
@@ -2399,6 +2496,33 @@ function showHitMarker() {
   m.classList.add('on');
   setTimeout(() => m.classList.remove('on'), 150);
 }
+function updateDeployBanner(forceShow) {
+  const el = document.getElementById('deployBanner');
+  if (!el) return;
+  if (game.deployCountdown > 0) {
+    document.getElementById('deployWave').textContent = `WAVE ${game.wave} · 第 ${game.wave} 波`;
+    document.getElementById('deployNum').textContent = Math.ceil(game.deployCountdown);
+    document.getElementById('deployNum').classList.remove('go');
+    document.getElementById('deployStatus').textContent = '部署中 · DEPLOYING';
+    el.classList.add('on');
+  } else if (game.engageBannerTimer > 0) {
+    document.getElementById('deployWave').textContent = `WAVE ${game.wave}`;
+    document.getElementById('deployNum').textContent = 'ENGAGE';
+    document.getElementById('deployNum').classList.add('go');
+    document.getElementById('deployStatus').textContent = '交战 · GO';
+    el.classList.add('on');
+  } else {
+    el.classList.remove('on');
+  }
+}
+
+function applyShake() {
+  if (game.shake > 0) {
+    activeCamera.position.x += (Math.random()-0.5) * game.shake * 0.4;
+    activeCamera.position.y += (Math.random()-0.5) * game.shake * 0.4;
+  }
+}
+
 function showMessage(txt, dur = 2) {
   game.message = txt;
   game.messageTime = dur;
@@ -2438,6 +2562,7 @@ function returnToMenu() {
   document.getElementById('pauseTip').classList.remove('on');
   document.getElementById('tacOverlay').classList.remove('on');
   document.getElementById('cursorSoft').classList.remove('show');
+  document.getElementById('deployBanner').classList.remove('on');
   setView('tpp');
   tppCamera.position.set(8, 6, 12);
   tppCamera.lookAt(0, 1, 0);
@@ -2540,6 +2665,9 @@ function startGame() {
   game.killCount = 0;
   game.elapsed = 0;
   game.waveBreakTimer = 0;
+  game.deployCountdown = 0;
+  game.engageBannerTimer = 0;
+  game.shake = 0;
 
   player.pos.set(0, 0, 0);
   player.yaw = 0; player.pitch = 0;
@@ -2548,6 +2676,7 @@ function startGame() {
   player.reserve = 120;
   player.alive = true;
   player.reloading = false;
+  player.lastHitTime = 0;
 
   drone.active = false;
   drone.battery = drone.maxBattery;
@@ -2662,15 +2791,41 @@ function update(dt) {
   updateMuzzleFlashes(dt);
   updateExplosions(dt);
 
+  // Deploy countdown ticking
+  if (game.deployCountdown > 0) {
+    game.deployCountdown -= dt;
+    if (game.deployCountdown <= 0) {
+      game.deployCountdown = 0;
+      game.engageBannerTimer = 1.2;
+    }
+    updateDeployBanner();
+  } else if (game.engageBannerTimer > 0) {
+    game.engageBannerTimer -= dt;
+    updateDeployBanner();
+    if (game.engageBannerTimer <= 0) updateDeployBanner();
+  }
+
   // Wave check
-  if (game.waveBreakTimer <= 0) {
+  if (game.waveBreakTimer <= 0 && game.deployCountdown <= 0) {
     const aliveEnemies = enemies.filter(e => e.alive).length;
     if (aliveEnemies === 0 && player.alive) {
       if (game.wave >= 5) { endGame(true); return; }
-      game.waveBreakTimer = 4;
-      showMessage(`第 ${game.wave} 波 已肃清`, 2);
+      game.waveBreakTimer = 3.5;
+      // Wave clear bonuses
+      const hpBefore = player.hp;
+      player.hp = Math.min(player.maxHp, player.hp + 40);
+      const hpGained = Math.floor(player.hp - hpBefore);
+      player.ammo = player.maxAmmo;
+      player.reserve = Math.min(240, player.reserve + 60);
+      fpv.available = Math.min(fpv.max, fpv.available + 1);
+      drone.battery = Math.min(drone.maxBattery, drone.battery + 30);
+      const bonusBits = [];
+      if (hpGained > 0) bonusBits.push(`+${hpGained}HP`);
+      bonusBits.push('弹药已补充');
+      bonusBits.push('+1 FPV');
+      showMessage(`WAVE ${game.wave} 完成 · ${bonusBits.join(' · ')}`, 3);
     }
-  } else {
+  } else if (game.waveBreakTimer > 0) {
     game.waveBreakTimer -= dt;
     if (game.waveBreakTimer <= 0 && game.state === 'playing') {
       startNextWave();
@@ -2684,6 +2839,8 @@ function update(dt) {
   }
 
   updateCameras(dt);
+  applyShake();
+  if (game.shake > 0) game.shake = Math.max(0, game.shake - dt * 5);
   updateHUD();
   renderMinimap();
 }
