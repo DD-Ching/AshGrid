@@ -1432,6 +1432,42 @@ const MAP_THEMES = {
   metro:      { name: 'METRO', cn: '地下地铁',     fog: 0x0d0d0d, sky: { top: 0x000000, bottom: 0x1a0808 }, accent: 'red' },
   data_core:  { name: 'DATA CORE', cn: '资料中心', fog: 0x18222e, sky: { top: 0x0a1018, bottom: 0x1a2838 }, accent: 'blue' },
 };
+
+// Per-theme generation parameters — controls which features the map gets.
+const THEME_PARAMS = {
+  red_zone: {
+    buildingFill: 0.55, paletteWeights: ['buildDark','buildDark','buildMid','red'],
+    redAccentChance: 0.55, barrelCount: 70, crateCount: 200,
+    feature: 'red_barriers',
+    ambient: 0xc0a090, sun: 0xffc0a0, hemi: 0xeec0b0, hemiGround: 0x2a1010,
+    extraHive: 1,
+  },
+  grey_district: {
+    buildingFill: 0.42, paletteWeights: ['buildLight','buildMid','buildMid','buildDark'],
+    redAccentChance: 0.10, barrelCount: 30, crateCount: 280,
+    feature: 'rubble',
+    ambient: 0xffffff, sun: 0xffffff, hemi: 0xeeeeee, hemiGround: 0x1a1a1a,
+  },
+  industrial: {
+    buildingFill: 0.50, paletteWeights: ['buildMid','buildMid','buildDark','barrelStripe'],
+    redAccentChance: 0.18, barrelCount: 90, crateCount: 160,
+    feature: 'smokestacks',
+    ambient: 0xe6d090, sun: 0xffe6a0, hemi: 0xeed8a0, hemiGround: 0x2a2010,
+  },
+  metro: {
+    buildingFill: 0.70, paletteWeights: ['buildDark','buildDark','black','buildMid'],
+    redAccentChance: 0.55, barrelCount: 25, crateCount: 200,
+    feature: 'metro_lights',
+    ambient: 0x6a4444, sun: 0x886060, hemi: 0x553030, hemiGround: 0x100404,
+    fogFar: 200,
+  },
+  data_core: {
+    buildingFill: 0.62, paletteWeights: ['buildLight','buildWhite','buildLight','buildMid'],
+    redAccentChance: 0.04, barrelCount: 22, crateCount: 200,
+    feature: 'server_racks', blueAccent: true,
+    ambient: 0xb0c0e0, sun: 0xc0d0ff, hemi: 0xb8cce0, hemiGround: 0x101820,
+  },
+};
 function applyLoadout() {
   const ld = LOADOUTS[settings.loadout] || LOADOUTS.assault;
   player.maxHp = ld.hp;
@@ -2055,7 +2091,14 @@ function generateWorld() {
   if (themeKey === 'random') themeKey = themeKeys[Math.floor(Math.random()*themeKeys.length)];
   game.activeTheme = themeKey;
   const theme = MAP_THEMES[themeKey] || MAP_THEMES.grey_district;
+  const params = THEME_PARAMS[themeKey] || THEME_PARAMS.grey_district;
   scene.fog.color.setHex(theme.fog);
+  if (params.fogFar) scene.fog.far = params.fogFar; else scene.fog.far = 480;
+  // Lighting tint per theme
+  ambient.color.setHex(params.ambient);
+  sun.color.setHex(params.sun);
+  hemi.color.setHex(params.hemi);
+  hemi.groundColor.setHex(params.hemiGround);
 
   buildings.length = 0;
 
@@ -2082,16 +2125,16 @@ function generateWorld() {
     line2.position.set(0, 0.02, i); scene.add(line2);
   }
 
-  // Building grid (denser for bigger world)
+  // Building grid (denser for bigger world; density per theme)
   const grid = 13;
   const cellSize = (WORLD_SIZE * 1.7) / grid;
   for (let i = 0; i < grid; i++) {
     for (let j = 0; j < grid; j++) {
-      if (Math.random() < 0.55) {
+      if (Math.random() < params.buildingFill) {
         const cx = -WORLD_SIZE*0.85 + i * cellSize + cellSize/2 + (Math.random()-0.5)*2;
         const cz = -WORLD_SIZE*0.85 + j * cellSize + cellSize/2 + (Math.random()-0.5)*2;
         if (Math.hypot(cx, cz) < 8) continue;
-        buildVoxelStructure(cx, cz);
+        buildVoxelStructure(cx, cz, params);
       }
     }
   }
@@ -2186,8 +2229,8 @@ function generateWorld() {
     });
   }
 
-  // Explosive barrels (red hazard barrels — shoot to detonate)
-  for (let i = 0; i < 50; i++) {
+  // Explosive barrels (count varies by theme)
+  for (let i = 0; i < (params.barrelCount || 50); i++) {
     let bx, bz, ok = false, tries = 0;
     while (!ok && tries < 30) {
       bx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
@@ -2221,8 +2264,8 @@ function generateWorld() {
     }
   }
 
-  // Decorative crates / cubes — also stack as parkour platforms
-  for (let i = 0; i < 200; i++) {
+  // Decorative crates / cubes — also stack as parkour platforms (count by theme)
+  for (let i = 0; i < (params.crateCount || 200); i++) {
     const x = (Math.random()-0.5) * WORLD_SIZE * 1.7;
     const z = (Math.random()-0.5) * WORLD_SIZE * 1.7;
     if (Math.hypot(x, z) < 5) continue;
@@ -2250,6 +2293,159 @@ function generateWorld() {
     step.position.set(s.x, s.h/2, s.z);
     scene.add(step);
     buildings.push({ x: s.x - 0.65, z: s.z - 0.65, w: 1.3, d: 1.3, h: s.h });
+  }
+
+  // ==== Theme-specific terrain features ====
+  if (params.feature === 'smokestacks') {
+    // INDUSTRIAL — tall cylindrical smokestacks with hazard bands
+    for (let i = 0; i < 16; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      if (Math.hypot(sx, sz) < 14) continue;
+      if (checkCollisionAt(sx, sz, 1.6)) continue;
+      const sh = 9 + Math.random() * 8;
+      const stack = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.4, sh, 8), M.buildDark);
+      stack.position.set(sx, sh/2, sz);
+      scene.add(stack);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.05, 0.5, 8), M.barrelStripe);
+      band.position.set(sx, sh - 1, sz);
+      scene.add(band);
+      // Glowing top vent
+      const vent = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.85, 0.4, 8), M.redBright);
+      vent.position.set(sx, sh + 0.2, sz);
+      scene.add(vent);
+      buildings.push({ x: sx - 1.4, z: sz - 1.4, w: 2.8, d: 2.8, h: sh });
+    }
+  }
+  if (params.feature === 'server_racks') {
+    // DATA CORE — aligned rows of tall thin server-like buildings with blue panels
+    for (let row = -2; row <= 2; row++) {
+      for (let col = -3; col <= 3; col++) {
+        const sx = row * 9 + col * 0.4;
+        const sz = -50 + col * 12 + (row % 2 === 0 ? 0 : 4);
+        if (Math.hypot(sx, sz) < 10) continue;
+        if (checkCollisionAt(sx, sz, 1.6)) continue;
+        const sh = 4.5 + Math.random() * 1.5;
+        const rack = makeBox(1.6, sh, 3.0, M.buildLight);
+        rack.position.set(sx, sh/2, sz);
+        scene.add(rack);
+        const led = makeBox(1.3, 0.4, 0.05, new THREE.MeshBasicMaterial({ color: 0x4d99dd }));
+        led.position.set(sx, sh - 1, sz + 1.52);
+        scene.add(led);
+        const led2 = makeBox(1.3, 0.4, 0.05, new THREE.MeshBasicMaterial({ color: 0x4d99dd }));
+        led2.position.set(sx, sh - 1.6, sz + 1.52);
+        scene.add(led2);
+        buildings.push({ x: sx - 0.8, z: sz - 1.5, w: 1.6, d: 3.0, h: sh });
+      }
+    }
+  }
+  if (params.feature === 'metro_lights') {
+    // METRO — red emergency lights scattered everywhere on the ground
+    for (let i = 0; i < 35; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.6;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.6;
+      if (Math.hypot(sx, sz) < 4) continue;
+      const lite = makeBox(0.3, 0.5, 0.3, M.redBright);
+      lite.position.set(sx, 0.25, sz);
+      scene.add(lite);
+      // Light pole
+      const pole = makeBox(0.06, 0.6, 0.06, M.black);
+      pole.position.set(sx, 0.3, sz);
+      scene.add(pole);
+    }
+    // Concrete pillars (subway-style supports)
+    for (let i = 0; i < 24; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(sx, sz) < 8) continue;
+      if (checkCollisionAt(sx, sz, 0.8)) continue;
+      const sh = 4 + Math.random() * 4;
+      const pillar = makeBox(1.0, sh, 1.0, M.buildDark);
+      pillar.position.set(sx, sh/2, sz);
+      scene.add(pillar);
+      buildings.push({ x: sx - 0.5, z: sz - 0.5, w: 1.0, d: 1.0, h: sh });
+    }
+  }
+  if (params.feature === 'red_barriers') {
+    // RED ZONE — large red hazard barriers planted around the map
+    for (let i = 0; i < 14; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.6;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.6;
+      if (Math.hypot(sx, sz) < 10) continue;
+      if (checkCollisionAt(sx, sz, 2)) continue;
+      const sw = 2.5 + Math.random() * 2;
+      const sh = 1.4;
+      const sd = 0.5;
+      const bar = makeBox(sw, sh, sd, M.red);
+      const ang = Math.random() * Math.PI * 2;
+      bar.position.set(sx, sh/2, sz);
+      bar.rotation.y = ang;
+      scene.add(bar);
+      const stripe = makeBox(sw + 0.05, 0.18, sd + 0.05, M.black);
+      stripe.position.set(sx, 0.55, sz);
+      stripe.rotation.y = ang;
+      scene.add(stripe);
+      // Black-and-yellow corner posts
+      const cs = Math.cos(ang), sn = Math.sin(ang);
+      const post1 = makeBox(0.18, 1.6, 0.18, M.black);
+      post1.position.set(sx + cs * sw/2, 0.8, sz + sn * sw/2);
+      scene.add(post1);
+      const post2 = makeBox(0.18, 1.6, 0.18, M.black);
+      post2.position.set(sx - cs * sw/2, 0.8, sz - sn * sw/2);
+      scene.add(post2);
+      buildings.push({
+        x: sx - sw/2 * Math.abs(cs) - sd/2 * Math.abs(sn),
+        z: sz - sw/2 * Math.abs(sn) - sd/2 * Math.abs(cs),
+        w: sw * Math.abs(cs) + sd * Math.abs(sn),
+        d: sw * Math.abs(sn) + sd * Math.abs(cs),
+        h: sh,
+      });
+    }
+    // Extra red beacon poles
+    for (let i = 0; i < 10; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(sx, sz) < 6) continue;
+      const pole = makeBox(0.1, 3, 0.1, M.black);
+      pole.position.set(sx, 1.5, sz);
+      scene.add(pole);
+      const top = makeBox(0.4, 0.4, 0.4, M.redBright);
+      top.position.set(sx, 3.2, sz);
+      scene.add(top);
+    }
+  }
+  if (params.feature === 'rubble') {
+    // GREY DISTRICT — broken low walls, debris piles, irregular rubble
+    for (let i = 0; i < 30; i++) {
+      const sx = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      const sz = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      if (Math.hypot(sx, sz) < 8) continue;
+      if (checkCollisionAt(sx, sz, 1.2)) continue;
+      // Stack of 3-5 small fragments
+      const count = 3 + Math.floor(Math.random() * 4);
+      for (let j = 0; j < count; j++) {
+        const fragS = 0.3 + Math.random() * 0.7;
+        const ox = (Math.random() - 0.5) * 1.4;
+        const oz = (Math.random() - 0.5) * 1.4;
+        const ang = Math.random() * Math.PI;
+        const tone = Math.random();
+        const mat = tone < 0.5 ? M.buildMid : (tone < 0.85 ? M.buildLight : M.buildDark);
+        const frag = makeBox(fragS, fragS, fragS, mat);
+        frag.position.set(sx + ox, fragS/2, sz + oz);
+        frag.rotation.y = ang;
+        scene.add(frag);
+      }
+      // Broken low wall
+      if (Math.random() < 0.5) {
+        const ww = 1.8 + Math.random() * 1.5;
+        const wh = 0.8 + Math.random() * 0.6;
+        const wall = makeBox(ww, wh, 0.3, M.buildMid);
+        wall.position.set(sx, wh/2, sz);
+        wall.rotation.y = Math.random() * Math.PI;
+        scene.add(wall);
+        buildings.push({ x: sx - ww/2, z: sz - 0.15, w: ww, d: 0.3, h: wh });
+      }
+    }
   }
 
   // Far skyline monoliths (denser, more variety)
@@ -2453,12 +2649,13 @@ void main(){
   scene.add(fpv.group);
 }
 
-function buildVoxelStructure(cx, cz) {
+function buildVoxelStructure(cx, cz, params) {
+  params = params || THEME_PARAMS.grey_district;
   const baseW = 4 + Math.floor(Math.random()*5);
   const baseD = 4 + Math.floor(Math.random()*5);
   const baseH = 3 + Math.floor(Math.random()*9);
-  const r = Math.random();
-  const mainColor = r < 0.45 ? M.buildLight : (r < 0.85 ? M.buildMid : M.buildDark);
+  const palette = params.paletteWeights || ['buildLight','buildMid','buildDark'];
+  const mainColor = M[palette[Math.floor(Math.random() * palette.length)]] || M.buildMid;
 
   const main = makeBox(baseW, baseH, baseD, mainColor);
   main.position.set(cx, baseH/2, cz);
@@ -2496,9 +2693,12 @@ function buildVoxelStructure(cx, cz) {
     buildings.push({ x: ax-aw/2, z: az-ad/2, w: aw, d: ad, h: ah });
   }
 
-  // Red banner / accent
-  if (Math.random() < 0.25) {
-    const r = makeBox(0.6 + Math.random()*0.8, 0.6 + Math.random()*0.8, 0.08, M.red);
+  // Red banner / accent (or blue for data_core)
+  if (Math.random() < (params.redAccentChance || 0.25)) {
+    const accentMat = params.blueAccent
+      ? new THREE.MeshBasicMaterial({ color: 0x4d7eb8 })
+      : M.red;
+    const r = makeBox(0.6 + Math.random()*0.8, 0.6 + Math.random()*0.8, 0.08, accentMat);
     const side = Math.floor(Math.random()*4);
     const off = baseW/2 + 0.05;
     if (side === 0) r.position.set(cx, 1.5 + Math.random()*(baseH-2), cz + off);
