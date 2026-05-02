@@ -356,7 +356,9 @@ const game = {
 
 const player = {
   x: WORLD.w/2, y: WORLD.h/2,
-  angle: 0,
+  angle: 0,           // view angle — follows mouse instantly (where you LOOK)
+  gunAngle: 0,        // gun barrel — lags behind, has sway + recoil
+  gunRecoil: 0,       // current recoil offset added to gunAngle
   hp: 100, maxHp: 100,
   ammo: 30, maxAmmo: 30, reserve: 120,
   reloading: false, reloadTime: 0,
@@ -366,6 +368,48 @@ const player = {
   alive: true,
   walkPhase: 0,
 };
+
+// Weapon profile — separate from player so future weapons can swap in
+const weapon = {
+  name: 'AR-7',
+  follow: 0.18,       // gun barrel angular damping (1 = instant, 0.05 = sluggish)
+  swayAmp: 0.024,     // idle weapon sway radians
+  swayFreq: 0.06,
+  movePenalty: 0.018, // extra sway while moving
+  recoilPerShot: 0.10,// rad kick per shot
+  recoilDecay: 0.86,  // recoil decay per frame
+  spread: 0.04,       // bullet spread cone (random)
+};
+
+// Vision system
+const VIEW = {
+  range: 720,         // player vision distance
+  arc: Math.PI * 0.62,// ~112° fan
+};
+const ENEMY_VIEW = {
+  range: 540,
+  arc: Math.PI * 0.55,// ~99°
+};
+const FOG_ALPHA = 0.62; // darkness outside cone
+const visionRays = 92;  // rays per cone (smoothness vs perf)
+const visionPoly = [];  // reused buffer
+const enemyVisionPoly = []; // reused buffer
+
+// Sound events for directional indicators + enemy alerts
+const soundEvents = [];
+function emitSound(x, y, intensity, fromPlayer) {
+  soundEvents.push({ x, y, intensity, fromPlayer, life: 80, maxLife: 80 });
+  // Alert nearby enemies (turn toward sound; investigate)
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const d = Math.hypot(x - e.x, y - e.y);
+    if (d < intensity) {
+      const lvl = 1 - d / intensity;
+      e.alerted = Math.max(e.alerted || 0, 120 + lvl * 120);
+      e.alertX = x; e.alertY = y;
+    }
+  }
+}
 
 const drone = {
   deployed: false,
@@ -493,6 +537,10 @@ function startNextWave() {
   enemyBullets.length = 0;
   enemies.length = 0;
   enemyDrones.length = 0;
+  soundEvents.length = 0;
+  // Reset gun state to view direction
+  player.gunAngle = player.angle;
+  player.gunRecoil = 0;
   fpv.active = false;
   if (game.mode === 'fpv' || game.mode === 'drone') game.mode = 'tactical';
   drone.deployed = false;
@@ -1278,6 +1326,64 @@ function startReload() {
   player.reloadTime = 80;
 }
 
+// ============ VISION RAYCASTING ============
+// Ray vs axis-aligned rect — returns t (distance along ray) or Infinity if no hit.
+function rayRect(x0, y0, dx, dy, rect) {
+  const invX = dx === 0 ? Infinity : 1 / dx;
+  const invY = dy === 0 ? Infinity : 1 / dy;
+  const tx1 = (rect.x - x0) * invX;
+  const tx2 = (rect.x + rect.w - x0) * invX;
+  const ty1 = (rect.y - y0) * invY;
+  const ty2 = (rect.y + rect.h - y0) * invY;
+  const tmin = Math.max(Math.min(tx1, tx2), Math.min(ty1, ty2));
+  const tmax = Math.min(Math.max(tx1, tx2), Math.max(ty1, ty2));
+  if (tmax < 0 || tmin > tmax) return Infinity;
+  return tmin > 0 ? tmin : Infinity;
+}
+
+// Cast a ray from (x0, y0) in direction angle, up to maxDist; returns the hit point.
+function castVisionRay(x0, y0, angle, maxDist, blockers) {
+  const dx = Math.cos(angle), dy = Math.sin(angle);
+  let best = maxDist;
+  for (const b of blockers) {
+    const t = rayRect(x0, y0, dx, dy, b);
+    if (t < best) best = t;
+  }
+  return { x: x0 + dx * best, y: y0 + dy * best, t: best };
+}
+
+// Build a fan-shaped visibility polygon from origin (numRays + 2 verts).
+function buildVisionPoly(out, ox, oy, faceAngle, arc, range) {
+  out.length = 0;
+  out.push({ x: ox, y: oy });
+  const half = arc / 2;
+  // Cull to nearby blockers for perf — only buildings/lowCovers within (range + diagonal) bounding circle.
+  const cull = range + 200;
+  const blockers = [];
+  for (const b of buildings) {
+    const cx = b.x + b.w/2, cy = b.y + b.h/2;
+    if (Math.hypot(cx - ox, cy - oy) - Math.hypot(b.w, b.h)/2 < cull) blockers.push(b);
+  }
+  for (const lc of lowCovers) {
+    const cx = lc.x + lc.w/2, cy = lc.y + lc.h/2;
+    if (Math.hypot(cx - ox, cy - oy) - Math.hypot(lc.w, lc.h)/2 < cull) blockers.push(lc);
+  }
+  for (let i = 0; i <= visionRays; i++) {
+    const t = i / visionRays;
+    const a = faceAngle - half + arc * t;
+    const hit = castVisionRay(ox, oy, a, range, blockers);
+    out.push(hit);
+  }
+}
+
+function angleInCone(srcAngle, arc, ox, oy, tx, ty) {
+  const a = Math.atan2(ty - oy, tx - ox);
+  let d = a - srcAngle;
+  while (d > Math.PI) d -= Math.PI*2;
+  while (d < -Math.PI) d += Math.PI*2;
+  return Math.abs(d) <= arc / 2;
+}
+
 // ============ AI ============
 function lineOfSight(x1, y1, x2, y2) {
   // Underground concealment: target hidden if it's in a tunnel and shooter isn't.
@@ -1316,25 +1422,82 @@ function pushOutOfBuildings(ent, radius) {
 function updateEnemies() {
   for (const e of enemies) {
     if (!e.alive) continue;
+    if (e.angle == null) e.angle = Math.random() * Math.PI*2;
+    if (e.alerted == null) e.alerted = 0;
+    if (e.lockTime == null) e.lockTime = 0;
+
     const dx = player.x - e.x, dy = player.y - e.y;
     const dist = Math.hypot(dx, dy);
-    e.angle = Math.atan2(dy, dx);
+    const angleToPlayer = Math.atan2(dy, dx);
 
-    if (dist > 280) {
-      e.x += Math.cos(e.angle) * e.speed;
-      e.y += Math.sin(e.angle) * e.speed;
-      e.walkPhase += 0.18;
-    } else if (dist < 180) {
-      e.x -= Math.cos(e.angle) * e.speed * 0.5;
-      e.y -= Math.sin(e.angle) * e.speed * 0.5;
-      e.walkPhase += 0.1;
+    // VISION TEST: player must be inside enemy's cone, within range, with LoS, and alive.
+    const inCone = angleInCone(e.angle, ENEMY_VIEW.arc, e.x, e.y, player.x, player.y);
+    const hasLoS = dist < ENEMY_VIEW.range && lineOfSight(e.x, e.y, player.x, player.y);
+    const canSee = inCone && hasLoS && player.alive;
+
+    if (canSee) {
+      // Lock — remember player position, snap face toward player.
+      e.lockTime = 60;
+      e.lastSeenX = player.x; e.lastSeenY = player.y;
+      let aDiff = angleToPlayer - e.angle;
+      while (aDiff > Math.PI) aDiff -= Math.PI*2;
+      while (aDiff < -Math.PI) aDiff += Math.PI*2;
+      e.angle += aDiff * 0.18;
+      // Approach / kite
+      if (dist > 280) {
+        e.x += Math.cos(e.angle) * e.speed;
+        e.y += Math.sin(e.angle) * e.speed;
+        e.walkPhase += 0.18;
+      } else if (dist < 180) {
+        e.x -= Math.cos(e.angle) * e.speed * 0.5;
+        e.y -= Math.sin(e.angle) * e.speed * 0.5;
+        e.walkPhase += 0.1;
+      }
+    } else if (e.lockTime > 0) {
+      // Recently saw player — push to last known position briefly
+      e.lockTime--;
+      const lx = e.lastSeenX, ly = e.lastSeenY;
+      if (lx != null) {
+        const ldx = lx - e.x, ldy = ly - e.y;
+        const lAng = Math.atan2(ldy, ldx);
+        let d = lAng - e.angle;
+        while (d > Math.PI) d -= Math.PI*2;
+        while (d < -Math.PI) d += Math.PI*2;
+        e.angle += d * 0.08;
+        if (Math.hypot(ldx, ldy) > 80) {
+          e.x += Math.cos(e.angle) * e.speed * 0.7;
+          e.y += Math.sin(e.angle) * e.speed * 0.7;
+          e.walkPhase += 0.12;
+        }
+      }
+    } else if (e.alerted > 0) {
+      // Heard something — turn toward sound, walk to investigate
+      e.alerted--;
+      const tdx = e.alertX - e.x, tdy = e.alertY - e.y;
+      const tdist = Math.hypot(tdx, tdy);
+      if (tdist > 1) {
+        const tAng = Math.atan2(tdy, tdx);
+        let d = tAng - e.angle;
+        while (d > Math.PI) d -= Math.PI*2;
+        while (d < -Math.PI) d += Math.PI*2;
+        e.angle += d * 0.06;
+        if (tdist > 100) {
+          e.x += Math.cos(e.angle) * e.speed * 0.55;
+          e.y += Math.sin(e.angle) * e.speed * 0.55;
+          e.walkPhase += 0.1;
+        }
+      }
+    } else {
+      // Idle patrol — slowly look around
+      e.angle += Math.sin(game.time * 0.011 + (e.walkPhase || 0)) * 0.012;
     }
+
     pushOutOfBuildings(e, e.radius);
     e.x = Math.max(20, Math.min(WORLD.w-20, e.x));
     e.y = Math.max(20, Math.min(WORLD.h-20, e.y));
 
     e.fireCd--;
-    if (e.fireCd <= 0 && dist < 500 && lineOfSight(e.x, e.y, player.x, player.y) && player.alive) {
+    if (e.fireCd <= 0 && canSee && dist < 500) {
       const ang = e.angle + (Math.random()-0.5)*0.08;
       enemyBullets.push({
         x: e.x + Math.cos(ang)*16,
@@ -1342,7 +1505,9 @@ function updateEnemies() {
         vx: Math.cos(ang)*8, vy: Math.sin(ang)*8,
         life: 70, damage: 9,
       });
-      e.fireCd = 50 + Math.random()*40;
+      e.fireCd = e.fireRate || (50 + Math.random()*40);
+      // Enemy gunshot is a sound source too — the player (and other enemies) "hear" it
+      emitSound(e.x, e.y, 700, false);
     }
   }
 
@@ -1375,7 +1540,15 @@ function updateEnemies() {
         life: 60, damage: 6,
       });
       d.fireCd = 80 + Math.random()*60;
+      emitSound(d.x, d.y, 500, false);
     }
+  }
+}
+
+function updateSoundEvents() {
+  for (let i = soundEvents.length - 1; i >= 0; i--) {
+    soundEvents[i].life--;
+    if (soundEvents[i].life <= 0) soundEvents.splice(i, 1);
   }
 }
 
@@ -1412,6 +1585,7 @@ function update() {
   updateBullets();
   updateExplosions();
   updateRadar();
+  updateSoundEvents();
 
   if (game.waveBreak <= 0) {
     const aliveEnemies = enemies.filter(e => e.alive).length + enemyDrones.filter(d => d.alive).length;
@@ -1433,7 +1607,8 @@ function updatePlayer() {
   if (keys['s']) my += 1;
   if (keys['a']) mx -= 1;
   if (keys['d']) mx += 1;
-  if (mx || my) {
+  const moving = mx || my;
+  if (moving) {
     const len = Math.hypot(mx, my);
     mx /= len; my /= len;
     player.x += mx * player.speed;
@@ -1446,7 +1621,20 @@ function updatePlayer() {
 
   const wp = screenToWorld(mouse.x, mouse.y);
   mouse.worldX = wp.x; mouse.worldY = wp.y;
+  // View angle (instant) — where the player LOOKS, drives vision cone & crosshair
   player.angle = Math.atan2(wp.y - player.y, wp.x - player.x);
+
+  // Gun barrel angle — lags behind view with damping, plus idle sway + recoil
+  let aDiff = player.angle - player.gunAngle;
+  while (aDiff > Math.PI) aDiff -= Math.PI*2;
+  while (aDiff < -Math.PI) aDiff += Math.PI*2;
+  player.gunAngle += aDiff * weapon.follow;
+  // Idle sway (sinusoid + low-freq jitter); more sway while moving
+  const swayAmp = weapon.swayAmp + (moving ? weapon.movePenalty : 0);
+  player.gunAngle += Math.sin(game.time * weapon.swayFreq) * swayAmp * 0.18;
+  // Recoil decay
+  player.gunRecoil *= weapon.recoilDecay;
+  if (Math.abs(player.gunRecoil) < 0.001) player.gunRecoil = 0;
 
   player.fireCooldown--;
   if (mouse.down && player.fireCooldown <= 0 && player.ammo > 0 && !player.reloading) fire();
@@ -1502,14 +1690,19 @@ function updateDroneControl() {
 function fire() {
   player.fireCooldown = 6;
   player.ammo--;
-  const ang = player.angle + (Math.random()-0.5)*0.04;
+  // Bullet leaves the GUN BARREL (gunAngle + recoil), not the view angle
+  const barrel = player.gunAngle + player.gunRecoil + (Math.random()-0.5) * weapon.spread;
   bullets.push({
-    x: player.x + Math.cos(ang)*18,
-    y: player.y + Math.sin(ang)*18,
-    vx: Math.cos(ang)*14, vy: Math.sin(ang)*14,
+    x: player.x + Math.cos(barrel)*18,
+    y: player.y + Math.sin(barrel)*18,
+    vx: Math.cos(barrel)*14, vy: Math.sin(barrel)*14,
     life: 60, damage: 14,
   });
-  muzzleFlashes.push({ x: player.x + Math.cos(ang)*22, y: player.y + Math.sin(ang)*22, angle: ang, life: 5 });
+  muzzleFlashes.push({ x: player.x + Math.cos(barrel)*22, y: player.y + Math.sin(barrel)*22, angle: barrel, life: 5 });
+  // Recoil kick — opposite to barrel direction, decays each frame
+  player.gunRecoil += (Math.random() < 0.5 ? -1 : 1) * weapon.recoilPerShot;
+  // Gunshot makes a loud sound — alerts every enemy within range
+  emitSound(player.x, player.y, 900, true);
 }
 
 function updateBullets() {
@@ -1969,11 +2162,27 @@ function renderWorld() {
   }
   ctx.globalAlpha = 1;
 
+  // Enemy vision cones — drawn before fog so they're dimmed when outside player view
+  drawEnemyVisionCones();
+
   // === OVERHEADS — drawn ABOVE everything for elevation effect ===
   drawOverheads();
 
   // Landmark top features (antenna spires, hive crowns) — last so they read as tall
   drawLandmarksTop();
+
+  // === FOG OF WAR — darken outside player's vision fan, with building shadows ===
+  // Only in tactical / command modes (other modes have their own visualisation)
+  if (game.mode === 'tactical' || game.mode === 'command') {
+    drawPlayerVisionFog();
+  }
+
+  // Player vision cone outline + sound indicators sit above the fog
+  if (game.mode === 'tactical') {
+    drawPlayerConeOutline();
+    drawSoundIndicators();
+    drawGunAimIndicator();
+  }
 }
 
 // ============ MAP RENDER HELPERS ============
@@ -2672,6 +2881,158 @@ function drawLandmarksTop() {
     }
     ctx.restore();
   }
+}
+
+// ============ VISION / FOG / SOUND RENDERING ============
+function drawPlayerVisionFog() {
+  if (!player.alive) return;
+  buildVisionPoly(visionPoly, player.x, player.y, player.angle, VIEW.arc, VIEW.range);
+  // Bounding box that covers the visible viewport in world coords
+  const camHalfW = W() / camera.scale + 400;
+  const camHalfH = H() / camera.scale + 400;
+  const fx = camera.x - camHalfW, fy = camera.y - camHalfH;
+  const fw = camHalfW * 2, fh = camHalfH * 2;
+
+  ctx.save();
+  // Blanket darkness over the world
+  ctx.fillStyle = `rgba(20, 18, 24, ${FOG_ALPHA})`;
+  ctx.fillRect(fx, fy, fw, fh);
+  // Cut the vision polygon out of the dark blanket
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.beginPath();
+  ctx.moveTo(visionPoly[0].x, visionPoly[0].y);
+  for (let i = 1; i < visionPoly.length; i++) {
+    ctx.lineTo(visionPoly[i].x, visionPoly[i].y);
+  }
+  ctx.closePath();
+  ctx.fill();
+  // Soft fade at cone edge — second pass with smaller polygon at higher alpha
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.restore();
+}
+
+function drawPlayerConeOutline() {
+  if (!player.alive) return;
+  if (visionPoly.length < 3) return;
+  ctx.save();
+  // Subtle red outline of the cone perimeter
+  ctx.strokeStyle = 'rgba(200, 38, 28, 0.45)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  // Skip origin vertex to outline only the fan edge
+  ctx.moveTo(visionPoly[1].x, visionPoly[1].y);
+  for (let i = 2; i < visionPoly.length; i++) {
+    ctx.lineTo(visionPoly[i].x, visionPoly[i].y);
+  }
+  ctx.stroke();
+  // The two side rays (from player out to first/last fan vert)
+  ctx.beginPath();
+  ctx.moveTo(visionPoly[0].x, visionPoly[0].y);
+  ctx.lineTo(visionPoly[1].x, visionPoly[1].y);
+  ctx.moveTo(visionPoly[0].x, visionPoly[0].y);
+  ctx.lineTo(visionPoly[visionPoly.length-1].x, visionPoly[visionPoly.length-1].y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawEnemyVisionCones() {
+  // Faint red triangles showing where each enemy is looking.
+  ctx.save();
+  ctx.fillStyle = 'rgba(200, 38, 28, 0.10)';
+  ctx.strokeStyle = 'rgba(200, 38, 28, 0.30)';
+  ctx.lineWidth = 1;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    if (e.angle == null) continue;
+    // Use a simpler triangular fan (no per-enemy raycasting — too expensive every frame).
+    const half = ENEMY_VIEW.arc / 2;
+    const r = ENEMY_VIEW.range;
+    ctx.beginPath();
+    ctx.moveTo(e.x, e.y);
+    const segs = 14;
+    for (let i = 0; i <= segs; i++) {
+      const a = e.angle - half + (ENEMY_VIEW.arc * i / segs);
+      ctx.lineTo(e.x + Math.cos(a)*r, e.y + Math.sin(a)*r);
+    }
+    ctx.closePath();
+    ctx.fill();
+    if (e.lockTime > 0) {
+      // Brighter cone when actively engaging
+      ctx.fillStyle = 'rgba(230, 51, 41, 0.18)';
+      ctx.fill();
+      ctx.fillStyle = 'rgba(200, 38, 28, 0.10)';
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSoundIndicators() {
+  if (!player.alive || soundEvents.length === 0) return;
+  ctx.save();
+  for (const s of soundEvents) {
+    const dx = s.x - player.x, dy = s.y - player.y;
+    const a = Math.atan2(dy, dx);
+    const dist = Math.hypot(dx, dy);
+    const inCone = angleInCone(player.angle, VIEW.arc, player.x, player.y, s.x, s.y);
+    const ringR = 230 / camera.scale;
+    const alpha = s.life / s.maxLife;
+
+    // Pulse ring at the sound origin (always visible)
+    const pulse = (1 - alpha) * 60;
+    ctx.strokeStyle = s.fromPlayer ? 'rgba(26,26,26,0.7)' : 'rgba(230, 51, 41, 0.85)';
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 12 + pulse, 0, Math.PI*2);
+    ctx.stroke();
+
+    // Off-screen / off-cone direction marker on player's ring
+    if (!inCone || dist > VIEW.range) {
+      const ix = player.x + Math.cos(a) * ringR;
+      const iy = player.y + Math.sin(a) * ringR;
+      ctx.save();
+      ctx.translate(ix, iy);
+      ctx.rotate(a);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = s.fromPlayer ? COLORS.black : COLORS.red;
+      // Triangle pointing outward
+      ctx.beginPath();
+      ctx.moveTo(20, 0);
+      ctx.lineTo(0, -10);
+      ctx.lineTo(0, 10);
+      ctx.closePath();
+      ctx.fill();
+      // Wing marks
+      ctx.fillRect(-4, -14, 2, 28);
+      ctx.restore();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawGunAimIndicator() {
+  if (!player.alive) return;
+  // A short red line from the gun barrel showing where the bullet ACTUALLY goes right now,
+  // distinct from the white crosshair (which shows where the player is looking).
+  const a = player.gunAngle + player.gunRecoil;
+  const len = 90;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(200, 38, 28, 0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath();
+  ctx.moveTo(player.x + Math.cos(a)*22, player.y + Math.sin(a)*22);
+  ctx.lineTo(player.x + Math.cos(a)*len, player.y + Math.sin(a)*len);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Small tick at the end
+  ctx.fillStyle = COLORS.red;
+  ctx.beginPath();
+  ctx.arc(player.x + Math.cos(a)*len, player.y + Math.sin(a)*len, 3, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawHumanoid(x, y, angle, walkPhase, color, isEnemy) {
