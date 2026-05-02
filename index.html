@@ -1494,7 +1494,7 @@ const LOADOUTS = {
   heavy: {
     name: 'HEAVY', cn: '重装型',
     desc: '高装甲 · 高火力 · 慢',
-    weapon: { name: 'LMG-15', cn: '重机枪', damage: 22, fireRate: 0.07, heat: 1.4, spread: 0.045, magazine: 80, reserve: 320, reloadDur: 1.8, aimFov: 52, scope: 'std' },
+    weapon: { name: 'LMG-44', cn: '重机枪', damage: 22, fireRate: 0.07, heat: 1.4, spread: 0.045, magazine: 80, reserve: 320, reloadDur: 1.8, aimFov: 52, scope: 'std' },
     hp: 180, armor: 80, speed: 5, sprintMul: 1.25,
     fpvMax: 2,
     stats: { weight: 5, agility: 1, accuracy: 2, firepower: 5, armor: 5 },
@@ -1968,7 +1968,7 @@ function makeWeaponModel(weaponName) {
     wRail.position.set(0, 0.13, 0.0); g.add(wRail);
     const stock = makeBox(0.1, 0.12, 0.18, M.black);
     stock.position.set(0, -0.05, -0.36); g.add(stock);
-  } else if (weaponName === 'LMG-15') {
+  } else if (weaponName === 'LMG-44') {
     // Heavy MG: thick barrel + ammo box + bipod
     const wBody = makeBox(0.24, 0.22, 0.95, M.black);
     g.add(wBody);
@@ -1994,6 +1994,94 @@ function makeWeaponModel(weaponName) {
     // Carry handle
     const handle = makeBox(0.06, 0.12, 0.3, M.black);
     handle.position.set(0, 0.16, 0.05); g.add(handle);
+  } else if (weaponName === 'BR-12') {
+    // Precision rifle: longer barrel + medium scope + carry handle
+    const wBody = makeBox(0.16, 0.18, 1.15, M.black);
+    g.add(wBody);
+    const wMag = makeBox(0.14, 0.32, 0.14, M.robotJoint);
+    wMag.position.set(0, -0.2, 0.05); g.add(wMag);
+    const wScope = makeBox(0.1, 0.13, 0.32, M.robotJoint);
+    wScope.position.set(0, 0.16, -0.1); g.add(wScope);
+    const wScopeFront = makeBox(0.13, 0.13, 0.05, M.redBright);
+    wScopeFront.position.set(0, 0.16, 0.06); g.add(wScopeFront);
+    const handle = makeBox(0.06, 0.1, 0.18, M.black);
+    handle.position.set(0, 0.22, -0.25); g.add(handle);
+    const wMuzzle = makeBox(0.12, 0.12, 0.16, M.black);
+    wMuzzle.position.set(0, 0, 0.65); g.add(wMuzzle);
+    const stock = makeBox(0.14, 0.18, 0.36, M.black);
+    stock.position.set(0, -0.05, -0.7); g.add(stock);
+  } else if (weaponName === 'SG-8') {
+    // Shotgun: short thick body + wide muzzle + pump grip + side shells
+    const wBody = makeBox(0.20, 0.20, 0.7, M.black);
+    g.add(wBody);
+    const wMuzzle = makeBox(0.24, 0.24, 0.16, M.black);
+    wMuzzle.position.set(0, 0, 0.42); g.add(wMuzzle);
+    const wMuzzleHole = makeBox(0.18, 0.18, 0.05, M.redBright);
+    wMuzzleHole.position.set(0, 0, 0.51); g.add(wMuzzleHole);
+    const pump = makeBox(0.22, 0.16, 0.18, M.robotJoint);
+    pump.position.set(0, -0.04, 0.05); g.add(pump);
+    const stock = makeBox(0.16, 0.22, 0.34, M.black);
+    stock.position.set(0, -0.06, -0.45); g.add(stock);
+    // Side shells (red)
+    for (let i = 0; i < 4; i++) {
+      const shell = makeBox(0.06, 0.06, 0.06, M.red);
+      shell.position.set(0.13, -0.13, -0.15 + i * 0.08);
+      g.add(shell);
+    }
+  } else if (weaponName === 'DMR-51') {
+    // Semi-auto precision rifle: between AR and DMR
+    const wBody = makeBox(0.14, 0.14, 1.25, M.black);
+    g.add(wBody);
+    const wMag = makeBox(0.13, 0.3, 0.13, M.robotJoint);
+    wMag.position.set(0, -0.18, 0); g.add(wMag);
+    const wScope = makeBox(0.11, 0.14, 0.4, M.robotJoint);
+    wScope.position.set(0, 0.15, 0); g.add(wScope);
+    const wScopeFront = makeBox(0.14, 0.14, 0.05, M.redBright);
+    wScopeFront.position.set(0, 0.15, 0.18); g.add(wScopeFront);
+    const wMuzzle = makeBox(0.14, 0.14, 0.16, M.black);
+    wMuzzle.position.set(0, 0, 0.7); g.add(wMuzzle);
+    const stock = makeBox(0.16, 0.18, 0.38, M.black);
+    stock.position.set(0, -0.05, -0.75); g.add(stock);
+    // Bipod
+    const bp1 = makeBox(0.04, 0.18, 0.04, M.robotJoint);
+    bp1.position.set(-0.07, -0.18, 0.4); bp1.rotation.x = -0.3; g.add(bp1);
+    const bp2 = makeBox(0.04, 0.18, 0.04, M.robotJoint);
+    bp2.position.set(0.07, -0.18, 0.4); bp2.rotation.x = -0.3; g.add(bp2);
+  } else if (weaponName === 'SR-70') {
+    // Railgun: very long, no scope, glowing red rail line + capacitor pack
+    const wBody = makeBox(0.12, 0.12, 1.8, M.black);
+    g.add(wBody);
+    // Red glowing rail on top
+    const rail = makeBox(0.08, 0.05, 1.6, M.redBright);
+    rail.position.set(0, 0.085, 0); g.add(rail);
+    // Rail coil rings
+    for (let i = -3; i <= 3; i++) {
+      const coil = makeBox(0.18, 0.18, 0.05, M.robotJoint);
+      coil.position.set(0, 0, i * 0.22); g.add(coil);
+    }
+    // Capacitor pack (yellow stripe)
+    const cap = makeBox(0.20, 0.26, 0.32, M.barrelStripe);
+    cap.position.set(0, -0.07, -0.95); g.add(cap);
+    const capInner = makeBox(0.21, 0.18, 0.33, M.black);
+    capInner.position.set(0, -0.07, -0.95); g.add(capInner);
+    // Stock
+    const stock = makeBox(0.14, 0.16, 0.3, M.black);
+    stock.position.set(0, -0.05, -1.18); g.add(stock);
+    // Muzzle aperture (glowing)
+    const muzzle = makeBox(0.14, 0.14, 0.06, M.redBright);
+    muzzle.position.set(0, 0, 0.93); g.add(muzzle);
+  } else if (weaponName === 'CR-6') {
+    // Carbine: AR-30 shorter, no scope, red dot only
+    const wBody = makeBox(0.16, 0.18, 0.78, M.black);
+    g.add(wBody);
+    const wMag = makeBox(0.14, 0.3, 0.14, M.robotJoint);
+    wMag.position.set(0, -0.2, 0.05); g.add(wMag);
+    const wDot = makeBox(0.06, 0.06, 0.04, M.redBright);
+    wDot.position.set(0, 0.13, 0.05); g.add(wDot);
+    const wMuzzle = makeBox(0.1, 0.1, 0.1, M.black);
+    wMuzzle.position.set(0, 0, 0.45); g.add(wMuzzle);
+    const stock = makeBox(0.12, 0.15, 0.22, M.black);
+    stock.position.set(0, -0.05, -0.51); g.add(stock);
   } else {
     // AR-30 default — assault rifle
     const wBody = makeBox(0.16, 0.18, 0.95, M.black);
@@ -3701,8 +3789,15 @@ void main(){
   const customWeaponName = settings.loadoutWeapons && settings.loadoutWeapons[settings.loadout];
   const playerWeapon = customWeaponName || ldNow.weapon.name;
   // Per-weapon damage so custom selection actually changes feel
-  const weaponDamageMap = { 'AR-30': 26, 'DMR-44': 36, 'SMG-9': 18, 'LMG-15': 32 };
-  if (weaponDamageMap[playerWeapon]) player.damage = weaponDamageMap[playerWeapon];
+  // Per-weapon stats — damage / fire cooldown / heat / ammo / reserve all driven by PRIMARY_WEAPONS catalog
+  const wStats = PRIMARY_WEAPONS[playerWeapon] || PRIMARY_WEAPONS['AR-30'];
+  player.damage = wStats.dmg;
+  player.fireRate = wStats.fireCd;
+  player.heatPerShot = wStats.heat;
+  player.maxAmmo = wStats.ammo;
+  player.ammo = wStats.ammo;
+  player.reserve = wStats.reserve;
+  player.weaponName = playerWeapon;
   if (settings.character === 'wolf') {
     player.group = makeWolf(M.robotBody, M.robotEye, playerWeapon);
     player.group.scale.setScalar(0.85);
@@ -5999,7 +6094,7 @@ function spawnHeavyEnemy() {
     tries++;
   }
   if (!ok) return;
-  const group = makeRobot(M.enemyBody, M.enemyAccent, 'LMG-15');
+  const group = makeRobot(M.enemyBody, M.enemyAccent, 'LMG-44');
   group.scale.set(0.7 * 1.3, 0.7 * 1.2, 0.7 * 1.3); // chunkier, scaled to building proportion
   group.position.set(x, 0, z);
   scene.add(group);
@@ -7676,12 +7771,29 @@ function refreshDeployConfig() {
 function weaponIconSVG(weaponName) {
   const icons = {
     'AR-30':  `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="13" width="36" height="6" fill="currentColor"/><rect x="13" y="9" width="6" height="14" fill="currentColor"/><rect x="38" y="11" width="14" height="3" fill="currentColor"/><rect x="52" y="11" width="6" height="10" fill="currentColor"/><rect x="22" y="6" width="10" height="3" fill="currentColor"/><rect x="0" y="19" width="10" height="6" fill="currentColor"/><rect x="50" y="11" width="2" height="3" fill="#c8261c"/></svg>`,
+    'BR-12':  `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="13" width="46" height="5" fill="currentColor"/><rect x="13" y="9" width="6" height="14" fill="currentColor"/><rect x="46" y="11" width="14" height="3" fill="currentColor"/><rect x="20" y="5" width="12" height="4" fill="currentColor"/><rect x="32" y="2" width="6" height="3" fill="currentColor"/><circle cx="26" cy="7" r="1.5" fill="#c8261c"/><rect x="0" y="19" width="8" height="6" fill="currentColor"/></svg>`,
     'DMR-44': `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="14" width="50" height="4" fill="currentColor"/><rect x="22" y="18" width="6" height="6" fill="currentColor"/><rect x="46" y="13" width="14" height="6" fill="currentColor"/><rect x="14" y="9" width="14" height="4" fill="currentColor"/><circle cx="20" cy="11" r="2" fill="#c8261c"/><rect x="0" y="19" width="6" height="3" fill="currentColor"/><rect x="50" y="11" width="2" height="2" fill="currentColor"/><rect x="50" y="20" width="2" height="2" fill="currentColor"/></svg>`,
+    'DMR-51': `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="13" width="44" height="5" fill="currentColor"/><rect x="14" y="9" width="14" height="4" fill="currentColor"/><circle cx="20" cy="11" r="1.5" fill="#c8261c"/><rect x="22" y="18" width="6" height="6" fill="currentColor"/><rect x="46" y="11" width="14" height="6" fill="currentColor"/><rect x="0" y="20" width="8" height="3" fill="currentColor"/><rect x="40" y="20" width="3" height="6" fill="currentColor"/><rect x="48" y="20" width="3" height="6" fill="currentColor"/></svg>`,
     'SMG-9':  `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="12" width="22" height="8" fill="currentColor"/><rect x="22" y="20" width="6" height="6" fill="currentColor"/><circle cx="18" cy="22" r="6" fill="#c8261c"/><rect x="32" y="13" width="14" height="6" fill="currentColor"/><rect x="46" y="14" width="6" height="3" fill="currentColor"/><rect x="14" y="9" width="6" height="3" fill="currentColor"/></svg>`,
-    'LMG-15': `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="11" width="42" height="8" fill="currentColor"/><rect x="44" y="13" width="14" height="4" fill="currentColor"/><rect x="46" y="11" width="2" height="8" fill="currentColor"/><rect x="50" y="11" width="2" height="8" fill="currentColor"/><rect x="14" y="19" width="14" height="6" fill="currentColor"/><rect x="0" y="13" width="3" height="3" fill="currentColor"/><rect x="14" y="19" width="14" height="2" fill="#e6b840"/></svg>`,
+    'CR-6':   `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="13" width="32" height="6" fill="currentColor"/><rect x="14" y="9" width="6" height="14" fill="currentColor"/><rect x="38" y="11" width="10" height="3" fill="currentColor"/><rect x="22" y="9" width="3" height="3" fill="#c8261c"/><rect x="0" y="14" width="6" height="4" fill="currentColor"/><rect x="0" y="19" width="9" height="6" fill="currentColor"/></svg>`,
+    'SG-8':   `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="11" width="30" height="10" fill="currentColor"/><rect x="36" y="9" width="14" height="14" fill="currentColor"/><circle cx="43" cy="16" r="3" fill="#c8261c"/><rect x="50" y="13" width="6" height="6" fill="currentColor"/><rect x="22" y="22" width="8" height="4" fill="currentColor"/><rect x="0" y="14" width="8" height="5" fill="currentColor"/><rect x="14" y="22" width="3" height="3" fill="#c8261c"/><rect x="18" y="22" width="3" height="3" fill="#c8261c"/></svg>`,
+    'SR-70':  `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="14" width="56" height="4" fill="currentColor"/><rect x="2" y="11" width="56" height="3" fill="#c8261c"/><rect x="56" y="13" width="3" height="3" fill="#c8261c"/><rect x="6" y="11" width="2" height="6" fill="currentColor"/><rect x="14" y="11" width="2" height="6" fill="currentColor"/><rect x="22" y="11" width="2" height="6" fill="currentColor"/><rect x="30" y="11" width="2" height="6" fill="currentColor"/><rect x="38" y="11" width="2" height="6" fill="currentColor"/><rect x="46" y="11" width="2" height="6" fill="currentColor"/><rect x="0" y="18" width="14" height="5" fill="#e6b840"/><rect x="2" y="20" width="10" height="3" fill="currentColor"/></svg>`,
+    'LMG-44': `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="11" width="42" height="8" fill="currentColor"/><rect x="44" y="13" width="14" height="4" fill="currentColor"/><rect x="46" y="11" width="2" height="8" fill="currentColor"/><rect x="50" y="11" width="2" height="8" fill="currentColor"/><rect x="14" y="19" width="14" height="6" fill="currentColor"/><rect x="0" y="13" width="3" height="3" fill="currentColor"/><rect x="14" y="19" width="14" height="2" fill="#e6b840"/></svg>`,
   };
   return icons[weaponName] || icons['AR-30'];
 }
+
+const PRIMARY_WEAPONS = {
+  'AR-30':  { cn: '向量步枪 · 通用',     dmg: 26, fireCd: 0.10, heat: 1.8, ammo: 30, reserve: 180 },
+  'BR-12':  { cn: '精准步枪 · 中远程',   dmg: 32, fireCd: 0.16, heat: 2.2, ammo: 24, reserve: 144 },
+  'SMG-9':  { cn: '紧凑冲锋 · 室内',     dmg: 18, fireCd: 0.07, heat: 1.4, ammo: 40, reserve: 240 },
+  'LMG-44': { cn: '压制机枪 · 高火力',   dmg: 30, fireCd: 0.08, heat: 2.6, ammo: 60, reserve: 300 },
+  'SG-8':   { cn: '破门霰弹 · 巷战',     dmg: 56, fireCd: 0.55, heat: 3.6, ammo: 8,  reserve: 48 },
+  'DMR-44': { cn: '精准步枪 · 中远程',   dmg: 36, fireCd: 0.30, heat: 3.0, ammo: 18, reserve: 108 },
+  'DMR-51': { cn: '半自动精准 · 街区',   dmg: 38, fireCd: 0.32, heat: 2.8, ammo: 18, reserve: 108 },
+  'SR-70':  { cn: '轨道狙击 · 远程',     dmg: 80, fireCd: 1.10, heat: 8.0, ammo: 6,  reserve: 36 },
+  'CR-6':   { cn: '卡宾枪 · 偵察轻装',   dmg: 22, fireCd: 0.09, heat: 1.6, ammo: 30, reserve: 180 },
+};
 
 function refreshLoadoutCards() {
   refreshModePills();
@@ -7694,14 +7806,8 @@ function refreshLoadoutCards() {
     card.className = 'loadout-card-big' + (isActive ? ' active' : '');
     card.dataset.loadout = id;
     const weaponNow = (settings.loadoutWeapons && settings.loadoutWeapons[id]) || ld.weapon.name;
-    const weaponCatalog = ['AR-30','DMR-44','SMG-9','LMG-15'];
-    const weaponMeta = {
-      'AR-30':  { cn: '向量步枪 · 通用', dmg: 26 },
-      'DMR-44': { cn: '精准步枪 · 中远程', dmg: 36 },
-      'SMG-9':  { cn: '紧凑冲锋 · 室内', dmg: 18 },
-      'LMG-15': { cn: '压制机枪 · 高火力', dmg: 32 },
-    };
-    const wMeta = weaponMeta[weaponNow] || weaponMeta['AR-30'];
+    const weaponCatalog = ['AR-30','BR-12','CR-6','SMG-9','SG-8','DMR-44','DMR-51','SR-70','LMG-44'];
+    const wMeta = PRIMARY_WEAPONS[weaponNow] || PRIMARY_WEAPONS['AR-30'];
     card.innerHTML = `
       <div>
         <div class="loadout-card-name">${ld.name}</div>
