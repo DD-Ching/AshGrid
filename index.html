@@ -1627,6 +1627,8 @@ const MAP_THEMES = {
   junkyard:      { name: 'JUNKYARD', cn: '机器人回收厂', fog: 0x2a261c, sky: { top: 0x141008, bottom: 0x3a2818 }, accent: 'yellow' },
   subway_hub:    { name: 'SUBWAY HUB', cn: '地铁转运站', fog: 0x141414, sky: { top: 0x000000, bottom: 0x1c0a0a }, accent: 'red' },
   sewers:        { name: 'SEWERS', cn: '下水道',         fog: 0x18221a, sky: { top: 0x080a08, bottom: 0x1a221a }, accent: 'green' },
+  underground_parking: { name: 'UNDERGROUND PARKING', cn: '地下停车场', fog: 0x141414, sky: { top: 0x000000, bottom: 0x101010 }, accent: 'red' },
+  drone_hive_factory:  { name: 'DRONE HIVE',         cn: '无人机蜂巢',  fog: 0x1c1c20, sky: { top: 0x0a0a10, bottom: 0x1c1c24 }, accent: 'red' },
 };
 
 // Per-theme generation parameters — controls which features the map gets.
@@ -1782,6 +1784,28 @@ const THEME_PARAMS = {
     groundColor: 0x0e1410, ambientDrones: 0, smokeColumns: 0, searchBeams: 0, skylineMonoliths: 0,
     skipStandardBuildings: true, skipWatchtowers: true, skipCatwalks: true, skipBanners: true, skipCraters: true,
     signature: 'mega_drainage_pit',
+  },
+  underground_parking: {
+    buildingFill: 0.0, paletteWeights: ['buildDark','black','buildMid','buildDark'],
+    redAccentChance: 0.30, barrelCount: 12, crateCount: 60,
+    feature: 'underground_parking',
+    ambient: 0x554545, sun: 0x806060, hemi: 0x453535, hemiGround: 0x080404,
+    fogFar: 160,
+    groundColor: 0x0a0a0a, ambientDrones: 0, smokeColumns: 0, searchBeams: 0, skylineMonoliths: 0,
+    skipStandardBuildings: true, skipWatchtowers: true, skipCatwalks: true, skipBanners: true, skipCraters: true, skipBlastWalls: true,
+    enterableCount: 0, blockoutCount: 0,
+    signature: 'parking_concourse',
+  },
+  drone_hive_factory: {
+    buildingFill: 0.0, paletteWeights: ['buildDark','buildMid','black','buildDark'],
+    redAccentChance: 0.50, barrelCount: 14, crateCount: 80,
+    feature: 'drone_hive_factory',
+    ambient: 0x707080, sun: 0x9090a0, hemi: 0x606070, hemiGround: 0x080810,
+    fogFar: 250,
+    groundColor: 0x0d0d12, ambientDrones: 18, smokeColumns: 4, searchBeams: 6, skylineMonoliths: 8,
+    skipStandardBuildings: true, skipWatchtowers: true, skipBanners: true, skipBlastWalls: true,
+    enterableCount: 0, blockoutCount: 1, extraHive: 4,
+    signature: 'hive_factory_core',
   },
 };
 function applyLoadout() {
@@ -2490,7 +2514,7 @@ function generateWorld() {
   scene.add(hemi);
 
   // Pick theme — randomized when gv_theme is 'random'
-  const themeKeys = ['red_zone','grey_district','industrial','metro','data_core','rooftop_grid','bridge_sector','drone_yard','power_station','command_core','nuclear_pool','steel_mill','container_port','apartment','junkyard','subway_hub','sewers'];
+  const themeKeys = ['red_zone','grey_district','industrial','metro','data_core','rooftop_grid','bridge_sector','drone_yard','power_station','command_core','nuclear_pool','steel_mill','container_port','apartment','junkyard','subway_hub','sewers','underground_parking','drone_hive_factory'];
   let themeKey = settings.mapTheme;
   if (themeKey === 'random') themeKey = themeKeys[Math.floor(Math.random()*themeKeys.length)];
   game.activeTheme = themeKey;
@@ -3561,6 +3585,245 @@ function generateWorld() {
       back.position.z -= 0.25;
       back.rotation.y = bench.rotation.y;
       scene.add(back);
+    }
+  }
+  if (params.feature === 'underground_parking') {
+    // UNDERGROUND PARKING — concrete pillar grid + parked vehicles + ramp + low ceiling
+    // Concrete ceiling slab covers the whole interior at ~5m
+    const ceilingH = 5.5;
+    const interiorR = 60;
+    // Big dark ceiling
+    const ceiling = makeBox(interiorR * 2.2, 0.8, interiorR * 2.2, M.buildDark);
+    ceiling.position.set(0, ceilingH + 0.4, 0); scene.add(ceiling);
+    // Concrete pillar grid (8x8 = 64 pillars at 12m spacing)
+    for (let i = -3; i <= 3; i++) {
+      for (let j = -3; j <= 3; j++) {
+        const px = i * 12, pz = j * 12;
+        if (Math.hypot(px, pz) < 8) continue;
+        const pillar = makeBox(1.4, ceilingH, 1.4, M.buildMid);
+        pillar.position.set(px, ceilingH/2, pz); scene.add(pillar);
+        // Hazard band at top
+        const band = makeBox(1.5, 0.25, 1.5, M.barrelStripe);
+        band.position.set(px, ceilingH - 0.4, pz); scene.add(band);
+        // Pillar number panel
+        if (Math.random() < 0.4) {
+          const panel = makeBox(0.4, 0.4, 0.06, M.barrelStripe);
+          panel.position.set(px, 1.6, pz + 0.75); scene.add(panel);
+          const num = makeBox(0.32, 0.32, 0.07, M.red);
+          num.position.set(px, 1.6, pz + 0.78); scene.add(num);
+        }
+        buildings.push({ x: px - 0.7, z: pz - 0.7, w: 1.4, d: 1.4, h: ceilingH });
+      }
+    }
+    // Parking line strips on ground
+    for (let i = -3; i < 3; i++) {
+      for (let j = -3; j < 3; j++) {
+        const px = i * 12 + 6;
+        const pz = j * 12;
+        if (Math.hypot(px, pz) < 6) continue;
+        // Yellow rectangle outline (4 lines per parking spot)
+        const linesData = [
+          [px - 2, pz - 4, 4, 0.1], [px + 2, pz - 4, 4, 0.1],
+          [px, pz - 4, 0.1, 4], [px, pz + 0, 0.1, 4],
+        ];
+        for (const [lx, lz, lw, ld] of linesData) {
+          const line = makeBox(Math.max(lw, ld), 0.04, Math.max(ld, lw === 4 ? 0.2 : ld), M.barrelStripe);
+        }
+        // Just two side lines
+        const l1 = makeBox(0.2, 0.04, 4, M.barrelStripe);
+        l1.position.set(px - 1.8, 0.022, pz); scene.add(l1);
+        const l2 = makeBox(0.2, 0.04, 4, M.barrelStripe);
+        l2.position.set(px + 1.8, 0.022, pz); scene.add(l2);
+        const l3 = makeBox(3.6, 0.04, 0.2, M.barrelStripe);
+        l3.position.set(px, 0.022, pz - 2); scene.add(l3);
+      }
+    }
+    // Parked cars between pillars (8-10)
+    for (let i = 0; i < 12; i++) {
+      let cx, cz, ok = false, tries = 0;
+      while (!ok && tries < 25) {
+        cx = (Math.random() - 0.5) * 60;
+        cz = (Math.random() - 0.5) * 60;
+        if (Math.hypot(cx, cz) < 8) { tries++; continue; }
+        if (!checkCollisionAt(cx, cz, 1.5)) ok = true;
+        tries++;
+      }
+      if (!ok) continue;
+      const yaw = Math.random() < 0.5 ? 0 : Math.PI;
+      const cs = Math.cos(yaw), sn = Math.sin(yaw);
+      const colors = [0x444444, 0x666666, 0x882020, 0x222238, 0x553522];
+      const carMat = new THREE.MeshLambertMaterial({color: colors[Math.floor(Math.random()*colors.length)]});
+      const chassis = makeBox(2.4, 0.5, 1.2, carMat);
+      chassis.position.set(cx, 0.25, cz); chassis.rotation.y = yaw;
+      scene.add(chassis);
+      const cabin = makeBox(1.5, 0.6, 1.0, carMat);
+      cabin.position.set(cx, 0.85, cz); cabin.rotation.y = yaw;
+      scene.add(cabin);
+      // 4 wheels
+      for (const [px, pz] of [[-0.9, -0.45], [0.9, -0.45], [-0.9, 0.45], [0.9, 0.45]]) {
+        const wheel = makeBox(0.35, 0.35, 0.25, M.black);
+        wheel.position.set(cx + px*cs - pz*sn, 0.18, cz + px*sn + pz*cs);
+        scene.add(wheel);
+      }
+      // Headlights
+      const hl1 = makeBox(0.18, 0.15, 0.05, M.barrelStripe);
+      hl1.position.set(cx + cs*1.2 - 0.4*sn, 0.5, cz + sn*1.2 + 0.4*cs);
+      hl1.rotation.y = yaw; scene.add(hl1);
+      const hl2 = makeBox(0.18, 0.15, 0.05, M.barrelStripe);
+      hl2.position.set(cx + cs*1.2 + 0.4*sn, 0.5, cz + sn*1.2 - 0.4*cs);
+      hl2.rotation.y = yaw; scene.add(hl2);
+      buildings.push({ x: cx - 1.2, z: cz - 0.6, w: 2.4, d: 1.2, h: 1.4 });
+    }
+    // Ceiling fluorescent lights (long panels in rows)
+    for (let i = -3; i <= 3; i++) {
+      for (let j = -2; j <= 2; j++) {
+        const lx = i * 12 + 6;
+        const lz = j * 12;
+        const light = makeBox(0.4, 0.05, 6, new THREE.MeshBasicMaterial({color: 0xffe8b0}));
+        light.position.set(lx, ceilingH - 0.05, lz); scene.add(light);
+        const frame = makeBox(0.5, 0.08, 6.1, M.black);
+        frame.position.set(lx, ceilingH + 0.02, lz); scene.add(frame);
+      }
+    }
+    // Red emergency lights at random pillars
+    for (let i = 0; i < 8; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const r = 12 + Math.random() * 30;
+      const ex = Math.cos(ang) * r;
+      const ez = Math.sin(ang) * r;
+      const em = makeBox(0.18, 0.18, 0.18, M.redBright);
+      em.position.set(ex, 4.6, ez); scene.add(em);
+    }
+    // B2 wall sign (one for visual reference)
+    const wall = makeBox(0.4, 4, 8, M.buildMid);
+    wall.position.set(50, 2, 0); scene.add(wall);
+    buildings.push({ x: 49.8, z: -4, w: 0.4, d: 8, h: 4 });
+    const signFrame = makeBox(0.05, 1.4, 1.6, M.barrelStripe);
+    signFrame.position.set(49.78, 2.6, 0); scene.add(signFrame);
+    const signInner = makeBox(0.06, 1.0, 1.2, M.red);
+    signInner.position.set(49.76, 2.6, 0); scene.add(signInner);
+    // Concrete ramp at edge (decorative entrance)
+    for (let s = 0; s < 6; s++) {
+      const rh = 0.6 + s * 0.7;
+      const ramp = makeBox(6, rh, 1.0, M.buildMid);
+      ramp.position.set(0, rh/2, 56 - s * 1.2); scene.add(ramp);
+      buildings.push({ x: -3, z: 56 - s * 1.2 - 0.5, w: 6, d: 1.0, h: rh });
+    }
+  }
+  if (params.feature === 'drone_hive_factory') {
+    // DRONE HIVE — factory floor with multiple charging racks + landing pads + control room
+    // Charging racks (vertical drone parking)
+    for (let row = -1; row <= 1; row++) {
+      for (let col = 0; col < 5; col++) {
+        const sx = row * 14;
+        const sz = -28 + col * 12;
+        if (checkCollisionAt(sx, sz, 3)) continue;
+        // Rack frame (3 tier)
+        const frame = makeBox(4, 7, 1.4, M.buildDark);
+        frame.position.set(sx, 3.5, sz); scene.add(frame);
+        buildings.push({ x: sx - 2, z: sz - 0.7, w: 4, d: 1.4, h: 7 });
+        // 3 levels of drone slots
+        for (let lvl = 0; lvl < 3; lvl++) {
+          const ly = 1 + lvl * 2.2;
+          // Side rails (yellow)
+          const rail = makeBox(4.05, 0.08, 1.45, M.barrelStripe);
+          rail.position.set(sx, ly + 1.0, sz); scene.add(rail);
+          // Drone parked (small drone model on rack)
+          const drn = makeDroneModel(false);
+          drn.scale.setScalar(0.7);
+          drn.position.set(sx, ly, sz + 0.1); scene.add(drn);
+          // Charging cable (small line)
+          const cable = makeBox(0.06, 0.5, 0.06, M.black);
+          cable.position.set(sx + 0.7, ly - 0.25, sz - 0.5); scene.add(cable);
+          // Status light (red = charging)
+          const stat = makeBox(0.1, 0.1, 0.1, M.redBright);
+          stat.position.set(sx + 0.85, ly + 0.05, sz - 0.5); scene.add(stat);
+        }
+      }
+    }
+    // Landing pads on floor between racks
+    for (let i = 0; i < 10; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const r = 6 + Math.random() * 30;
+      const px = Math.cos(ang) * r, pz = Math.sin(ang) * r;
+      if (Math.hypot(px, pz) < 5) continue;
+      if (checkCollisionAt(px, pz, 1.5)) continue;
+      const pad = makeBox(2.2, 0.06, 2.2, M.barrelStripe);
+      pad.position.set(px, 0.03, pz); scene.add(pad);
+      const padInner = makeBox(1.8, 0.07, 1.8, new THREE.MeshLambertMaterial({color: 0x101010}));
+      padInner.position.set(px, 0.05, pz); scene.add(padInner);
+      const cv = makeBox(0.18, 0.07, 1.4, M.barrelStripe);
+      cv.position.set(px, 0.06, pz); scene.add(cv);
+      const ch = makeBox(1.4, 0.07, 0.18, M.barrelStripe);
+      ch.position.set(px, 0.06, pz); scene.add(ch);
+    }
+    // Conveyor belt running through the middle
+    const belt = makeBox(2.0, 0.4, 70, M.buildDark);
+    belt.position.set(40, 0.5, 0); scene.add(belt);
+    const beltTop = makeBox(2.0, 0.06, 70, M.barrelStripe);
+    beltTop.position.set(40, 0.74, 0); scene.add(beltTop);
+    buildings.push({ x: 39, z: -35, w: 2.0, d: 70, h: 0.74 });
+    // Drone parts on belt
+    for (let i = -6; i <= 6; i++) {
+      const part = makeBox(0.8, 0.4, 0.8, M.buildMid);
+      part.position.set(40, 0.95, i * 5); scene.add(part);
+      const eye = makeBox(0.18, 0.06, 0.04, M.redBright);
+      eye.position.set(40, 1.0, i * 5 + 0.42); scene.add(eye);
+    }
+    // Conveyor support pillars
+    for (let i = -3; i <= 3; i++) {
+      const pillar = makeBox(0.4, 0.5, 0.4, M.black);
+      pillar.position.set(40, 0.25, i * 12); scene.add(pillar);
+    }
+    // Control room (raised platform with windows)
+    const ctrl = makeBox(8, 0.5, 6, M.buildDark);
+    ctrl.position.set(-40, 5, 0); scene.add(ctrl);
+    buildings.push({ x: -44, z: -3, w: 8, d: 6, h: 5.25 });
+    // 4 corner posts holding up the platform
+    for (const [px, pz] of [[-44, -3],[-36, -3],[-44, 3],[-36, 3]]) {
+      const post = makeBox(0.5, 5, 0.5, M.buildDark);
+      post.position.set(px, 2.5, pz); scene.add(post);
+      buildings.push({ x: px - 0.25, z: pz - 0.25, w: 0.5, d: 0.5, h: 5 });
+    }
+    // Control room walls + glass
+    const wallBack = makeBox(8, 3, 0.3, M.buildMid);
+    wallBack.position.set(-40, 6.75, -3); scene.add(wallBack);
+    buildings.push({ x: -44, z: -3.15, w: 8, d: 0.3, h: 8.25 });
+    const glass = makeBox(7, 1.6, 0.08, new THREE.MeshLambertMaterial({color: 0x305080, transparent: true, opacity: 0.55}));
+    glass.position.set(-40, 6.5, 3.0); scene.add(glass);
+    // Stair up to control room
+    for (let s = 0; s < 8; s++) {
+      const sh = (s + 1) * (5.0 / 8);
+      const step = makeBox(2.0, sh, 0.7, M.buildLight);
+      step.position.set(-36, sh/2, 4 + s * 0.7); scene.add(step);
+      buildings.push({ x: -37, z: 4 + s * 0.7 - 0.35, w: 2.0, d: 0.7, h: sh });
+    }
+    // Red beacon poles around the floor
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      const r = 35;
+      const px = Math.cos(ang) * r;
+      const pz = Math.sin(ang) * r;
+      const pole = makeBox(0.18, 5, 0.18, M.black);
+      pole.position.set(px, 2.5, pz); scene.add(pole);
+      const beacon = makeBox(0.4, 0.4, 0.4, M.redBright);
+      beacon.position.set(px, 5.2, pz); scene.add(beacon);
+    }
+    // Defensive turret stations (decorative)
+    for (let i = 0; i < 3; i++) {
+      const ang = (i / 3) * Math.PI * 2 + Math.PI / 4;
+      const r = 50;
+      const tx = Math.cos(ang) * r, tz = Math.sin(ang) * r;
+      if (checkCollisionAt(tx, tz, 1.5)) continue;
+      const base = makeBox(2, 0.6, 2, M.buildDark);
+      base.position.set(tx, 0.3, tz); scene.add(base);
+      const turret = makeBox(1.2, 1.0, 1.2, M.buildMid);
+      turret.position.set(tx, 1.1, tz); scene.add(turret);
+      const eye = makeBox(0.3, 0.12, 0.06, M.redBright);
+      eye.position.set(tx, 1.3, tz + 0.62); scene.add(eye);
+      const barrel = makeBox(0.2, 0.2, 1.0, M.black);
+      barrel.position.set(tx, 1.1, tz + 0.7); scene.add(barrel);
+      buildings.push({ x: tx - 1, z: tz - 1, w: 2, d: 2, h: 1.6 });
     }
   }
   if (params.feature === 'sewers') {
@@ -4954,6 +5217,78 @@ function spawnSignatureLandmark(params) {
     buildings.push({ x: -12.2, z: -platLen/2, w: 0.4, d: platLen, h: 6 });
     const tunnelEnd = makeBox(20, 6, 0.5, M.black);
     tunnelEnd.position.set(0, 3, -platLen/2); scene.add(tunnelEnd);
+  } else if (sig === 'parking_concourse') {
+    // Central elevator shaft + ramp down to lower level (B2)
+    const cx = 0, cz = -25;
+    // Elevator shaft (open box)
+    const shaftH = 5;
+    for (const [px, pz, pw, pd] of [[-2, 0, 0.3, 4], [2, 0, 0.3, 4], [0, -2, 4, 0.3], [0, 2, 4, 0.3]]) {
+      const wall = makeBox(pw, shaftH, pd, M.buildMid);
+      wall.position.set(cx + px, shaftH/2, cz + pz); scene.add(wall);
+      buildings.push({ x: cx + px - pw/2, z: cz + pz - pd/2, w: pw, d: pd, h: shaftH });
+    }
+    // Elevator floor
+    const elev = makeBox(3.4, 0.3, 3.4, M.buildDark);
+    elev.position.set(cx, 0.15, cz); scene.add(elev);
+    buildings.push({ x: cx - 1.7, z: cz - 1.7, w: 3.4, d: 3.4, h: 0.3 });
+    // Yellow caution band
+    const band = makeBox(3.5, 0.1, 3.5, M.barrelStripe);
+    band.position.set(cx, 0.32, cz); scene.add(band);
+    // Top sign "B2"
+    const sign = makeBox(2, 1, 0.1, M.barrelStripe);
+    sign.position.set(cx, 5.3, cz - 1.99); scene.add(sign);
+    const signInner = makeBox(1.6, 0.7, 0.12, M.red);
+    signInner.position.set(cx, 5.3, cz - 1.95); scene.add(signInner);
+    // 4 ceiling lights inside shaft
+    const elevLight = makeBox(2.8, 0.06, 2.8, new THREE.MeshBasicMaterial({color: 0xffe890}));
+    elevLight.position.set(cx, 4.9, cz); scene.add(elevLight);
+  } else if (sig === 'hive_factory_core') {
+    // Central main hive raised on platform with conveyor feeding it
+    const cx = 0, cz = -30;
+    // Octagonal base platform
+    const base = makeBox(14, 1, 14, M.buildDark);
+    base.position.set(cx, 0.5, cz); scene.add(base);
+    buildings.push({ x: cx - 7, z: cz - 7, w: 14, d: 14, h: 1 });
+    // Hazard band edge
+    for (const [bx, bz, bw, bd] of [[0,-7,14,0.2],[0,7,14,0.2],[-7,0,0.2,14],[7,0,0.2,14]]) {
+      const stripe = makeBox(bw, 0.16, bd, M.barrelStripe);
+      stripe.position.set(cx + bx, 1.1, cz + bz); scene.add(stripe);
+    }
+    // Big primary hive at center (taller variant)
+    const mainHive = makeDroneHive();
+    mainHive.scale.setScalar(1.5);
+    mainHive.position.set(cx, 1.0, cz); scene.add(mainHive);
+    droneHives.push({
+      pos: new THREE.Vector3(cx, 1.0, cz),
+      mesh: mainHive,
+      buildingEntry: { x: cx - 4, z: cz - 4, w: 8, d: 8, h: 12, _hive: true },
+      hp: 1500, maxHp: 1500, alive: true,
+      spawnTimer: 5 + Math.random() * 3, pulse: 0, radius: 4,
+    });
+    buildings.push({ x: cx - 4, z: cz - 4, w: 8, d: 8, h: 12, _hive: true });
+    // Conveyor running from belt area to hive base
+    const feedBelt = makeBox(2, 0.4, 16, M.buildDark);
+    feedBelt.position.set(cx, 1.5, cz + 14); scene.add(feedBelt);
+    const feedBeltTop = makeBox(2, 0.06, 16, M.barrelStripe);
+    feedBeltTop.position.set(cx, 1.74, cz + 14); scene.add(feedBeltTop);
+    buildings.push({ x: cx - 1, z: cz + 6, w: 2, d: 16, h: 1.74 });
+    // 4 robotic arms around the hive
+    for (let i = 0; i < 4; i++) {
+      const ang = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const r = 5;
+      const ax = cx + Math.cos(ang) * r;
+      const az = cz + Math.sin(ang) * r;
+      const armBase = makeBox(0.8, 1.5, 0.8, M.buildDark);
+      armBase.position.set(ax, 1.75, az); scene.add(armBase);
+      const armUpper = makeBox(0.5, 0.5, 3, M.buildMid);
+      armUpper.position.set(ax + Math.cos(ang) * 1.5, 2.7, az + Math.sin(ang) * 1.5);
+      armUpper.rotation.y = ang;
+      armUpper.rotation.x = -0.4;
+      scene.add(armUpper);
+      const armEnd = makeBox(0.6, 0.6, 0.6, M.barrelStripe);
+      armEnd.position.set(ax + Math.cos(ang) * 2.2, 1.8, az + Math.sin(ang) * 2.2);
+      scene.add(armEnd);
+    }
   } else if (sig === 'mega_drainage_pit') {
     const pitFloor = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 0.4, 16), new THREE.MeshLambertMaterial({color: 0x101410}));
     pitFloor.position.set(cx, 0.02, cz); scene.add(pitFloor);
@@ -7790,6 +8125,8 @@ function mapIconSVG(themeKey) {
     junkyard:      wrap(`<polygon points="5,32 12,21 18,28 24,19 30,30 35,32" fill="#333"/><circle cx="14" cy="26" r="1.5" fill="#c8261c"/><circle cx="22" cy="24" r="1.5" fill="#c8261c"/><line x1="9" y1="29" x2="13" y2="22" stroke="#666" stroke-width="0.7"/><line x1="20" y1="29" x2="22" y2="20" stroke="#666" stroke-width="0.7"/><circle cx="28" cy="27" r="1" fill="#e6b840"/>`),
     subway_hub:    wrap(`<rect x="5" y="5" width="30" height="30" fill="#1a1a1a"/><rect x="7" y="7" width="26" height="26" fill="#0a0a0a"/><circle cx="20" cy="20" r="7" fill="#c8261c"/><text x="20" y="24" font-size="10" font-weight="900" fill="#fff" text-anchor="middle">A</text>`),
     sewers:        wrap(`<rect x="2" y="13" width="36" height="4" fill="#333"/><rect x="2" y="22" width="36" height="4" fill="#333"/><circle cx="2" cy="15" r="2" fill="#222"/><circle cx="38" cy="15" r="2" fill="#222"/><circle cx="2" cy="24" r="2" fill="#222"/><circle cx="38" cy="24" r="2" fill="#222"/><rect x="13" y="30" width="14" height="2" fill="#33aa55"/>`),
+    underground_parking: wrap(`<rect x="2" y="6" width="36" height="28" fill="#0a0a0a"/><rect x="6" y="10" width="2" height="18" fill="#444"/><rect x="14" y="10" width="2" height="18" fill="#444"/><rect x="22" y="10" width="2" height="18" fill="#444"/><rect x="30" y="10" width="2" height="18" fill="#444"/><rect x="9" y="14" width="4" height="2" fill="#666"/><rect x="17" y="20" width="4" height="2" fill="#666"/><rect x="25" y="14" width="4" height="2" fill="#666"/><rect x="2" y="29" width="36" height="0.6" fill="#e6b840"/><rect x="32" y="9" width="4" height="3" fill="#c8261c"/><text x="34" y="11.5" font-size="3" font-weight="900" fill="#fff" text-anchor="middle">B2</text>`),
+    drone_hive_factory: wrap(`<rect x="3" y="6" width="34" height="28" fill="#1a1a1f"/><polygon points="12,12 18,9 18,18 12,21" fill="#3a3a44"/><polygon points="12,12 18,9 12,9" fill="#444"/><circle cx="14" cy="14" r="1.4" fill="#c8261c"/><polygon points="22,15 28,12 28,21 22,24" fill="#3a3a44"/><circle cx="24" cy="17" r="1.4" fill="#c8261c"/><rect x="6" y="29" width="6" height="2" fill="#666"/><rect x="14" y="29" width="6" height="2" fill="#666"/><rect x="22" y="29" width="6" height="2" fill="#666"/><rect x="30" y="29" width="6" height="2" fill="#666"/><rect x="3" y="32" width="34" height="0.5" fill="#e6b840"/>`),
   };
   return patterns[themeKey] || patterns.random;
 }
