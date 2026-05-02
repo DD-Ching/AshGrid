@@ -267,13 +267,14 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
     </div>
 
     <div class="missions">
-      <div class="missions-tag">作战序列 / MISSION CHAIN — 5 张地形 · 5 种节奏</div>
+      <div class="missions-tag">作战序列 / 6-MISSION CAMPAIGN</div>
       <div class="missions-grid">
-        <div class="mission"><span class="mission-num">01</span><div class="mission-body"><div class="mission-name">核池 · REACTOR POOL</div><div class="mission-rhythm">室内清剿 · 巨型核池 · 冷却管道层</div></div></div>
-        <div class="mission"><span class="mission-num">02</span><div class="mission-body"><div class="mission-name">高炉 · BLAST FOUNDRY</div><div class="mission-rhythm">垂直交火 · 高炉塔 · 钢梯吊车</div></div></div>
-        <div class="mission"><span class="mission-num">03</span><div class="mission-body"><div class="mission-name">货柜港 · CONTAINER YARD</div><div class="mission-rhythm">伏击突袭 · 巨型吊车 · 集装箱迷宫</div></div></div>
-        <div class="mission"><span class="mission-num">04</span><div class="mission-body"><div class="mission-name">资料核心 · DATA CORE</div><div class="mission-rhythm">节点控制 · 数据核 · 服务器矩阵</div></div></div>
-        <div class="mission"><span class="mission-num">05</span><div class="mission-body"><div class="mission-name">蜂巢 · DRONE HIVE</div><div class="mission-rhythm">空中开阔战 · 蜂巢塔 · 无人机蜂群</div></div></div>
+        <div class="mission"><span class="mission-num">01</span><div class="mission-body"><div class="mission-name">坚守中继站 · HOLD THE RELAY</div><div class="mission-rhythm">核池 · 通讯崩溃前的最后节点 · 90s</div></div></div>
+        <div class="mission"><span class="mission-num">02</span><div class="mission-body"><div class="mission-name">回收黑盒 · RECOVER BLACK BOX</div><div class="mission-rhythm">高炉 · 找回坠毁单元的资料核心</div></div></div>
+        <div class="mission"><span class="mission-num">03</span><div class="mission-body"><div class="mission-name">护送补给车 · CONVOY ESCORT</div><div class="mission-rhythm">货柜港 · 保护 Cargo UGV 穿越码头</div></div></div>
+        <div class="mission"><span class="mission-num">04</span><div class="mission-body"><div class="mission-name">夺取讯号节点 · CAPTURE NODES</div><div class="mission-rhythm">资料核心 · 占领 A · B · C</div></div></div>
+        <div class="mission"><span class="mission-num">05</span><div class="mission-body"><div class="mission-name">重型机具进场 · HEAVY INSERTION</div><div class="mission-rhythm">资料核心 · 护送破障 UGV 完成破障</div></div></div>
+        <div class="mission"><span class="mission-num">06</span><div class="mission-body"><div class="mission-name">摧毁蜂巢 · DESTROY HIVE</div><div class="mission-rhythm">蜂巢 · 阻止 FPV 持续生成</div></div></div>
       </div>
     </div>
 
@@ -628,28 +629,32 @@ function endGame(victory) {
 
 function startNextWave() {
   game.wave++;
-  if (game.wave > MAPS.length) { endGame(true); return; }
-  // Each wave loads a new themed map.
-  generateWorld(game.wave - 1);
+  if (game.wave > MISSIONS.length) { endGame(true); return; }
+  const missionDef = MISSIONS[game.wave - 1];
+  generateWorld(missionDef.mapIdx);
   // Clear any leftover combat state from the previous map.
   bullets.length = 0;
   enemyBullets.length = 0;
   enemies.length = 0;
   enemyDrones.length = 0;
   soundEvents.length = 0;
+  squadIntel.fresh = 0;
   // Reset gun state to view direction
   player.gunAngle = player.angle;
   player.gunRecoil = 0;
   fpv.active = false;
-  // Fresh squad each mission — allies don't persist deaths between maps
+  // Fresh squad each mission — allies don't persist deaths between missions
   spawnAllies();
   if (game.mode === 'fpv' || game.mode === 'drone') game.mode = 'tactical';
   drone.deployed = false;
   drone.battery = drone.maxBattery;
   fpv.available = fpv.max;
-  // Brief intro
-  showMessage(`第 ${game.wave} 关 · ${currentMap.name} / ${currentMap.nameEn}`, 180);
+  // Mission objective entities (UGV, hive, capture zones, relay, etc.)
+  initMission(missionDef, currentMap);
+  // Light starting opposition seeded by the map's spawn config
   spawnWave(game.wave);
+  // Brief intro
+  showMessage(`关卡 ${game.wave} · ${mission ? mission.title : currentMap.name}`, 220);
 }
 
 function showMessage(text, time = 90) {
@@ -1261,6 +1266,588 @@ MAPS.push({
     for (let i = 0; i < 26; i++) addNode(Math.random()*WORLD.w, Math.random()*WORLD.h);
   }
 });
+
+// ============ MISSIONS (campaign of 6 objectives across the 5 maps) ============
+// Each entry pairs a map with a mission type. Missions own their own win/loss
+// conditions; "kill everyone" is no longer the goal.
+const MISSIONS = [
+  { mapIdx: 0, type: 'hold',         id: 'M6-relay'   }, // Reactor Pool — Hold the Last Relay
+  { mapIdx: 1, type: 'recover',      id: 'M4-blackbox'}, // Foundry — Recover Black Box
+  { mapIdx: 2, type: 'escort',       id: 'M1-convoy'  }, // Container Yard — Convoy Escort
+  { mapIdx: 3, type: 'capture',      id: 'M2-nodes'   }, // Data Core — Capture A/B/C
+  { mapIdx: 3, type: 'heavyInsert',  id: 'M5-breach'  }, // Data Core — Heavy Insertion
+  { mapIdx: 4, type: 'destroyHive',  id: 'M3-hive'    }, // Drone Hive — Destroy the Hive
+];
+
+let mission = null;          // active mission state (factory output)
+const MISSION_FACTORIES = {}; // populated below by makeXxxMission()
+
+function initMission(missionDef, mapDef) {
+  const factory = MISSION_FACTORIES[missionDef.type];
+  if (!factory) { mission = null; return; }
+  mission = factory(mapDef);
+  mission.type   = missionDef.type;
+  mission.id     = missionDef.id;
+  mission.status = 'active';
+  mission.startFrame = game.time;
+}
+
+function updateMission() {
+  if (!mission || mission.status !== 'active') return;
+  if (mission.update) mission.update();
+  if (mission.isComplete && mission.isComplete()) {
+    mission.status = 'success';
+    onMissionSuccess();
+  } else if (mission.isFailed && mission.isFailed()) {
+    mission.status = 'failure';
+    onMissionFailed();
+  }
+}
+
+function onMissionSuccess() {
+  game.score += 800;
+  showMessage(`任务完成 / MISSION COMPLETE`, 200);
+  game.waveBreak = 220;
+}
+
+function onMissionFailed() {
+  showMessage(`任务失败 / MISSION FAILED`, 200);
+  setTimeout(() => endGame(false), 2000);
+}
+
+// ---------- MISSION 1: CONVOY ESCORT ----------
+MISSION_FACTORIES.escort = function(mapDef) {
+  // Path along the quay road on Container Yard (south to north along x ~ WORLD.w*0.20)
+  const xLane = WORLD.w * 0.21;
+  const path = [
+    { x: xLane, y: WORLD.h - 240 },
+    { x: xLane, y: WORLD.h - 1200 },
+    { x: xLane, y: 240 },
+  ];
+  const ugv = {
+    x: path[0].x, y: path[0].y, angle: -Math.PI/2,
+    hp: 320, maxHp: 320, radius: 26, speed: 0.85,
+    pathIdx: 1, alive: true, arrivedAt: null,
+  };
+  return {
+    title: '护送补给车',
+    titleEn: 'CONVOY ESCORT',
+    objective: '保护 Cargo UGV 抵达终点',
+    ugv, path,
+    update() {
+      if (!ugv.alive) return;
+      if (ugv.pathIdx >= path.length) return;
+      const wp = path[ugv.pathIdx];
+      const dx = wp.x - ugv.x, dy = wp.y - ugv.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 32) {
+        ugv.pathIdx++;
+        if (ugv.pathIdx >= path.length) ugv.arrivedAt = game.time;
+        return;
+      }
+      ugv.angle = Math.atan2(dy, dx);
+      ugv.x += Math.cos(ugv.angle) * ugv.speed;
+      ugv.y += Math.sin(ugv.angle) * ugv.speed;
+      // Periodic spawn: more enemies the further the convoy goes
+      if (game.time % 240 === 0) {
+        if (Math.random() < 0.7) spawnSoldier({ soldierBias: 'corridor' });
+        if (Math.random() < 0.4) spawnDroneEnemy({ droneBias: 'open' });
+      }
+    },
+    isComplete() { return ugv.alive && ugv.pathIdx >= path.length; },
+    isFailed()   { return !ugv.alive || !player.alive; },
+    onEnemyBulletHit(b) {
+      if (ugv.alive && Math.hypot(b.x - ugv.x, b.y - ugv.y) < ugv.radius) {
+        ugv.hp -= b.damage;
+        if (ugv.hp <= 0) { ugv.alive = false; createExplosion(ugv.x, ugv.y, 'big'); }
+        return true;
+      }
+      return false;
+    },
+    renderWorld() {
+      // Path
+      ctx.save();
+      ctx.strokeStyle = 'rgba(200, 38, 28, 0.35)';
+      ctx.lineWidth = 5; ctx.setLineDash([14, 14]);
+      ctx.beginPath();
+      ctx.moveTo(path[0].x, path[0].y);
+      for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+      ctx.stroke(); ctx.setLineDash([]);
+      // Destination marker
+      const dest = path[path.length-1];
+      ctx.strokeStyle = COLORS.red; ctx.lineWidth = 3;
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath(); ctx.arc(dest.x, dest.y, 60, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = COLORS.red; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('终点 EXTRACT', dest.x, dest.y + 4); ctx.textAlign = 'left';
+      // UGV body
+      if (ugv.alive) {
+        ctx.translate(ugv.x, ugv.y); ctx.rotate(ugv.angle);
+        ctx.fillStyle = COLORS.creamDark; ctx.fillRect(-30, -18, 60, 36);
+        ctx.fillStyle = COLORS.black; ctx.fillRect(-26, -14, 52, 28);
+        ctx.fillStyle = COLORS.red; ctx.fillRect(-22, -12, 18, 24);
+        ctx.fillStyle = COLORS.red; ctx.fillRect(4, -12, 18, 24);
+        ctx.fillStyle = COLORS.red; ctx.fillRect(24, -8, 6, 16);
+      }
+      ctx.restore();
+      // HP bar
+      if (ugv.alive) {
+        ctx.fillStyle = COLORS.black; ctx.fillRect(ugv.x-32, ugv.y-34, 64, 4);
+        ctx.fillStyle = ugv.hp > ugv.maxHp*0.3 ? COLORS.red : COLORS.redBright;
+        ctx.fillRect(ugv.x-32, ugv.y-34, 64 * ugv.hp/ugv.maxHp, 4);
+      }
+    },
+    renderHUD() {
+      const dest = path[path.length-1];
+      const dist = ugv.alive ? Math.hypot(dest.x - ugv.x, dest.y - ugv.y).toFixed(0) : 'KIA';
+      drawObjectivePanel([
+        `UGV   ${ugv.alive ? ugv.hp + '/' + ugv.maxHp : '已损毁'}`,
+        `距离  ${dist}u`,
+      ]);
+    },
+  };
+};
+
+// ---------- MISSION 2: CAPTURE SIGNAL NODES ----------
+MISSION_FACTORIES.capture = function(mapDef) {
+  const zones = [
+    { id: 'A', x: WORLD.w*0.25, y: WORLD.h*0.25, r: 110, capture: 0, owner: 'neutral' },
+    { id: 'B', x: WORLD.w*0.75, y: WORLD.h*0.25, r: 110, capture: 0, owner: 'neutral' },
+    { id: 'C', x: WORLD.w*0.50, y: WORLD.h*0.75, r: 110, capture: 0, owner: 'neutral' },
+  ];
+  let lastSpawnFrame = 0;
+  return {
+    title: '夺取讯号节点',
+    titleEn: 'CAPTURE NODES',
+    objective: '占领 A · B · C 三个节点',
+    zones,
+    update() {
+      for (const z of zones) {
+        let f = 0, h = 0;
+        if (player.alive && Math.hypot(player.x - z.x, player.y - z.y) < z.r) f++;
+        for (const a of allies) if (a.alive && Math.hypot(a.x - z.x, a.y - z.y) < z.r) f++;
+        for (const e of enemies) if (e.alive && Math.hypot(e.x - z.x, e.y - z.y) < z.r) h++;
+        if (f > h)      z.capture = Math.min(100, z.capture + 0.30 * (f - h));
+        else if (h > f) z.capture = Math.max(-100, z.capture - 0.25 * (h - f));
+        if (z.capture >= 100) z.owner = 'friendly';
+        else if (z.capture <= -100) z.owner = 'hostile';
+        else z.owner = 'neutral';
+      }
+      // Periodic enemy spawn around uncaptured zones
+      if (game.time - lastSpawnFrame > 360) {
+        lastSpawnFrame = game.time;
+        const uncaptured = zones.filter(z => z.owner !== 'friendly');
+        if (uncaptured.length > 0) {
+          const z = uncaptured[Math.floor(Math.random()*uncaptured.length)];
+          spawnSoldierAt(z.x + (Math.random()-0.5)*200, z.y + (Math.random()-0.5)*200);
+          if (Math.random() < 0.3) spawnSoldierAt(z.x + (Math.random()-0.5)*200, z.y + (Math.random()-0.5)*200);
+        }
+      }
+    },
+    isComplete() { return zones.every(z => z.owner === 'friendly'); },
+    isFailed()   { return !player.alive && allies.every(a => !a.alive); },
+    renderWorld() {
+      for (const z of zones) {
+        ctx.save();
+        // Owner color
+        const col = z.owner === 'friendly' ? COLORS.cream
+                  : z.owner === 'hostile'  ? COLORS.red
+                  : COLORS.gray;
+        ctx.strokeStyle = col; ctx.lineWidth = 3;
+        ctx.setLineDash([10, 8]);
+        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI*2); ctx.stroke();
+        ctx.setLineDash([]);
+        // Inner fill (capture progress)
+        const t = Math.abs(z.capture) / 100;
+        ctx.fillStyle = z.capture >= 0 ? `rgba(232, 228, 216, ${0.05 + t*0.20})`
+                                       : `rgba(200, 38, 28, ${0.05 + t*0.20})`;
+        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI*2); ctx.fill();
+        // Label
+        ctx.fillStyle = COLORS.black; ctx.font = 'bold 64px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(z.id, z.x, z.y + 22);
+        // Capture meter ring
+        ctx.strokeStyle = z.capture >= 0 ? COLORS.cream : COLORS.red;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(z.x, z.y, z.r + 14, -Math.PI/2, -Math.PI/2 + Math.PI*2 * Math.abs(z.capture)/100);
+        ctx.stroke();
+        ctx.textAlign = 'left';
+        ctx.restore();
+      }
+    },
+    renderHUD() {
+      const lines = zones.map(z => {
+        const pct = Math.round(z.capture);
+        const tag = z.owner === 'friendly' ? '已占领' : z.owner === 'hostile' ? '敌占' : `${pct > 0 ? '+' : ''}${pct}%`;
+        return `节点 ${z.id}   ${tag}`;
+      });
+      drawObjectivePanel(lines);
+    },
+  };
+};
+
+// ---------- MISSION 3: DESTROY DRONE HIVE ----------
+MISSION_FACTORIES.destroyHive = function(mapDef) {
+  const lm = landmarks[0] || { x: WORLD.w/2, y: WORLD.h*0.40, r: 200 };
+  const hive = {
+    x: lm.x, y: lm.y, r: lm.r || 200,
+    hp: 1600, maxHp: 1600, alive: true,
+    spawnCd: 240, spawnInterval: 380,
+  };
+  return {
+    title: '摧毁无人机蜂巢',
+    titleEn: 'DESTROY HIVE',
+    objective: '炸毁中央蜂巢塔，阻止 FPV 持续生成',
+    hive,
+    update() {
+      if (!hive.alive) return;
+      hive.spawnCd--;
+      if (hive.spawnCd <= 0) {
+        spawnDroneEnemy({ droneBias: 'hive' });
+        if (Math.random() < 0.4) spawnDroneEnemy({ droneBias: 'hive' });
+        hive.spawnCd = hive.spawnInterval;
+      }
+    },
+    isComplete() { return !hive.alive; },
+    isFailed()   { return !player.alive && allies.every(a => !a.alive); },
+    onPlayerBulletHit(b) {
+      if (hive.alive && Math.hypot(b.x - hive.x, b.y - hive.y) < hive.r * 0.7) {
+        hive.hp -= b.damage;
+        if (hive.hp <= 0) {
+          hive.alive = false;
+          createExplosion(hive.x, hive.y, 'big');
+          createExplosion(hive.x + 100, hive.y - 60, 'medium');
+          createExplosion(hive.x - 80, hive.y + 80, 'medium');
+        }
+        return true;
+      }
+      return false;
+    },
+    renderWorld() {
+      if (hive.alive) {
+        // Damage outline that pulses red as HP drops
+        const dmg = 1 - hive.hp / hive.maxHp;
+        ctx.save();
+        ctx.strokeStyle = `rgba(230, 51, 41, ${0.4 + Math.sin(game.time*0.2) * 0.2 * dmg})`;
+        ctx.lineWidth = 3 + dmg * 4;
+        ctx.beginPath(); ctx.arc(hive.x, hive.y, hive.r * 0.85, 0, Math.PI*2); ctx.stroke();
+        // Cracks at low HP
+        if (dmg > 0.5) {
+          ctx.strokeStyle = COLORS.black; ctx.lineWidth = 3;
+          for (let i = 0; i < 4; i++) {
+            const a = i * Math.PI/2 + game.time * 0.001;
+            ctx.beginPath();
+            ctx.moveTo(hive.x + Math.cos(a)*hive.r*0.3, hive.y + Math.sin(a)*hive.r*0.3);
+            ctx.lineTo(hive.x + Math.cos(a)*hive.r*0.7, hive.y + Math.sin(a)*hive.r*0.7);
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+    },
+    renderHUD() {
+      drawObjectivePanel([
+        `蜂巢 HP   ${Math.max(0, hive.hp)} / ${hive.maxHp}`,
+        hive.alive ? `状态  存活 · 持续生成 FPV` : `状态  已摧毁`,
+      ]);
+    },
+  };
+};
+
+// ---------- MISSION 4: RECOVER BLACK BOX ----------
+MISSION_FACTORIES.recover = function(mapDef) {
+  const blackBox = {
+    x: WORLD.w*0.78, y: WORLD.h*0.30, // Foundry — top right by slag pool
+    radius: 22,
+    pickedUp: false,
+    pulse: 0,
+  };
+  const extraction = {
+    x: (mapDef.playerSpawn ? mapDef.playerSpawn.x : WORLD.w/2),
+    y: (mapDef.playerSpawn ? mapDef.playerSpawn.y : WORLD.h/2),
+    r: 90,
+  };
+  let extraSpawnsAfterPickup = 0;
+  return {
+    title: '回收黑盒',
+    titleEn: 'RECOVER BLACK BOX',
+    objective: '找到坠毁单元的资料核心，带回撤离区',
+    blackBox, extraction,
+    update() {
+      blackBox.pulse += 0.08;
+      if (!blackBox.pickedUp) {
+        if (player.alive && Math.hypot(player.x - blackBox.x, player.y - blackBox.y) < blackBox.radius + player.radius) {
+          blackBox.pickedUp = true;
+          showMessage('黑盒已回收 · 撤离', 150);
+        }
+      } else {
+        // Box rides on the player
+        blackBox.x = player.x;
+        blackBox.y = player.y - 4;
+        // Ramped enemy pressure once we're carrying
+        if (game.time % 220 === 0) {
+          extraSpawnsAfterPickup++;
+          spawnSoldier({ soldierBias: 'gantry' });
+          if (extraSpawnsAfterPickup % 3 === 0) spawnDroneEnemy({ droneBias: 'open' });
+        }
+      }
+    },
+    isComplete() {
+      return blackBox.pickedUp && player.alive
+          && Math.hypot(player.x - extraction.x, player.y - extraction.y) < extraction.r;
+    },
+    isFailed() { return !player.alive; },
+    renderWorld() {
+      // Extraction zone
+      ctx.save();
+      ctx.strokeStyle = blackBox.pickedUp ? COLORS.red : COLORS.gray;
+      ctx.lineWidth = 3; ctx.setLineDash([10, 10]);
+      ctx.beginPath(); ctx.arc(extraction.x, extraction.y, extraction.r, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = blackBox.pickedUp ? COLORS.red : COLORS.gray;
+      ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('撤离 EXTRACT', extraction.x, extraction.y + 5);
+      ctx.textAlign = 'left';
+      ctx.restore();
+      // Black box
+      if (!blackBox.pickedUp) {
+        ctx.save();
+        const pulseR = 36 + Math.sin(blackBox.pulse) * 6;
+        ctx.strokeStyle = COLORS.red; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(blackBox.x, blackBox.y, pulseR, 0, Math.PI*2); ctx.stroke();
+        ctx.fillStyle = COLORS.black;
+        ctx.fillRect(blackBox.x - 14, blackBox.y - 10, 28, 20);
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(blackBox.x - 12, blackBox.y - 8, 24, 4);
+        ctx.fillStyle = COLORS.cream;
+        ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+        ctx.fillText('BLK', blackBox.x, blackBox.y + 6);
+        ctx.textAlign = 'left';
+        ctx.restore();
+      } else if (player.alive) {
+        // Carry indicator on the player
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(player.x - 6, player.y - 22, 12, 6);
+      }
+    },
+    renderHUD() {
+      const lines = !blackBox.pickedUp
+        ? [`目标   抵达黑盒（红色脉冲）`]
+        : [`携带中  返回撤离区`,
+           `距离   ${Math.hypot(player.x - extraction.x, player.y - extraction.y).toFixed(0)}u`];
+      drawObjectivePanel(lines);
+    },
+  };
+};
+
+// ---------- MISSION 5: HEAVY MACHINE INSERTION ----------
+MISSION_FACTORIES.heavyInsert = function(mapDef) {
+  // Tanky UGV starts at bottom edge, rolls to the data core, then breaches.
+  const target = { x: WORLD.w*0.50, y: WORLD.h*0.50 }; // data core landmark
+  const heavy = {
+    x: WORLD.w*0.50, y: WORLD.h - 280,
+    angle: -Math.PI/2,
+    hp: 700, maxHp: 700, radius: 38,
+    speed: 0.5, alive: true, arrivedAt: null,
+    breachProgress: 0, breachDuration: 720, // 12s
+  };
+  return {
+    title: '重型机具进场',
+    titleEn: 'HEAVY INSERTION',
+    objective: '护送破障 UGV 进入资料核心并完成破障',
+    heavy, target,
+    update() {
+      if (!heavy.alive) return;
+      if (!heavy.arrivedAt) {
+        const dx = target.x - heavy.x, dy = target.y - heavy.y;
+        const d = Math.hypot(dx, dy);
+        if (d < 100) {
+          heavy.arrivedAt = game.time;
+          showMessage('破障开始 · 防御 12s', 150);
+        } else {
+          heavy.angle = Math.atan2(dy, dx);
+          heavy.x += Math.cos(heavy.angle) * heavy.speed;
+          heavy.y += Math.sin(heavy.angle) * heavy.speed;
+        }
+      } else {
+        heavy.breachProgress++;
+        // During breach: heavy spawn pressure
+        if (game.time % 180 === 0) {
+          spawnSoldier({ soldierBias: 'nodes' });
+          if (Math.random() < 0.5) spawnDroneEnemy({ droneBias: 'open' });
+        }
+      }
+    },
+    isComplete() { return heavy.alive && heavy.arrivedAt && heavy.breachProgress >= heavy.breachDuration; },
+    isFailed()   { return !heavy.alive; },
+    onEnemyBulletHit(b) {
+      if (heavy.alive && Math.hypot(b.x - heavy.x, b.y - heavy.y) < heavy.radius) {
+        heavy.hp -= b.damage * 0.5; // armored
+        if (heavy.hp <= 0) { heavy.alive = false; createExplosion(heavy.x, heavy.y, 'big'); }
+        return true;
+      }
+      return false;
+    },
+    renderWorld() {
+      // Target ring
+      ctx.save();
+      ctx.strokeStyle = COLORS.red; ctx.lineWidth = 3; ctx.setLineDash([10, 10]);
+      ctx.beginPath(); ctx.arc(target.x, target.y, 110, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+      // Heavy UGV
+      if (heavy.alive) {
+        ctx.translate(heavy.x, heavy.y); ctx.rotate(heavy.angle);
+        // Tracks
+        ctx.fillStyle = COLORS.black;
+        ctx.fillRect(-44, -28, 88, 8);
+        ctx.fillRect(-44, 20, 88, 8);
+        // Hull
+        ctx.fillStyle = COLORS.gray;
+        ctx.fillRect(-40, -22, 80, 44);
+        // Turret breaching ram
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(-10, -10, 50, 20);
+        ctx.fillStyle = COLORS.black;
+        ctx.fillRect(28, -6, 16, 12);
+        // Antenna
+        ctx.fillStyle = COLORS.black;
+        ctx.fillRect(-30, -2, 4, 16);
+      }
+      ctx.restore();
+      if (heavy.alive) {
+        ctx.fillStyle = COLORS.black; ctx.fillRect(heavy.x-40, heavy.y-44, 80, 5);
+        ctx.fillStyle = heavy.hp > heavy.maxHp*0.3 ? COLORS.red : COLORS.redBright;
+        ctx.fillRect(heavy.x-40, heavy.y-44, 80 * heavy.hp/heavy.maxHp, 5);
+      }
+      // Breach progress ring
+      if (heavy.arrivedAt && heavy.alive) {
+        ctx.save();
+        ctx.strokeStyle = COLORS.red; ctx.lineWidth = 6;
+        ctx.beginPath();
+        const t = heavy.breachProgress / heavy.breachDuration;
+        ctx.arc(target.x, target.y, 130, -Math.PI/2, -Math.PI/2 + Math.PI*2 * t);
+        ctx.stroke();
+        ctx.fillStyle = COLORS.red;
+        ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(`BREACH ${Math.floor(t*100)}%`, target.x, target.y + 6);
+        ctx.textAlign = 'left';
+        ctx.restore();
+      }
+    },
+    renderHUD() {
+      const lines = [`UGV   ${heavy.alive ? heavy.hp + '/' + heavy.maxHp : '已损毁'}`];
+      if (heavy.arrivedAt) {
+        lines.push(`破障   ${Math.floor(heavy.breachProgress / heavy.breachDuration * 100)}%`);
+      } else if (heavy.alive) {
+        lines.push(`距离   ${Math.hypot(target.x - heavy.x, target.y - heavy.y).toFixed(0)}u`);
+      }
+      drawObjectivePanel(lines);
+    },
+  };
+};
+
+// ---------- MISSION 6: HOLD THE LAST RELAY ----------
+MISSION_FACTORIES.hold = function(mapDef) {
+  const relay = {
+    x: WORLD.w/2, y: WORLD.h/2, r: 90,
+    hp: 600, maxHp: 600, alive: true,
+  };
+  const duration = 90 * 60; // 90 sec at 60fps
+  let elapsed = 0;
+  let waveTimer = 60;
+  return {
+    title: '坚守最后中继站',
+    titleEn: 'HOLD THE RELAY',
+    objective: `守住中继站 90 秒不失守`,
+    relay, duration,
+    get elapsed() { return elapsed; },
+    update() {
+      elapsed++;
+      waveTimer--;
+      if (waveTimer <= 0) {
+        // Continuous wave pressure
+        spawnSoldier({ soldierBias: 'landmarkRing' });
+        if (Math.random() < 0.35) spawnDroneEnemy({ droneBias: 'overhead' });
+        waveTimer = 220 + Math.floor(Math.random() * 80);
+      }
+    },
+    isComplete() { return elapsed >= duration && relay.alive; },
+    isFailed()   { return !relay.alive; },
+    onEnemyBulletHit(b) {
+      if (relay.alive && Math.hypot(b.x - relay.x, b.y - relay.y) < relay.r) {
+        relay.hp -= b.damage;
+        if (relay.hp <= 0) { relay.alive = false; createExplosion(relay.x, relay.y, 'big'); }
+        return true;
+      }
+      return false;
+    },
+    renderWorld() {
+      // Relay defense ring + threat radius
+      ctx.save();
+      ctx.strokeStyle = relay.alive ? COLORS.red : COLORS.gray;
+      ctx.lineWidth = 4; ctx.setLineDash([12, 8]);
+      ctx.beginPath(); ctx.arc(relay.x, relay.y, relay.r, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+      // Relay structure (cross with central pulse)
+      if (relay.alive) {
+        ctx.fillStyle = COLORS.black;
+        ctx.fillRect(relay.x - 8, relay.y - 50, 16, 100);
+        ctx.fillRect(relay.x - 50, relay.y - 8, 100, 16);
+        ctx.fillStyle = COLORS.red;
+        const pulse = 0.6 + Math.sin(game.time * 0.08) * 0.4;
+        ctx.globalAlpha = pulse;
+        ctx.beginPath(); ctx.arc(relay.x, relay.y, 18, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = COLORS.gray;
+        ctx.fillRect(relay.x - 30, relay.y - 14, 60, 28);
+      }
+      ctx.restore();
+      // Damage bar
+      if (relay.alive) {
+        ctx.fillStyle = COLORS.black; ctx.fillRect(relay.x-40, relay.y-66, 80, 5);
+        ctx.fillStyle = relay.hp > relay.maxHp*0.3 ? COLORS.red : COLORS.redBright;
+        ctx.fillRect(relay.x-40, relay.y-66, 80 * relay.hp/relay.maxHp, 5);
+      }
+    },
+    renderHUD() {
+      const remaining = Math.max(0, Math.ceil((duration - elapsed) / 60));
+      drawObjectivePanel([
+        `倒计时   ${remaining}s`,
+        `中继 HP   ${Math.max(0, relay.hp)}/${relay.maxHp}`,
+      ]);
+    },
+  };
+};
+
+// Helper for missions: spawn a soldier at a specific point (no bias logic)
+function spawnSoldierAt(x, y) {
+  enemies.push({
+    x: Math.max(40, Math.min(WORLD.w-40, x)),
+    y: Math.max(40, Math.min(WORLD.h-40, y)),
+    hp: 50, maxHp: 50, angle: 0,
+    fireCd: 60 + Math.random()*60, fireRate: 50,
+    radius: 13, alive: true,
+    walkPhase: Math.random() * Math.PI*2,
+    speed: 1.0 + Math.random()*0.4,
+  });
+}
+
+// Shared HUD helper for the objective panel (used by every mission renderHUD)
+function drawObjectivePanel(lines) {
+  const w = 320, h = 64 + lines.length * 18;
+  const x = W()/2 - w/2, y = 76;
+  drawHUDPanel(x, y, w, h, `任务 / ${mission.titleEn}`);
+  ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText(mission.title, x + 12, y + 36);
+  ctx.fillStyle = COLORS.black;
+  ctx.font = '11px monospace';
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], x + 12, y + 56 + i*18);
+  }
+}
 
 // ============ WORLD GEN ============
 function generateWorld(mapIndex) {
@@ -1978,18 +2565,14 @@ function update() {
   updateSquadIntel();
   updateAllies();
   updateEnemies();
+  updateMission();   // mission tick (movement, capture progress, breach, spawn pressure)
   updateBullets();
   updateExplosions();
   updateRadar();
   updateSoundEvents();
 
-  if (game.waveBreak <= 0) {
-    const aliveEnemies = enemies.filter(e => e.alive).length + enemyDrones.filter(d => d.alive).length;
-    if (aliveEnemies === 0 && player.alive) {
-      game.waveBreak = 180;
-      showMessage(`第 ${game.wave} 波 已肃清`, 120);
-    }
-  }
+  // Mission completion drives wave advancement.
+  // (onMissionSuccess() sets game.waveBreak to 220.)
   if (game.waveBreak > 0) {
     game.waveBreak--;
     if (game.waveBreak === 0) startNextWave();
@@ -2097,7 +2680,9 @@ function updateBullets() {
     b.x += b.vx; b.y += b.vy;
     b.life--;
     let hit = false;
-    for (const e of enemies) {
+    // Mission-specific damage hook (e.g. hive HP) — fires before enemy-soldier check
+    if (mission && mission.onPlayerBulletHit && mission.onPlayerBulletHit(b)) hit = true;
+    if (!hit) for (const e of enemies) {
       if (!e.alive) continue;
       if (Math.hypot(b.x-e.x, b.y-e.y) < e.radius) {
         e.hp -= b.damage;
@@ -2126,7 +2711,9 @@ function updateBullets() {
     b.x += b.vx; b.y += b.vy;
     b.life--;
     let hit = false;
-    if (player.alive && Math.hypot(b.x-player.x, b.y-player.y) < player.radius) {
+    // Mission-specific damage hook (UGV / heavy / relay take damage from enemy fire)
+    if (mission && mission.onEnemyBulletHit && mission.onEnemyBulletHit(b)) hit = true;
+    if (!hit && player.alive && Math.hypot(b.x-player.x, b.y-player.y) < player.radius) {
       player.hp -= b.damage;
       game.hitFlash = 12;
       hit = true;
@@ -2611,9 +3198,13 @@ function renderWorld() {
   // Landmark top features (antenna spires, hive crowns) — last so they read as tall
   drawLandmarksTop();
 
+  // Mission objective elements (UGV, hive damage outline, capture zones, relay…)
+  // Drawn over landmarks so capture rings / breach progress sit on top.
+  if (mission && mission.renderWorld && (game.mode === 'tactical' || game.mode === 'command')) {
+    mission.renderWorld();
+  }
+
   // Soft shared fog: friendlies' cones are punched out of a darkening blanket.
-  // Multiple cones merge naturally (no overlapping outlines). Cone vertex is
-  // offset forward so it doesn't look like a sharp triangle pinned to the unit.
   if (game.mode === 'tactical') {
     drawSharedVisionFog();
     drawSoundIndicators();
@@ -3718,7 +4309,7 @@ function renderHUD() {
   ctx.font = 'bold 11px sans-serif';
   ctx.fillText(`坐标 ${player.x.toFixed(0)} · ${player.y.toFixed(0)}`, 32, 60);
   ctx.fillText(`视角 ${getModeLabel()}`, 32, 78);
-  ctx.fillText(`关卡 ${game.wave} / ${MAPS.length}`, 32, 96);
+  ctx.fillText(`关卡 ${game.wave} / ${MISSIONS.length}`, 32, 96);
   const remaining = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
   ctx.fillStyle = remaining > 0 ? COLORS.red : COLORS.gray;
   ctx.fillText(`敌方剩余 ${remaining}`, 32, 114);
@@ -3773,6 +4364,9 @@ function renderHUD() {
   ctx.fillStyle = COLORS.gray;
   ctx.fillText('— VIEW MODE —', W()/2, 56);
   ctx.textAlign = 'left';
+
+  // Mission objective panel (drawn just below the view mode banner)
+  if (mission && mission.renderHUD) mission.renderHUD();
 
   // Bottom-left: weapon
   const py = H() - 110;
