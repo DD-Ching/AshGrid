@@ -734,6 +734,63 @@ canvas#game { display: block; position: fixed; inset: 0; }
   font-weight: 700;
 }
 
+.arsenal-panel {
+  padding: 14px 36px 18px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: rgba(20, 20, 20, 0.6);
+}
+.arsenal-title {
+  font-size: 10px; letter-spacing: 4px;
+  color: var(--text-dim); font-weight: 700;
+  margin-bottom: 10px;
+}
+.arsenal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+.arsenal-slot {
+  background: var(--bg);
+  border: 1px solid var(--line-bright);
+  border-left: 2px solid var(--red);
+  padding: 8px 10px;
+  display: flex; flex-direction: column;
+  gap: 4px;
+}
+.arsenal-slot-label {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 9px; letter-spacing: 3px;
+  color: var(--text-dim); font-weight: 700;
+}
+.arsenal-slot-en { color: var(--text); }
+.arsenal-slot-cn { color: var(--text-dim); font-weight: 500; letter-spacing: 1px; }
+.arsenal-slot-control {
+  display: flex; align-items: center; gap: 6px;
+}
+.arsenal-cycle {
+  background: var(--bg-light);
+  border: 1px solid var(--line-bright);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px; font-weight: 700;
+  padding: 3px 8px;
+  cursor: pointer;
+  line-height: 1;
+}
+.arsenal-cycle:hover { background: var(--bg-lighter); border-color: var(--red); color: var(--red); }
+.arsenal-slot-name { flex: 1; min-width: 0; }
+.arsenal-slot-name-en {
+  font-size: 11px; font-weight: 800; letter-spacing: 2px;
+  color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.arsenal-slot-name-desc {
+  font-size: 9px; letter-spacing: 1px;
+  color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 .weapon-svg {
   width: 100%; height: 32px;
   margin: 6px auto 4px;
@@ -1272,6 +1329,10 @@ body.trackpad-mode .cursor-soft { display: none !important; }
     </div>
   </div>
   <div class="loadout-cards" id="loadoutCards"></div>
+  <div class="arsenal-panel">
+    <div class="arsenal-title">// ARSENAL · 槽位定制 (依目前选定的 LOADOUT)</div>
+    <div class="arsenal-grid" id="arsenalGrid"></div>
+  </div>
   <div class="loadout-footer">
     <div class="loadout-current"><span class="accent" id="loadoutCurrentName">ASSAULT</span><span id="loadoutCurrentDesc">突击型 · 平衡</span></div>
     <div class="loadout-actions">
@@ -1523,6 +1584,9 @@ const settings = {
   loadoutWeapons: (() => {
     try { return JSON.parse(localStorage.getItem('gv_lw') || '{}'); } catch (e) { return {}; }
   })(),
+  loadoutSlots: (() => {
+    try { return JSON.parse(localStorage.getItem('gv_ls') || '{}'); } catch (e) { return {}; }
+  })(),
 };
 function saveSettings() {
   localStorage.setItem('gv_ctrl', settings.controlMode);
@@ -1534,6 +1598,7 @@ function saveSettings() {
   localStorage.setItem('gv_mode', settings.gameMode);
   localStorage.setItem('gv_theme', settings.mapTheme);
   localStorage.setItem('gv_lw', JSON.stringify(settings.loadoutWeapons || {}));
+  localStorage.setItem('gv_ls', JSON.stringify(settings.loadoutSlots || {}));
 }
 
 const GAME_MODES = {
@@ -7783,6 +7848,65 @@ function weaponIconSVG(weaponName) {
   return icons[weaponName] || icons['AR-30'];
 }
 
+const SLOT_CATALOGS = {
+  secondary: [
+    { id: 'P-18',            cn: '机械手枪',     desc: '低耗电低热量备用武器' },
+    { id: 'MP-2',            cn: '微型 PDW',     desc: '近距离快速反应' },
+    { id: 'Shock Pistol',    cn: '电击手枪',     desc: '短暂瘫痪小型机器人' },
+    { id: 'Signal Cutter',   cn: '讯号切断器',   desc: '近距离削弱敌方无人机连线' },
+    { id: 'Flare Marker',    cn: '标记发射器',   desc: '标记敌方 · 无人机追踪' },
+    { id: 'Repair Injector', cn: '维修注入器',   desc: '支援队友或修理机器狼' },
+  ],
+  launcher: [
+    { id: 'AT-4X',           cn: '反载具发射器', desc: '对付无人车 / 重装机器人' },
+    { id: 'LM-3',             cn: '巡飞弹发射器', desc: '慢速巡航弹绕过掩体' },
+    { id: 'DP-6',             cn: '无人机艙发射器', desc: '快速部署小型无人机' },
+    { id: 'EMP Tube',         cn: '电磁干扰筒',   desc: '瘫痪感测器 / 砲塔' },
+    { id: 'Smoke Grid',       cn: '烟幕网格发射器', desc: '製造灰雾遮蔽视线' },
+    { id: 'Decoy Rocket',     cn: '诱饵火箭',     desc: '製造假热源 / 假讯号' },
+    { id: 'Mine Disc',        cn: '地雷盘发射器', desc: '佈置区域封锁点' },
+    { id: 'Breach Charge',    cn: '破障弹发射器', desc: '打开封锁门 / 薄牆' },
+  ],
+  drone: [
+    { id: 'FPV-K1',          cn: 'FPV 自杀式',   desc: '高风险高伤害单次攻击' },
+    { id: 'RCN-2',            cn: '侦察无人机',   desc: '扫描敌人 · 标记节点' },
+    { id: 'DRP-5',            cn: '投放式',       desc: '投下小型爆炸物' },
+    { id: 'SWM-8',            cn: '蜂群无人机包', desc: '多台小型无人机骚扰' },
+    { id: 'RELAY-H7',         cn: '通讯中继',     desc: '增加讯号范围' },
+    { id: 'DCY-1',            cn: '诱饵无人机',   desc: '吸引砲塔 / 错乱感测' },
+    { id: 'CARGO-C5',         cn: '搬运无人机',   desc: '运送弹药 / 电池 / 维修' },
+    { id: 'THERMAL-EYE',      cn: '热成像无人机', desc: '搜索地下 / 烟雾 / 室内' },
+  ],
+  throwable: [
+    { id: 'Frag Cube',        cn: '破片方块',     desc: '标准清场爆炸' },
+    { id: 'Smoke Block',      cn: '烟雾方块',     desc: '產生遮蔽区' },
+    { id: 'EMP Disc',         cn: '电磁圆盘',     desc: '对无人机 / 砲塔有效' },
+    { id: 'Repair Cell',      cn: '维修电池',     desc: '回復装甲或修理模组' },
+    { id: 'Battery Pack',     cn: '电池包',       desc: '补充行动与控制资源' },
+    { id: 'Signal Spike',     cn: '讯号钉',       desc: '临时建立连线点' },
+    { id: 'Barrier Plate',    cn: '展开式护板',   desc: '快速建立掩体' },
+    { id: 'Scan Beacon',      cn: '扫描信标',     desc: '区域偵测' },
+  ],
+  ew: [
+    { id: 'Jammer Pack',      cn: '干扰背包',     desc: '降低敌方讯号与小地图' },
+    { id: 'Spoof Beacon',     cn: '欺骗信标',     desc: '生成假目标点' },
+    { id: 'EMP Grenade',      cn: '电磁脉衝手雷', desc: '短暂瘫痪电子单位' },
+    { id: 'Sensor Dart',      cn: '感测钉',       desc: '建立小型侦察点' },
+    { id: 'Signal Mine',      cn: '讯号地雷',     desc: '靠近时干扰无人机' },
+    { id: 'Thermal Decoy',    cn: '热源诱饵',     desc: '欺骗热成像 / 砲塔' },
+    { id: 'Radar Pulse',      cn: '雷达脉衝器',   desc: '揭露附近敌人' },
+    { id: 'Blackout Node',    cn: '黑域节点',     desc: '建立通讯黑洞' },
+  ],
+};
+
+const LOADOUT_DEFAULTS = {
+  assault:   { secondary: 'P-18',            launcher: 'EMP Tube',     drone: 'FPV-K1',     throwable: 'Frag Cube',   ew: 'Jammer Pack' },
+  recon:     { secondary: 'MP-2',            launcher: 'Smoke Grid',   drone: 'RCN-2',      throwable: 'Scan Beacon', ew: 'Sensor Dart' },
+  droneop:   { secondary: 'Signal Cutter',   launcher: 'DP-6',         drone: 'SWM-8',      throwable: 'Signal Spike',ew: 'Spoof Beacon' },
+  heavy:     { secondary: 'P-18',            launcher: 'AT-4X',        drone: 'DRP-5',      throwable: 'Frag Cube',   ew: 'EMP Grenade' },
+  engineer:  { secondary: 'Repair Injector', launcher: 'Mine Disc',    drone: 'CARGO-C5',   throwable: 'Repair Cell', ew: 'Sensor Dart' },
+};
+
 const PRIMARY_WEAPONS = {
   'AR-30':  { cn: '向量步枪 · 通用',     dmg: 26, fireCd: 0.10, heat: 1.8, ammo: 30, reserve: 180 },
   'BR-12':  { cn: '精准步枪 · 中远程',   dmg: 32, fireCd: 0.16, heat: 2.2, ammo: 24, reserve: 144 },
@@ -7795,9 +7919,65 @@ const PRIMARY_WEAPONS = {
   'CR-6':   { cn: '卡宾枪 · 偵察轻装',   dmg: 22, fireCd: 0.09, heat: 1.6, ammo: 30, reserve: 180 },
 };
 
+function renderArsenal() {
+  const grid = document.getElementById('arsenalGrid');
+  if (!grid) return;
+  const lid = settings.loadout;
+  const defaults = LOADOUT_DEFAULTS[lid] || LOADOUT_DEFAULTS.assault;
+  const userSlots = (settings.loadoutSlots && settings.loadoutSlots[lid]) || {};
+  grid.innerHTML = '';
+  const slotInfo = [
+    { key: 'secondary', label: 'SECONDARY', cn: '副武器' },
+    { key: 'launcher',  label: 'LAUNCHER',  cn: '发射器' },
+    { key: 'drone',     label: 'DRONE',     cn: '无人机' },
+    { key: 'throwable', label: 'THROWABLE', cn: '投掷物' },
+    { key: 'ew',        label: 'EW',        cn: '电子战' },
+  ];
+  for (const s of slotInfo) {
+    const items = SLOT_CATALOGS[s.key];
+    const cur = userSlots[s.key] || defaults[s.key];
+    const meta = items.find(i => i.id === cur) || items[0];
+    const row = document.createElement('div');
+    row.className = 'arsenal-slot';
+    row.innerHTML = `
+      <div class="arsenal-slot-label">
+        <span class="arsenal-slot-en">${s.label}</span>
+        <span class="arsenal-slot-cn">${s.cn}</span>
+      </div>
+      <div class="arsenal-slot-control">
+        <button class="arsenal-cycle" data-dir="-1" data-slot="${s.key}">◀</button>
+        <div class="arsenal-slot-name">
+          <div class="arsenal-slot-name-en">${meta.id}</div>
+          <div class="arsenal-slot-name-desc">${meta.cn} · ${meta.desc}</div>
+        </div>
+        <button class="arsenal-cycle" data-dir="1" data-slot="${s.key}">▶</button>
+      </div>
+    `;
+    grid.appendChild(row);
+  }
+  grid.querySelectorAll('.arsenal-cycle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const dir = parseInt(btn.dataset.dir, 10);
+      const slot = btn.dataset.slot;
+      const items = SLOT_CATALOGS[slot];
+      const cur = (userSlots[slot]) || defaults[slot] || items[0].id;
+      const idx = items.findIndex(i => i.id === cur);
+      const nextIdx = (idx + dir + items.length) % items.length;
+      if (!settings.loadoutSlots) settings.loadoutSlots = {};
+      if (!settings.loadoutSlots[lid]) settings.loadoutSlots[lid] = {};
+      settings.loadoutSlots[lid][slot] = items[nextIdx].id;
+      saveSettings();
+      renderArsenal();
+      const meta = items[nextIdx];
+      showToast(`${slot.toUpperCase()} → ${meta.id}`, 1200);
+    });
+  });
+}
+
 function refreshLoadoutCards() {
   refreshModePills();
   renderMapGallery();
+  renderArsenal();
   const grid = document.getElementById('loadoutCards');
   grid.innerHTML = '';
   for (const [id, ld] of Object.entries(LOADOUTS)) {
@@ -7841,6 +8021,7 @@ function refreshLoadoutCards() {
       settings.loadout = id;
       saveSettings();
       refreshLoadoutCards();
+      renderArsenal();
       refreshDeployConfig();
       const cur = LOADOUTS[settings.loadout];
       document.getElementById('loadoutCurrentName').textContent = cur.name;
