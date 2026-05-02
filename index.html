@@ -1342,6 +1342,8 @@ body.trackpad-mode .cursor-soft { display: none !important; }
         <span class="tactical-key">G</span><span id="grenadeCount">3</span>
         <span class="tactical-spacer">·</span>
         <span class="tactical-key">C</span><span id="launcherCount">3</span>
+        <span class="tactical-spacer">·</span>
+        <span class="tactical-key">X</span><span id="ewCount">1</span>
       </div>
     </div>
   </div>
@@ -1405,10 +1407,6 @@ body.trackpad-mode .cursor-soft { display: none !important; }
     <div class="loadout-config-section">
       <div class="loadout-config-label">// 任务模式 · GAME MODE</div>
       <div class="loadout-pills" id="modePills"></div>
-    </div>
-    <div class="loadout-config-section loadout-config-wide">
-      <div class="loadout-config-label">// 地图选择 · MAP SELECTION</div>
-      <div class="map-gallery" id="mapGallery"></div>
     </div>
   </div>
   <div class="loadout-cards" id="loadoutCards"></div>
@@ -1710,6 +1708,7 @@ const LOADOUTS = {
     weapon: { name: 'AR-30', cn: '突击步枪', damage: 26, fireRate: 0.1, heat: 1.8, spread: 0.012, magazine: 30, reserve: 180, reloadDur: 1.2, aimFov: 48, scope: 'std' },
     hp: 120, armor: 30, speed: 7, sprintMul: 1.75,
     fpvMax: 3,
+    carry: { launcher: 3, throwable: 3, ew: 1 },
     stats: { weight: 3, agility: 3, accuracy: 3, firepower: 3, armor: 3 },
   },
   recon: {
@@ -1718,6 +1717,7 @@ const LOADOUTS = {
     weapon: { name: 'DMR-44', cn: '精准步枪', damage: 65, fireRate: 0.55, heat: 9, spread: 0.0025, magazine: 8, reserve: 64, reloadDur: 1.5, aimFov: 18, scope: 'sniper' },
     hp: 80, armor: 10, speed: 9, sprintMul: 2.0,
     fpvMax: 2,
+    carry: { launcher: 1, throwable: 2, ew: 2 },
     stats: { weight: 1, agility: 5, accuracy: 5, firepower: 3, armor: 1 },
   },
   drone_op: {
@@ -1726,6 +1726,7 @@ const LOADOUTS = {
     weapon: { name: 'SMG-9', cn: '短突击', damage: 14, fireRate: 0.06, heat: 1.0, spread: 0.028, magazine: 40, reserve: 240, reloadDur: 1.0, aimFov: 56, scope: 'std' },
     hp: 100, armor: 20, speed: 7, sprintMul: 1.7,
     fpvMax: 6,
+    carry: { launcher: 2, throwable: 2, ew: 3 },
     stats: { weight: 2, agility: 4, accuracy: 2, firepower: 2, armor: 2 },
   },
   heavy: {
@@ -1734,6 +1735,7 @@ const LOADOUTS = {
     weapon: { name: 'LMG-44', cn: '重机枪', damage: 22, fireRate: 0.07, heat: 1.4, spread: 0.045, magazine: 80, reserve: 320, reloadDur: 1.8, aimFov: 52, scope: 'std' },
     hp: 180, armor: 80, speed: 5, sprintMul: 1.25,
     fpvMax: 2,
+    carry: { launcher: 5, throwable: 4, ew: 1 },
     stats: { weight: 5, agility: 1, accuracy: 2, firepower: 5, armor: 5 },
   },
   engineer: {
@@ -1743,6 +1745,7 @@ const LOADOUTS = {
     hp: 130, armor: 40, speed: 7, sprintMul: 1.6,
     fpvMax: 3,
     deployTurret: true,
+    carry: { launcher: 2, throwable: 4, ew: 2 },
     stats: { weight: 3, agility: 3, accuracy: 3, firepower: 3, armor: 4 },
   },
 };
@@ -2166,6 +2169,7 @@ window.addEventListener('keydown', e => {
   if (k === 'h') deployTurret();
   if (k === 'b') swapWeapon();
   if (k === 'c') fireLauncher();
+  if (k === 'x') activateEW();
 });
 
 function togglePause() {
@@ -4637,8 +4641,11 @@ void main(){
     healSelf: ss.healSelf || 0,
   };
   player.holding = 'primary';
-  player.throwableCharges = 3;
-  player.launcherCharges = 3;
+  const carry = ldNow.carry || { launcher: 3, throwable: 3, ew: 1 };
+  player.throwableCharges = carry.throwable;
+  player.launcherCharges = carry.launcher;
+  player.ewCharges = carry.ew;
+  player.ewCooldown = 0;
   if (settings.character === 'wolf') {
     player.group = makeWolf(M.robotBody, M.robotEye, playerWeapon);
     player.group.scale.setScalar(0.85);
@@ -6725,27 +6732,80 @@ function swapWeapon() {
   game.shake = Math.max(game.shake, 0.04);
 }
 
+function getActiveThrowableType() {
+  const slotMap = (settings.loadoutSlots && settings.loadoutSlots[settings.loadout]) || {};
+  const ldDef = LOADOUT_DEFAULTS[settings.loadout] || LOADOUT_DEFAULTS.assault || {};
+  return slotMap.throwable || ldDef.throwable || 'Frag Cube';
+}
+
 function throwGrenade() {
   if (!player.alive) return;
   if (player.throwableCharges <= 0) { showToast('投掷物已耗尽'); return; }
+  const tType = getActiveThrowableType();
+  // Self-use items: instant effect, no projectile
+  if (tType === 'Repair Cell') {
+    player.throwableCharges--;
+    const before = player.hp;
+    player.hp = Math.min(player.maxHp, player.hp + 50);
+    player.lastHitTime = 0;
+    showToast(`Repair Cell · +${Math.floor(player.hp - before)} HP`);
+    return;
+  }
+  if (tType === 'Battery Pack') {
+    player.throwableCharges--;
+    player.battery = Math.min(player.maxBattery, player.battery + 60);
+    showToast('Battery Pack · +60 电池');
+    return;
+  }
+  if (tType === 'Barrier Plate') {
+    // Deploy a wall in front of player as a building
+    player.throwableCharges--;
+    const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+    const wx = player.pos.x + fx * 2.2;
+    const wz = player.pos.z + fz * 2.2;
+    const wall = makeBox(3, 1.6, 0.4, M.buildLight);
+    wall.position.set(wx, 0.8 + (player.pos.y || 0), wz);
+    wall.rotation.y = player.yaw;
+    scene.add(wall);
+    const cap = makeBox(3.05, 0.18, 0.45, M.barrelStripe);
+    cap.position.set(wx, 1.6 + (player.pos.y || 0), wz);
+    cap.rotation.y = player.yaw;
+    scene.add(cap);
+    const cs = Math.abs(Math.cos(player.yaw)), sn = Math.abs(Math.sin(player.yaw));
+    buildings.push({ x: wx - (3*cs + 0.4*sn)/2, z: wz - (3*sn + 0.4*cs)/2, w: 3*cs + 0.4*sn, d: 3*sn + 0.4*cs, h: 1.6 + (player.pos.y || 0) });
+    showToast('Barrier Plate · 已展开');
+    return;
+  }
+  if (tType === 'Scan Beacon' || tType === 'Signal Spike') {
+    // Reveal enemies briefly
+    player.throwableCharges--;
+    game.scanRevealUntil = (game.elapsed || 0) + (tType === 'Scan Beacon' ? 8 : 5);
+    showMessage(tType + ' · 全图扫描', 1.5);
+    return;
+  }
+  // Otherwise: physics projectile (Frag / Smoke / EMP)
   player.throwableCharges--;
   const origin = activeCamera.getWorldPosition(new THREE.Vector3());
   const dir = new THREE.Vector3();
   activeCamera.getWorldDirection(dir);
   const startPos = origin.clone().addScaledVector(dir, 0.8);
   const mesh = new THREE.Group();
-  const body = makeBox(0.32, 0.32, 0.32, M.barrelStripe);
+  let bodyColor = M.barrelStripe;
+  let tipColor = M.red;
+  if (tType === 'Smoke Block') { bodyColor = new THREE.MeshLambertMaterial({ color: 0x808080 }); tipColor = new THREE.MeshBasicMaterial({ color: 0xb0b0b0 }); }
+  else if (tType === 'EMP Disc') { bodyColor = new THREE.MeshLambertMaterial({ color: 0x305080 }); tipColor = new THREE.MeshBasicMaterial({ color: 0x4d99dd }); }
+  const body = makeBox(0.32, 0.32, 0.32, bodyColor);
   mesh.add(body);
   const stripe = makeBox(0.34, 0.08, 0.34, M.black);
   stripe.position.y = 0.04; mesh.add(stripe);
-  const tip = makeBox(0.1, 0.05, 0.1, M.red);
+  const tip = makeBox(0.1, 0.05, 0.1, tipColor);
   tip.position.y = 0.18; mesh.add(tip);
   mesh.position.copy(startPos);
   scene.add(mesh);
   const vel = dir.clone().multiplyScalar(20);
   vel.y += 5;
-  throwables.push({ pos: startPos.clone(), vel, mesh, fuse: 1.8 });
-  showToast(`投掷 · 剩余 ${player.throwableCharges}`, 800);
+  throwables.push({ pos: startPos.clone(), vel, mesh, fuse: 1.8, type: tType });
+  showToast(`${tType} · 剩余 ${player.throwableCharges}`, 800);
   game.shake = Math.max(game.shake, 0.05);
 }
 
@@ -6766,37 +6826,92 @@ function updateThrowables(dt) {
     t.mesh.rotation.x += dt * 5;
     t.mesh.rotation.y += dt * 6;
     if (t.fuse <= 0) {
-      createExplosion(t.pos.clone(), 'medium');
-      game.shake = Math.max(game.shake, 0.45);
-      const radius = 6.5;
-      for (const e of enemies) {
-        if (!e.alive) continue;
-        const d = e.pos.distanceTo(t.pos);
-        if (d < radius) {
-          e.hp -= 70 * (1 - d/radius);
-          if (e.hp <= 0) {
-            e.alive = false;
-            scene.remove(e.group);
-            game.score += e.type === 'drone' ? 150 : 100;
-            game.killCount++;
-            addKillFeed('FRAG', e.type === 'drone' ? 'DRONE' : 'ROBOT-X');
-            rollPickupDrop(e.pos);
-          } else {
-            e.state = 'engage';
-            e.fireCd = 1 + Math.random();
+      const ttype = t.type || 'Frag Cube';
+      if (ttype === 'Smoke Block') {
+        // Smoke cloud — visual only, lasts ~5s, slightly drops enemy detection
+        for (let s = 0; s < 8; s++) {
+          const cloud = new THREE.Mesh(
+            new THREE.SphereGeometry(1.0 + Math.random() * 0.8, 6, 4),
+            new THREE.MeshLambertMaterial({ color: 0x808080, transparent: true, opacity: 0.55 })
+          );
+          cloud.position.set(t.pos.x + (Math.random()-0.5)*3, 1 + Math.random()*1.5, t.pos.z + (Math.random()-0.5)*3);
+          scene.add(cloud);
+          // Self-cleanup
+          setTimeout(() => scene.remove(cloud), 5000);
+        }
+        // Patrol enemies in radius lose track briefly
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          if (e.pos.distanceTo(t.pos) < 6) {
+            e.fireCd = Math.max(e.fireCd, 2.5);
           }
         }
-      }
-      if (player.alive && player.pos.distanceTo(t.pos) < 4.5) {
-        const d = player.pos.distanceTo(t.pos);
-        player.hp -= 22 * (1 - d/4.5);
-        player.lastHitTime = player.regenDelay;
-        flashHit();
-        if (player.hp <= 0) {
-          player.hp = 0; player.alive = false;
-          allies[0].alive = false; allies[0].hp = 0;
-          createExplosion(player.pos, 'big');
-          setTimeout(() => endGame(false), 1500);
+        showToast('烟雾散开');
+      } else if (ttype === 'EMP Disc') {
+        // EMP burst — disable enemy fire and slow drones
+        const radius = 9;
+        // Visual burst
+        const burst = new THREE.Mesh(
+          new THREE.SphereGeometry(0.5, 12, 8),
+          new THREE.MeshBasicMaterial({ color: 0x4d99dd, transparent: true, opacity: 0.9 })
+        );
+        burst.position.copy(t.pos);
+        scene.add(burst);
+        let bs = 0.5;
+        const grow = setInterval(() => {
+          bs += 1.2;
+          burst.scale.setScalar(bs);
+          burst.material.opacity *= 0.85;
+          if (bs > radius * 2.4) {
+            clearInterval(grow);
+            scene.remove(burst);
+          }
+        }, 30);
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          const d = e.pos.distanceTo(t.pos);
+          if (d < radius) {
+            e.fireCd = 6;
+            // Drones drop velocity
+            if (e.type === 'drone') e.hp -= 25;
+          }
+        }
+        // Player turrets are friend; spare them
+        showMessage('EMP 脉冲 · 区域瘫痪', 1.5);
+      } else {
+        // Frag (default)
+        createExplosion(t.pos.clone(), 'medium');
+        game.shake = Math.max(game.shake, 0.45);
+        const radius = 6.5;
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          const d = e.pos.distanceTo(t.pos);
+          if (d < radius) {
+            e.hp -= 70 * (1 - d/radius);
+            if (e.hp <= 0) {
+              e.alive = false;
+              scene.remove(e.group);
+              game.score += e.type === 'drone' ? 150 : 100;
+              game.killCount++;
+              addKillFeed('FRAG', e.type === 'drone' ? 'DRONE' : 'ROBOT-X');
+              rollPickupDrop(e.pos);
+            } else {
+              e.state = 'engage';
+              e.fireCd = 1 + Math.random();
+            }
+          }
+        }
+        if (player.alive && player.pos.distanceTo(t.pos) < 4.5) {
+          const d = player.pos.distanceTo(t.pos);
+          player.hp -= 22 * (1 - d/4.5);
+          player.lastHitTime = player.regenDelay;
+          flashHit();
+          if (player.hp <= 0) {
+            player.hp = 0; player.alive = false;
+            allies[0].alive = false; allies[0].hp = 0;
+            createExplosion(player.pos, 'big');
+            setTimeout(() => endGame(false), 1500);
+          }
         }
       }
       scene.remove(t.mesh);
@@ -6805,16 +6920,161 @@ function updateThrowables(dt) {
   }
 }
 
+function getActiveEWType() {
+  const slotMap = (settings.loadoutSlots && settings.loadoutSlots[settings.loadout]) || {};
+  const ldDef = LOADOUT_DEFAULTS[settings.loadout] || LOADOUT_DEFAULTS.assault || {};
+  return slotMap.ew || ldDef.ew || 'Jammer Pack';
+}
+
+function activateEW() {
+  if (!player.alive) return;
+  if ((player.ewCooldown || 0) > 0) {
+    showToast(`EW 冷却中 ${player.ewCooldown.toFixed(1)}s`, 800);
+    return;
+  }
+  if ((player.ewCharges || 0) <= 0) {
+    showToast('EW 已耗尽');
+    return;
+  }
+  const ewType = getActiveEWType();
+  player.ewCharges--;
+  player.ewCooldown = 12;
+  if (ewType === 'Jammer Pack' || ewType === 'Blackout Node') {
+    // Wide-area enemy fire suppression for 6s
+    let count = 0;
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      if (e.pos.distanceTo(player.pos) < 35) {
+        e.fireCd = Math.max(e.fireCd, 6);
+        count++;
+      }
+    }
+    showMessage(`${ewType} · 已干扰 ${count} 单位`, 1.6);
+  } else if (ewType === 'EMP Grenade') {
+    // AOE EMP near player
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const d = e.pos.distanceTo(player.pos);
+      if (d < 18) {
+        e.fireCd = Math.max(e.fireCd, 5);
+        if (e.type === 'drone') e.hp -= 35;
+        if (!e.alive) { /* re-check after damage */ }
+      }
+    }
+    // Visual flash
+    flashHit();
+    showMessage('EMP 区域脉冲', 1.4);
+  } else if (ewType === 'Radar Pulse' || ewType === 'Sensor Dart') {
+    // Reveal enemies on minimap for 6s
+    game.scanRevealUntil = (game.elapsed || 0) + (ewType === 'Radar Pulse' ? 8 : 5);
+    showMessage(`${ewType} · 全图扫描`, 1.5);
+  } else if (ewType === 'Spoof Beacon' || ewType === 'Thermal Decoy') {
+    // Spawn a decoy at cursor location — enemies retarget toward it briefly
+    const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+    const dx = player.pos.x + fx * 8;
+    const dz = player.pos.z + fz * 8;
+    const decoy = new THREE.Group();
+    const dBody = makeBox(0.6, 1.4, 0.6, M.barrelStripe);
+    dBody.position.y = 0.7; decoy.add(dBody);
+    const dEye = makeBox(0.3, 0.1, 0.3, M.redBright);
+    dEye.position.y = 1.4; decoy.add(dEye);
+    decoy.position.set(dx, 0, dz);
+    scene.add(decoy);
+    // Distract nearby patrol enemies for 4s
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      if (e.pos.distanceTo(decoy.position) < 25) {
+        e.fireCd = Math.max(e.fireCd, 3);
+        e.state = 'patrol';
+      }
+    }
+    setTimeout(() => scene.remove(decoy), 6000);
+    showMessage(`${ewType} · 诱饵已部署`, 1.5);
+  } else if (ewType === 'Signal Mine') {
+    // Drop a mine at player location — explodes when enemy gets close
+    const mx = player.pos.x, mz = player.pos.z;
+    const mine = new THREE.Group();
+    const mBase = makeBox(0.5, 0.1, 0.5, M.buildDark);
+    mine.add(mBase);
+    const mTop = makeBox(0.3, 0.05, 0.3, M.redBright);
+    mTop.position.y = 0.1; mine.add(mTop);
+    mine.position.set(mx, 0.05, mz);
+    scene.add(mine);
+    // Track via timeout-based scanner
+    const armed = { alive: true };
+    const tick = setInterval(() => {
+      if (!armed.alive) { clearInterval(tick); return; }
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        if (e.pos.distanceTo(mine.position) < 4) {
+          armed.alive = false;
+          createExplosion(mine.position.clone(), 'medium');
+          for (const ee of enemies) {
+            if (!ee.alive) continue;
+            const dd = ee.pos.distanceTo(mine.position);
+            if (dd < 6) {
+              ee.hp -= 80 * (1 - dd/6);
+              if (ee.hp <= 0) {
+                ee.alive = false;
+                scene.remove(ee.group);
+                game.score += ee.type === 'drone' ? 150 : 100;
+                game.killCount++;
+                addKillFeed('SIGNAL MINE', ee.type === 'drone' ? 'DRONE' : 'ROBOT-X');
+              }
+            }
+          }
+          scene.remove(mine);
+          clearInterval(tick);
+          return;
+        }
+      }
+    }, 250);
+    showMessage('讯号地雷 · 已布署', 1.4);
+  } else {
+    // Generic effect fallback
+    showMessage(`${ewType} · 已激活`, 1.4);
+  }
+  game.shake = Math.max(game.shake, 0.06);
+}
+
+function getActiveLauncherType() {
+  const slotMap = (settings.loadoutSlots && settings.loadoutSlots[settings.loadout]) || {};
+  const ldDef = LOADOUT_DEFAULTS[settings.loadout] || LOADOUT_DEFAULTS.assault || {};
+  return slotMap.launcher || ldDef.launcher || 'AT-4X';
+}
+
 function fireLauncher() {
   if (!player.alive) return;
   if (player.launcherCharges <= 0) { showToast('发射器已耗尽'); return; }
+  const lType = getActiveLauncherType();
+  // Drone Pod: deploy a recon drone instead of firing a rocket
+  if (lType === 'DP-6') {
+    if (drone.battery < 15) { showToast('UAV 电池不足'); return; }
+    player.launcherCharges--;
+    drone.active = true;
+    drone.battery = drone.maxBattery;
+    drone.pos.set(player.pos.x, (player.pos.y || 0) + 4, player.pos.z);
+    drone.yaw = player.yaw;
+    if (drone.group) drone.group.visible = true;
+    showToast('DP-6 · 侦察无人机已部署', 1200);
+    return;
+  }
   player.launcherCharges--;
   const origin = activeCamera.getWorldPosition(new THREE.Vector3());
   const dir = new THREE.Vector3();
   activeCamera.getWorldDirection(dir);
   const startPos = origin.clone().addScaledVector(dir, 1.5);
   const rocket = new THREE.Group();
-  const rBody = makeBox(0.3, 0.3, 1.0, M.red);
+  // Visual color depends on type
+  let bodyColor = M.red;
+  let velMag = 48;
+  let life = 4.0;
+  if (lType === 'EMP Tube') bodyColor = new THREE.MeshLambertMaterial({ color: 0x305080 });
+  else if (lType === 'Smoke Grid') bodyColor = new THREE.MeshLambertMaterial({ color: 0x808080 });
+  else if (lType === 'Decoy Rocket') bodyColor = M.barrelStripe;
+  else if (lType === 'Mine Disc') bodyColor = new THREE.MeshLambertMaterial({ color: 0x444444 });
+  else if (lType === 'LM-3') { velMag = 22; life = 8.0; }  // loiter — slower, longer
+  const rBody = makeBox(0.3, 0.3, 1.0, bodyColor);
   rocket.add(rBody);
   const rHead = makeBox(0.22, 0.22, 0.3, M.black);
   rHead.position.z = 0.65; rocket.add(rHead);
@@ -6831,12 +7091,12 @@ function fireLauncher() {
   scene.add(rocket);
   launcherShots.push({
     pos: startPos.clone(),
-    vel: dir.clone().multiplyScalar(48),
+    vel: dir.clone().multiplyScalar(velMag),
     mesh: rocket,
-    life: 4.0,
+    life, type: lType,
   });
   game.shake = Math.max(game.shake, 0.22);
-  showToast(`发射 · 剩余 ${player.launcherCharges}`, 800);
+  showToast(`${lType} · 剩余 ${player.launcherCharges}`, 800);
 }
 
 function updateLauncherShots(dt) {
@@ -6873,29 +7133,185 @@ function updateLauncherShots(dt) {
     }
     if (s.pos.y < 0.1) hit = true;
     if (hit || s.life <= 0) {
-      createExplosion(hitPos, 'big');
-      game.shake = Math.max(game.shake, 0.6);
-      const radius = 8.5;
-      for (const e of enemies) {
-        if (!e.alive) continue;
-        const d = e.pos.distanceTo(s.pos);
-        if (d < radius) {
-          e.hp -= 120 * (1 - d/radius);
-          if (e.hp <= 0) {
-            e.alive = false;
-            scene.remove(e.group);
-            game.score += e.type === 'drone' ? 150 : 100;
-            game.killCount++;
-            addKillFeed('LAUNCHER', e.type === 'drone' ? 'DRONE' : 'ROBOT-X');
-            rollPickupDrop(e.pos);
+      const lt = s.type || 'AT-4X';
+      // EMP Tube: blue burst, large fireCd radius, drone damage
+      if (lt === 'EMP Tube') {
+        createExplosion(hitPos, 'big');
+        game.shake = Math.max(game.shake, 0.4);
+        const empMesh = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 12), new THREE.MeshBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.55 }));
+        empMesh.position.copy(hitPos);
+        scene.add(empMesh);
+        let t = 0;
+        const empBurst = setInterval(() => {
+          t += 0.05;
+          empMesh.scale.setScalar(1 + t * 18);
+          empMesh.material.opacity = Math.max(0, 0.55 - t * 0.7);
+          if (t > 0.8) { clearInterval(empBurst); scene.remove(empMesh); }
+        }, 50);
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          const d = e.pos.distanceTo(s.pos);
+          if (d < 16) {
+            e.fireCd = Math.max(e.fireCd || 0, 8);
+            if (e.type === 'drone') {
+              e.hp -= 60;
+              if (e.hp <= 0) {
+                e.alive = false; scene.remove(e.group);
+                game.score += 150; game.killCount++;
+                addKillFeed('EMP', 'DRONE');
+                rollPickupDrop(e.pos);
+              }
+            }
           }
         }
+        showToast('EMP TUBE · 电磁锁定 16m / 8s', 1100);
       }
-      // Detonate barrels in radius too
-      for (const bar of barrels) {
-        if (!bar.alive) continue;
-        if (bar.pos.distanceTo(s.pos) < radius + 0.5) {
-          setTimeout(() => explodeBarrel(bar), 100 + Math.random()*200);
+      // Smoke Grid: deploys a smoke cloud
+      else if (lt === 'Smoke Grid') {
+        for (let k = 0; k < 12; k++) {
+          const puff = new THREE.Mesh(new THREE.SphereGeometry(1.6 + Math.random()*0.6, 10, 10), new THREE.MeshLambertMaterial({ color: 0x808080, transparent: true, opacity: 0.7 }));
+          puff.position.set(hitPos.x + (Math.random()-0.5)*5, 1.5 + Math.random()*2, hitPos.z + (Math.random()-0.5)*5);
+          scene.add(puff);
+          setTimeout(() => scene.remove(puff), 6500);
+        }
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          if (e.pos.distanceTo(s.pos) < 8) e.fireCd = Math.max(e.fireCd || 0, 5);
+        }
+        showToast('SMOKE GRID · 烟幕屏障 6s', 1100);
+      }
+      // Decoy Rocket: deploys a voxel decoy that diverts patrols
+      else if (lt === 'Decoy Rocket') {
+        const decoy = new THREE.Group();
+        const body = makeBox(0.6, 1.6, 0.5, M.red);
+        body.position.y = 0.8;
+        const head = makeBox(0.4, 0.4, 0.4, M.black);
+        head.position.y = 1.85;
+        decoy.add(body); decoy.add(head);
+        decoy.position.set(hitPos.x, 0, hitPos.z);
+        scene.add(decoy);
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          if (e.pos.distanceTo(s.pos) < 30 && e.type !== 'drone') {
+            e.divertTarget = decoy.position.clone();
+            e.divertUntil = (game.time || 0) + 8;
+          }
+        }
+        setTimeout(() => scene.remove(decoy), 8000);
+        showToast('DECOY · 信号假体已部署 8s', 1100);
+      }
+      // Mine Disc: deploys a proximity mine
+      else if (lt === 'Mine Disc') {
+        const mine = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.18, 12), new THREE.MeshLambertMaterial({ color: 0x222222 }));
+        mine.position.set(hitPos.x, 0.1, hitPos.z);
+        scene.add(mine);
+        const mineLight = new THREE.Mesh(new THREE.SphereGeometry(0.07), new THREE.MeshBasicMaterial({ color: 0xff2222 }));
+        mineLight.position.set(hitPos.x, 0.22, hitPos.z);
+        scene.add(mineLight);
+        let blink = 0;
+        const mineBlink = setInterval(() => { blink++; mineLight.visible = blink % 2 === 0; }, 350);
+        const mineCheck = setInterval(() => {
+          for (const e of enemies) {
+            if (!e.alive) continue;
+            if (e.pos.distanceTo(mine.position) < 4.5) {
+              clearInterval(mineCheck); clearInterval(mineBlink);
+              createExplosion(mine.position, 'big');
+              for (const en of enemies) {
+                if (!en.alive) continue;
+                const dd = en.pos.distanceTo(mine.position);
+                if (dd < 7) {
+                  en.hp -= 110 * (1 - dd/7);
+                  if (en.hp <= 0) {
+                    en.alive = false; scene.remove(en.group);
+                    game.score += en.type === 'drone' ? 150 : 100;
+                    game.killCount++;
+                    addKillFeed('MINE', en.type === 'drone' ? 'DRONE' : 'ROBOT-X');
+                    rollPickupDrop(en.pos);
+                  }
+                }
+              }
+              scene.remove(mine); scene.remove(mineLight);
+              return;
+            }
+          }
+        }, 250);
+        setTimeout(() => { clearInterval(mineCheck); clearInterval(mineBlink); scene.remove(mine); scene.remove(mineLight); }, 60000);
+        showToast('MINE DISC · 近接地雷已部署', 1100);
+      }
+      // Breach Charge: bigger AOE for buildings/cover
+      else if (lt === 'Breach Charge') {
+        createExplosion(hitPos, 'big');
+        game.shake = Math.max(game.shake, 0.85);
+        const radius = 12;
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          const d = e.pos.distanceTo(s.pos);
+          if (d < radius) {
+            e.hp -= 160 * (1 - d/radius);
+            if (e.hp <= 0) {
+              e.alive = false; scene.remove(e.group);
+              game.score += e.type === 'drone' ? 150 : 100;
+              game.killCount++;
+              addKillFeed('BREACH', e.type === 'drone' ? 'DRONE' : 'ROBOT-X');
+              rollPickupDrop(e.pos);
+            }
+          }
+        }
+        for (const bar of barrels) {
+          if (!bar.alive) continue;
+          if (bar.pos.distanceTo(s.pos) < radius + 1) setTimeout(() => explodeBarrel(bar), 100 + Math.random()*200);
+        }
+        showToast('BREACH · 爆破装药引爆', 1100);
+      }
+      // LM-3 Loitering munition: bigger AOE
+      else if (lt === 'LM-3') {
+        createExplosion(hitPos, 'big');
+        game.shake = Math.max(game.shake, 0.7);
+        const radius = 10;
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          const d = e.pos.distanceTo(s.pos);
+          if (d < radius) {
+            e.hp -= 140 * (1 - d/radius);
+            if (e.hp <= 0) {
+              e.alive = false; scene.remove(e.group);
+              game.score += e.type === 'drone' ? 150 : 100;
+              game.killCount++;
+              addKillFeed('LM-3', e.type === 'drone' ? 'DRONE' : 'ROBOT-X');
+              rollPickupDrop(e.pos);
+            }
+          }
+        }
+        for (const bar of barrels) {
+          if (!bar.alive) continue;
+          if (bar.pos.distanceTo(s.pos) < radius + 0.5) setTimeout(() => explodeBarrel(bar), 100 + Math.random()*200);
+        }
+      }
+      // Default AT-4X / others: standard rocket
+      else {
+        createExplosion(hitPos, 'big');
+        game.shake = Math.max(game.shake, 0.6);
+        const radius = 8.5;
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          const d = e.pos.distanceTo(s.pos);
+          if (d < radius) {
+            e.hp -= 120 * (1 - d/radius);
+            if (e.hp <= 0) {
+              e.alive = false;
+              scene.remove(e.group);
+              game.score += e.type === 'drone' ? 150 : 100;
+              game.killCount++;
+              addKillFeed('LAUNCHER', e.type === 'drone' ? 'DRONE' : 'ROBOT-X');
+              rollPickupDrop(e.pos);
+            }
+          }
+        }
+        for (const bar of barrels) {
+          if (!bar.alive) continue;
+          if (bar.pos.distanceTo(s.pos) < radius + 0.5) {
+            setTimeout(() => explodeBarrel(bar), 100 + Math.random()*200);
+          }
         }
       }
       scene.remove(s.mesh);
@@ -7440,6 +7856,13 @@ function updateEnemies(dt) {
         alertNearby(e, 14);
         e.fireCd = 0.8 + Math.random() * 0.6;
       } else {
+        // DECOY DIVERSION — if a decoy rocket has set a target, walk to it
+        if (e.divertTarget && (e.divertUntil || 0) > (game.time || 0)) {
+          e.patrolTarget = e.divertTarget.clone();
+          e.patrolTarget.y = e.pos.y;
+        } else if (e.divertUntil && (game.time || 0) >= e.divertUntil) {
+          e.divertTarget = null; e.divertUntil = 0;
+        }
         if (!e.patrolTarget) {
           if (e.patrolWait > 0) {
             e.patrolWait -= dt;
@@ -7692,6 +8115,10 @@ function updatePlayerMovement(dt) {
   if (player.lastHitTime > 0) player.lastHitTime -= dt;
   if (player.lastHitTime <= 0 && player.alive && player.hp < player.maxHp) {
     player.hp = Math.min(player.maxHp, player.hp + player.regenRate * dt);
+  }
+  // EW cooldown tick
+  if ((player.ewCooldown || 0) > 0) {
+    player.ewCooldown = Math.max(0, player.ewCooldown - dt);
   }
 
   // Reload
@@ -8404,6 +8831,14 @@ function updateHUD() {
   if (grenadeEl) grenadeEl.textContent = String(player.throwableCharges || 0);
   const launcherEl = document.getElementById('launcherCount');
   if (launcherEl) launcherEl.textContent = String(player.launcherCharges || 0);
+  const ewEl = document.getElementById('ewCount');
+  if (ewEl) {
+    if ((player.ewCooldown || 0) > 0) {
+      ewEl.textContent = (player.ewCharges || 0) + ' (' + player.ewCooldown.toFixed(1) + 's)';
+    } else {
+      ewEl.textContent = String(player.ewCharges || 0);
+    }
+  }
   // Drone
   document.getElementById('uavStat').textContent = drone.active ? 'ACTIVE' : (drone.battery > 15 ? 'READY' : 'LOW');
   document.getElementById('uavStat').className = drone.active ? 'v' : '';
