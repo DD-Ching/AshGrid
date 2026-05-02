@@ -369,17 +369,56 @@ const player = {
   walkPhase: 0,
 };
 
-// Weapon profile — separate from player so future weapons can swap in
-const weapon = {
-  name: 'AR-7',
-  follow: 0.18,       // gun barrel angular damping (1 = instant, 0.05 = sluggish)
-  swayAmp: 0.024,     // idle weapon sway radians
-  swayFreq: 0.06,
-  movePenalty: 0.018, // extra sway while moving
-  recoilPerShot: 0.10,// rad kick per shot
-  recoilDecay: 0.86,  // recoil decay per frame
-  spread: 0.04,       // bullet spread cone (random)
+// All shooters use the same lag/sway/recoil mechanic — they just pick a weapon profile.
+// follow: how fast the gun barrel angle damps toward the target angle (1=instant, 0.05=sluggish)
+// swayAmp: idle weapon sway amplitude (radians)
+// movePenalty: extra sway while moving
+// recoilPerShot: rad kick added to gunRecoil each shot
+// recoilDecay: recoil decay multiplier per frame
+// spread: per-bullet random angle (radians)
+// fireCd: frames between shots
+// damage / bulletSpeed / bulletLife: ballistics
+// soundIntensity: how far the gunshot reaches as an alert
+const WEAPONS = {
+  // Player rifle — accurate, fast follow
+  AR7: { follow: 0.18, swayAmp: 0.024, swayFreq: 0.06, movePenalty: 0.018,
+         recoilPerShot: 0.10, recoilDecay: 0.86, spread: 0.04,
+         fireCd: 6,  damage: 14, bulletSpeed: 14, bulletLife: 60, soundIntensity: 900 },
+  // Ally squad rifle — slightly looser
+  M4:  { follow: 0.14, swayAmp: 0.030, swayFreq: 0.07, movePenalty: 0.022,
+         recoilPerShot: 0.09, recoilDecay: 0.87, spread: 0.06,
+         fireCd: 14, damage: 12, bulletSpeed: 13, bulletLife: 60, soundIntensity: 800 },
+  // Hostile soldier — slow follow, large spread, lower damage
+  AK:  { follow: 0.10, swayAmp: 0.034, swayFreq: 0.05, movePenalty: 0.026,
+         recoilPerShot: 0.12, recoilDecay: 0.85, spread: 0.10,
+         fireCd: 32, damage: 9,  bulletSpeed: 8,  bulletLife: 70, soundIntensity: 700 },
 };
+
+// Backward-compat shim — code that still reads `weapon` gets the player profile
+const weapon = WEAPONS.AR7;
+
+// Drive any shooter's gunAngle: damps toward `target`, adds idle sway, decays recoil.
+// Returns the *effective* barrel angle (gunAngle + recoil) for firing this frame.
+function tickShooter(s, target, w, isMoving) {
+  if (s.gunAngle == null) s.gunAngle = target;
+  if (s.gunRecoil == null) s.gunRecoil = 0;
+  if (s.swayPhase == null) s.swayPhase = Math.random() * Math.PI*2;
+  let d = target - s.gunAngle;
+  while (d > Math.PI) d -= Math.PI*2;
+  while (d < -Math.PI) d += Math.PI*2;
+  s.gunAngle += d * w.follow;
+  const swayAmp = w.swayAmp + (isMoving ? w.movePenalty : 0);
+  s.swayPhase += w.swayFreq;
+  s.gunAngle += Math.sin(s.swayPhase) * swayAmp * 0.18;
+  s.gunRecoil *= w.recoilDecay;
+  if (Math.abs(s.gunRecoil) < 0.001) s.gunRecoil = 0;
+  return s.gunAngle + s.gunRecoil;
+}
+
+// Apply recoil kick after firing
+function applyRecoil(s, w) {
+  s.gunRecoil += (Math.random() < 0.5 ? -1 : 1) * w.recoilPerShot;
+}
 
 // Vision system
 const VIEW = {
@@ -448,6 +487,13 @@ const themeShapes = [];   // big themed geometry covering 70%+ of the map (drawn
 const decorations = [];
 const muzzleFlashes = [];
 const networkNodes = [];
+
+// Friendly squad (vision is shared with the player)
+const allies = [];
+const ALLY_LOADOUT = [
+  { callsign: 'BRAVO',   offsetX: -110, offsetY:  60 },
+  { callsign: 'CHARLIE', offsetX:  110, offsetY:  60 },
+];
 
 let currentMap = null;
 
@@ -542,6 +588,8 @@ function startNextWave() {
   player.gunAngle = player.angle;
   player.gunRecoil = 0;
   fpv.active = false;
+  // Fresh squad each mission — allies don't persist deaths between maps
+  spawnAllies();
   if (game.mode === 'fpv' || game.mode === 'drone') game.mode = 'tactical';
   drone.deployed = false;
   drone.battery = drone.maxBattery;
@@ -1285,12 +1333,142 @@ function spawnDroneEnemy(cfg) {
   y = Math.max(60, Math.min(WORLD.h-60, y));
   enemyDrones.push({
     x, y,
-    hp: 25, maxHp: 25,
-    fireCd: 60 + Math.random()*120,
+    hp: 18, maxHp: 18,
     radius: 11,
     alive: true,
+    angle: Math.atan2(player.y - y, player.x - x),
+    speed: 4.6 + Math.random()*1.2,    // cruise speed (high — they're committed)
+    turnRate: 0.038,                   // low — hard to turn (committed approach)
+    armed: true,
     hoverPhase: Math.random()*Math.PI*2,
+    explodeRadius: 70,
+    explodeDamage: 60,
   });
+}
+
+// ============ SQUAD (allies) ============
+function spawnAllies() {
+  allies.length = 0;
+  for (let i = 0; i < ALLY_LOADOUT.length; i++) {
+    const ld = ALLY_LOADOUT[i];
+    allies.push({
+      callsign: ld.callsign,
+      offsetX: ld.offsetX, offsetY: ld.offsetY,
+      x: player.x + ld.offsetX, y: player.y + ld.offsetY,
+      angle: player.angle, gunAngle: player.angle, gunRecoil: 0, swayPhase: Math.random()*Math.PI*2,
+      hp: 80, maxHp: 80,
+      alive: true, radius: 13, walkPhase: Math.random()*Math.PI*2,
+      speed: 2.5,
+      fireCd: 0,
+      weaponId: 'M4',
+      target: null,
+      lookPhase: Math.random()*Math.PI*2, // patrol look-around
+    });
+  }
+}
+
+function nearestVisibleEnemy(ax, ay, fromAngle, range) {
+  let best = null, bestD = Infinity;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const dx = e.x - ax, dy = e.y - ay;
+    const d = Math.hypot(dx, dy);
+    if (d < range && angleInCone(fromAngle, VIEW.arc, ax, ay, e.x, e.y) && lineOfSight(ax, ay, e.x, e.y)) {
+      if (d < bestD) { best = e; bestD = d; }
+    }
+  }
+  for (const dr of enemyDrones) {
+    if (!dr.alive) continue;
+    const dx = dr.x - ax, dy = dr.y - ay;
+    const d = Math.hypot(dx, dy);
+    // Drones are priority targets — they'll explode on you
+    const priority = d * 0.6;
+    if (d < range && angleInCone(fromAngle, VIEW.arc, ax, ay, dr.x, dr.y) && lineOfSight(ax, ay, dr.x, dr.y)) {
+      if (priority < bestD) { best = dr; bestD = priority; }
+    }
+  }
+  return best;
+}
+
+function updateAllies() {
+  for (const a of allies) {
+    if (!a.alive) continue;
+
+    // Look first (turn body toward target if any), then move.
+    const target = a.target && a.target.alive ? a.target : nearestVisibleEnemy(a.x, a.y, a.angle, VIEW.range);
+    a.target = target;
+
+    let desiredAngle;
+    let isMoving = false;
+
+    if (target) {
+      // Engage — face target, hold position roughly, fire.
+      desiredAngle = Math.atan2(target.y - a.y, target.x - a.x);
+      a.angle = desiredAngle; // body turns instantly to face threat
+      // Move toward a comfortable engagement distance (~280)
+      const dx = target.x - a.x, dy = target.y - a.y;
+      const dist = Math.hypot(dx, dy);
+      const ideal = 280;
+      if (dist > ideal + 60) {
+        a.x += Math.cos(desiredAngle) * a.speed * 0.7;
+        a.y += Math.sin(desiredAngle) * a.speed * 0.7;
+        a.walkPhase += 0.16;
+        isMoving = true;
+      } else if (dist < ideal - 60) {
+        a.x -= Math.cos(desiredAngle) * a.speed * 0.4;
+        a.y -= Math.sin(desiredAngle) * a.speed * 0.4;
+        a.walkPhase += 0.10;
+        isMoving = true;
+      }
+    } else {
+      // No target — follow the player at flanking offset, scan vision around player's facing.
+      // Offset rotates with player angle so squad keeps formation when player turns.
+      const cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
+      const fx = player.x + (a.offsetX*cosA - a.offsetY*sinA);
+      const fy = player.y + (a.offsetX*sinA + a.offsetY*cosA);
+      const dx = fx - a.x, dy = fy - a.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 30) {
+        const fa = Math.atan2(dy, dx);
+        const step = Math.min(a.speed, d);
+        a.x += Math.cos(fa) * step;
+        a.y += Math.sin(fa) * step;
+        a.walkPhase += 0.18;
+        isMoving = true;
+        // While moving in formation, body faces the player's look direction
+        desiredAngle = player.angle;
+      } else {
+        // Stationary — slowly scan around player's facing for tactical coverage
+        a.lookPhase += 0.012;
+        desiredAngle = player.angle + Math.sin(a.lookPhase) * 0.6;
+      }
+      a.angle = desiredAngle;
+    }
+
+    pushOutOfBuildings(a, a.radius);
+    a.x = Math.max(20, Math.min(WORLD.w-20, a.x));
+    a.y = Math.max(20, Math.min(WORLD.h-20, a.y));
+
+    // Gun barrel — same lag/sway/recoil mechanic as the player
+    const w = WEAPONS[a.weaponId];
+    const barrel = tickShooter(a, a.angle, w, isMoving);
+
+    a.fireCd--;
+    if (a.fireCd <= 0 && target) {
+      const ang = barrel + (Math.random()-0.5)*w.spread;
+      bullets.push({
+        x: a.x + Math.cos(ang)*16,
+        y: a.y + Math.sin(ang)*16,
+        vx: Math.cos(ang)*w.bulletSpeed, vy: Math.sin(ang)*w.bulletSpeed,
+        life: w.bulletLife, damage: w.damage,
+        fromAlly: true,
+      });
+      muzzleFlashes.push({ x: a.x + Math.cos(ang)*22, y: a.y + Math.sin(ang)*22, angle: ang, life: 5 });
+      applyRecoil(a, w);
+      a.fireCd = w.fireCd + Math.floor(Math.random()*8);
+      emitSound(a.x, a.y, w.soundIntensity, true);
+    }
+  }
 }
 
 // ============ DRONE / FPV CONTROL ============
@@ -1384,6 +1562,27 @@ function angleInCone(srcAngle, arc, ox, oy, tx, ty) {
   return Math.abs(d) <= arc / 2;
 }
 
+// True if any friendly (player or alive ally) can see (x, y) right now.
+// Vision = inside their cone + within range + clear line-of-sight.
+// Used to CULL enemy/drone/enemy-bullet rendering: outside any friendly cone,
+// the player has no perceptual evidence of where enemies are.
+function isVisibleToFriendly(x, y) {
+  if (player.alive) {
+    const dx = x - player.x, dy = y - player.y;
+    if (dx*dx + dy*dy < VIEW.range * VIEW.range
+        && angleInCone(player.angle, VIEW.arc, player.x, player.y, x, y)
+        && lineOfSight(player.x, player.y, x, y)) return true;
+  }
+  for (const a of allies) {
+    if (!a.alive) continue;
+    const dx = x - a.x, dy = y - a.y;
+    if (dx*dx + dy*dy < VIEW.range * VIEW.range
+        && angleInCone(a.angle, VIEW.arc, a.x, a.y, x, y)
+        && lineOfSight(a.x, a.y, x, y)) return true;
+  }
+  return false;
+}
+
 // ============ AI ============
 function lineOfSight(x1, y1, x2, y2) {
   // Underground concealment: target hidden if it's in a tunnel and shooter isn't.
@@ -1419,42 +1618,62 @@ function pushOutOfBuildings(ent, radius) {
   }
 }
 
+// Returns the nearest friendly (player or ally) the source can SEE right now (cone + LoS).
+function nearestVisibleFriendly(sx, sy, sAngle, range, arc) {
+  let best = null, bestD = Infinity;
+  if (player.alive) {
+    const d = Math.hypot(player.x - sx, player.y - sy);
+    if (d < range && angleInCone(sAngle, arc, sx, sy, player.x, player.y)
+        && lineOfSight(sx, sy, player.x, player.y)) {
+      best = player; bestD = d;
+    }
+  }
+  for (const a of allies) {
+    if (!a.alive) continue;
+    const d = Math.hypot(a.x - sx, a.y - sy);
+    if (d < range && angleInCone(sAngle, arc, sx, sy, a.x, a.y)
+        && lineOfSight(sx, sy, a.x, a.y)) {
+      if (d < bestD) { best = a; bestD = d; }
+    }
+  }
+  return best;
+}
+
 function updateEnemies() {
+  const w = WEAPONS.AK;
   for (const e of enemies) {
     if (!e.alive) continue;
     if (e.angle == null) e.angle = Math.random() * Math.PI*2;
     if (e.alerted == null) e.alerted = 0;
     if (e.lockTime == null) e.lockTime = 0;
 
-    const dx = player.x - e.x, dy = player.y - e.y;
-    const dist = Math.hypot(dx, dy);
-    const angleToPlayer = Math.atan2(dy, dx);
-
-    // VISION TEST: player must be inside enemy's cone, within range, with LoS, and alive.
-    const inCone = angleInCone(e.angle, ENEMY_VIEW.arc, e.x, e.y, player.x, player.y);
-    const hasLoS = dist < ENEMY_VIEW.range && lineOfSight(e.x, e.y, player.x, player.y);
-    const canSee = inCone && hasLoS && player.alive;
+    // Pick whichever friendly the enemy can see right now.
+    const tgt = nearestVisibleFriendly(e.x, e.y, e.angle, ENEMY_VIEW.range, ENEMY_VIEW.arc);
+    const canSee = tgt != null;
+    const tx = tgt ? tgt.x : null, ty = tgt ? tgt.y : null;
+    const dist = tgt ? Math.hypot(tx - e.x, ty - e.y) : 0;
+    let isMoving = false;
 
     if (canSee) {
-      // Lock — remember player position, snap face toward player.
       e.lockTime = 60;
-      e.lastSeenX = player.x; e.lastSeenY = player.y;
-      let aDiff = angleToPlayer - e.angle;
+      e.lastSeenX = tx; e.lastSeenY = ty;
+      const angleToTarget = Math.atan2(ty - e.y, tx - e.x);
+      let aDiff = angleToTarget - e.angle;
       while (aDiff > Math.PI) aDiff -= Math.PI*2;
       while (aDiff < -Math.PI) aDiff += Math.PI*2;
       e.angle += aDiff * 0.18;
-      // Approach / kite
       if (dist > 280) {
         e.x += Math.cos(e.angle) * e.speed;
         e.y += Math.sin(e.angle) * e.speed;
         e.walkPhase += 0.18;
+        isMoving = true;
       } else if (dist < 180) {
         e.x -= Math.cos(e.angle) * e.speed * 0.5;
         e.y -= Math.sin(e.angle) * e.speed * 0.5;
         e.walkPhase += 0.1;
+        isMoving = true;
       }
     } else if (e.lockTime > 0) {
-      // Recently saw player — push to last known position briefly
       e.lockTime--;
       const lx = e.lastSeenX, ly = e.lastSeenY;
       if (lx != null) {
@@ -1468,10 +1687,10 @@ function updateEnemies() {
           e.x += Math.cos(e.angle) * e.speed * 0.7;
           e.y += Math.sin(e.angle) * e.speed * 0.7;
           e.walkPhase += 0.12;
+          isMoving = true;
         }
       }
     } else if (e.alerted > 0) {
-      // Heard something — turn toward sound, walk to investigate
       e.alerted--;
       const tdx = e.alertX - e.x, tdy = e.alertY - e.y;
       const tdist = Math.hypot(tdx, tdy);
@@ -1485,10 +1704,10 @@ function updateEnemies() {
           e.x += Math.cos(e.angle) * e.speed * 0.55;
           e.y += Math.sin(e.angle) * e.speed * 0.55;
           e.walkPhase += 0.1;
+          isMoving = true;
         }
       }
     } else {
-      // Idle patrol — slowly look around
       e.angle += Math.sin(game.time * 0.011 + (e.walkPhase || 0)) * 0.012;
     }
 
@@ -1496,51 +1715,121 @@ function updateEnemies() {
     e.x = Math.max(20, Math.min(WORLD.w-20, e.x));
     e.y = Math.max(20, Math.min(WORLD.h-20, e.y));
 
+    // Gun barrel: same lag/sway/recoil mechanic, with the AK profile (looser)
+    const barrel = tickShooter(e, e.angle, w, isMoving);
+
     e.fireCd--;
-    if (e.fireCd <= 0 && canSee && dist < 500) {
-      const ang = e.angle + (Math.random()-0.5)*0.08;
+    if (e.fireCd <= 0 && canSee && dist < 520) {
+      const ang = barrel + (Math.random()-0.5) * w.spread;
       enemyBullets.push({
         x: e.x + Math.cos(ang)*16,
         y: e.y + Math.sin(ang)*16,
-        vx: Math.cos(ang)*8, vy: Math.sin(ang)*8,
-        life: 70, damage: 9,
+        vx: Math.cos(ang)*w.bulletSpeed, vy: Math.sin(ang)*w.bulletSpeed,
+        life: w.bulletLife, damage: w.damage,
       });
-      e.fireCd = e.fireRate || (50 + Math.random()*40);
-      // Enemy gunshot is a sound source too — the player (and other enemies) "hear" it
-      emitSound(e.x, e.y, 700, false);
+      applyRecoil(e, w);
+      e.fireCd = w.fireCd + Math.floor(Math.random()*16);
+      emitSound(e.x, e.y, w.soundIntensity, false);
     }
   }
 
+  // ---- Kamikaze FPV drones ----
+  // Charge nearest friendly with a slow turn rate. If they overshoot (high speed,
+  // low turn) they fly past and have to circle back. Explode on contact with any
+  // friendly, building, low cover, overhead, or world edge.
   for (const d of enemyDrones) {
     if (!d.alive) continue;
-    d.hoverPhase += 0.04;
-    const dx = player.x - d.x, dy = player.y - d.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist > 220) {
-      const a = Math.atan2(dy, dx);
-      d.x += Math.cos(a)*1.6;
-      d.y += Math.sin(a)*1.6;
-    } else if (dist < 180) {
-      const a = Math.atan2(dy, dx);
-      d.x -= Math.cos(a)*0.8;
-      d.y -= Math.sin(a)*0.8;
-    }
-    d.x += Math.cos(d.hoverPhase)*0.4;
-    d.y += Math.sin(d.hoverPhase*1.3)*0.4;
+    d.hoverPhase += 0.18;
 
-    d.fireCd--;
-    // Drones cannot acquire a player who is in an underground tunnel.
-    const concealed = isInUnderground(player.x, player.y);
-    if (d.fireCd <= 0 && dist < 400 && player.alive && !concealed) {
-      const a = Math.atan2(dy, dx) + (Math.random()-0.5)*0.15;
-      enemyBullets.push({
-        x: d.x + Math.cos(a)*12,
-        y: d.y + Math.sin(a)*12,
-        vx: Math.cos(a)*7, vy: Math.sin(a)*7,
-        life: 60, damage: 6,
-      });
-      d.fireCd = 80 + Math.random()*60;
-      emitSound(d.x, d.y, 500, false);
+    // Target = nearest alive friendly. Underground hides them from the drone.
+    let tgt = null, bestD = Infinity;
+    if (player.alive && !isInUnderground(player.x, player.y)) {
+      bestD = Math.hypot(player.x - d.x, player.y - d.y);
+      tgt = player;
+    }
+    for (const a of allies) {
+      if (!a.alive) continue;
+      const dd = Math.hypot(a.x - d.x, a.y - d.y);
+      if (dd < bestD) { tgt = a; bestD = dd; }
+    }
+
+    if (tgt) {
+      // Steer toward target with limited turn rate (low manoeuvrability)
+      const desired = Math.atan2(tgt.y - d.y, tgt.x - d.x);
+      let aDiff = desired - d.angle;
+      while (aDiff > Math.PI) aDiff -= Math.PI*2;
+      while (aDiff < -Math.PI) aDiff += Math.PI*2;
+      const maxTurn = d.turnRate;
+      d.angle += Math.max(-maxTurn, Math.min(maxTurn, aDiff));
+    }
+    // Always cruise forward at high speed (committed approach)
+    d.x += Math.cos(d.angle) * d.speed;
+    d.y += Math.sin(d.angle) * d.speed;
+    // Tiny lateral wobble for FPV flight feel
+    const wob = Math.sin(d.hoverPhase) * 0.6;
+    d.x += -Math.sin(d.angle) * wob * 0.2;
+    d.y +=  Math.cos(d.angle) * wob * 0.2;
+
+    // World-edge: explode (they can't bank that hard)
+    if (d.x < 30 || d.x > WORLD.w-30 || d.y < 30 || d.y > WORLD.h-30) {
+      kamikazeExplode(d);
+      continue;
+    }
+    // Building / lowCover / overhead collision: explode
+    let crashed = false;
+    for (const b of buildings) {
+      if (d.x > b.x && d.x < b.x+b.w && d.y > b.y && d.y < b.y+b.h) { crashed = true; break; }
+    }
+    if (!crashed) for (const lc of lowCovers) {
+      if (d.x > lc.x && d.x < lc.x+lc.w && d.y > lc.y && d.y < lc.y+lc.h) { crashed = true; break; }
+    }
+    if (!crashed) for (const o of overheads) {
+      if (d.x > o.x && d.x < o.x+o.w && d.y > o.y && d.y < o.y+o.h) { crashed = true; break; }
+    }
+    if (crashed) { kamikazeExplode(d); continue; }
+
+    // Friendly contact: explode
+    if (player.alive && Math.hypot(d.x - player.x, d.y - player.y) < d.radius + player.radius) {
+      kamikazeExplode(d); continue;
+    }
+    for (const a of allies) {
+      if (!a.alive) continue;
+      if (Math.hypot(d.x - a.x, d.y - a.y) < d.radius + a.radius) { kamikazeExplode(d); break; }
+    }
+
+    // Buzzing — periodic sound emit so the player gets directional warning
+    if ((game.time + d.hoverPhase * 10 | 0) % 28 === 0) {
+      emitSound(d.x, d.y, 360, false);
+    }
+  }
+}
+
+function kamikazeExplode(d) {
+  d.alive = false;
+  createExplosion(d.x, d.y, 'medium');
+  emitSound(d.x, d.y, 700, false);
+  // Damage friendlies in radius
+  if (player.alive) {
+    const pd = Math.hypot(player.x - d.x, player.y - d.y);
+    if (pd < d.explodeRadius) {
+      const dmg = Math.round(d.explodeDamage * (1 - pd / d.explodeRadius));
+      player.hp -= dmg;
+      game.hitFlash = 18;
+      if (player.hp <= 0) {
+        player.hp = 0;
+        player.alive = false;
+        createExplosion(player.x, player.y, 'big');
+        setTimeout(() => endGame(false), 1500);
+      }
+    }
+  }
+  for (const a of allies) {
+    if (!a.alive) continue;
+    const ad = Math.hypot(a.x - d.x, a.y - d.y);
+    if (ad < d.explodeRadius) {
+      const dmg = Math.round(d.explodeDamage * (1 - ad / d.explodeRadius));
+      a.hp -= dmg;
+      if (a.hp <= 0) { a.alive = false; }
     }
   }
 }
@@ -1581,6 +1870,7 @@ function update() {
     }
   }
 
+  updateAllies();
   updateEnemies();
   updateBullets();
   updateExplosions();
@@ -1624,17 +1914,8 @@ function updatePlayer() {
   // View angle (instant) — where the player LOOKS, drives vision cone & crosshair
   player.angle = Math.atan2(wp.y - player.y, wp.x - player.x);
 
-  // Gun barrel angle — lags behind view with damping, plus idle sway + recoil
-  let aDiff = player.angle - player.gunAngle;
-  while (aDiff > Math.PI) aDiff -= Math.PI*2;
-  while (aDiff < -Math.PI) aDiff += Math.PI*2;
-  player.gunAngle += aDiff * weapon.follow;
-  // Idle sway (sinusoid + low-freq jitter); more sway while moving
-  const swayAmp = weapon.swayAmp + (moving ? weapon.movePenalty : 0);
-  player.gunAngle += Math.sin(game.time * weapon.swayFreq) * swayAmp * 0.18;
-  // Recoil decay
-  player.gunRecoil *= weapon.recoilDecay;
-  if (Math.abs(player.gunRecoil) < 0.001) player.gunRecoil = 0;
+  // Gun barrel: damped follow toward view, sway, recoil decay
+  tickShooter(player, player.angle, WEAPONS.AR7, !!moving);
 
   player.fireCooldown--;
   if (mouse.down && player.fireCooldown <= 0 && player.ammo > 0 && !player.reloading) fire();
@@ -1688,21 +1969,20 @@ function updateDroneControl() {
 }
 
 function fire() {
-  player.fireCooldown = 6;
+  const w = WEAPONS.AR7;
+  player.fireCooldown = w.fireCd;
   player.ammo--;
-  // Bullet leaves the GUN BARREL (gunAngle + recoil), not the view angle
-  const barrel = player.gunAngle + player.gunRecoil + (Math.random()-0.5) * weapon.spread;
+  const barrel = player.gunAngle + player.gunRecoil + (Math.random()-0.5) * w.spread;
   bullets.push({
     x: player.x + Math.cos(barrel)*18,
     y: player.y + Math.sin(barrel)*18,
-    vx: Math.cos(barrel)*14, vy: Math.sin(barrel)*14,
-    life: 60, damage: 14,
+    vx: Math.cos(barrel)*w.bulletSpeed, vy: Math.sin(barrel)*w.bulletSpeed,
+    life: w.bulletLife, damage: w.damage,
+    fromAlly: false,
   });
   muzzleFlashes.push({ x: player.x + Math.cos(barrel)*22, y: player.y + Math.sin(barrel)*22, angle: barrel, life: 5 });
-  // Recoil kick — opposite to barrel direction, decays each frame
-  player.gunRecoil += (Math.random() < 0.5 ? -1 : 1) * weapon.recoilPerShot;
-  // Gunshot makes a loud sound — alerts every enemy within range
-  emitSound(player.x, player.y, 900, true);
+  applyRecoil(player, w);
+  emitSound(player.x, player.y, w.soundIntensity, true);
 }
 
 function updateBullets() {
@@ -1749,6 +2029,18 @@ function updateBullets() {
         player.alive = false;
         createExplosion(player.x, player.y, 'big');
         setTimeout(() => endGame(false), 1500);
+      }
+    }
+    if (!hit) for (const a of allies) {
+      if (!a.alive) continue;
+      if (Math.hypot(b.x - a.x, b.y - a.y) < a.radius) {
+        a.hp -= b.damage;
+        if (a.hp <= 0) {
+          a.alive = false;
+          createExplosion(a.x, a.y, 'small');
+        }
+        hit = true;
+        break;
       }
     }
     if (!hit) for (const bd of buildings) {
@@ -2043,6 +2335,7 @@ function renderWorld() {
   }
   ctx.strokeStyle = COLORS.red;
   for (const b of enemyBullets) {
+    if (!isVisibleToFriendly(b.x, b.y)) continue;
     ctx.beginPath();
     ctx.moveTo(b.x, b.y);
     ctx.lineTo(b.x - b.vx*1.6, b.y - b.vy*1.6);
@@ -2095,9 +2388,11 @@ function renderWorld() {
     ctx.globalAlpha = 1;
   }
 
-  // Enemies
+  // Enemies — only render those visible to the friendly squad (player + allies).
+  // Outside vision: no rendering at all. To find them, switch to radar/thermal/UAV.
   for (const e of enemies) {
     if (!e.alive) continue;
+    if (!isVisibleToFriendly(e.x, e.y)) continue;
     drawHumanoid(e.x, e.y, e.angle, e.walkPhase, COLORS.red, true);
     if (e.hp < e.maxHp) {
       ctx.fillStyle = COLORS.black;
@@ -2107,10 +2402,22 @@ function renderWorld() {
     }
   }
 
-  // Enemy drones
+  // Kamikaze drones — diving silhouettes; hide when outside friendly vision
   for (const d of enemyDrones) {
     if (!d.alive) continue;
+    if (!isVisibleToFriendly(d.x, d.y)) continue;
     drawDrone(d.x, d.y, COLORS.red, d.hoverPhase + game.time*0.2);
+    // Aim line so the player can read which way it's diving
+    ctx.save();
+    ctx.strokeStyle = 'rgba(200,38,28,0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(d.x, d.y);
+    ctx.lineTo(d.x + Math.cos(d.angle)*60, d.y + Math.sin(d.angle)*60);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
     if (d.hp < d.maxHp) {
       ctx.fillStyle = COLORS.black;
       ctx.fillRect(d.x-12, d.y-22, 24, 2);
@@ -2118,6 +2425,36 @@ function renderWorld() {
       ctx.fillRect(d.x-12, d.y-22, 24 * d.hp/d.maxHp, 2);
     }
   }
+
+  // Allies (squad)
+  for (const a of allies) {
+    if (!a.alive) continue;
+    drawHumanoid(a.x, a.y, a.angle, a.walkPhase, COLORS.creamDark, false);
+    // Cream outline highlight to distinguish from enemies
+    ctx.save();
+    ctx.strokeStyle = COLORS.cream;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, a.radius + 3, 0, Math.PI*2);
+    ctx.stroke();
+    // Callsign label
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(a.callsign, a.x, a.y - 22);
+    ctx.textAlign = 'left';
+    // HP bar
+    if (a.hp < a.maxHp) {
+      ctx.fillStyle = COLORS.creamDark;
+      ctx.fillRect(a.x-15, a.y-32, 30, 3);
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(a.x-15, a.y-32, 30 * a.hp/a.maxHp, 3);
+    }
+    ctx.restore();
+  }
+
+  // Cull enemy bullets that fly through dark
+  // (The render is a separate loop above — visibility check happens there.)
 
   // Player
   if (player.alive) drawHumanoid(player.x, player.y, player.angle, player.walkPhase, COLORS.black, false);
@@ -2162,24 +2499,17 @@ function renderWorld() {
   }
   ctx.globalAlpha = 1;
 
-  // Enemy vision cones — drawn before fog so they're dimmed when outside player view
-  drawEnemyVisionCones();
-
   // === OVERHEADS — drawn ABOVE everything for elevation effect ===
   drawOverheads();
 
   // Landmark top features (antenna spires, hive crowns) — last so they read as tall
   drawLandmarksTop();
 
-  // === FOG OF WAR — darken outside player's vision fan, with building shadows ===
-  // Only in tactical / command modes (other modes have their own visualisation)
-  if (game.mode === 'tactical' || game.mode === 'command') {
-    drawPlayerVisionFog();
-  }
-
-  // Player vision cone outline + sound indicators sit above the fog
+  // Tactical-only HUD overlays in world space:
+  //  - Sound indicators on the player's perception ring (off-cone gunshots / drone buzz)
+  //  - Gun-aim dashed line (where the bullet would actually go this frame, distinct from crosshair)
+  // No drawn vision cone — vision is implicit through what's rendered (enemies vanish outside it).
   if (game.mode === 'tactical') {
-    drawPlayerConeOutline();
     drawSoundIndicators();
     drawGunAimIndicator();
   }
@@ -3314,7 +3644,7 @@ function renderHUD() {
   }
 
   // Top-left: status panel
-  drawHUDPanel(20, 20, 300, 168, '战场状态 / STATUS');
+  drawHUDPanel(20, 20, 300, 188, '战场状态 / STATUS');
   ctx.fillStyle = COLORS.black;
   ctx.font = 'bold 11px sans-serif';
   ctx.fillText(`坐标 ${player.x.toFixed(0)} · ${player.y.toFixed(0)}`, 32, 60);
@@ -3323,22 +3653,27 @@ function renderHUD() {
   const remaining = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
   ctx.fillStyle = remaining > 0 ? COLORS.red : COLORS.gray;
   ctx.fillText(`敌方剩余 ${remaining}`, 32, 114);
+  // Squad status
+  const sqAlive = allies.filter(a=>a.alive).length;
+  ctx.fillStyle = sqAlive > 0 ? COLORS.black : COLORS.gray;
+  const sqList = allies.map(a => a.alive ? `${a.callsign}(${a.hp})` : `${a.callsign}†`).join(' · ');
+  ctx.fillText(`小组 ${sqAlive}/${allies.length}  ${sqList}`, 32, 132);
   // Map name + rhythm
   if (currentMap) {
     ctx.fillStyle = COLORS.red;
     ctx.font = 'bold 12px sans-serif';
-    ctx.fillText(`${currentMap.name} · ${currentMap.nameEn}`, 32, 134);
+    ctx.fillText(`${currentMap.name} · ${currentMap.nameEn}`, 32, 152);
     ctx.fillStyle = COLORS.black;
     ctx.font = 'bold 9px sans-serif';
-    ctx.fillText(currentMap.rhythmHint, 32, 150);
+    ctx.fillText(currentMap.rhythmHint, 32, 168);
     if (isInUnderground(player.x, player.y)) {
       ctx.fillStyle = COLORS.red;
       ctx.font = 'bold 10px sans-serif';
-      ctx.fillText('● 隐蔽中 · 地下层', 32, 168);
+      ctx.fillText('● 隐蔽中 · 地下层', 32, 186);
     } else {
       ctx.fillStyle = COLORS.gray;
       ctx.font = '10px sans-serif';
-      ctx.fillText(`T+${Math.floor(game.time/60)}s`, 32, 168);
+      ctx.fillText(`T+${Math.floor(game.time/60)}s`, 32, 186);
     }
   }
 
@@ -3491,6 +3826,15 @@ function renderHUD() {
       ctx.fillRect(mapX + lm.x*sx - w/2, mapY + lm.y*sy - h/2, w, h);
     }
   }
+  // Allies (cream squares)
+  for (const a of allies) {
+    if (!a.alive) continue;
+    ctx.fillStyle = COLORS.creamDark;
+    ctx.fillRect(mapX + a.x*sx - 3, mapY + a.y*sy - 3, 6, 6);
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(mapX + a.x*sx - 3, mapY + a.y*sy - 3, 6, 6);
+  }
   // Player
   ctx.fillStyle = COLORS.black;
   ctx.fillRect(mapX + player.x*sx - 3, mapY + player.y*sy - 3, 6, 6);
@@ -3501,14 +3845,16 @@ function renderHUD() {
   ctx.moveTo(mapX + player.x*sx, mapY + player.y*sy);
   ctx.lineTo(mapX + player.x*sx + Math.cos(player.angle)*10, mapY + player.y*sy + Math.sin(player.angle)*10);
   ctx.stroke();
-  // Enemies
+  // Enemies — only show those visible to the squad (fog applies on the minimap too)
   ctx.fillStyle = COLORS.red;
   for (const e of enemies) {
     if (!e.alive) continue;
+    if (!isVisibleToFriendly(e.x, e.y)) continue;
     ctx.fillRect(mapX + e.x*sx - 2, mapY + e.y*sy - 2, 4, 4);
   }
   for (const d of enemyDrones) {
     if (!d.alive) continue;
+    if (!isVisibleToFriendly(d.x, d.y)) continue;
     ctx.beginPath();
     ctx.arc(mapX + d.x*sx, mapY + d.y*sy, 2, 0, Math.PI*2);
     ctx.fill();
