@@ -681,7 +681,83 @@ canvas#game { display: block; position: fixed; inset: 0; }
   gap: 14px 24px;
   border-bottom: 1px solid var(--line);
 }
+.loadout-config-wide { grid-column: 1 / -1; }
 .loadout-config-section { display: flex; flex-direction: column; gap: 6px; }
+.map-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.map-card {
+  background: var(--bg);
+  border: 1px solid var(--line-bright);
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text);
+  display: flex; flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  transition: border-color 0.15s, transform 0.1s;
+  text-align: left;
+}
+.map-card:hover { border-color: var(--text-dim); transform: translateY(-1px); }
+.map-card.active { border-color: var(--red); border-width: 2px; padding: 0; }
+.map-card-icon {
+  height: 60px;
+  position: relative;
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+.map-card-icon svg { width: 100%; height: 100%; display: block; }
+.map-card-name {
+  font-size: 9px; font-weight: 800; letter-spacing: 1.5px;
+  padding: 4px 6px 1px;
+  color: var(--text);
+}
+.map-card-cn {
+  font-size: 10px; color: var(--text-dim);
+  padding: 0 6px 5px;
+  font-weight: 500;
+}
+.map-card.active .map-card-name { color: var(--red); }
+.map-card-tag {
+  position: absolute;
+  top: 2px; right: 2px;
+  font-size: 8px; letter-spacing: 1px;
+  color: rgba(255,255,255,0.7);
+  background: rgba(0,0,0,0.5);
+  padding: 1px 4px;
+  font-weight: 700;
+}
+
+.weapon-svg {
+  width: 100%; height: 32px;
+  margin: 6px auto 4px;
+  display: block;
+  color: var(--text);
+}
+.weapon-svg svg { width: 100%; height: 100%; display: block; }
+.loadout-card-big.active .weapon-svg { color: var(--red); }
+.loadout-card-weapon-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 4px;
+}
+.weapon-cycle {
+  background: var(--bg);
+  border: 1px solid var(--line-bright);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px; font-weight: 700;
+  padding: 2px 7px;
+  cursor: pointer;
+  line-height: 1;
+}
+.weapon-cycle:hover { background: var(--bg-lighter); border-color: var(--red); color: var(--red); }
+.loadout-card-big.active .weapon-cycle { border-color: var(--red); }
 .loadout-config-label {
   font-size: 9px; letter-spacing: 4px; color: var(--text-dim); font-weight: 700;
 }
@@ -1190,9 +1266,9 @@ body.trackpad-mode .cursor-soft { display: none !important; }
       <div class="loadout-config-label">// 任务模式 · GAME MODE</div>
       <div class="loadout-pills" id="modePills"></div>
     </div>
-    <div class="loadout-config-section">
-      <div class="loadout-config-label">// 地图风格 · MAP THEME</div>
-      <div class="loadout-pills" id="themePills"></div>
+    <div class="loadout-config-section loadout-config-wide">
+      <div class="loadout-config-label">// 地图选择 · MAP SELECTION</div>
+      <div class="map-gallery" id="mapGallery"></div>
     </div>
   </div>
   <div class="loadout-cards" id="loadoutCards"></div>
@@ -1444,6 +1520,9 @@ const settings = {
   loadout: localStorage.getItem('gv_loadout') || 'assault',
   gameMode: localStorage.getItem('gv_mode') || 'wave',
   mapTheme: localStorage.getItem('gv_theme') || 'random',
+  loadoutWeapons: (() => {
+    try { return JSON.parse(localStorage.getItem('gv_lw') || '{}'); } catch (e) { return {}; }
+  })(),
 };
 function saveSettings() {
   localStorage.setItem('gv_ctrl', settings.controlMode);
@@ -1454,6 +1533,7 @@ function saveSettings() {
   localStorage.setItem('gv_loadout', settings.loadout);
   localStorage.setItem('gv_mode', settings.gameMode);
   localStorage.setItem('gv_theme', settings.mapTheme);
+  localStorage.setItem('gv_lw', JSON.stringify(settings.loadoutWeapons || {}));
 }
 
 const GAME_MODES = {
@@ -3616,9 +3696,13 @@ void main(){
   spawnDroneHives();
   placeSignalTowers();
 
-  // Player model — humanoid or quadruped wolf, with loadout-specific weapon
+  // Player model — humanoid or quadruped wolf, with loadout-specific weapon (custom override supported)
   const ldNow = LOADOUTS[settings.loadout] || LOADOUTS.assault;
-  const playerWeapon = ldNow.weapon.name;
+  const customWeaponName = settings.loadoutWeapons && settings.loadoutWeapons[settings.loadout];
+  const playerWeapon = customWeaponName || ldNow.weapon.name;
+  // Per-weapon damage so custom selection actually changes feel
+  const weaponDamageMap = { 'AR-30': 26, 'DMR-44': 36, 'SMG-9': 18, 'LMG-15': 32 };
+  if (weaponDamageMap[playerWeapon]) player.damage = weaponDamageMap[playerWeapon];
   if (settings.character === 'wolf') {
     player.group = makeWolf(M.robotBody, M.robotEye, playerWeapon);
     player.group.scale.setScalar(0.85);
@@ -7522,22 +7606,58 @@ function refreshModePills() {
     wrap.appendChild(btn);
   }
 }
-function refreshThemePills() {
-  const wrap = document.getElementById('themePills');
+function mapIconSVG(themeKey) {
+  const t = MAP_THEMES[themeKey];
+  if (!t) return '';
+  const fogHex = '#' + (t.fog || 0x1a1a1a).toString(16).padStart(6, '0');
+  const wrap = (svg) => `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="${fogHex}"/>${svg}</svg>`;
+  const patterns = {
+    random:        wrap(`<circle cx="20" cy="20" r="9" fill="#c8261c"/><text x="20" y="24" font-size="12" font-weight="900" fill="#fff" text-anchor="middle">?</text>`),
+    red_zone:      wrap(`<polygon points="20,7 33,30 7,30" fill="#c8261c"/><rect x="18" y="14" width="4" height="9" fill="#000"/><rect x="18" y="25" width="4" height="3" fill="#000"/>`),
+    grey_district: wrap(`<rect x="6" y="20" width="6" height="14" fill="#666"/><rect x="14" y="13" width="7" height="21" fill="#888"/><rect x="23" y="22" width="6" height="12" fill="#666"/><rect x="31" y="16" width="5" height="18" fill="#888"/><rect x="3" y="33" width="34" height="3" fill="#444"/><rect x="16" y="9" width="3" height="4" fill="#888" opacity="0.5"/>`),
+    industrial:    wrap(`<rect x="13" y="9" width="6" height="25" fill="#333"/><rect x="22" y="6" width="6" height="28" fill="#333"/><rect x="13" y="6" width="6" height="3" fill="#e6b840"/><rect x="22" y="3" width="6" height="3" fill="#e6b840"/><circle cx="16" cy="4" r="3" fill="#666" opacity="0.5"/><circle cx="25" cy="2" r="3" fill="#666" opacity="0.5"/><rect x="0" y="33" width="40" height="3" fill="#222"/>`),
+    metro:         wrap(`<rect x="6" y="10" width="28" height="20" fill="#1a1a1a"/><rect x="9" y="13" width="22" height="13" fill="#0a0a0a"/><circle cx="20" cy="19" r="5" fill="#c8261c"/><text x="20" y="23" font-size="9" font-weight="900" fill="#fff" text-anchor="middle">A</text>`),
+    data_core:     wrap(`<rect x="5" y="8" width="6" height="24" fill="#666"/><rect x="13" y="8" width="6" height="24" fill="#666"/><rect x="21" y="8" width="6" height="24" fill="#666"/><rect x="29" y="8" width="6" height="24" fill="#666"/><rect x="5" y="14" width="30" height="2" fill="#4d99dd"/><rect x="5" y="20" width="30" height="2" fill="#4d99dd"/><rect x="5" y="26" width="30" height="2" fill="#4d99dd"/>`),
+    rooftop_grid:  wrap(`<rect x="2" y="20" width="6" height="14" fill="#999"/><rect x="10" y="13" width="6" height="21" fill="#aaa"/><rect x="18" y="9" width="7" height="25" fill="#bbb"/><rect x="27" y="15" width="6" height="19" fill="#aaa"/><rect x="35" y="22" width="4" height="12" fill="#999"/><line x1="13" y1="9" x2="22" y2="6" stroke="#000" stroke-width="0.6"/><circle cx="22" cy="5" r="1.5" fill="#c8261c"/>`),
+    bridge_sector: wrap(`<path d="M 4 25 Q 20 6 36 25" stroke="#888" stroke-width="2" fill="none"/><rect x="2" y="25" width="36" height="2" fill="#888"/><rect x="7" y="27" width="2" height="7" fill="#666"/><rect x="14" y="27" width="2" height="7" fill="#666"/><rect x="20" y="27" width="2" height="7" fill="#666"/><rect x="26" y="27" width="2" height="7" fill="#666"/><rect x="32" y="27" width="2" height="7" fill="#666"/>`),
+    drone_yard:    wrap(`<rect x="13" y="13" width="14" height="14" fill="none" stroke="#e6b840" stroke-width="1.2" stroke-dasharray="2 1"/><circle cx="20" cy="20" r="3.5" fill="#444"/><line x1="17" y1="17" x2="23" y2="23" stroke="#222" stroke-width="0.8"/><line x1="23" y1="17" x2="17" y2="23" stroke="#222" stroke-width="0.8"/><rect x="2" y="34" width="36" height="2" fill="#e6b840"/><rect x="5" y="5" width="3" height="3" fill="#444"/><rect x="32" y="5" width="3" height="3" fill="#444"/>`),
+    power_station: wrap(`<polyline points="9,32 7,11 13,11 15,32" fill="none" stroke="#000" stroke-width="0.9"/><polyline points="25,32 23,11 29,11 31,32" fill="none" stroke="#000" stroke-width="0.9"/><line x1="14" y1="13" x2="24" y2="13" stroke="#000" stroke-width="0.7"/><line x1="14" y1="17" x2="24" y2="17" stroke="#000" stroke-width="0.7"/><line x1="11" y1="22" x2="13" y2="22" stroke="#aaa" stroke-width="2"/><line x1="25" y1="22" x2="27" y2="22" stroke="#aaa" stroke-width="2"/>`),
+    command_core:  wrap(`<circle cx="20" cy="20" r="14" stroke="#444" stroke-width="0.6" fill="none"/><circle cx="20" cy="20" r="9" stroke="#444" stroke-width="0.6" fill="none"/><rect x="16" y="16" width="8" height="8" fill="#000"/><rect x="18" y="18" width="4" height="4" fill="#c8261c"/>`),
+    nuclear_pool:  wrap(`<circle cx="20" cy="20" r="13" fill="#0a1410"/><circle cx="20" cy="20" r="11" fill="#33aa55" opacity="0.6"/><rect x="17" y="13" width="6" height="14" fill="#1a1a1a"/><rect x="18" y="15" width="4" height="10" fill="#33aa55"/>`),
+    steel_mill:    wrap(`<rect x="13" y="6" width="14" height="28" fill="#333"/><rect x="14" y="29" width="12" height="3" fill="#ff5520"/><circle cx="20" cy="32" r="6" fill="#ff5520" opacity="0.4"/><rect x="13" y="13" width="14" height="2" fill="#e6b840"/><rect x="13" y="22" width="14" height="2" fill="#e6b840"/>`),
+    container_port: wrap(`<rect x="3" y="22" width="11" height="6" fill="#c8261c"/><rect x="3" y="16" width="11" height="6" fill="#e6b840"/><rect x="14" y="22" width="11" height="6" fill="#4d7eb8"/><rect x="14" y="16" width="11" height="6" fill="#357a4a"/><rect x="25" y="22" width="11" height="6" fill="#888"/><rect x="25" y="16" width="11" height="6" fill="#c8261c"/><rect x="3" y="28" width="33" height="1" fill="#000"/>`),
+    apartment:     wrap(`<rect x="9" y="5" width="22" height="29" fill="#aaa"/><g fill="#222"><rect x="11" y="8" width="2" height="2"/><rect x="15" y="8" width="2" height="2"/><rect x="19" y="8" width="2" height="2"/><rect x="23" y="8" width="2" height="2"/><rect x="27" y="8" width="2" height="2"/><rect x="11" y="13" width="2" height="2"/><rect x="15" y="13" width="2" height="2"/><rect x="19" y="13" width="2" height="2"/><rect x="23" y="13" width="2" height="2"/><rect x="27" y="13" width="2" height="2"/><rect x="11" y="18" width="2" height="2"/><rect x="15" y="18" width="2" height="2"/><rect x="19" y="18" width="2" height="2"/><rect x="23" y="18" width="2" height="2"/><rect x="27" y="18" width="2" height="2"/><rect x="11" y="23" width="2" height="2"/><rect x="15" y="23" width="2" height="2"/><rect x="19" y="23" width="2" height="2"/><rect x="23" y="23" width="2" height="2"/><rect x="27" y="23" width="2" height="2"/><rect x="11" y="28" width="2" height="2"/><rect x="15" y="28" width="2" height="2"/><rect x="19" y="28" width="2" height="2"/><rect x="23" y="28" width="2" height="2"/><rect x="27" y="28" width="2" height="2"/></g>`),
+    junkyard:      wrap(`<polygon points="5,32 12,21 18,28 24,19 30,30 35,32" fill="#333"/><circle cx="14" cy="26" r="1.5" fill="#c8261c"/><circle cx="22" cy="24" r="1.5" fill="#c8261c"/><line x1="9" y1="29" x2="13" y2="22" stroke="#666" stroke-width="0.7"/><line x1="20" y1="29" x2="22" y2="20" stroke="#666" stroke-width="0.7"/><circle cx="28" cy="27" r="1" fill="#e6b840"/>`),
+    subway_hub:    wrap(`<rect x="5" y="5" width="30" height="30" fill="#1a1a1a"/><rect x="7" y="7" width="26" height="26" fill="#0a0a0a"/><circle cx="20" cy="20" r="7" fill="#c8261c"/><text x="20" y="24" font-size="10" font-weight="900" fill="#fff" text-anchor="middle">A</text>`),
+    sewers:        wrap(`<rect x="2" y="13" width="36" height="4" fill="#333"/><rect x="2" y="22" width="36" height="4" fill="#333"/><circle cx="2" cy="15" r="2" fill="#222"/><circle cx="38" cy="15" r="2" fill="#222"/><circle cx="2" cy="24" r="2" fill="#222"/><circle cx="38" cy="24" r="2" fill="#222"/><rect x="13" y="30" width="14" height="2" fill="#33aa55"/>`),
+  };
+  return patterns[themeKey] || patterns.random;
+}
+
+function renderMapGallery() {
+  const wrap = document.getElementById('mapGallery');
+  if (!wrap) return;
   wrap.innerHTML = '';
   for (const [id, t] of Object.entries(MAP_THEMES)) {
     const btn = document.createElement('button');
-    btn.className = 'loadout-pill' + (id === settings.mapTheme ? ' active' : '');
-    btn.innerHTML = `${t.name}<span class="pill-cn">${t.cn}</span>`;
+    btn.className = 'map-card' + (id === settings.mapTheme ? ' active' : '');
+    btn.title = t.name;
+    btn.innerHTML = `
+      <div class="map-card-icon">${mapIconSVG(id)}${id === 'random' ? '<div class="map-card-tag">RAND</div>' : ''}</div>
+      <div class="map-card-name">${t.name}</div>
+      <div class="map-card-cn">${t.cn}</div>
+    `;
     btn.addEventListener('click', () => {
       settings.mapTheme = id;
       saveSettings();
-      refreshThemePills();
+      renderMapGallery();
       refreshDeployConfig();
     });
     wrap.appendChild(btn);
   }
 }
+// Backwards-compat shim — anything that called refreshThemePills now hits the gallery
+function refreshThemePills() { renderMapGallery(); }
 
 function refreshDeployConfig() {
   const m = GAME_MODES[settings.gameMode] || GAME_MODES.wave;
@@ -7553,9 +7673,19 @@ function refreshDeployConfig() {
   if (cu) cu.textContent = settings.character === 'wolf' ? 'M-WLF · 机器狼' : 'UNIT-0451 · 人形';
 }
 
+function weaponIconSVG(weaponName) {
+  const icons = {
+    'AR-30':  `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="13" width="36" height="6" fill="currentColor"/><rect x="13" y="9" width="6" height="14" fill="currentColor"/><rect x="38" y="11" width="14" height="3" fill="currentColor"/><rect x="52" y="11" width="6" height="10" fill="currentColor"/><rect x="22" y="6" width="10" height="3" fill="currentColor"/><rect x="0" y="19" width="10" height="6" fill="currentColor"/><rect x="50" y="11" width="2" height="3" fill="#c8261c"/></svg>`,
+    'DMR-44': `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="14" width="50" height="4" fill="currentColor"/><rect x="22" y="18" width="6" height="6" fill="currentColor"/><rect x="46" y="13" width="14" height="6" fill="currentColor"/><rect x="14" y="9" width="14" height="4" fill="currentColor"/><circle cx="20" cy="11" r="2" fill="#c8261c"/><rect x="0" y="19" width="6" height="3" fill="currentColor"/><rect x="50" y="11" width="2" height="2" fill="currentColor"/><rect x="50" y="20" width="2" height="2" fill="currentColor"/></svg>`,
+    'SMG-9':  `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="12" width="22" height="8" fill="currentColor"/><rect x="22" y="20" width="6" height="6" fill="currentColor"/><circle cx="18" cy="22" r="6" fill="#c8261c"/><rect x="32" y="13" width="14" height="6" fill="currentColor"/><rect x="46" y="14" width="6" height="3" fill="currentColor"/><rect x="14" y="9" width="6" height="3" fill="currentColor"/></svg>`,
+    'LMG-15': `<svg viewBox="0 0 60 28" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="11" width="42" height="8" fill="currentColor"/><rect x="44" y="13" width="14" height="4" fill="currentColor"/><rect x="46" y="11" width="2" height="8" fill="currentColor"/><rect x="50" y="11" width="2" height="8" fill="currentColor"/><rect x="14" y="19" width="14" height="6" fill="currentColor"/><rect x="0" y="13" width="3" height="3" fill="currentColor"/><rect x="14" y="19" width="14" height="2" fill="#e6b840"/></svg>`,
+  };
+  return icons[weaponName] || icons['AR-30'];
+}
+
 function refreshLoadoutCards() {
   refreshModePills();
-  refreshThemePills();
+  renderMapGallery();
   const grid = document.getElementById('loadoutCards');
   grid.innerHTML = '';
   for (const [id, ld] of Object.entries(LOADOUTS)) {
@@ -7563,14 +7693,28 @@ function refreshLoadoutCards() {
     const card = document.createElement('div');
     card.className = 'loadout-card-big' + (isActive ? ' active' : '');
     card.dataset.loadout = id;
+    const weaponNow = (settings.loadoutWeapons && settings.loadoutWeapons[id]) || ld.weapon.name;
+    const weaponCatalog = ['AR-30','DMR-44','SMG-9','LMG-15'];
+    const weaponMeta = {
+      'AR-30':  { cn: '向量步枪 · 通用', dmg: 26 },
+      'DMR-44': { cn: '精准步枪 · 中远程', dmg: 36 },
+      'SMG-9':  { cn: '紧凑冲锋 · 室内', dmg: 18 },
+      'LMG-15': { cn: '压制机枪 · 高火力', dmg: 32 },
+    };
+    const wMeta = weaponMeta[weaponNow] || weaponMeta['AR-30'];
     card.innerHTML = `
       <div>
         <div class="loadout-card-name">${ld.name}</div>
         <div class="loadout-card-cn">${ld.cn}</div>
       </div>
+      <div class="weapon-svg" style="text-align:center;">${weaponIconSVG(weaponNow)}</div>
       <div class="loadout-card-weapon">
-        <div class="loadout-card-weapon-name">${ld.weapon.name}</div>
-        <div class="loadout-card-weapon-cn">${ld.weapon.cn}</div>
+        <div class="loadout-card-weapon-row">
+          <button class="weapon-cycle" data-cycle="-1" data-loadout="${id}">◀</button>
+          <div class="loadout-card-weapon-name">${weaponNow}</div>
+          <button class="weapon-cycle" data-cycle="1" data-loadout="${id}">▶</button>
+        </div>
+        <div class="loadout-card-weapon-cn">${wMeta.cn}</div>
       </div>
       <div class="loadout-card-stats">
         <div class="loadout-stat-row"><span class="loadout-stat-label">重量</span>${pipBar(ld.stats.weight)}</div>
@@ -7583,7 +7727,7 @@ function refreshLoadoutCards() {
         <div><span>HP</span>${ld.hp}</div>
         <div><span>ARM</span>${ld.armor}</div>
         <div><span>SPD</span>${ld.speed.toFixed(1)}</div>
-        <div><span>DMG</span>${ld.weapon.damage}</div>
+        <div><span>DMG</span>${wMeta.dmg}</div>
       </div>
       <div class="loadout-card-desc">${ld.desc}</div>
     `;
@@ -7595,6 +7739,23 @@ function refreshLoadoutCards() {
       const cur = LOADOUTS[settings.loadout];
       document.getElementById('loadoutCurrentName').textContent = cur.name;
       document.getElementById('loadoutCurrentDesc').textContent = `${cur.cn} · ${cur.desc}`;
+    });
+    // Cycle button handlers (don't trigger card click)
+    card.querySelectorAll('.weapon-cycle').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const dir = parseInt(btn.dataset.cycle, 10);
+        const lid = btn.dataset.loadout;
+        const cur = (settings.loadoutWeapons && settings.loadoutWeapons[lid]) || LOADOUTS[lid].weapon.name;
+        const idx = weaponCatalog.indexOf(cur);
+        const nextIdx = (idx + dir + weaponCatalog.length) % weaponCatalog.length;
+        if (!settings.loadoutWeapons) settings.loadoutWeapons = {};
+        settings.loadoutWeapons[lid] = weaponCatalog[nextIdx];
+        saveSettings();
+        refreshLoadoutCards();
+        refreshDeployConfig();
+        showToast(`${LOADOUTS[lid].name} → ${weaponCatalog[nextIdx]}`, 1200);
+      });
     });
     grid.appendChild(card);
   }
