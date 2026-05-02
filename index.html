@@ -109,6 +109,36 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   font-size: 11px;
   letter-spacing: 0;
 }
+.missions {
+  padding: 16px 0 0;
+  border-top: 3px solid var(--black);
+  margin-top: 4px;
+}
+.missions-tag {
+  font-size: 11px; letter-spacing: 5px; font-weight: 800;
+  color: var(--red); margin-bottom: 12px;
+  border-left: 4px solid var(--red); padding-left: 10px;
+}
+.missions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 14px;
+}
+.mission {
+  display: flex; gap: 10px;
+  border-left: 3px solid var(--black);
+  padding: 6px 10px;
+  background: rgba(232, 228, 216, 0.6);
+}
+.mission-num {
+  font-family: "Courier New", monospace;
+  font-weight: 900; color: var(--red);
+  font-size: 22px; line-height: 1;
+  min-width: 28px;
+}
+.mission-body { display: flex; flex-direction: column; }
+.mission-name { font-weight: 800; font-size: 12px; color: var(--black); letter-spacing: 1px; }
+.mission-rhythm { font-size: 10px; color: var(--gray); margin-top: 2px; letter-spacing: 1px; }
 .start-btn {
   background: var(--red);
   color: var(--cream);
@@ -236,6 +266,17 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
       <div class="ctrl-item"><span class="ctrl-key">TAB</span><span>战术指挥 RTS</span></div>
     </div>
 
+    <div class="missions">
+      <div class="missions-tag">作战序列 / MISSION CHAIN — 5 张地形 · 5 种节奏</div>
+      <div class="missions-grid">
+        <div class="mission"><span class="mission-num">01</span><div class="mission-body"><div class="mission-name">核池 · REACTOR POOL</div><div class="mission-rhythm">室内清剿 · 巨型核池 · 冷却管道层</div></div></div>
+        <div class="mission"><span class="mission-num">02</span><div class="mission-body"><div class="mission-name">高炉 · BLAST FOUNDRY</div><div class="mission-rhythm">垂直交火 · 高炉塔 · 钢梯吊车</div></div></div>
+        <div class="mission"><span class="mission-num">03</span><div class="mission-body"><div class="mission-name">货柜港 · CONTAINER YARD</div><div class="mission-rhythm">伏击突袭 · 巨型吊车 · 集装箱迷宫</div></div></div>
+        <div class="mission"><span class="mission-num">04</span><div class="mission-body"><div class="mission-name">资料核心 · DATA CORE</div><div class="mission-rhythm">节点控制 · 数据核 · 服务器矩阵</div></div></div>
+        <div class="mission"><span class="mission-num">05</span><div class="mission-body"><div class="mission-name">蜂巢 · DRONE HIVE</div><div class="mission-rhythm">空中开阔战 · 蜂巢塔 · 无人机蜂群</div></div></div>
+      </div>
+    </div>
+
     <div>
       <button class="start-btn" id="startBtn">进入战场 ▶</button>
     </div>
@@ -353,10 +394,18 @@ const enemyBullets = [];
 const enemies = [];
 const enemyDrones = [];
 const explosions = [];
-const buildings = [];
+const buildings = [];     // full obstacles — block movement + bullets
+const lowCovers = [];     // waist-high — block bullets, walk-through
+const overheads = [];     // catwalk / crane rails — block FPV; ground units pass under
+const undergrounds = [];  // tunnels / pits — concealment from soldiers + drone vision
+const routes = [];        // visualized tactical paths {x,y,w,h,angle,type,style}
+const landmarks = [];     // map's signature structures (drawn separately)
+const themeShapes = [];   // big themed geometry covering 70%+ of the map (drawn under buildings)
 const decorations = [];
 const muzzleFlashes = [];
 const networkNodes = [];
+
+let currentMap = null;
 
 // ============ INPUT ============
 const keys = {};
@@ -419,7 +468,7 @@ function startGame() {
   explosions.length = 0;
   muzzleFlashes.length = 0;
 
-  generateWorld();
+  // First map will be loaded by startNextWave()
   startNextWave();
 }
 
@@ -436,8 +485,21 @@ function endGame(victory) {
 
 function startNextWave() {
   game.wave++;
-  if (game.wave > 5) { endGame(true); return; }
-  showMessage(`第 ${game.wave} 波 · 敌方单位接近`, 120);
+  if (game.wave > MAPS.length) { endGame(true); return; }
+  // Each wave loads a new themed map.
+  generateWorld(game.wave - 1);
+  // Clear any leftover combat state from the previous map.
+  bullets.length = 0;
+  enemyBullets.length = 0;
+  enemies.length = 0;
+  enemyDrones.length = 0;
+  fpv.active = false;
+  if (game.mode === 'fpv' || game.mode === 'drone') game.mode = 'tactical';
+  drone.deployed = false;
+  drone.battery = drone.maxBattery;
+  fpv.available = fpv.max;
+  // Brief intro
+  showMessage(`第 ${game.wave} 关 · ${currentMap.name} / ${currentMap.nameEn}`, 180);
   spawnWave(game.wave);
 }
 
@@ -446,93 +508,735 @@ function showMessage(text, time = 90) {
   game.messageTime = time;
 }
 
-// ============ WORLD GEN ============
-function generateWorld() {
+// ============ MAP HELPERS ============
+function clearWorld() {
   buildings.length = 0;
+  lowCovers.length = 0;
+  overheads.length = 0;
+  undergrounds.length = 0;
+  routes.length = 0;
+  landmarks.length = 0;
+  themeShapes.length = 0;
   decorations.length = 0;
   networkNodes.length = 0;
+}
 
-  const gw = 9, gh = 9;
-  const cw = WORLD.w / gw, ch = WORLD.h / gh;
-  for (let i = 0; i < gw; i++) {
-    for (let j = 0; j < gh; j++) {
-      if (Math.random() < 0.55) {
-        const cx = i * cw + cw/2 + (Math.random()-0.5)*60;
-        const cy = j * ch + ch/2 + (Math.random()-0.5)*60;
-        if (Math.hypot(cx-WORLD.w/2, cy-WORLD.h/2) < 280) continue;
-        const w = 70 + Math.random()*180;
-        const h = 70 + Math.random()*180;
-        buildings.push({
-          x: cx-w/2, y: cy-h/2, w, h,
-          color: Math.random() < 0.78 ? COLORS.gray : COLORS.black,
-          shadow: true,
-          accent: Math.random() < 0.18,
-        });
+function addBuilding(x, y, w, h, color, opts={}) {
+  buildings.push({ x, y, w, h, color: color || COLORS.gray, shadow: opts.shadow !== false, accent: !!opts.accent, kind: opts.kind || 'building' });
+}
+function addLowCover(x, y, w, h, color, opts={}) {
+  lowCovers.push({ x, y, w, h, color: color || COLORS.lightGray, kind: opts.kind || 'cover' });
+}
+function addOverhead(x, y, w, h, color, opts={}) {
+  overheads.push({ x, y, w, h, color: color || COLORS.black, kind: opts.kind || 'catwalk' });
+}
+function addUnderground(x, y, w, h, opts={}) {
+  undergrounds.push({ x, y, w, h, kind: opts.kind || 'tunnel', label: opts.label || '' });
+}
+function addRoute(x, y, w, h, type, opts={}) {
+  routes.push({ x, y, w, h, angle: opts.angle || 0, type, style: opts.style || 'solid', label: opts.label || '' });
+}
+function addLandmark(obj) { landmarks.push(obj); }
+function addTheme(shape) { themeShapes.push(shape); }
+function addDecoration(x, y, type, size, color, opacity, angle) {
+  decorations.push({ x, y, type, size, color, opacity, angle });
+}
+function addNode(x, y) { networkNodes.push({ x, y, pulse: Math.random()*Math.PI*2 }); }
+
+function isInsideRect(x, y, r) {
+  return x > r.x && x < r.x+r.w && y > r.y && y < r.y+r.h;
+}
+function isInUnderground(x, y) {
+  for (const u of undergrounds) if (isInsideRect(x, y, u)) return true;
+  return false;
+}
+
+// ============ MAP DEFINITIONS ============
+// Each map satisfies: theme >= 70%, 3+ spatial layers, 1+ landmark, 3+ route types, distinct combat rhythm.
+const MAPS = [];
+
+// ---------- MAP 1: 核池 / REACTOR POOL ----------
+// Rhythm: room clearing — soldiers cluster around the cooling pool; tight corridors.
+MAPS.push({
+  id: 'reactor',
+  name: '核池',
+  nameEn: 'REACTOR POOL',
+  subtitle: '高放冷却池 · 室内清剿',
+  rhythmHint: 'CLOSE-QUARTERS / 室内清剿',
+  playerSpawn: { x: 480, y: WORLD.h/2 },
+  spawn: {
+    soldierBase: 6, soldierPerWave: 1,
+    droneBase: 1,  dronePerWave: 0,
+    soldierBias: 'landmarkRing',
+    droneBias: 'overhead',
+    soldierSpeedMul: 0.95,
+    soldierFireFast: false,
+  },
+  build() {
+    // === THEME BG: massive hot zone outline + radial hazard banding (>70% coverage) ===
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.cream }); // base
+    // Hazard wedge sweeping from corner
+    addTheme({ kind: 'wedge', cx: WORLD.w*0.5, cy: WORLD.h*0.5, r: 1900, a0: -Math.PI*0.92, a1: -Math.PI*0.45, color: COLORS.red, alpha: 0.10 });
+    // Cooling pools (visual coverage)
+    const pools = [
+      { cx: WORLD.w*0.50, cy: WORLD.h*0.50, r: 360 }, // central (landmark frame)
+      { cx: WORLD.w*0.18, cy: WORLD.h*0.22, r: 180 },
+      { cx: WORLD.w*0.82, cy: WORLD.h*0.22, r: 200 },
+      { cx: WORLD.w*0.18, cy: WORLD.h*0.78, r: 200 },
+      { cx: WORLD.w*0.82, cy: WORLD.h*0.78, r: 220 },
+    ];
+    for (const p of pools) addTheme({ kind: 'pool', cx: p.cx, cy: p.cy, r: p.r });
+    // Hazard radial banding around center
+    for (let i = 0; i < 5; i++) addTheme({ kind: 'circle-stroke', cx: WORLD.w*0.5, cy: WORLD.h*0.5, r: 600 + i*180, color: COLORS.red, alpha: 0.15, dash: [16, 22] });
+    // Pipe network: heavy parallel pipes covering map
+    for (let i = 0; i < 9; i++) {
+      addTheme({ kind: 'pipe', x: 240 + i*340, y: 0, w: 28, h: WORLD.h, color: COLORS.gray });
+    }
+    for (let i = 0; i < 5; i++) {
+      addTheme({ kind: 'pipe', x: 0, y: 460 + i*520, w: WORLD.w, h: 28, color: COLORS.gray });
+    }
+    // Trefoil radiation symbol big in upper-right
+    addTheme({ kind: 'trefoil', cx: WORLD.w*0.78, cy: WORLD.h*0.18, r: 240, color: COLORS.red, alpha: 0.7 });
+    // Hazard chevrons along lower edge
+    for (let i = 0; i < 16; i++) addTheme({ kind: 'chevron', x: 200 + i*180, y: WORLD.h-90, color: COLORS.black });
+
+    // === LAYERS ===
+    // UNDERGROUND — coolant service tunnels (cross corridors)
+    addUnderground(WORLD.w*0.10, WORLD.h*0.48, WORLD.w*0.80, 80, { label: 'COOLANT TUNNEL E-W' });
+    addUnderground(WORLD.w*0.48, WORLD.h*0.10, 80, WORLD.h*0.80, { label: 'COOLANT TUNNEL N-S' });
+    // Tunnel access pits
+    addUnderground(420, WORLD.h*0.50 - 60, 120, 120);
+    addUnderground(WORLD.w-540, WORLD.h*0.50 - 60, 120, 120);
+
+    // GROUND — reactor halls (full block buildings)
+    // Containment ring buildings around landmark
+    const ringR = 580;
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * Math.PI*2 + 0.2;
+      const cx = WORLD.w/2 + Math.cos(a)*ringR;
+      const cy = WORLD.h/2 + Math.sin(a)*ringR;
+      addBuilding(cx-60, cy-60, 120, 120, COLORS.gray, { accent: i%2===0 });
+    }
+    // Outer service halls
+    addBuilding(180, 180, 360, 200, COLORS.gray, { accent: true });
+    addBuilding(WORLD.w-540, 180, 360, 200, COLORS.gray, { accent: true });
+    addBuilding(180, WORLD.h-380, 360, 200, COLORS.black);
+    addBuilding(WORLD.w-540, WORLD.h-380, 360, 200, COLORS.black);
+    // Inner partition walls — create corridor combat
+    addBuilding(WORLD.w*0.32, WORLD.h*0.20, 40, 280, COLORS.gray);
+    addBuilding(WORLD.w*0.68 - 40, WORLD.h*0.20, 40, 280, COLORS.gray);
+    addBuilding(WORLD.w*0.32, WORLD.h*0.80 - 280, 40, 280, COLORS.gray);
+    addBuilding(WORLD.w*0.68 - 40, WORLD.h*0.80 - 280, 40, 280, COLORS.gray);
+    // Low-cover bunkers near pool (block bullets, walkable around)
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI*2;
+      const cx = WORLD.w/2 + Math.cos(a)*420;
+      const cy = WORLD.h/2 + Math.sin(a)*420;
+      addLowCover(cx-30, cy-30, 60, 60, COLORS.creamDark, { kind: 'sandbag' });
+    }
+
+    // ELEVATED — overhead catwalks crossing pool
+    addOverhead(WORLD.w*0.40, WORLD.h*0.50 - 12, WORLD.w*0.20, 24, COLORS.black, { kind: 'catwalk' });
+    addOverhead(WORLD.w*0.50 - 12, WORLD.h*0.40, 24, WORLD.h*0.20, COLORS.black, { kind: 'catwalk' });
+    // Pipe bridges over outer perimeter
+    addOverhead(WORLD.w*0.18, WORLD.h*0.30, 280, 18, COLORS.black);
+    addOverhead(WORLD.w-460, WORLD.h*0.30, 280, 18, COLORS.black);
+
+    // === ROUTES ===
+    // MAIN — hot corridor down center (fast, exposed to drone catwalks)
+    addRoute(WORLD.w*0.20, WORLD.h*0.50 - 28, WORLD.w*0.60, 56, 'main', { label: '主路 · 热区' });
+    // SIDE — outer perimeter ring (safer)
+    addRoute(120, 120, WORLD.w-240, 30, 'side', { label: '侧路 · 外环' });
+    addRoute(120, WORLD.h-150, WORLD.w-240, 30, 'side');
+    addRoute(120, 120, 30, WORLD.h-240, 'side');
+    addRoute(WORLD.w-150, 120, 30, WORLD.h-240, 'side');
+    // VERTICAL — catwalk stair markers (where catwalks meet ground)
+    addRoute(WORLD.w*0.40 - 14, WORLD.h*0.50 - 14, 28, 28, 'vertical', { label: '垂直 · 楼梯' });
+    addRoute(WORLD.w*0.60 - 14, WORLD.h*0.50 - 14, 28, 28, 'vertical');
+    addRoute(WORLD.w*0.50 - 14, WORLD.h*0.40 - 14, 28, 28, 'vertical');
+
+    // === LANDMARK ===
+    addLandmark({
+      kind: 'reactorPool',
+      x: WORLD.w/2, y: WORLD.h/2,
+      r: 320,
+      name: '核池 / REACTOR POOL',
+    });
+
+    // Decorations: hazard markers + warning triangles
+    for (let i = 0; i < 18; i++) {
+      addDecoration(
+        Math.random()*WORLD.w, Math.random()*WORLD.h,
+        Math.random() < 0.5 ? 'triangle' : 'square',
+        24 + Math.random()*40, COLORS.red, 0.30 + Math.random()*0.25,
+        Math.random()*Math.PI*2
+      );
+    }
+    for (let i = 0; i < 30; i++) addNode(Math.random()*WORLD.w, Math.random()*WORLD.h);
+  }
+});
+
+// ---------- MAP 2: 高炉 / BLAST FOUNDRY ----------
+// Rhythm: vertical combat — drones swarm from gantries; player must clear elevated threats.
+MAPS.push({
+  id: 'foundry',
+  name: '高炉',
+  nameEn: 'BLAST FOUNDRY',
+  subtitle: '熔铸车间 · 垂直交火',
+  rhythmHint: 'VERTICAL FIREFIGHT / 垂直交火',
+  playerSpawn: { x: WORLD.w/2, y: WORLD.h-360 },
+  spawn: {
+    soldierBase: 4, soldierPerWave: 1,
+    droneBase: 4,  dronePerWave: 1,
+    soldierBias: 'gantry',
+    droneBias: 'overhead',
+    soldierSpeedMul: 0.85,
+    soldierFireFast: true,
+  },
+  build() {
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.cream });
+    // Massive slag heat plume from the furnace
+    addTheme({ kind: 'plume', cx: WORLD.w/2, cy: WORLD.h*0.40, w: 900, h: WORLD.h*0.85, color: COLORS.red, alpha: 0.14 });
+    // Slag pools — molten orange/red rectangles scattered
+    const slags = [
+      { x: WORLD.w*0.10, y: WORLD.h*0.30, w: 360, h: 140 },
+      { x: WORLD.w*0.65, y: WORLD.h*0.20, w: 520, h: 160 },
+      { x: WORLD.w*0.18, y: WORLD.h*0.65, w: 420, h: 180 },
+      { x: WORLD.w*0.55, y: WORLD.h*0.70, w: 600, h: 160 },
+      { x: WORLD.w*0.36, y: WORLD.h*0.85, w: 800, h: 90 },
+    ];
+    for (const s of slags) addTheme({ kind: 'slag', x: s.x, y: s.y, w: s.w, h: s.h });
+    // Conveyor belt ribbons crossing entire map
+    addTheme({ kind: 'belt', x: 0, y: WORLD.h*0.30, w: WORLD.w, h: 36, color: COLORS.black });
+    addTheme({ kind: 'belt', x: 0, y: WORLD.h*0.62, w: WORLD.w, h: 36, color: COLORS.black });
+    addTheme({ kind: 'belt-v', x: WORLD.w*0.20, y: 0, w: 36, h: WORLD.h, color: COLORS.gray });
+    addTheme({ kind: 'belt-v', x: WORLD.w*0.78, y: 0, w: 36, h: WORLD.h, color: COLORS.gray });
+    // Industrial pipes
+    for (let i = 0; i < 10; i++) addTheme({ kind: 'pipe', x: 120 + i*300, y: 0, w: 18, h: WORLD.h, color: COLORS.lightGray });
+    // Heat haze rings around furnace
+    for (let i = 0; i < 6; i++) addTheme({ kind: 'circle-stroke', cx: WORLD.w/2, cy: WORLD.h*0.40, r: 380 + i*120, color: COLORS.red, alpha: 0.18, dash: [10, 14] });
+    // Big stamped foundry insignia
+    addTheme({ kind: 'gear', cx: WORLD.w*0.15, cy: WORLD.h*0.85, r: 220, color: COLORS.black, alpha: 0.22 });
+
+    // UNDERGROUND — foundry pits (player can drop in for cover)
+    for (const s of slags) addUnderground(s.x+20, s.y+20, s.w-40, s.h-40, { kind: 'pit', label: 'FOUNDRY PIT' });
+
+    // GROUND — production halls + control rooms
+    addBuilding(180, 200, 380, 300, COLORS.gray, { accent: true });
+    addBuilding(WORLD.w-560, 200, 380, 300, COLORS.gray, { accent: true });
+    addBuilding(180, WORLD.h-500, 380, 300, COLORS.black);
+    addBuilding(WORLD.w-560, WORLD.h-500, 380, 300, COLORS.black);
+    // Furnace cluster columns (around landmark)
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI*2;
+      const cx = WORLD.w/2 + Math.cos(a)*440;
+      const cy = WORLD.h*0.40 + Math.sin(a)*340;
+      addBuilding(cx-40, cy-40, 80, 80, COLORS.gray);
+    }
+    // Side production walls
+    addBuilding(WORLD.w*0.35, WORLD.h*0.45, 60, 240, COLORS.gray);
+    addBuilding(WORLD.w*0.65 - 60, WORLD.h*0.45, 60, 240, COLORS.gray);
+    // Low-cover steel girders
+    for (let i = 0; i < 10; i++) {
+      addLowCover(280 + i*240, WORLD.h*0.55, 90, 22, COLORS.gray, { kind: 'girder' });
+    }
+
+    // ELEVATED — overhead crane rails + gantry catwalks (drones perch here)
+    addOverhead(120, WORLD.h*0.18, WORLD.w-240, 22, COLORS.black, { kind: 'crane-rail' });
+    addOverhead(120, WORLD.h*0.50, WORLD.w-240, 22, COLORS.black, { kind: 'crane-rail' });
+    // Gantry walkways crossing
+    addOverhead(WORLD.w*0.20, WORLD.h*0.30, 24, WORLD.h*0.40, COLORS.black);
+    addOverhead(WORLD.w*0.80 - 24, WORLD.h*0.30, 24, WORLD.h*0.40, COLORS.black);
+    // Crane trolley body (a thicker overhead segment)
+    addOverhead(WORLD.w*0.50 - 80, WORLD.h*0.18 - 14, 160, 50, COLORS.black, { kind: 'trolley' });
+
+    // ROUTES
+    // MAIN — production line (wide path along central E-W)
+    addRoute(0, WORLD.h*0.55 + 30, WORLD.w, 60, 'main', { label: '主路 · 生产线' });
+    // SIDE — along furnace columns
+    addRoute(WORLD.w*0.10, WORLD.h*0.36, WORLD.w*0.80, 24, 'side', { label: '侧路 · 工艺道' });
+    // VERTICAL — gantry stairs
+    addRoute(WORLD.w*0.20 - 14, WORLD.h*0.65, 52, 28, 'vertical', { label: '垂直 · 钢梯' });
+    addRoute(WORLD.w*0.80 - 38, WORLD.h*0.65, 52, 28, 'vertical');
+    // DRONE — open ceiling lane (top strip)
+    addRoute(0, 60, WORLD.w, 36, 'drone', { label: '空中 · 无人机' });
+    // VEHICLE — wide internal road
+    addRoute(WORLD.w*0.35, WORLD.h-200, WORLD.w*0.30, 100, 'vehicle', { label: '车道 · 运料' });
+
+    // LANDMARK — the blast furnace tower
+    addLandmark({
+      kind: 'blastFurnace',
+      x: WORLD.w/2, y: WORLD.h*0.40,
+      r: 240,
+      name: '高炉 / BLAST FURNACE',
+    });
+
+    // Decorations
+    for (let i = 0; i < 14; i++) {
+      addDecoration(
+        Math.random()*WORLD.w, Math.random()*WORLD.h,
+        Math.random() < 0.5 ? 'square' : 'line',
+        30 + Math.random()*70, Math.random() < 0.6 ? COLORS.red : COLORS.black,
+        0.2 + Math.random()*0.3,
+        Math.random()*Math.PI*2
+      );
+    }
+    for (let i = 0; i < 22; i++) addNode(Math.random()*WORLD.w, Math.random()*WORLD.h);
+  }
+});
+
+// ---------- MAP 3: 货柜港 / CONTAINER YARD ----------
+// Rhythm: ambush in narrow gaps + open vehicle/drone combat on wide quay.
+MAPS.push({
+  id: 'containerYard',
+  name: '货柜港',
+  nameEn: 'CONTAINER YARD',
+  subtitle: '集装箱码头 · 伏击与突袭',
+  rhythmHint: 'AMBUSH + OPEN ASSAULT / 伏击突袭',
+  playerSpawn: { x: WORLD.w-360, y: WORLD.h*0.60 },
+  spawn: {
+    soldierBase: 5, soldierPerWave: 2,
+    droneBase: 2,  dronePerWave: 1,
+    soldierBias: 'corridor',
+    droneBias: 'open',
+    soldierSpeedMul: 1.10,
+    soldierFireFast: false,
+  },
+  build() {
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.cream });
+    // Dockside water (left edge)
+    addTheme({ kind: 'water', x: 0, y: 0, w: WORLD.w*0.18, h: WORLD.h, color: COLORS.gray });
+    // Dock concrete strip
+    addTheme({ kind: 'rect', x: WORLD.w*0.18, y: 0, w: 80, h: WORLD.h, color: COLORS.creamDark });
+    // Yard grid lines (loading bay markings) covering whole right side
+    for (let i = 0; i < 10; i++) addTheme({ kind: 'line-h', x: WORLD.w*0.20, y: 200 + i*280, w: WORLD.w*0.78, h: 4, color: COLORS.gray, alpha: 0.4 });
+    for (let i = 0; i < 9; i++) addTheme({ kind: 'line-v', x: WORLD.w*0.20 + 240 + i*280, y: 100, w: 4, h: WORLD.h-200, color: COLORS.gray, alpha: 0.4 });
+    // Big port logo (red square + black bar)
+    addTheme({ kind: 'square', x: WORLD.w*0.78, y: 120, w: 360, h: 360, color: COLORS.red, alpha: 0.18 });
+    addTheme({ kind: 'rect', x: WORLD.w*0.78, y: 480, w: 360, h: 60, color: COLORS.black, alpha: 0.4 });
+    // Crane shadow stripe across yard
+    addTheme({ kind: 'rect', x: WORLD.w*0.22, y: WORLD.h*0.50 - 100, w: WORLD.w*0.76, h: 200, color: COLORS.black, alpha: 0.05 });
+
+    // UNDERGROUND — dockside trench / drainage
+    addUnderground(WORLD.w*0.18 + 20, WORLD.h*0.10, 60, WORLD.h*0.80, { kind: 'trench', label: 'DRAINAGE' });
+    // Cargo tunnels under yard
+    addUnderground(WORLD.w*0.30, WORLD.h*0.85, WORLD.w*0.55, 70, { kind: 'tunnel', label: 'CARGO TUNNEL' });
+
+    // GROUND — container stacks (full obstacles), arranged in rows with narrow alleys
+    const cw0 = 200, ch0 = 100;
+    const startX = WORLD.w*0.26, startY = 220;
+    for (let row = 0; row < 5; row++) {
+      for (let col = 0; col < 8; col++) {
+        // Skip occasional gaps to create alleys
+        if ((row + col) % 7 === 3) continue;
+        const px = startX + col * (cw0 + 60);
+        const py = startY + row * (ch0 + 80);
+        // Color by faction (red / black / gray containers)
+        const palette = [COLORS.gray, COLORS.gray, COLORS.black, COLORS.red];
+        const color = palette[(row*3 + col*5) % palette.length];
+        addBuilding(px, py, cw0, ch0, color, { accent: (col%4)===0 });
+        // Stack a second smaller container on top (visual + low cover)
+        if ((row + col) % 3 === 0) {
+          addLowCover(px + 30, py + 12, cw0 - 60, ch0 - 32, COLORS.creamDark, { kind: 'container-top' });
+        }
       }
     }
-  }
+    // Quay wall (bullet-blocking low cover along dock)
+    addLowCover(WORLD.w*0.18 + 80, 80, 24, WORLD.h-160, COLORS.black, { kind: 'quay-wall' });
 
-  for (let i = 0; i < 24; i++) {
-    decorations.push({
-      x: Math.random()*WORLD.w,
-      y: Math.random()*WORLD.h,
-      type: Math.random() < 0.45 ? 'triangle' : Math.random() < 0.6 ? 'square' : 'line',
-      size: 30 + Math.random()*60,
-      angle: Math.random()*Math.PI*2,
-      color: Math.random() < 0.55 ? COLORS.red : COLORS.black,
-      opacity: 0.25 + Math.random() * 0.35,
-    });
-  }
+    // ELEVATED — gantry crane rails over yard, container-top catwalks
+    addOverhead(WORLD.w*0.22, WORLD.h*0.40, WORLD.w*0.76, 28, COLORS.black, { kind: 'crane-rail' });
+    addOverhead(WORLD.w*0.22, WORLD.h*0.65, WORLD.w*0.76, 28, COLORS.black, { kind: 'crane-rail' });
+    // Crane trolley
+    addOverhead(WORLD.w*0.55 - 100, WORLD.h*0.40 - 18, 200, 60, COLORS.black, { kind: 'trolley' });
 
-  for (let i = 0; i < 40; i++) {
-    networkNodes.push({
-      x: Math.random()*WORLD.w,
-      y: Math.random()*WORLD.h,
-      pulse: Math.random()*Math.PI*2,
+    // ROUTES
+    // MAIN — wide quay road (vehicle, exposed)
+    addRoute(WORLD.w*0.20, 80, 80, WORLD.h-160, 'vehicle', { label: '主路·码头道', style: 'wide' });
+    // SIDE — narrow alleys between container rows
+    for (let r = 0; r < 4; r++) {
+      addRoute(WORLD.w*0.26, 220 + r*180 + 100, WORLD.w*0.70, 28, 'side', { label: r===0 ? '侧路·暗巷' : '' });
+    }
+    // VERTICAL — climb points to container tops
+    for (let i = 0; i < 4; i++) addRoute(WORLD.w*0.30 + i*340, WORLD.h*0.55, 28, 28, 'vertical', { label: i===0 ? '垂直·攀爬' : '' });
+    // DRONE lane along top of map
+    addRoute(0, 60, WORLD.w, 30, 'drone', { label: '空中·无人机' });
+
+    // LANDMARK — gantry crane (huge)
+    addLandmark({
+      kind: 'gantryCrane',
+      x: WORLD.w*0.55, y: WORLD.h*0.50,
+      w: WORLD.w*0.76, h: 320,
+      name: '货柜吊车 / GANTRY CRANE',
     });
+
+    // Decorations
+    for (let i = 0; i < 12; i++) {
+      addDecoration(
+        WORLD.w*0.20 + Math.random()*WORLD.w*0.78,
+        Math.random()*WORLD.h,
+        'line', 60 + Math.random()*100,
+        COLORS.red, 0.35 + Math.random()*0.3,
+        Math.random()*Math.PI*0.5 - Math.PI*0.25
+      );
+    }
+    for (let i = 0; i < 18; i++) addNode(WORLD.w*0.20 + Math.random()*WORLD.w*0.78, Math.random()*WORLD.h);
+  }
+});
+
+// ---------- MAP 4: 资料核心 / DATA CORE ----------
+// Rhythm: node control — tight grid of server racks; capture-the-node feel.
+MAPS.push({
+  id: 'dataCore',
+  name: '资料核心',
+  nameEn: 'DATA CORE',
+  subtitle: '服务器矩阵 · 节点控制',
+  rhythmHint: 'NODE CONTROL / 节点控制',
+  playerSpawn: { x: WORLD.w*0.15, y: WORLD.h*0.15 },
+  spawn: {
+    soldierBase: 6, soldierPerWave: 2,
+    droneBase: 3,  dronePerWave: 1,
+    soldierBias: 'nodes',
+    droneBias: 'corridor',
+    soldierSpeedMul: 1.0,
+    soldierFireFast: true,
+  },
+  build() {
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.cream });
+    // Massive grid background covering 100% (server matrix feel)
+    addTheme({ kind: 'megaGrid', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.gray, alpha: 0.18, step: 60 });
+    // Cooling vents (parallel red strips)
+    for (let i = 0; i < 7; i++) {
+      addTheme({ kind: 'rect', x: 200, y: 200 + i*420, w: WORLD.w-400, h: 26, color: COLORS.red, alpha: 0.35 });
+    }
+    // Massive central data sigil
+    addTheme({ kind: 'square', x: WORLD.w*0.50 - 360, y: WORLD.h*0.50 - 360, w: 720, h: 720, color: COLORS.black, alpha: 0.10 });
+    addTheme({ kind: 'circle-stroke', cx: WORLD.w*0.50, cy: WORLD.h*0.50, r: 380, color: COLORS.red, alpha: 0.4, dash: [4, 6] });
+    // Data flow ribbons
+    addTheme({ kind: 'line-h', x: 0, y: WORLD.h*0.50, w: WORLD.w, h: 6, color: COLORS.red, alpha: 0.5 });
+    addTheme({ kind: 'line-v', x: WORLD.w*0.50, y: 0, w: 6, h: WORLD.h, color: COLORS.red, alpha: 0.5 });
+
+    // UNDERGROUND — cable trenches in a grid
+    addUnderground(120, WORLD.h*0.30, WORLD.w-240, 50, { kind: 'cable', label: 'CABLE TRENCH' });
+    addUnderground(120, WORLD.h*0.70, WORLD.w-240, 50, { kind: 'cable' });
+    addUnderground(WORLD.w*0.30, 120, 50, WORLD.h-240, { kind: 'cable' });
+    addUnderground(WORLD.w*0.70, 120, 50, WORLD.h-240, { kind: 'cable' });
+
+    // GROUND — server rack rows (full block)
+    const rackW = 240, rackH = 40;
+    for (let row = 0; row < 7; row++) {
+      const ry = 220 + row * 200;
+      // Skip rows where landmark sits
+      if (Math.abs(ry - WORLD.h*0.50) < 220) continue;
+      for (let col = 0; col < 5; col++) {
+        const rx = 220 + col * 580;
+        addBuilding(rx, ry, rackW, rackH, COLORS.black, { accent: (col + row) % 3 === 0 });
+        addBuilding(rx, ry + 80, rackW, rackH, COLORS.gray);
+      }
+    }
+    // Capture-node markers (low cover at strategic points)
+    const nodes = [
+      { x: WORLD.w*0.25, y: WORLD.h*0.25 },
+      { x: WORLD.w*0.75, y: WORLD.h*0.25 },
+      { x: WORLD.w*0.25, y: WORLD.h*0.75 },
+      { x: WORLD.w*0.75, y: WORLD.h*0.75 },
+    ];
+    for (const n of nodes) {
+      addLowCover(n.x-60, n.y-60, 120, 120, COLORS.red, { kind: 'node-platform' });
+    }
+
+    // ELEVATED — overhead cable trays + ducts
+    addOverhead(0, WORLD.h*0.20, WORLD.w, 18, COLORS.black, { kind: 'duct' });
+    addOverhead(0, WORLD.h*0.80, WORLD.w, 18, COLORS.black, { kind: 'duct' });
+    addOverhead(WORLD.w*0.50 - 9, 0, 18, WORLD.h, COLORS.black, { kind: 'duct' });
+
+    // ROUTES
+    // MAIN — cold aisle corridor (wide red ribbon)
+    addRoute(WORLD.w*0.10, WORLD.h*0.50 - 30, WORLD.w*0.80, 60, 'main', { label: '主路·冷通道' });
+    // SIDE — cable trench paths (along undergrounds)
+    addRoute(120, WORLD.h*0.30, WORLD.w-240, 30, 'side', { label: '侧路·线槽' });
+    addRoute(WORLD.w*0.30, 120, 30, WORLD.h-240, 'side');
+    // VERTICAL — duct ladders
+    addRoute(WORLD.w*0.50 - 14, 60, 28, 28, 'vertical', { label: '垂直·风道' });
+    addRoute(WORLD.w*0.50 - 14, WORLD.h-100, 28, 28, 'vertical');
+    // DRONE
+    addRoute(0, 30, WORLD.w, 24, 'drone', { label: '空中·无人机' });
+
+    // LANDMARK — central data core
+    addLandmark({
+      kind: 'dataCore',
+      x: WORLD.w*0.50, y: WORLD.h*0.50,
+      r: 220,
+      name: '资料核心 / DATA CORE',
+      capturePoints: nodes,
+    });
+
+    // Decorations
+    for (let i = 0; i < 16; i++) {
+      addDecoration(
+        Math.random()*WORLD.w, Math.random()*WORLD.h,
+        Math.random() < 0.6 ? 'square' : 'triangle',
+        16 + Math.random()*30,
+        Math.random() < 0.5 ? COLORS.red : COLORS.black,
+        0.3 + Math.random()*0.3,
+        Math.random()*Math.PI*2
+      );
+    }
+    // Lots of network nodes — this is the data core after all
+    for (let i = 0; i < 80; i++) addNode(Math.random()*WORLD.w, Math.random()*WORLD.h);
+  }
+});
+
+// ---------- MAP 5: 蜂巢 / DRONE HIVE ----------
+// Rhythm: open vehicle / drone-heavy combat with constant aerial harassment.
+MAPS.push({
+  id: 'droneHive',
+  name: '蜂巢',
+  nameEn: 'DRONE HIVE',
+  subtitle: '无人机巢穴 · 开阔战场',
+  rhythmHint: 'OPEN AERIAL ASSAULT / 空中开阔战',
+  playerSpawn: { x: WORLD.w/2, y: WORLD.h-380 },
+  spawn: {
+    soldierBase: 3, soldierPerWave: 1,
+    droneBase: 6,  dronePerWave: 2,
+    soldierBias: 'pad',
+    droneBias: 'hive',
+    soldierSpeedMul: 1.05,
+    soldierFireFast: false,
+  },
+  build() {
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.cream });
+    // Concentric landing pad rings dominating the map
+    for (let i = 0; i < 12; i++) {
+      addTheme({ kind: 'circle-stroke', cx: WORLD.w/2, cy: WORLD.h*0.40, r: 200 + i*150, color: COLORS.red, alpha: 0.20, dash: [12, 18] });
+    }
+    // Hexagonal landing pads scattered widely
+    const pads = [
+      { x: WORLD.w*0.18, y: WORLD.h*0.30, r: 160 },
+      { x: WORLD.w*0.82, y: WORLD.h*0.30, r: 160 },
+      { x: WORLD.w*0.20, y: WORLD.h*0.72, r: 180 },
+      { x: WORLD.w*0.80, y: WORLD.h*0.72, r: 180 },
+      { x: WORLD.w*0.50, y: WORLD.h*0.85, r: 200 },
+    ];
+    for (const p of pads) {
+      addTheme({ kind: 'pad', cx: p.x, cy: p.y, r: p.r, color: COLORS.black, alpha: 0.5 });
+    }
+    // Antenna / radar masts (theme volume)
+    for (let i = 0; i < 14; i++) {
+      addTheme({ kind: 'mast', x: 100 + i*210, y: WORLD.h*0.10 + (i%2)*40, h: 220 + (i%3)*60, color: COLORS.black });
+    }
+    // Massive runway markings
+    addTheme({ kind: 'rect', x: WORLD.w*0.45, y: 0, w: WORLD.w*0.10, h: WORLD.h, color: COLORS.creamDark });
+    for (let i = 0; i < 16; i++) addTheme({ kind: 'rect', x: WORLD.w*0.50 - 6, y: 80 + i*200, w: 12, h: 80, color: COLORS.black });
+    // Flight path arcs
+    addTheme({ kind: 'arc-stroke', cx: WORLD.w*0.20, cy: WORLD.h*0.60, r: 800, a0: -Math.PI*0.3, a1: Math.PI*0.3, color: COLORS.red, alpha: 0.2 });
+    addTheme({ kind: 'arc-stroke', cx: WORLD.w*0.80, cy: WORLD.h*0.60, r: 800, a0: Math.PI*0.7, a1: Math.PI*1.3, color: COLORS.red, alpha: 0.2 });
+
+    // UNDERGROUND — maintenance bunkers under each pad
+    for (const p of pads) addUnderground(p.x - p.r*0.5, p.y - p.r*0.4, p.r, p.r*0.8, { kind: 'bunker', label: 'MAINT' });
+
+    // GROUND — control kiosks and antenna bases (sparse, keep map open)
+    addBuilding(180, 200, 240, 200, COLORS.gray, { accent: true });
+    addBuilding(WORLD.w-420, 200, 240, 200, COLORS.gray, { accent: true });
+    addBuilding(180, WORLD.h-400, 240, 200, COLORS.black);
+    addBuilding(WORLD.w-420, WORLD.h-400, 240, 200, COLORS.black);
+    // Hive support pylons (around landmark)
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI*2;
+      const cx = WORLD.w/2 + Math.cos(a)*340;
+      const cy = WORLD.h*0.40 + Math.sin(a)*340;
+      addBuilding(cx-30, cy-30, 60, 60, COLORS.gray, { accent: true });
+    }
+    // Sparse low-cover blast walls scattered across pads
+    for (let i = 0; i < 10; i++) {
+      const ang = i / 10 * Math.PI*2;
+      const r = 540 + (i%3)*120;
+      addLowCover(WORLD.w/2 + Math.cos(ang)*r - 40, WORLD.h*0.40 + Math.sin(ang)*r - 16, 80, 32, COLORS.creamDark, { kind: 'blastwall' });
+    }
+
+    // ELEVATED — hive perches + service catwalks radiating from hive
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI*2;
+      const len = 380;
+      const x1 = WORLD.w/2, y1 = WORLD.h*0.40;
+      const x2 = x1 + Math.cos(a)*len, y2 = y1 + Math.sin(a)*len;
+      // Use axis-aligned overhead approximation (thin rect)
+      const minX = Math.min(x1, x2), minY = Math.min(y1, y2);
+      const w = Math.max(20, Math.abs(x2-x1));
+      const h = Math.max(20, Math.abs(y2-y1));
+      addOverhead(minX, minY, w, h, COLORS.black, { kind: 'perch', spoke: true });
+    }
+    // Antenna outriggers (overhead bands)
+    addOverhead(0, WORLD.h*0.10 - 9, WORLD.w, 18, COLORS.black);
+    addOverhead(0, WORLD.h*0.92 - 9, WORLD.w, 18, COLORS.black);
+
+    // ROUTES
+    // VEHICLE — central runway (the dominant route)
+    addRoute(WORLD.w*0.45, 0, WORLD.w*0.10, WORLD.h, 'vehicle', { label: '主路·跑道', style: 'wide' });
+    // SIDE — perimeter taxiway
+    addRoute(120, 120, WORLD.w-240, 28, 'side', { label: '侧路·边线' });
+    addRoute(120, WORLD.h-150, WORLD.w-240, 28, 'side');
+    // VERTICAL — pylon climb
+    for (let i = 0; i < 4; i++) {
+      const a = i / 4 * Math.PI*2;
+      const cx = WORLD.w/2 + Math.cos(a)*280, cy = WORLD.h*0.40 + Math.sin(a)*280;
+      addRoute(cx-14, cy-14, 28, 28, 'vertical', { label: i===0 ? '垂直·攀爬' : '' });
+    }
+    // DRONE — radial sky paths from hive
+    for (let i = 0; i < 4; i++) {
+      const a = i / 4 * Math.PI*2 + Math.PI*0.125;
+      const cx = WORLD.w/2 + Math.cos(a)*900;
+      const cy = WORLD.h*0.40 + Math.sin(a)*900;
+      addRoute(Math.min(WORLD.w/2, cx), Math.min(WORLD.h*0.40, cy), Math.abs(cx - WORLD.w/2), 24, 'drone', { angle: a, label: i===0 ? '空中·蜂群' : '' });
+    }
+
+    // LANDMARK — drone hive tower
+    addLandmark({
+      kind: 'droneHive',
+      x: WORLD.w/2, y: WORLD.h*0.40,
+      r: 200,
+      name: '无人机蜂巢 / DRONE HIVE',
+    });
+
+    // Decorations
+    for (let i = 0; i < 22; i++) {
+      addDecoration(
+        Math.random()*WORLD.w, Math.random()*WORLD.h,
+        Math.random() < 0.5 ? 'triangle' : 'line',
+        20 + Math.random()*60,
+        Math.random() < 0.6 ? COLORS.red : COLORS.black,
+        0.3 + Math.random()*0.3,
+        Math.random()*Math.PI*2
+      );
+    }
+    for (let i = 0; i < 26; i++) addNode(Math.random()*WORLD.w, Math.random()*WORLD.h);
+  }
+});
+
+// ============ WORLD GEN ============
+function generateWorld(mapIndex) {
+  clearWorld();
+  currentMap = MAPS[mapIndex % MAPS.length];
+  currentMap.build();
+  // Move player to map's spawn
+  if (currentMap.playerSpawn) {
+    player.x = currentMap.playerSpawn.x;
+    player.y = currentMap.playerSpawn.y;
+  } else {
+    player.x = WORLD.w/2; player.y = WORLD.h/2;
   }
 }
 
 function spawnWave(n) {
-  const numSoldiers = 2 + n * 2;
-  const numDrones = Math.floor(n * 1.2);
-  for (let i = 0; i < numSoldiers; i++) spawnSoldier();
-  for (let i = 0; i < numDrones; i++) spawnDroneEnemy();
+  const cfg = currentMap.spawn;
+  const numSoldiers = cfg.soldierBase + (n - 1) * cfg.soldierPerWave;
+  const numDrones   = cfg.droneBase   + (n - 1) * cfg.dronePerWave;
+  for (let i = 0; i < numSoldiers; i++) spawnSoldier(cfg);
+  for (let i = 0; i < numDrones; i++) spawnDroneEnemy(cfg);
 }
 
-function spawnSoldier() {
+function pickBiasedSpawn(bias) {
+  // Returns {x, y} biased to the map's combat rhythm.
+  const lm = landmarks[0];
+  const r = () => Math.random();
+  switch (bias) {
+    case 'landmarkRing': {
+      if (lm) {
+        const a = r() * Math.PI*2;
+        const dist = (lm.r || 240) + 200 + r()*200;
+        return { x: lm.x + Math.cos(a)*dist, y: lm.y + Math.sin(a)*dist };
+      }
+      break;
+    }
+    case 'gantry': {
+      // Spawn along the long edges (under elevated rails)
+      const top = r() < 0.5;
+      return { x: 200 + r()*(WORLD.w-400), y: top ? WORLD.h*0.20 : WORLD.h*0.80 };
+    }
+    case 'corridor': {
+      // Container alleys — spawn along horizontal alley lines
+      const alley = Math.floor(r()*4);
+      return { x: WORLD.w*0.30 + r()*WORLD.w*0.60, y: 320 + alley*180 + r()*40 };
+    }
+    case 'nodes': {
+      // Around capture nodes
+      if (lm && lm.capturePoints) {
+        const n = lm.capturePoints[Math.floor(r()*lm.capturePoints.length)];
+        const a = r()*Math.PI*2;
+        const d = 120 + r()*120;
+        return { x: n.x + Math.cos(a)*d, y: n.y + Math.sin(a)*d };
+      }
+      break;
+    }
+    case 'pad': {
+      // Around the map's hex pads — sparse ground enemies on open
+      const a = r() * Math.PI*2;
+      const d = 800 + r()*400;
+      return { x: WORLD.w/2 + Math.cos(a)*d, y: WORLD.h*0.40 + Math.sin(a)*d };
+    }
+  }
+  // Default: ring around player
+  const a = r() * Math.PI*2;
+  const d = 700 + r()*500;
+  return { x: player.x + Math.cos(a)*d, y: player.y + Math.sin(a)*d };
+}
+
+function spawnSoldier(cfg) {
   let x, y, ok = false, tries = 0;
   while (!ok && tries < 50) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 700 + Math.random() * 500;
-    x = player.x + Math.cos(angle)*dist;
-    y = player.y + Math.sin(angle)*dist;
+    const p = pickBiasedSpawn(cfg ? cfg.soldierBias : null);
+    x = p.x; y = p.y;
     if (x < 50 || x > WORLD.w-50 || y < 50 || y > WORLD.h-50) { tries++; continue; }
     ok = true;
     for (const b of buildings) {
       if (x > b.x-20 && x < b.x+b.w+20 && y > b.y-20 && y < b.y+b.h+20) { ok = false; break; }
     }
+    // Don't spawn too close to player
+    if (Math.hypot(x - player.x, y - player.y) < 380) ok = false;
     tries++;
   }
   if (!ok) { x = player.x + 700; y = player.y; }
+  const speedMul = cfg ? cfg.soldierSpeedMul : 1;
+  const fast = cfg && cfg.soldierFireFast;
   enemies.push({
     x, y,
     hp: 50, maxHp: 50,
     angle: 0,
-    fireCd: 60 + Math.random()*60,
+    fireCd: (fast ? 30 : 60) + Math.random()*60,
+    fireRate: fast ? 32 : 50,
     radius: 13,
     alive: true,
     walkPhase: Math.random() * Math.PI * 2,
-    speed: 1.0 + Math.random()*0.4,
+    speed: (1.0 + Math.random()*0.4) * speedMul,
   });
 }
 
-function spawnDroneEnemy() {
-  const angle = Math.random() * Math.PI * 2;
-  const dist = 600 + Math.random() * 400;
+function spawnDroneEnemy(cfg) {
+  let x, y;
+  const bias = cfg ? cfg.droneBias : null;
+  if (bias === 'overhead' && overheads.length) {
+    const o = overheads[Math.floor(Math.random()*overheads.length)];
+    x = o.x + Math.random()*o.w;
+    y = o.y + Math.random()*o.h;
+  } else if (bias === 'hive' && landmarks[0]) {
+    const lm = landmarks[0];
+    const a = Math.random()*Math.PI*2;
+    const d = (lm.r || 200) + 80 + Math.random()*200;
+    x = lm.x + Math.cos(a)*d;
+    y = lm.y + Math.sin(a)*d;
+  } else if (bias === 'open') {
+    x = 200 + Math.random()*(WORLD.w-400);
+    y = 100 + Math.random()*(WORLD.h-200);
+  } else {
+    const a = Math.random() * Math.PI * 2;
+    const d = 600 + Math.random() * 400;
+    x = player.x + Math.cos(a)*d;
+    y = player.y + Math.sin(a)*d;
+  }
+  x = Math.max(60, Math.min(WORLD.w-60, x));
+  y = Math.max(60, Math.min(WORLD.h-60, y));
   enemyDrones.push({
-    x: player.x + Math.cos(angle)*dist,
-    y: player.y + Math.sin(angle)*dist,
+    x, y,
     hp: 25, maxHp: 25,
     fireCd: 60 + Math.random()*120,
     radius: 11,
@@ -576,12 +1280,20 @@ function startReload() {
 
 // ============ AI ============
 function lineOfSight(x1, y1, x2, y2) {
-  const steps = 24;
+  // Underground concealment: target hidden if it's in a tunnel and shooter isn't.
+  const targetUnder = isInUnderground(x2, y2);
+  const shooterUnder = isInUnderground(x1, y1);
+  if (targetUnder && !shooterUnder) return false;
+
+  const steps = 28;
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
     const x = x1 + (x2-x1)*t, y = y1 + (y2-y1)*t;
     for (const b of buildings) {
       if (x > b.x && x < b.x+b.w && y > b.y && y < b.y+b.h) return false;
+    }
+    for (const lc of lowCovers) {
+      if (x > lc.x && x < lc.x+lc.w && y > lc.y && y < lc.y+lc.h) return false;
     }
   }
   return true;
@@ -652,7 +1364,9 @@ function updateEnemies() {
     d.y += Math.sin(d.hoverPhase*1.3)*0.4;
 
     d.fireCd--;
-    if (d.fireCd <= 0 && dist < 400 && player.alive) {
+    // Drones cannot acquire a player who is in an underground tunnel.
+    const concealed = isInUnderground(player.x, player.y);
+    if (d.fireCd <= 0 && dist < 400 && player.alive && !concealed) {
       const a = Math.atan2(dy, dx) + (Math.random()-0.5)*0.15;
       enemyBullets.push({
         x: d.x + Math.cos(a)*12,
@@ -823,6 +1537,9 @@ function updateBullets() {
     if (!hit) for (const bd of buildings) {
       if (b.x > bd.x && b.x < bd.x+bd.w && b.y > bd.y && b.y < bd.y+bd.h) { hit = true; break; }
     }
+    if (!hit) for (const lc of lowCovers) {
+      if (b.x > lc.x && b.x < lc.x+lc.w && b.y > lc.y && b.y < lc.y+lc.h) { hit = true; break; }
+    }
     if (hit || b.life <= 0) bullets.splice(i, 1);
   }
   for (let i = enemyBullets.length-1; i >= 0; i--) {
@@ -843,6 +1560,9 @@ function updateBullets() {
     }
     if (!hit) for (const bd of buildings) {
       if (b.x > bd.x && b.x < bd.x+bd.w && b.y > bd.y && b.y < bd.y+bd.h) { hit = true; break; }
+    }
+    if (!hit) for (const lc of lowCovers) {
+      if (b.x > lc.x && b.x < lc.x+lc.w && b.y > lc.y && b.y < lc.y+lc.h) { hit = true; break; }
     }
     if (hit || b.life <= 0) enemyBullets.splice(i, 1);
   }
@@ -923,6 +1643,9 @@ function updateFPV() {
   }
   if (!exploded) for (const bd of buildings) {
     if (fpv.x > bd.x && fpv.x < bd.x+bd.w && fpv.y > bd.y && fpv.y < bd.y+bd.h) { exploded = true; break; }
+  }
+  if (!exploded) for (const o of overheads) {
+    if (fpv.x > o.x && fpv.x < o.x+o.w && fpv.y > o.y && fpv.y < o.y+o.h) { exploded = true; break; }
   }
   if (fpv.x < 0 || fpv.x > WORLD.w || fpv.y < 0 || fpv.y > WORLD.h) exploded = true;
   if (exploded) {
@@ -1024,45 +1747,11 @@ function renderWorld() {
   }
   ctx.stroke();
 
-  // El Lissitzky-style red wedge (large constructivist motif)
-  ctx.fillStyle = COLORS.red;
-  ctx.beginPath();
-  ctx.moveTo(WORLD.w*0.05, WORLD.h*0.95);
-  ctx.lineTo(WORLD.w*0.45, WORLD.h*0.50);
-  ctx.lineTo(WORLD.w*0.05, WORLD.h*0.50);
-  ctx.closePath();
-  ctx.fill();
-
-  // Big red sun/circle
-  ctx.beginPath();
-  ctx.arc(WORLD.w*0.72, WORLD.h*0.28, 220, 0, Math.PI*2);
-  ctx.fill();
-
-  // Black geometric corner blocks
-  ctx.fillStyle = COLORS.black;
-  ctx.beginPath();
-  ctx.moveTo(WORLD.w, 0);
-  ctx.lineTo(WORLD.w*0.65, 0);
-  ctx.lineTo(WORLD.w, WORLD.h*0.18);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(WORLD.w*0.22, 0);
-  ctx.lineTo(0, WORLD.h*0.10);
-  ctx.closePath();
-  ctx.fill();
-
-  // Diagonal red strip
-  ctx.save();
-  ctx.translate(WORLD.w*0.5, WORLD.h*0.5);
-  ctx.rotate(-Math.PI/6);
-  ctx.fillStyle = COLORS.red;
-  ctx.globalAlpha = 0.18;
-  ctx.fillRect(-2200, -8, 4400, 16);
-  ctx.restore();
-  ctx.globalAlpha = 1;
+  // === THEME-DRIVEN MAP DRESSING ===
+  drawThemeShapes();
+  drawUndergrounds();
+  drawRoutes();
+  drawLandmarksUnder();
 
   // Decorative shapes
   for (const d of decorations) {
@@ -1131,6 +1820,12 @@ function renderWorld() {
     }
     ctx.globalAlpha = 1;
   }
+
+  // Low covers (waist-high — between buildings & units in z-order)
+  drawLowCovers();
+
+  // Landmark mid layer (silhouette body that sits with buildings)
+  drawLandmarksMid();
 
   // Network nodes (decorative)
   for (const n of networkNodes) {
@@ -1273,6 +1968,710 @@ function renderWorld() {
     }
   }
   ctx.globalAlpha = 1;
+
+  // === OVERHEADS — drawn ABOVE everything for elevation effect ===
+  drawOverheads();
+
+  // Landmark top features (antenna spires, hive crowns) — last so they read as tall
+  drawLandmarksTop();
+}
+
+// ============ MAP RENDER HELPERS ============
+function drawThemeShapes() {
+  for (const s of themeShapes) {
+    ctx.save();
+    if (s.alpha != null) ctx.globalAlpha = s.alpha;
+    switch (s.kind) {
+      case 'rect': {
+        ctx.fillStyle = s.color || COLORS.cream;
+        ctx.fillRect(s.x, s.y, s.w, s.h);
+        break;
+      }
+      case 'square': {
+        ctx.fillStyle = s.color || COLORS.red;
+        ctx.fillRect(s.x, s.y, s.w, s.h);
+        break;
+      }
+      case 'wedge': {
+        ctx.fillStyle = s.color || COLORS.red;
+        ctx.beginPath();
+        ctx.moveTo(s.cx, s.cy);
+        ctx.arc(s.cx, s.cy, s.r, s.a0, s.a1);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      }
+      case 'pool': {
+        // Cooling pool — gray base, red ring, inner reflection ticks
+        ctx.fillStyle = COLORS.lightGray;
+        ctx.beginPath();
+        ctx.arc(s.cx, s.cy, s.r, 0, Math.PI*2);
+        ctx.fill();
+        ctx.strokeStyle = COLORS.red;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(s.cx, s.cy, s.r-4, 0, Math.PI*2);
+        ctx.stroke();
+        ctx.strokeStyle = COLORS.creamDark;
+        ctx.lineWidth = 1;
+        for (let a = 0; a < Math.PI*2; a += Math.PI/8) {
+          const r0 = s.r * 0.55, r1 = s.r * 0.85;
+          ctx.beginPath();
+          ctx.moveTo(s.cx + Math.cos(a)*r0, s.cy + Math.sin(a)*r0);
+          ctx.lineTo(s.cx + Math.cos(a)*r1, s.cy + Math.sin(a)*r1);
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'circle-stroke': {
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = 2;
+        if (s.dash) ctx.setLineDash(s.dash);
+        ctx.beginPath();
+        ctx.arc(s.cx, s.cy, s.r, 0, Math.PI*2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        break;
+      }
+      case 'arc-stroke': {
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(s.cx, s.cy, s.r, s.a0, s.a1);
+        ctx.stroke();
+        break;
+      }
+      case 'pipe': {
+        ctx.fillStyle = s.color || COLORS.gray;
+        ctx.fillRect(s.x, s.y, s.w, s.h);
+        ctx.fillStyle = COLORS.creamDark;
+        if (s.w > s.h) {
+          ctx.fillRect(s.x, s.y + s.h/2 - 1, s.w, 2);
+        } else {
+          ctx.fillRect(s.x + s.w/2 - 1, s.y, 2, s.h);
+        }
+        // Joint flanges
+        if (s.h > s.w) {
+          for (let y = s.y; y < s.y + s.h; y += 320) {
+            ctx.fillStyle = COLORS.black;
+            ctx.fillRect(s.x - 4, y, s.w + 8, 8);
+          }
+        } else {
+          for (let x = s.x; x < s.x + s.w; x += 320) {
+            ctx.fillStyle = COLORS.black;
+            ctx.fillRect(x, s.y - 4, 8, s.h + 8);
+          }
+        }
+        break;
+      }
+      case 'trefoil': {
+        // Radiation symbol
+        ctx.translate(s.cx, s.cy);
+        ctx.fillStyle = s.color || COLORS.red;
+        ctx.beginPath();
+        ctx.arc(0, 0, s.r*0.18, 0, Math.PI*2);
+        ctx.fill();
+        for (let i = 0; i < 3; i++) {
+          ctx.save();
+          ctx.rotate(i * Math.PI*2/3);
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.arc(0, 0, s.r, -Math.PI/6, Math.PI/6);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+        break;
+      }
+      case 'chevron': {
+        ctx.fillStyle = s.color || COLORS.black;
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(s.x + 60, s.y + 30);
+        ctx.lineTo(s.x + 50, s.y + 30);
+        ctx.lineTo(s.x - 10, s.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = COLORS.red;
+        ctx.beginPath();
+        ctx.moveTo(s.x + 12, s.y);
+        ctx.lineTo(s.x + 72, s.y + 30);
+        ctx.lineTo(s.x + 62, s.y + 30);
+        ctx.lineTo(s.x + 2, s.y);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      }
+      case 'plume': {
+        const grad = ctx.createRadialGradient(s.cx, s.cy, 0, s.cx, s.cy, s.w);
+        grad.addColorStop(0, s.color || COLORS.red);
+        grad.addColorStop(1, 'rgba(200,38,28,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(s.cx - s.w, s.cy - s.h*0.5, s.w*2, s.h);
+        break;
+      }
+      case 'slag': {
+        ctx.fillStyle = COLORS.redDim;
+        ctx.fillRect(s.x, s.y, s.w, s.h);
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(s.x + 8, s.y + 8, s.w - 16, s.h - 16);
+        ctx.fillStyle = COLORS.redBright;
+        for (let i = 0; i < 6; i++) {
+          ctx.fillRect(s.x + 16 + i*((s.w-32)/6), s.y + s.h*0.3, (s.w-32)/8, 6);
+        }
+        // Edge bars
+        ctx.fillStyle = COLORS.black;
+        ctx.fillRect(s.x, s.y, s.w, 6);
+        ctx.fillRect(s.x, s.y + s.h - 6, s.w, 6);
+        break;
+      }
+      case 'belt':
+      case 'belt-v': {
+        ctx.fillStyle = s.color || COLORS.black;
+        ctx.fillRect(s.x, s.y, s.w, s.h);
+        ctx.fillStyle = COLORS.creamDark;
+        if (s.kind === 'belt') {
+          for (let x = s.x; x < s.x + s.w; x += 24) {
+            ctx.fillRect(x, s.y + s.h/2 - 1, 14, 2);
+          }
+        } else {
+          for (let y = s.y; y < s.y + s.h; y += 24) {
+            ctx.fillRect(s.x + s.w/2 - 1, y, 2, 14);
+          }
+        }
+        break;
+      }
+      case 'gear': {
+        ctx.fillStyle = s.color || COLORS.black;
+        const teeth = 16;
+        ctx.beginPath();
+        for (let i = 0; i < teeth*2; i++) {
+          const a = i / (teeth*2) * Math.PI*2;
+          const r = (i%2===0) ? s.r : s.r*0.85;
+          const x = s.cx + Math.cos(a)*r;
+          const y = s.cy + Math.sin(a)*r;
+          if (i===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = COLORS.cream;
+        ctx.beginPath();
+        ctx.arc(s.cx, s.cy, s.r*0.35, 0, Math.PI*2);
+        ctx.fill();
+        break;
+      }
+      case 'water': {
+        ctx.fillStyle = s.color || COLORS.gray;
+        ctx.fillRect(s.x, s.y, s.w, s.h);
+        ctx.strokeStyle = COLORS.creamDark;
+        ctx.lineWidth = 1.5;
+        for (let y = s.y + 30; y < s.y + s.h; y += 60) {
+          ctx.beginPath();
+          for (let x = s.x; x < s.x + s.w; x += 20) {
+            const yy = y + Math.sin((x + game.time)*0.02)*4;
+            if (x === s.x) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+          }
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'line-h':
+      case 'line-v': {
+        ctx.fillStyle = s.color || COLORS.black;
+        ctx.fillRect(s.x, s.y, s.w, s.h);
+        break;
+      }
+      case 'megaGrid': {
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let x = s.x; x < s.x + s.w; x += s.step) {
+          ctx.moveTo(x, s.y); ctx.lineTo(x, s.y + s.h);
+        }
+        for (let y = s.y; y < s.y + s.h; y += s.step) {
+          ctx.moveTo(s.x, y); ctx.lineTo(s.x + s.w, y);
+        }
+        ctx.stroke();
+        break;
+      }
+      case 'pad': {
+        ctx.fillStyle = s.color || COLORS.black;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = i / 6 * Math.PI*2;
+          const x = s.cx + Math.cos(a)*s.r;
+          const y = s.cy + Math.sin(a)*s.r;
+          if (i===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = COLORS.red;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(s.cx, s.cy, s.r*0.55, 0, Math.PI*2);
+        ctx.stroke();
+        ctx.fillStyle = COLORS.red;
+        ctx.font = 'bold 36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('H', s.cx, s.cy + 12);
+        ctx.textAlign = 'left';
+        break;
+      }
+      case 'mast': {
+        ctx.fillStyle = s.color || COLORS.black;
+        ctx.fillRect(s.x - 3, s.y, 6, s.h);
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 10, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(s.x - 14, s.y + 30, 28, 4);
+        ctx.fillRect(s.x - 10, s.y + 60, 20, 4);
+        break;
+      }
+    }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawUndergrounds() {
+  ctx.save();
+  for (const u of undergrounds) {
+    // Cutout fill
+    ctx.fillStyle = COLORS.creamDark;
+    ctx.fillRect(u.x, u.y, u.w, u.h);
+    // Diagonal hatch suggesting "below grade"
+    ctx.strokeStyle = COLORS.gray;
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = -u.h; i < u.w; i += 14) {
+      ctx.moveTo(u.x + i, u.y);
+      ctx.lineTo(u.x + i + u.h, u.y + u.h);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    // Dashed border
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 6]);
+    ctx.strokeRect(u.x, u.y, u.w, u.h);
+    ctx.setLineDash([]);
+    // Label
+    if (u.label) {
+      ctx.fillStyle = COLORS.gray;
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(u.label, u.x + 6, u.y + 14);
+    }
+  }
+  ctx.restore();
+}
+
+function drawRoutes() {
+  ctx.save();
+  for (const r of routes) {
+    switch (r.type) {
+      case 'main': {
+        ctx.fillStyle = COLORS.creamDark;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.fillStyle = COLORS.red;
+        const isHorizontal = r.w > r.h;
+        if (isHorizontal) {
+          for (let x = r.x; x < r.x + r.w; x += 30) {
+            ctx.fillRect(x, r.y + r.h/2 - 2, 16, 4);
+          }
+        } else {
+          for (let y = r.y; y < r.y + r.h; y += 30) {
+            ctx.fillRect(r.x + r.w/2 - 2, y, 4, 16);
+          }
+        }
+        break;
+      }
+      case 'side': {
+        ctx.strokeStyle = COLORS.gray;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 6]);
+        ctx.strokeRect(r.x, r.y, r.w, r.h);
+        ctx.setLineDash([]);
+        break;
+      }
+      case 'vertical': {
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.strokeStyle = COLORS.cream;
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 4; i++) {
+          ctx.beginPath();
+          ctx.moveTo(r.x + 4, r.y + 4 + i*6);
+          ctx.lineTo(r.x + r.w - 4, r.y + 4 + i*6);
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'vehicle': {
+        ctx.fillStyle = COLORS.creamDark;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.fillStyle = COLORS.black;
+        const isVertical = r.h > r.w;
+        if (isVertical) {
+          for (let y = r.y; y < r.y + r.h; y += 80) {
+            ctx.fillRect(r.x + r.w/2 - 5, y, 10, 50);
+          }
+          ctx.fillStyle = COLORS.red;
+          ctx.fillRect(r.x, r.y, 4, r.h);
+          ctx.fillRect(r.x + r.w - 4, r.y, 4, r.h);
+        } else {
+          for (let x = r.x; x < r.x + r.w; x += 80) {
+            ctx.fillRect(x, r.y + r.h/2 - 5, 50, 10);
+          }
+          ctx.fillStyle = COLORS.red;
+          ctx.fillRect(r.x, r.y, r.w, 4);
+          ctx.fillRect(r.x, r.y + r.h - 4, r.w, 4);
+        }
+        break;
+      }
+      case 'drone': {
+        ctx.strokeStyle = COLORS.red;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.55;
+        ctx.setLineDash([2, 8]);
+        const isH = r.w > r.h;
+        ctx.beginPath();
+        if (isH) {
+          ctx.moveTo(r.x, r.y + r.h/2);
+          ctx.lineTo(r.x + r.w, r.y + r.h/2);
+        } else {
+          ctx.moveTo(r.x + r.w/2, r.y);
+          ctx.lineTo(r.x + r.w/2, r.y + r.h);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+        break;
+      }
+    }
+    if (r.label) {
+      ctx.fillStyle = COLORS.black;
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillText(r.label, r.x + 6, r.y - 6);
+    }
+  }
+  ctx.restore();
+}
+
+function drawLowCovers() {
+  ctx.save();
+  for (const lc of lowCovers) {
+    // Slight drop shadow
+    ctx.fillStyle = COLORS.creamDark;
+    ctx.fillRect(lc.x + 4, lc.y + 4, lc.w, lc.h);
+    ctx.fillStyle = lc.color;
+    ctx.fillRect(lc.x, lc.y, lc.w, lc.h);
+    // Hatch top to suggest waist-high
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.5;
+    for (let i = 0; i < lc.w; i += 8) {
+      ctx.beginPath();
+      ctx.moveTo(lc.x + i, lc.y);
+      ctx.lineTo(lc.x + i + 4, lc.y + lc.h);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.strokeRect(lc.x, lc.y, lc.w, lc.h);
+  }
+  ctx.restore();
+}
+
+function drawOverheads() {
+  ctx.save();
+  for (const o of overheads) {
+    // Big offset shadow to read as elevated
+    ctx.fillStyle = 'rgba(26,26,26,0.20)';
+    ctx.fillRect(o.x + 18, o.y + 18, o.w, o.h);
+    ctx.fillStyle = o.color || COLORS.black;
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    // Catwalk grid pattern
+    ctx.strokeStyle = COLORS.gray;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.6;
+    if (o.w > o.h) {
+      for (let x = o.x; x < o.x + o.w; x += 12) {
+        ctx.beginPath();
+        ctx.moveTo(x, o.y);
+        ctx.lineTo(x, o.y + o.h);
+        ctx.stroke();
+      }
+    } else {
+      for (let y = o.y; y < o.y + o.h; y += 12) {
+        ctx.beginPath();
+        ctx.moveTo(o.x, y);
+        ctx.lineTo(o.x + o.w, y);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+    // Red outline rivets
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(o.x, o.y, o.w, 3);
+    ctx.fillRect(o.x, o.y + o.h - 3, o.w, 3);
+  }
+  ctx.restore();
+}
+
+function drawLandmarksUnder() {
+  // Footprint shadow / radiating glow
+  for (const lm of landmarks) {
+    ctx.save();
+    if (lm.kind === 'reactorPool' || lm.kind === 'droneHive' || lm.kind === 'dataCore') {
+      const grad = ctx.createRadialGradient(lm.x, lm.y, 0, lm.x, lm.y, lm.r * 2.4);
+      grad.addColorStop(0, 'rgba(200,38,28,0.25)');
+      grad.addColorStop(1, 'rgba(200,38,28,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(lm.x - lm.r*2.4, lm.y - lm.r*2.4, lm.r*4.8, lm.r*4.8);
+    }
+    ctx.restore();
+  }
+}
+
+function drawLandmarksMid() {
+  for (const lm of landmarks) {
+    ctx.save();
+    switch (lm.kind) {
+      case 'reactorPool': {
+        // Outer rim
+        ctx.fillStyle = COLORS.gray;
+        ctx.beginPath();
+        ctx.arc(lm.x, lm.y, lm.r, 0, Math.PI*2);
+        ctx.fill();
+        // Reactor cap (red core)
+        ctx.fillStyle = COLORS.black;
+        ctx.beginPath();
+        ctx.arc(lm.x, lm.y, lm.r*0.72, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = COLORS.red;
+        ctx.beginPath();
+        ctx.arc(lm.x, lm.y, lm.r*0.45, 0, Math.PI*2);
+        ctx.fill();
+        // Pulsing core
+        ctx.fillStyle = COLORS.cream;
+        const pulse = 0.7 + Math.sin(game.time*0.06)*0.3;
+        ctx.globalAlpha = pulse;
+        ctx.beginPath();
+        ctx.arc(lm.x, lm.y, lm.r*0.18, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        // Cooling pipes radiating
+        ctx.strokeStyle = COLORS.black;
+        ctx.lineWidth = 12;
+        for (let i = 0; i < 4; i++) {
+          const a = i * Math.PI/2 + Math.PI/4;
+          ctx.beginPath();
+          ctx.moveTo(lm.x + Math.cos(a)*lm.r*0.7, lm.y + Math.sin(a)*lm.r*0.7);
+          ctx.lineTo(lm.x + Math.cos(a)*lm.r*1.3, lm.y + Math.sin(a)*lm.r*1.3);
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'blastFurnace': {
+        // Tall trapezoid silhouette
+        ctx.fillStyle = COLORS.black;
+        ctx.beginPath();
+        ctx.moveTo(lm.x - lm.r*0.9, lm.y + lm.r*0.6);
+        ctx.lineTo(lm.x - lm.r*0.5, lm.y - lm.r*0.9);
+        ctx.lineTo(lm.x + lm.r*0.5, lm.y - lm.r*0.9);
+        ctx.lineTo(lm.x + lm.r*0.9, lm.y + lm.r*0.6);
+        ctx.closePath();
+        ctx.fill();
+        // Slag spout opening
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(lm.x - lm.r*0.25, lm.y + lm.r*0.4, lm.r*0.5, lm.r*0.25);
+        // Furnace body bands
+        ctx.fillStyle = COLORS.gray;
+        for (let i = 0; i < 4; i++) {
+          ctx.fillRect(lm.x - lm.r*0.7 + i*4, lm.y - lm.r*0.6 + i*lm.r*0.35, lm.r*1.4 - i*8, 6);
+        }
+        // Glow at top (charge hole)
+        ctx.fillStyle = COLORS.redBright;
+        ctx.globalAlpha = 0.5 + Math.sin(game.time*0.08)*0.3;
+        ctx.beginPath();
+        ctx.ellipse(lm.x, lm.y - lm.r*0.85, lm.r*0.4, lm.r*0.12, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case 'gantryCrane': {
+        // Massive crane spans the yard horizontally
+        const cx = lm.x, cy = lm.y;
+        const span = lm.w, height = lm.h;
+        // Two leg towers (pillars)
+        ctx.fillStyle = COLORS.black;
+        ctx.fillRect(cx - span*0.5, cy - height*0.5, 50, height);
+        ctx.fillRect(cx + span*0.5 - 50, cy - height*0.5, 50, height);
+        // Main beam (truss) — cream with red cross-bracing
+        ctx.fillStyle = COLORS.creamDark;
+        ctx.fillRect(cx - span*0.5, cy - height*0.5, span, 50);
+        ctx.strokeStyle = COLORS.red;
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 12; i++) {
+          const x = cx - span*0.5 + (i / 12) * span;
+          ctx.beginPath();
+          ctx.moveTo(x, cy - height*0.5);
+          ctx.lineTo(x + span/12, cy - height*0.5 + 50);
+          ctx.stroke();
+        }
+        // Trolley + container hanging
+        const tx = cx + Math.sin(game.time*0.01) * span*0.3;
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(tx - 30, cy - height*0.5 + 50, 60, 30);
+        ctx.strokeStyle = COLORS.black;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(tx, cy - height*0.5 + 80);
+        ctx.lineTo(tx, cy - height*0.5 + 200);
+        ctx.stroke();
+        ctx.fillStyle = COLORS.gray;
+        ctx.fillRect(tx - 50, cy - height*0.5 + 200, 100, 40);
+        // Big "PORT" letters on beam
+        ctx.fillStyle = COLORS.black;
+        ctx.font = 'bold 38px sans-serif';
+        ctx.fillText('PORT 7G', cx - 80, cy - height*0.5 + 38);
+        break;
+      }
+      case 'dataCore': {
+        // Central data core — stacked black/red squares
+        ctx.fillStyle = COLORS.black;
+        ctx.fillRect(lm.x - lm.r, lm.y - lm.r, lm.r*2, lm.r*2);
+        // Red core
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(lm.x - lm.r*0.6, lm.y - lm.r*0.6, lm.r*1.2, lm.r*1.2);
+        // Inner "rack rows" white pattern
+        ctx.fillStyle = COLORS.cream;
+        for (let i = 0; i < 6; i++) {
+          ctx.fillRect(lm.x - lm.r*0.5, lm.y - lm.r*0.5 + i*lm.r*0.18, lm.r, lm.r*0.06);
+        }
+        // Pulsing center
+        ctx.fillStyle = COLORS.cream;
+        ctx.globalAlpha = 0.5 + Math.sin(game.time*0.1)*0.5;
+        ctx.beginPath();
+        ctx.arc(lm.x, lm.y, lm.r*0.22, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        // Heat sink fins around
+        ctx.fillStyle = COLORS.gray;
+        for (let i = 0; i < 8; i++) {
+          const a = i * Math.PI/4;
+          ctx.save();
+          ctx.translate(lm.x, lm.y);
+          ctx.rotate(a);
+          ctx.fillRect(lm.r*0.95, -8, 30, 16);
+          ctx.restore();
+        }
+        // Capture-node markers
+        if (lm.capturePoints) {
+          for (const n of lm.capturePoints) {
+            ctx.fillStyle = COLORS.black;
+            ctx.fillRect(n.x - 30, n.y - 30, 60, 60);
+            ctx.fillStyle = COLORS.cream;
+            ctx.font = 'bold 14px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('NODE', n.x, n.y + 4);
+            ctx.textAlign = 'left';
+          }
+        }
+        break;
+      }
+      case 'droneHive': {
+        // Hexagonal hive base
+        ctx.fillStyle = COLORS.black;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = i / 6 * Math.PI*2;
+          const x = lm.x + Math.cos(a)*lm.r;
+          const y = lm.y + Math.sin(a)*lm.r;
+          if (i===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        // Inner red hexagon
+        ctx.fillStyle = COLORS.red;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = i / 6 * Math.PI*2;
+          const x = lm.x + Math.cos(a)*lm.r*0.6;
+          const y = lm.y + Math.sin(a)*lm.r*0.6;
+          if (i===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        // Hexagonal honeycomb cells
+        ctx.fillStyle = COLORS.black;
+        for (let ring = 0; ring < 3; ring++) {
+          for (let i = 0; i < 6; i++) {
+            const a = i / 6 * Math.PI*2;
+            const r = (ring+1) * lm.r*0.18;
+            const cx = lm.x + Math.cos(a)*r, cy = lm.y + Math.sin(a)*r;
+            ctx.beginPath();
+            ctx.arc(cx, cy, lm.r*0.06, 0, Math.PI*2);
+            ctx.fill();
+          }
+        }
+        // Pulsing center
+        ctx.fillStyle = COLORS.cream;
+        ctx.globalAlpha = 0.6 + Math.sin(game.time*0.12)*0.4;
+        ctx.beginPath();
+        ctx.arc(lm.x, lm.y, lm.r*0.16, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        break;
+      }
+    }
+    ctx.restore();
+  }
+}
+
+function drawLandmarksTop() {
+  // Drawn last so spires/antennas read as tall
+  for (const lm of landmarks) {
+    ctx.save();
+    if (lm.kind === 'blastFurnace') {
+      // Smoke stack rising
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(lm.x - 16, lm.y - lm.r*1.6, 32, lm.r*0.8);
+      ctx.fillStyle = COLORS.gray;
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.arc(lm.x, lm.y - lm.r*1.7, 60, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (lm.kind === 'droneHive') {
+      // Antenna spire
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(lm.x - 4, lm.y - lm.r*2.4, 8, lm.r*1.4);
+      ctx.fillStyle = COLORS.red;
+      ctx.beginPath();
+      ctx.arc(lm.x, lm.y - lm.r*2.4, 10, 0, Math.PI*2);
+      ctx.fill();
+      // Pulse blink
+      if (Math.sin(game.time*0.1) > 0.6) {
+        ctx.globalAlpha = 0.4;
+        ctx.beginPath();
+        ctx.arc(lm.x, lm.y - lm.r*2.4, 32, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    } else if (lm.kind === 'reactorPool') {
+      // Containment dome top — small concentric red rings
+      ctx.strokeStyle = COLORS.red;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.arc(lm.x, lm.y, lm.r*1.05, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
 }
 
 function drawHumanoid(x, y, angle, walkPhase, color, isEnemy) {
@@ -1375,7 +2774,7 @@ function renderRadarWorld() {
   ctx.stroke();
   ctx.globalAlpha = 1;
 
-  // Building outlines (faint)
+  // Building + cover outlines (faint)
   ctx.strokeStyle = COLORS.gray;
   ctx.globalAlpha = 0.25;
   ctx.lineWidth = 1;
@@ -1383,6 +2782,24 @@ function renderRadarWorld() {
     if (Math.hypot(b.x+b.w/2-cx, b.y+b.h/2-cy) > maxR+100) continue;
     ctx.strokeRect(b.x, b.y, b.w, b.h);
   }
+  for (const lc of lowCovers) {
+    if (Math.hypot(lc.x+lc.w/2-cx, lc.y+lc.h/2-cy) > maxR+100) continue;
+    ctx.strokeRect(lc.x, lc.y, lc.w, lc.h);
+  }
+  // Landmark silhouette in radar
+  ctx.globalAlpha = 0.6;
+  ctx.strokeStyle = COLORS.red;
+  ctx.lineWidth = 2;
+  for (const lm of landmarks) {
+    if (lm.r) {
+      ctx.beginPath();
+      ctx.arc(lm.x, lm.y, lm.r, 0, Math.PI*2);
+      ctx.stroke();
+    } else if (lm.w) {
+      ctx.strokeRect(lm.x - lm.w/2, lm.y - lm.h/2, lm.w, lm.h);
+    }
+  }
+  ctx.globalAlpha = 0.25;
 
   // Pings
   ctx.fillStyle = COLORS.redBright;
@@ -1449,6 +2866,21 @@ function renderThermalWorld() {
     ctx.strokeRect(b.x, b.y, b.w, b.h);
     ctx.fillStyle = '#2A2A2A';
     ctx.fillRect(b.x, b.y, b.w, b.h);
+  }
+  // Cool low covers
+  ctx.fillStyle = '#222';
+  for (const lc of lowCovers) ctx.fillRect(lc.x, lc.y, lc.w, lc.h);
+  // Hot landmarks (reactor / furnace / hive emit heat)
+  for (const lm of landmarks) {
+    if (lm.kind === 'reactorPool' || lm.kind === 'blastFurnace' || lm.kind === 'droneHive' || lm.kind === 'dataCore') {
+      const r = lm.r || Math.max(lm.w, lm.h)/2;
+      const grad = ctx.createRadialGradient(lm.x, lm.y, 0, lm.x, lm.y, r*1.4);
+      grad.addColorStop(0, COLORS.cream);
+      grad.addColorStop(0.4, COLORS.redBright);
+      grad.addColorStop(1, 'rgba(200,38,28,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(lm.x - r*1.4, lm.y - r*1.4, r*2.8, r*2.8);
+    }
   }
 
   // Hot units
@@ -1521,18 +2953,33 @@ function renderHUD() {
   }
 
   // Top-left: status panel
-  drawHUDPanel(20, 20, 280, 130, '战场状态 / STATUS');
+  drawHUDPanel(20, 20, 300, 168, '战场状态 / STATUS');
   ctx.fillStyle = COLORS.black;
   ctx.font = 'bold 11px sans-serif';
   ctx.fillText(`坐标 ${player.x.toFixed(0)} · ${player.y.toFixed(0)}`, 32, 60);
   ctx.fillText(`视角 ${getModeLabel()}`, 32, 78);
-  ctx.fillText(`波次 ${game.wave} / 5`, 32, 96);
+  ctx.fillText(`关卡 ${game.wave} / ${MAPS.length}`, 32, 96);
   const remaining = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
   ctx.fillStyle = remaining > 0 ? COLORS.red : COLORS.gray;
   ctx.fillText(`敌方剩余 ${remaining}`, 32, 114);
-  ctx.fillStyle = COLORS.gray;
-  ctx.font = '10px sans-serif';
-  ctx.fillText(`T+${Math.floor(game.time/60)}s`, 32, 134);
+  // Map name + rhythm
+  if (currentMap) {
+    ctx.fillStyle = COLORS.red;
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(`${currentMap.name} · ${currentMap.nameEn}`, 32, 134);
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText(currentMap.rhythmHint, 32, 150);
+    if (isInUnderground(player.x, player.y)) {
+      ctx.fillStyle = COLORS.red;
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillText('● 隐蔽中 · 地下层', 32, 168);
+    } else {
+      ctx.fillStyle = COLORS.gray;
+      ctx.font = '10px sans-serif';
+      ctx.fillText(`T+${Math.floor(game.time/60)}s`, 32, 168);
+    }
+  }
 
   // Top-right: score
   ctx.textAlign = 'right';
@@ -1616,9 +3063,10 @@ function renderHUD() {
   }
 
   // Mini-map (bottom-right)
-  const mw = 220, mh = 220;
+  const mw = 240, mh = 240;
   const mx = W() - mw - 20, my = H() - mh - 20;
-  drawHUDPanel(mx, my, mw, mh, '战术地图 / MAP');
+  const mapLabel = currentMap ? `战术地图 · ${currentMap.name}` : '战术地图 / MAP';
+  drawHUDPanel(mx, my, mw, mh, mapLabel);
   const mapPad = 12;
   const mapX = mx + mapPad, mapY = my + 30;
   const mapW = mw - mapPad*2, mapH = mh - 40;
@@ -1629,17 +3077,58 @@ function renderHUD() {
   ctx.strokeRect(mapX, mapY, mapW, mapH);
 
   const sx = mapW / WORLD.w, sy = mapH / WORLD.h;
-  // Sun on map
-  ctx.fillStyle = COLORS.red;
-  ctx.globalAlpha = 0.3;
-  ctx.beginPath();
-  ctx.arc(mapX + WORLD.w*0.72*sx, mapY + WORLD.h*0.28*sy, 220*sx, 0, Math.PI*2);
-  ctx.fill();
+
+  // Underground tunnels (dashed)
+  ctx.strokeStyle = COLORS.gray;
+  ctx.setLineDash([3, 3]);
+  for (const u of undergrounds) {
+    ctx.strokeRect(mapX + u.x*sx, mapY + u.y*sy, Math.max(1, u.w*sx), Math.max(1, u.h*sy));
+  }
+  ctx.setLineDash([]);
+
+  // Routes (color by type)
+  for (const r of routes) {
+    let col = COLORS.creamDark, alpha = 0.7;
+    if (r.type === 'main') col = COLORS.red;
+    else if (r.type === 'side') { col = COLORS.gray; alpha = 0.5; }
+    else if (r.type === 'vertical') col = COLORS.red;
+    else if (r.type === 'vehicle') col = COLORS.black;
+    else if (r.type === 'drone') { col = COLORS.red; alpha = 0.4; }
+    ctx.fillStyle = col;
+    ctx.globalAlpha = alpha;
+    ctx.fillRect(mapX + r.x*sx, mapY + r.y*sy, Math.max(1, r.w*sx), Math.max(1, r.h*sy));
+  }
   ctx.globalAlpha = 1;
+
   // Buildings
   ctx.fillStyle = COLORS.lightGray;
   for (const b of buildings) {
     ctx.fillRect(mapX + b.x*sx, mapY + b.y*sy, Math.max(1, b.w*sx), Math.max(1, b.h*sy));
+  }
+  // Low covers (mid gray)
+  ctx.fillStyle = COLORS.creamDark;
+  for (const lc of lowCovers) {
+    ctx.fillRect(mapX + lc.x*sx, mapY + lc.y*sy, Math.max(1, lc.w*sx), Math.max(1, lc.h*sy));
+  }
+  // Overheads (dark)
+  ctx.fillStyle = COLORS.black;
+  for (const o of overheads) {
+    ctx.fillRect(mapX + o.x*sx, mapY + o.y*sy, Math.max(1, o.w*sx), Math.max(1, o.h*sy));
+  }
+  // Landmark — big star/circle
+  for (const lm of landmarks) {
+    ctx.fillStyle = COLORS.red;
+    if (lm.r) {
+      ctx.beginPath();
+      ctx.arc(mapX + lm.x*sx, mapY + lm.y*sy, Math.max(4, lm.r*sx*0.9), 0, Math.PI*2);
+      ctx.fill();
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    } else if (lm.w) {
+      const w = Math.max(8, lm.w*sx*0.5), h = Math.max(8, lm.h*sx*0.5);
+      ctx.fillRect(mapX + lm.x*sx - w/2, mapY + lm.y*sy - h/2, w, h);
+    }
   }
   // Player
   ctx.fillStyle = COLORS.black;
