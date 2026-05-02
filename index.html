@@ -360,7 +360,7 @@ const player = {
   angle: 0,           // view angle — follows mouse instantly (where you LOOK)
   gunAngle: 0,        // gun barrel — lags behind, has sway + recoil
   gunRecoil: 0,       // current recoil offset added to gunAngle
-  hp: 100, maxHp: 100,
+  hp: 130, maxHp: 130,   // bumped from 100 — survives a full kamikaze hit + a few stray rounds
   ammo: 30, maxAmmo: 30, reserve: 120,
   reloading: false, reloadTime: 0,
   fireCooldown: 0,
@@ -590,6 +590,7 @@ function startGame() {
   game.time = 0;
   game.message = '';
   game.waveBreak = 0;
+  game.missionRetries = 0;
 
   player.x = WORLD.w/2; player.y = WORLD.h/2;
   player.hp = player.maxHp;
@@ -1188,13 +1189,54 @@ function updateMission() {
 
 function onMissionSuccess() {
   game.score += 800;
-  showMessage(`任务完成 / MISSION COMPLETE`, 200);
+  game.missionRetries = 0; // reset retry counter on each successful mission
+  showMessage(`任务完成 +800`, 200);
   game.waveBreak = 220;
 }
 
+// Mission failure now RETRIES the current mission (not the whole campaign).
+// Allies and the player respawn full HP, the same map+objective is re-initialised.
+// On the third failure of the same mission, the campaign ends.
 function onMissionFailed() {
-  showMessage(`任务失败 / MISSION FAILED`, 200);
-  setTimeout(() => endGame(false), 2000);
+  game.missionRetries = (game.missionRetries || 0) + 1;
+  if (game.missionRetries >= 3) {
+    showMessage(`任务三次失败 · 撤退`, 200);
+    setTimeout(() => endGame(false), 2200);
+    return;
+  }
+  showMessage(`任务失败 · 重试 (${game.missionRetries}/3)`, 200);
+  setTimeout(() => retryCurrentMission(), 1800);
+}
+
+function retryCurrentMission() {
+  if (game.state !== 'playing') return;
+  // Reset combat state but keep score, kill count
+  bullets.length = 0;
+  enemyBullets.length = 0;
+  enemies.length = 0;
+  enemyDrones.length = 0;
+  soundEvents.length = 0;
+  squadIntel.fresh = 0;
+  // Player respawns
+  player.alive = true;
+  player.hp = player.maxHp;
+  player.ammo = player.maxAmmo;
+  player.reserve = 120;
+  player.reloading = false;
+  player.gunRecoil = 0;
+  drone.deployed = false;
+  drone.battery = drone.maxBattery;
+  fpv.active = false;
+  fpv.available = fpv.max;
+  if (game.mode === 'fpv' || game.mode === 'drone') game.mode = 'tactical';
+  // Reload the same mission
+  const missionDef = MISSIONS[game.wave - 1];
+  generateWorld(missionDef.mapIdx);
+  spawnAllies();
+  initMission(missionDef, currentMap);
+  spawnWave(game.wave);
+  showMessage(`重试 · ${mission.title}`, 150);
+  game.waveBreak = 0;
 }
 
 // ---------- MISSION 1: CONVOY ESCORT ----------
@@ -1718,17 +1760,116 @@ function spawnSoldierAt(x, y) {
 
 // Shared HUD helper for the objective panel (used by every mission renderHUD)
 function drawObjectivePanel(lines) {
-  const w = 320, h = 64 + lines.length * 18;
-  const x = W()/2 - w/2, y = 76;
-  drawHUDPanel(x, y, w, h, `任务 / ${mission.titleEn}`);
+  const w = 280, h = 30 + lines.length * 16;
+  const x = W()/2 - w/2, y = 54;
+  drawHUDPanel(x, y, w, h, null);
   ctx.fillStyle = COLORS.red;
-  ctx.font = 'bold 13px sans-serif';
-  ctx.fillText(mission.title, x + 12, y + 36);
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(`任务 · ${mission.title}`, x + 10, y + 18);
   ctx.fillStyle = COLORS.black;
-  ctx.font = '11px monospace';
+  ctx.font = '10px monospace';
   for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], x + 12, y + 56 + i*18);
+    ctx.fillText(lines[i], x + 10, y + 32 + i*15);
   }
+}
+
+// Off-screen waypoint indicator: when the objective is outside the viewport,
+// draw a chevron + distance on the screen edge in its direction. Players never
+// have to wonder "where do I go".
+function drawObjectiveCompass() {
+  if (!mission || !player.alive) return;
+  const targets = collectMissionWaypoints();
+  if (!targets.length) return;
+  for (const t of targets) {
+    drawCompassChevron(t.x, t.y, t.label, t.color || COLORS.red);
+  }
+}
+
+function collectMissionWaypoints() {
+  const out = [];
+  if (!mission) return out;
+  switch (mission.type) {
+    case 'escort': {
+      const u = mission.ugv;
+      if (u && u.alive) out.push({ x: u.x, y: u.y, label: 'UGV', color: COLORS.red });
+      const dest = mission.path[mission.path.length-1];
+      if (dest) out.push({ x: dest.x, y: dest.y, label: '终点', color: COLORS.black });
+      break;
+    }
+    case 'capture': {
+      for (const z of mission.zones) {
+        if (z.owner !== 'friendly') out.push({ x: z.x, y: z.y, label: z.id, color: z.owner === 'hostile' ? COLORS.red : COLORS.black });
+      }
+      break;
+    }
+    case 'destroyHive': {
+      const h = mission.hive;
+      if (h && h.alive) out.push({ x: h.x, y: h.y, label: '蜂巢', color: COLORS.red });
+      break;
+    }
+    case 'recover': {
+      if (!mission.blackBox.pickedUp) out.push({ x: mission.blackBox.x, y: mission.blackBox.y, label: '黑盒', color: COLORS.red });
+      else out.push({ x: mission.extraction.x, y: mission.extraction.y, label: '撤离', color: COLORS.red });
+      break;
+    }
+    case 'heavyInsert': {
+      const h = mission.heavy;
+      if (h && h.alive) out.push({ x: h.x, y: h.y, label: 'UGV', color: COLORS.red });
+      if (!h || !h.arrivedAt) out.push({ x: mission.target.x, y: mission.target.y, label: '目标', color: COLORS.black });
+      break;
+    }
+    case 'hold': {
+      const r = mission.relay;
+      if (r && r.alive) out.push({ x: r.x, y: r.y, label: '中继', color: COLORS.red });
+      break;
+    }
+  }
+  return out;
+}
+
+function drawCompassChevron(wx, wy, label, color) {
+  // Test if the world point is on-screen
+  const sx = (wx - camera.x) * camera.scale + W()/2;
+  const sy = (wy - camera.y) * camera.scale + H()/2;
+  const margin = 80;
+  if (sx > margin && sx < W()-margin && sy > margin && sy < H()-margin) return; // visible — no chevron needed
+  // Clamp to screen edge along the ray from screen center
+  const cx = W()/2, cy = H()/2;
+  const dx = sx - cx, dy = sy - cy;
+  const ang = Math.atan2(dy, dx);
+  const halfW = W()/2 - 40;
+  const halfH = H()/2 - 100;
+  const t = Math.min(halfW / Math.max(0.001, Math.abs(Math.cos(ang))),
+                     halfH / Math.max(0.001, Math.abs(Math.sin(ang))));
+  const ex = cx + Math.cos(ang) * t;
+  const ey = cy + Math.sin(ang) * t;
+  const dist = Math.hypot(wx - player.x, wy - player.y).toFixed(0);
+
+  ctx.save();
+  ctx.translate(ex, ey);
+  ctx.rotate(ang);
+  // Chevron arrow
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(20, 0);
+  ctx.lineTo(0, -12);
+  ctx.lineTo(0, 12);
+  ctx.closePath();
+  ctx.fill();
+  // Pulse outline
+  const pulse = 0.5 + Math.sin(game.time * 0.12) * 0.5;
+  ctx.globalAlpha = 0.4 * pulse;
+  ctx.fillRect(-6, -16, 4, 32);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  // Label + distance just inside the screen from the chevron
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${label} ${dist}m`, ex - Math.cos(ang)*30, ey - Math.sin(ang)*30 + 4);
+  ctx.textAlign = 'left';
+  ctx.restore();
 }
 
 // ============ WORLD GEN ============
@@ -1859,12 +2000,12 @@ function spawnDroneEnemy(cfg) {
     radius: 11,
     alive: true,
     angle: Math.atan2(player.y - y, player.x - x),
-    speed: 4.6 + Math.random()*1.2,    // cruise speed (high — they're committed)
-    turnRate: 0.038,                   // low — hard to turn (committed approach)
+    speed: 3.4 + Math.random()*0.8,    // was 4.6+1.2 — slower so the player has time to react
+    turnRate: 0.034,                   // low — hard to turn (committed approach)
     armed: true,
     hoverPhase: Math.random()*Math.PI*2,
-    explodeRadius: 70,
-    explodeDamage: 60,
+    explodeRadius: 55,                 // was 70 — smaller blast
+    explodeDamage: 35,                 // was 60 — survivable at full HP
   });
 }
 
@@ -1915,6 +2056,18 @@ function nearestVisibleEnemy(ax, ay, fromAngle, range) {
 function updateAllies() {
   for (const a of allies) {
     if (!a.alive) continue;
+    // Stuck detector — record last position; if we haven't moved >2u in 90 frames,
+    // sidestep perpendicular to the current facing for a moment to break free.
+    if (a._lastX == null) { a._lastX = a.x; a._lastY = a.y; a._stuckFrames = 0; }
+    if (Math.hypot(a.x - a._lastX, a.y - a._lastY) < 2) a._stuckFrames++;
+    else { a._stuckFrames = 0; a._lastX = a.x; a._lastY = a.y; }
+    if (a._stuckFrames > 90) {
+      const side = (a.callsign.charCodeAt(0) % 2) ? 1 : -1;
+      a.x += -Math.sin(a.angle) * a.speed * side;
+      a.y +=  Math.cos(a.angle) * a.speed * side;
+      a._stuckFrames = 0;
+      a._lastX = a.x; a._lastY = a.y;
+    }
 
     // Look first (turn body toward target if any), then move.
     const target = a.target && a.target.alive ? a.target : nearestVisibleEnemy(a.x, a.y, a.angle, VIEW.range);
@@ -2393,7 +2546,7 @@ function kamikazeExplode(d) {
         player.hp = 0;
         player.alive = false;
         createExplosion(player.x, player.y, 'big');
-        setTimeout(() => endGame(false), 1500);
+        // Player death — onMissionFailed handles retry/campaign-end
       }
     }
   }
@@ -2456,6 +2609,9 @@ function update() {
   // Mission completion drives wave advancement.
   // (onMissionSuccess() sets game.waveBreak to 220.)
   if (game.waveBreak > 0) {
+    // Regen HP between missions: full recovery over the wave-break window
+    if (player.alive && player.hp < player.maxHp) player.hp = Math.min(player.maxHp, player.hp + 0.6);
+    for (const a of allies) if (a.alive && a.hp < a.maxHp) a.hp = Math.min(a.maxHp, a.hp + 0.5);
     game.waveBreak--;
     if (game.waveBreak === 0) startNextWave();
   }
@@ -2603,7 +2759,7 @@ function updateBullets() {
         player.hp = 0;
         player.alive = false;
         createExplosion(player.x, player.y, 'big');
-        setTimeout(() => endGame(false), 1500);
+        // Player death — onMissionFailed handles retry/campaign-end
       }
     }
     if (!hit) for (const a of allies) {
@@ -4185,128 +4341,111 @@ function renderHUD() {
     ctx.fillRect(0, 0, W(), H());
   }
 
-  // Top-left: status panel
-  drawHUDPanel(20, 20, 300, 188, '战场状态 / STATUS');
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 11px sans-serif';
-  ctx.fillText(`坐标 ${player.x.toFixed(0)} · ${player.y.toFixed(0)}`, 32, 60);
-  ctx.fillText(`视角 ${getModeLabel()}`, 32, 78);
-  ctx.fillText(`关卡 ${game.wave} / ${MISSIONS.length}`, 32, 96);
-  const remaining = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
-  ctx.fillStyle = remaining > 0 ? COLORS.red : COLORS.gray;
-  ctx.fillText(`敌方剩余 ${remaining}`, 32, 114);
-  // Squad status
-  const sqAlive = allies.filter(a=>a.alive).length;
-  ctx.fillStyle = sqAlive > 0 ? COLORS.black : COLORS.gray;
-  const sqList = allies.map(a => a.alive ? `${a.callsign}(${a.hp})` : `${a.callsign}†`).join(' · ');
-  ctx.fillText(`小组 ${sqAlive}/${allies.length}  ${sqList}`, 32, 132);
-  // Map name + rhythm
-  if (currentMap) {
-    ctx.fillStyle = COLORS.red;
-    ctx.font = 'bold 12px sans-serif';
-    ctx.fillText(`${currentMap.name} · ${currentMap.nameEn}`, 32, 152);
-    ctx.fillStyle = COLORS.black;
-    ctx.font = 'bold 9px sans-serif';
-    ctx.fillText(currentMap.rhythmHint, 32, 168);
-    if (isInUnderground(player.x, player.y)) {
-      ctx.fillStyle = COLORS.red;
-      ctx.font = 'bold 10px sans-serif';
-      ctx.fillText('● 隐蔽中 · 地下层', 32, 186);
-    } else {
-      ctx.fillStyle = COLORS.gray;
-      ctx.font = '10px sans-serif';
-      ctx.fillText(`T+${Math.floor(game.time/60)}s`, 32, 186);
-    }
-  }
-
-  // Top-right: score
-  ctx.textAlign = 'right';
+  // Top-left: compact status panel
+  drawHUDPanel(16, 16, 220, 100, null);
   ctx.fillStyle = COLORS.red;
-  ctx.font = 'bold 38px sans-serif';
-  ctx.fillText(`${game.score}`, W() - 30, 60);
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 11px sans-serif';
-  ctx.fillText('TOTAL SCORE / 总积分', W() - 30, 78);
-  ctx.fillText(`击杀 ${game.killCount}`, W() - 30, 96);
-  ctx.textAlign = 'left';
-
-  // View mode banner (top-center)
-  ctx.fillStyle = COLORS.red;
-  ctx.fillRect(W()/2 - 110, 20, 220, 4);
-  ctx.fillStyle = 'rgba(232, 228, 216, 0.92)';
-  ctx.fillRect(W()/2 - 110, 24, 220, 38);
-  ctx.strokeStyle = COLORS.black;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(W()/2 - 110, 24, 220, 38);
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 14px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(getModeLabel(), W()/2, 44);
-  ctx.font = '9px sans-serif';
-  ctx.fillStyle = COLORS.gray;
-  ctx.fillText('— VIEW MODE —', W()/2, 56);
-  ctx.textAlign = 'left';
-
-  // Mission objective panel (drawn just below the view mode banner)
-  if (mission && mission.renderHUD) mission.renderHUD();
-
-  // Bottom-left: weapon
-  const py = H() - 110;
-  drawHUDPanel(20, py, 320, 90, '武器 / WEAPON');
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 38px sans-serif';
-  ctx.fillText(`${player.ammo}`, 32, py + 70);
-  ctx.font = 'bold 16px sans-serif';
-  ctx.fillStyle = COLORS.gray;
-  ctx.fillText(`/ ${player.reserve}`, 90, py + 70);
-  if (player.reloading) {
-    ctx.fillStyle = COLORS.creamDark;
-    ctx.fillRect(160, py + 50, 140, 12);
-    ctx.fillStyle = COLORS.red;
-    ctx.fillRect(160, py + 50, 140 * (1 - player.reloadTime / 80), 12);
-    ctx.fillStyle = COLORS.black;
-    ctx.font = 'bold 10px sans-serif';
-    ctx.fillText('装填中 RELOADING...', 160, py + 75);
-  } else {
-    ctx.fillStyle = COLORS.gray;
-    ctx.font = '10px sans-serif';
-    ctx.fillText('R · 装填', 160, py + 60);
-    ctx.fillText('LMB · 射击', 160, py + 75);
-  }
-
-  // Center-bottom: HP
-  const hpx = 360, hpy = py;
-  drawHUDPanel(hpx, hpy, 240, 90, '生命值 / HP');
-  ctx.fillStyle = COLORS.creamDark;
-  ctx.fillRect(hpx + 12, hpy + 50, 216, 18);
-  ctx.fillStyle = player.hp > 30 ? COLORS.black : COLORS.red;
-  ctx.fillRect(hpx + 12, hpy + 50, 216 * (player.hp/player.maxHp), 18);
-  ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 12px sans-serif';
-  ctx.fillText(`${Math.floor(player.hp)} / ${player.maxHp}`, hpx + 18, hpy + 64);
-
-  // Drone & FPV
-  const dx = 620, dy = py;
-  drawHUDPanel(dx, dy, 220, 90, '无人机 / UAV');
+  ctx.fillText(`关卡 ${game.wave}/${MISSIONS.length}  ${currentMap ? currentMap.name : ''}`, 26, 36);
   ctx.fillStyle = COLORS.black;
   ctx.font = 'bold 10px sans-serif';
-  ctx.fillText(`Q · 侦察 ${drone.deployed ? '部署中' : '待命'}`, dx + 12, dy + 50);
-  ctx.fillStyle = COLORS.creamDark;
-  ctx.fillRect(dx + 12, dy + 56, 196, 6);
-  ctx.fillStyle = drone.battery > 30 ? COLORS.black : COLORS.red;
-  ctx.fillRect(dx + 12, dy + 56, 196 * (drone.battery/drone.maxBattery), 6);
-  ctx.fillStyle = COLORS.black;
-  ctx.fillText(`E · FPV`, dx + 12, dy + 78);
-  // FPV pips
-  for (let i = 0; i < fpv.max; i++) {
-    ctx.fillStyle = i < fpv.available ? COLORS.red : COLORS.lightGray;
-    ctx.fillRect(dx + 60 + i*22, dy + 70, 16, 10);
+  ctx.fillText(`视角 ${getModeLabel()}`, 26, 54);
+  const remaining = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
+  ctx.fillStyle = remaining > 0 ? COLORS.red : COLORS.gray;
+  ctx.fillText(`敌方 ${remaining}`, 26, 70);
+  // Squad
+  const sqAlive = allies.filter(a=>a.alive).length;
+  ctx.fillStyle = sqAlive > 0 ? COLORS.black : COLORS.gray;
+  const sqList = allies.map(a => a.alive ? a.callsign[0] + a.hp : a.callsign[0] + '✕').join(' ');
+  ctx.fillText(`小组 ${sqAlive}/${allies.length}  ${sqList}`, 26, 86);
+  if (isInUnderground(player.x, player.y)) {
+    ctx.fillStyle = COLORS.red;
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText('● 地下层', 26, 102);
+  } else {
+    ctx.fillStyle = COLORS.gray;
+    ctx.font = '9px sans-serif';
+    ctx.fillText(`T+${Math.floor(game.time/60)}s`, 26, 102);
   }
 
-  // Mini-map (bottom-right)
-  const mw = 240, mh = 240;
-  const mx = W() - mw - 20, my = H() - mh - 20;
-  const mapLabel = currentMap ? `战术地图 · ${currentMap.name}` : '战术地图 / MAP';
+  // Top-right: score (smaller)
+  ctx.textAlign = 'right';
+  ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 30px sans-serif';
+  ctx.fillText(`${game.score}`, W() - 20, 46);
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 9px sans-serif';
+  ctx.fillText(`SCORE  ·  击杀 ${game.killCount}`, W() - 20, 62);
+  ctx.textAlign = 'left';
+
+  // View mode banner (top-center) — slimmer
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(W()/2 - 90, 16, 180, 3);
+  ctx.fillStyle = 'rgba(232, 228, 216, 0.92)';
+  ctx.fillRect(W()/2 - 90, 19, 180, 26);
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(W()/2 - 90, 19, 180, 26);
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(getModeLabel(), W()/2, 36);
+  ctx.textAlign = 'left';
+
+  // Mission objective panel + off-screen compass
+  if (mission && mission.renderHUD) mission.renderHUD();
+  if (mission && (game.mode === 'tactical' || game.mode === 'command')) drawObjectiveCompass();
+
+  // ----- Compact bottom command bar: HP + Ammo + UAV in one slim row -----
+  const barH = 54;
+  const barY = H() - barH - 12;
+  const barW = 560;
+  const barX = 20;
+  drawHUDPanel(barX, barY, barW, barH, null);
+  // HP bar (left third)
+  const hpw = 180;
+  ctx.fillStyle = COLORS.creamDark;
+  ctx.fillRect(barX + 12, barY + 22, hpw, 18);
+  ctx.fillStyle = player.hp > 30 ? COLORS.black : COLORS.red;
+  ctx.fillRect(barX + 12, barY + 22, hpw * (player.hp/player.maxHp), 18);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText(`HP ${Math.floor(player.hp)}/${player.maxHp}`, barX + 18, barY + 36);
+  // Ammo (middle)
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 22px sans-serif';
+  ctx.fillText(`${player.ammo}`, barX + 210, barY + 38);
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillStyle = COLORS.gray;
+  ctx.fillText(`/${player.reserve}`, barX + 250, barY + 38);
+  if (player.reloading) {
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(barX + 210, barY + 44, 80 * (1 - player.reloadTime / 80), 4);
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText('R 装填中', barX + 210, barY + 18);
+  } else {
+    ctx.fillStyle = COLORS.gray;
+    ctx.font = '9px sans-serif';
+    ctx.fillText('R · 装填', barX + 210, barY + 18);
+  }
+  // UAV/FPV cluster (right of bar)
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 10px monospace';
+  ctx.fillText(`Q UAV ${drone.battery.toFixed(0)}%`, barX + 320, barY + 20);
+  ctx.fillText('E FPV', barX + 320, barY + 38);
+  ctx.fillStyle = COLORS.creamDark;
+  ctx.fillRect(barX + 396, barY + 12, 152, 6);
+  ctx.fillStyle = drone.battery > 30 ? COLORS.black : COLORS.red;
+  ctx.fillRect(barX + 396, barY + 12, 152 * (drone.battery/drone.maxBattery), 6);
+  for (let i = 0; i < fpv.max; i++) {
+    ctx.fillStyle = i < fpv.available ? COLORS.red : COLORS.lightGray;
+    ctx.fillRect(barX + 396 + i*18, barY + 30, 14, 10);
+  }
+
+  // Mini-map (bottom-right) — shrunk to leave more screen for action
+  const mw = 180, mh = 180;
+  const mx = W() - mw - 16, my = H() - mh - 16;
+  const mapLabel = currentMap ? `${currentMap.name} · MAP` : 'MAP';
   drawHUDPanel(mx, my, mw, mh, mapLabel);
   const mapPad = 12;
   const mapX = mx + mapPad, mapY = my + 30;
@@ -4443,20 +4582,29 @@ function renderHUD() {
     ctx.fillRect(mouse.x - 1, mouse.y - 1, 2, 2);
   }
 
-  // Center message
+  // Center message — banner. If a mission is active and the message is fresh,
+  // also include the mission objective so the player has a brief in their face.
   if (game.message) {
     ctx.save();
     const alpha = Math.min(1, game.messageTime / 30);
     ctx.globalAlpha = alpha;
+    const showObj = mission && mission.objective && game.messageTime > 60;
+    const msgW = Math.max(520, game.message.length * 18);
+    const msgH = showObj ? 86 : 56;
     ctx.fillStyle = COLORS.red;
-    const msgW = Math.max(420, game.message.length * 16);
-    ctx.fillRect(W()/2 - msgW/2, H()/2 - 50, msgW, 56);
+    ctx.fillRect(W()/2 - msgW/2, H()/2 - msgH/2, msgW, msgH);
     ctx.fillStyle = COLORS.black;
-    ctx.fillRect(W()/2 - msgW/2 + 6, H()/2 - 44, msgW, 56);
+    ctx.fillRect(W()/2 - msgW/2 + 6, H()/2 - msgH/2 + 6, msgW, msgH);
     ctx.fillStyle = COLORS.cream;
-    ctx.font = 'bold 24px sans-serif';
+    ctx.font = 'bold 22px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(game.message, W()/2 + 6, H()/2 - 6);
+    ctx.fillText(game.message, W()/2 + 6, H()/2 - msgH/2 + 36);
+    if (showObj) {
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = '13px monospace';
+      ctx.globalAlpha = alpha * 0.8;
+      ctx.fillText(`目标: ${mission.objective}`, W()/2 + 6, H()/2 - msgH/2 + 64);
+    }
     ctx.textAlign = 'left';
     ctx.restore();
   }
