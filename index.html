@@ -3614,22 +3614,24 @@ void main(){
   const playerWeapon = ldNow.weapon.name;
   if (settings.character === 'wolf') {
     player.group = makeWolf(M.robotBody, M.robotEye, playerWeapon);
-    player.height = 1.0;
-    player.eyeY = 0.85;
-    player.tppDist = 4.2;
-    player.tppUp = 1.6;
+    player.group.scale.setScalar(0.85);
+    player.height = 0.95;
+    player.eyeY = 0.78;
+    player.tppDist = 4.0;
+    player.tppUp = 1.5;
     player.tppSide = 0.5;
     player.speed = 9;
-    player.radius = 0.5;
+    player.radius = 0.42;
   } else {
     player.group = makeRobot(M.robotBody, M.robotEye, playerWeapon);
-    player.height = 1.75;
-    player.eyeY = 1.75;
-    player.tppDist = 4.5;
-    player.tppUp = 2.4;
-    player.tppSide = 0.7;
+    player.group.scale.setScalar(0.7);
+    player.height = 1.7;
+    player.eyeY = 1.6;
+    player.tppDist = 4.0;
+    player.tppUp = 2.0;
+    player.tppSide = 0.6;
     player.speed = 7;
-    player.radius = 0.45;
+    player.radius = 0.4;
   }
   scene.add(player.group);
 
@@ -3908,15 +3910,17 @@ function spawnBlastWalls(count) {
 }
 
 function makeEnterableBuilding(cx, cz, w, d, floors, opts = {}) {
-  const fH = 3.0;
+  const fH = 3.2;
   const wt = 0.35;
+  const slabT = 0.4;          // thick ceiling/floor slab
   const totalH = floors * fH;
   const mat = opts.mat || M.buildLight;
   const innerMat = opts.innerMat || M.buildMid;
   const floorMat = opts.floorMat || M.buildDark;
-  const doorH = 2.3;
-  const doorW = 1.4;
-  const stW = 1.8, stD = 2.4;
+  const ceilingMat = opts.ceilingMat || new THREE.MeshLambertMaterial({ color: 0x4a4a4a });
+  const doorH = 2.2;
+  const doorW = 1.5;
+  const stW = 2.0, stD = 2.6;
   const stCx = cx + (Math.random() - 0.5) * (w/3);
   const stCz = cz + d/2 - stD/2 - 0.6;
   // === Outer walls (north has door) ===
@@ -3968,41 +3972,62 @@ function makeEnterableBuilding(cx, cz, w, d, floors, opts = {}) {
     const rail = makeBox(rw, 0.5, rd, M.black);
     rail.position.set(cx + rx, totalH + 0.55, cz + rz); scene.add(rail);
   }
-  // === Interior floor slabs with stairwell hole ===
+  // === Interior floor slabs (thick) with stairwell hole + ceiling face ===
+  // Slab top sits at fy + 0.1 (walking surface), bottom at fy + 0.1 - slabT
   for (let f = 1; f < floors; f++) {
     const fy = f * fH;
+    const slabCenterY = fy + 0.1 - slabT / 2;
+    const slabBottomY = fy + 0.1 - slabT;
     const sxL = stCx - stW/2, sxR = stCx + stW/2;
     const szT = stCz - stD/2, szB = stCz + stD/2;
     const leftW = sxL - (cx - w/2);
     if (leftW > 0.3) {
-      const seg = makeBox(leftW, 0.2, d, floorMat);
-      seg.position.set(cx - w/2 + leftW/2, fy, cz); scene.add(seg);
+      const seg = makeBox(leftW, slabT, d, floorMat);
+      seg.position.set(cx - w/2 + leftW/2, slabCenterY, cz); scene.add(seg);
       buildings.push({ x: cx - w/2, z: cz - d/2, w: leftW, d, h: fy + 0.1 });
+      // Distinct ceiling face below
+      const ceil = makeBox(leftW - 0.1, 0.04, d - 0.1, ceilingMat);
+      ceil.position.set(cx - w/2 + leftW/2, slabBottomY - 0.02, cz); scene.add(ceil);
     }
     const rightW = (cx + w/2) - sxR;
     if (rightW > 0.3) {
-      const seg = makeBox(rightW, 0.2, d, floorMat);
-      seg.position.set(cx + w/2 - rightW/2, fy, cz); scene.add(seg);
+      const seg = makeBox(rightW, slabT, d, floorMat);
+      seg.position.set(cx + w/2 - rightW/2, slabCenterY, cz); scene.add(seg);
       buildings.push({ x: cx + w/2 - rightW, z: cz - d/2, w: rightW, d, h: fy + 0.1 });
+      const ceil = makeBox(rightW - 0.1, 0.04, d - 0.1, ceilingMat);
+      ceil.position.set(cx + w/2 - rightW/2, slabBottomY - 0.02, cz); scene.add(ceil);
     }
     const topD = szT - (cz - d/2);
     if (topD > 0.3) {
-      const seg = makeBox(stW, 0.2, topD, floorMat);
-      seg.position.set(stCx, fy, cz - d/2 + topD/2); scene.add(seg);
+      const seg = makeBox(stW, slabT, topD, floorMat);
+      seg.position.set(stCx, slabCenterY, cz - d/2 + topD/2); scene.add(seg);
       buildings.push({ x: stCx - stW/2, z: cz - d/2, w: stW, d: topD, h: fy + 0.1 });
     }
     const botD = (cz + d/2) - szB;
     if (botD > 0.3) {
-      const seg = makeBox(stW, 0.2, botD, floorMat);
-      seg.position.set(stCx, fy, szB + botD/2); scene.add(seg);
+      const seg = makeBox(stW, slabT, botD, floorMat);
+      seg.position.set(stCx, slabCenterY, szB + botD/2); scene.add(seg);
       buildings.push({ x: stCx - stW/2, z: szB, w: stW, d: botD, h: fy + 0.1 });
     }
-    // Stairwell edge stripes
+    // Stairwell edge stripes (yellow)
     const stripe1 = makeBox(stW + 0.05, 0.05, 0.16, M.barrelStripe);
-    stripe1.position.set(stCx, fy + 0.13, szT); scene.add(stripe1);
+    stripe1.position.set(stCx, fy + 0.14, szT); scene.add(stripe1);
     const stripe2 = makeBox(stW + 0.05, 0.05, 0.16, M.barrelStripe);
-    stripe2.position.set(stCx, fy + 0.13, szB); scene.add(stripe2);
+    stripe2.position.set(stCx, fy + 0.14, szB); scene.add(stripe2);
+    // Cross beams visible on ceiling underside (structural detail)
+    const beam1 = makeBox(w - 0.4, 0.12, 0.18, M.black);
+    beam1.position.set(cx, slabBottomY - 0.06, cz - d/4); scene.add(beam1);
+    const beam2 = makeBox(w - 0.4, 0.12, 0.18, M.black);
+    beam2.position.set(cx, slabBottomY - 0.06, cz + d/4); scene.add(beam2);
   }
+  // === Top-floor ceiling (underside of roof) with beams + tiles ===
+  const topSlabBottomY = totalH - 0.05;
+  const topCeil = makeBox(w - 0.6, 0.05, d - 0.6, ceilingMat);
+  topCeil.position.set(cx, topSlabBottomY, cz); scene.add(topCeil);
+  const topBeam1 = makeBox(w - 0.4, 0.12, 0.18, M.black);
+  topBeam1.position.set(cx, topSlabBottomY - 0.06, cz - d/4); scene.add(topBeam1);
+  const topBeam2 = makeBox(w - 0.4, 0.12, 0.18, M.black);
+  topBeam2.position.set(cx, topSlabBottomY - 0.06, cz + d/4); scene.add(topBeam2);
   // === Stairs from ground all the way to roof ===
   const stepsPerFloor = 6;
   const stepDep = (stD - 0.2) / stepsPerFloor;
@@ -4040,20 +4065,35 @@ function makeEnterableBuilding(cx, cz, w, d, floors, opts = {}) {
       winW3.position.set(cx - w/2 - 0.04, wy, cz + z); scene.add(winW3);
     }
   }
-  // === Ceiling lights (interior glow) ===
+  // === Ceiling lights (long fluorescent panels under each ceiling) ===
   for (let f = 0; f < floors; f++) {
-    const ly = (f + 1) * fH - 0.18;
-    for (let lx = -1; lx <= 1; lx++) {
-      for (let lz = -1; lz <= 1; lz++) {
-        if (lx === 0 && lz === 0) continue;
-        const light = makeBox(0.45, 0.06, 0.45, new THREE.MeshBasicMaterial({color: 0xfff0d0}));
-        light.position.set(cx + lx * w/3.5, ly, cz + lz * d/3.5);
-        // Skip if too close to stairwell
-        if (Math.abs(light.position.x - stCx) < stW/2 + 0.3 &&
-            Math.abs(light.position.z - stCz) < stD/2 + 0.3) continue;
-        scene.add(light);
-      }
+    // Ceiling underside: for floor 0..floors-2 = (f+1)*fH - 0.3 (slabT bottom)
+    // For top floor: topSlabBottomY ≈ totalH - 0.05
+    const isTop = (f === floors - 1);
+    const ly = isTop ? (totalH - 0.13) : ((f + 1) * fH - 0.36);
+    // 2 long fluorescent panels running along the depth
+    for (const lxOffset of [-w/4, w/4]) {
+      const panel = makeBox(0.5, 0.08, d - 1.2, new THREE.MeshBasicMaterial({color: 0xfff0d0}));
+      panel.position.set(cx + lxOffset, ly, cz);
+      // Skip if crosses stairwell
+      if (Math.abs(cx + lxOffset - stCx) < stW/2 + 0.4) continue;
+      scene.add(panel);
+      // Frame around panel
+      const frame = makeBox(0.6, 0.04, d - 1.0, M.black);
+      frame.position.set(cx + lxOffset, ly + 0.05, cz);
+      scene.add(frame);
     }
+    // Cross panels (perpendicular)
+    for (const lzOffset of [-d/4, d/4]) {
+      const panel = makeBox(w - 1.2, 0.08, 0.5, new THREE.MeshBasicMaterial({color: 0xfff0d0}));
+      panel.position.set(cx, ly, cz + lzOffset);
+      if (Math.abs(cz + lzOffset - stCz) < stD/2 + 0.4) continue;
+      scene.add(panel);
+    }
+    // Center red emergency light
+    const emergency = makeBox(0.18, 0.18, 0.18, M.redBright);
+    emergency.position.set(cx, ly + 0.08, cz);
+    if (Math.hypot(cx - stCx, cz - stCz) > stW/2 + 0.5) scene.add(emergency);
   }
   // === Random partition wall (one per floor) — splits into rooms ===
   for (let f = 0; f < floors; f++) {
@@ -5570,6 +5610,7 @@ function spawnEnemy() {
   }
   if (!ok) return;
   const group = makeRobot(M.enemyBody, M.enemyAccent);
+  group.scale.setScalar(0.7);
   group.position.set(x, 0, z);
   scene.add(group);
   enemies.push({
@@ -5631,7 +5672,7 @@ function spawnHeavyEnemy() {
   }
   if (!ok) return;
   const group = makeRobot(M.enemyBody, M.enemyAccent, 'LMG-15');
-  group.scale.set(1.3, 1.2, 1.3); // chunkier
+  group.scale.set(0.7 * 1.3, 0.7 * 1.2, 0.7 * 1.3); // chunkier, scaled to building proportion
   group.position.set(x, 0, z);
   scene.add(group);
   enemies.push({
@@ -5666,7 +5707,7 @@ function spawnSniperEnemy() {
   }
   if (!ok) return;
   const group = makeRobot(M.enemyBody, M.enemyAccent, 'DMR-44');
-  group.scale.set(0.9, 1.15, 0.9); // taller, thinner
+  group.scale.set(0.7 * 0.9, 0.7 * 1.15, 0.7 * 0.9); // taller, thinner, scaled to building proportion
   group.position.set(x, 0, z);
   scene.add(group);
   enemies.push({
