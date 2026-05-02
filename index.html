@@ -362,6 +362,22 @@ canvas#game { display: block; position: fixed; inset: 0; }
   font-weight: 700;
 }
 .weapon-ammo-row { display: flex; align-items: baseline; }
+.tactical-row {
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 6px;
+  font-size: 11px; letter-spacing: 1px;
+  font-family: "JetBrains Mono", "Menlo", monospace;
+  color: var(--text); font-weight: 700;
+}
+.tactical-key {
+  background: var(--bg-light);
+  border: 1px solid var(--line-bright);
+  padding: 1px 5px;
+  font-size: 9px; font-weight: 800;
+  color: var(--text);
+  letter-spacing: 0;
+}
+.tactical-spacer { color: var(--text-faint); }
 .weapon-ammo {
   font-family: "JetBrains Mono", monospace;
   font-weight: 700;
@@ -1175,7 +1191,10 @@ body.trackpad-mode .cursor-soft { display: none !important; }
         <div class="ctrl"><span class="ctrl-key">Q</span><span class="ctrl-label">侦察无人机 UAV</span></div>
         <div class="ctrl"><span class="ctrl-key">E</span><span class="ctrl-label">FPV 自杀无人机</span></div>
         <div class="ctrl"><span class="ctrl-key">T</span><span class="ctrl-label">热成像 THERMAL</span></div>
-        <div class="ctrl"><span class="ctrl-key">G</span><span class="ctrl-label">部署砲塔 (ENGINEER)</span></div>
+        <div class="ctrl"><span class="ctrl-key">B</span><span class="ctrl-label">切换主 / 副武器</span></div>
+        <div class="ctrl"><span class="ctrl-key">C</span><span class="ctrl-label">发射器 (高伤 AOE)</span></div>
+        <div class="ctrl"><span class="ctrl-key">G</span><span class="ctrl-label">投掷手雷 (FRAG)</span></div>
+        <div class="ctrl"><span class="ctrl-key">H</span><span class="ctrl-label">部署砲塔 (ENGINEER)</span></div>
         <div class="ctrl"><span class="ctrl-key">TAB</span><span class="ctrl-label">战术地图 RTS</span></div>
         <div class="ctrl"><span class="ctrl-key">ESC</span><span class="ctrl-label">释放鼠标</span></div>
       </div>
@@ -1263,6 +1282,13 @@ body.trackpad-mode .cursor-soft { display: none !important; }
         <span class="weapon-ammo-reserve" id="ammoReserve">/ 120</span>
       </div>
       <div class="reload-bar" id="reloadBar" style="display:none;"><div class="reload-bar-fill" id="reloadFill" style="width:0%;"></div></div>
+      <div class="tactical-row">
+        <span class="tactical-key">B</span><span id="weaponSlotIndicator">PRI</span>
+        <span class="tactical-spacer">·</span>
+        <span class="tactical-key">G</span><span id="grenadeCount">3</span>
+        <span class="tactical-spacer">·</span>
+        <span class="tactical-key">C</span><span id="launcherCount">3</span>
+      </div>
     </div>
   </div>
 </div>
@@ -1301,7 +1327,10 @@ body.trackpad-mode .cursor-soft { display: none !important; }
     <div class="pause-ctrl"><span class="pause-ctrl-key">E</span><span class="pause-ctrl-label">FPV 自杀无人机</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">TAB</span><span class="pause-ctrl-label">战术地图</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">T</span><span class="pause-ctrl-label">热成像 THERMAL</span></div>
-    <div class="pause-ctrl"><span class="pause-ctrl-key">G</span><span class="pause-ctrl-label">部署自动砲塔 (ENGINEER)</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">B</span><span class="pause-ctrl-label">切换主 / 副武器</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">C</span><span class="pause-ctrl-label">发射器 RPG · 高伤 AOE</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">G</span><span class="pause-ctrl-label">投掷手雷 · 1.8s 引信</span></div>
+    <div class="pause-ctrl"><span class="pause-ctrl-key">H</span><span class="pause-ctrl-label">部署自动砲塔 (ENGINEER)</span></div>
     <div class="pause-ctrl"><span class="pause-ctrl-key">光标</span><span class="pause-ctrl-label">触摸板模式视角 (移至屏幕边缘)</span></div>
   </div>
   <div class="pause-actions">
@@ -1938,6 +1967,17 @@ const turrets = [];
 const droneHives = [];
 const signalTowers = [];
 const supplyPods = [];
+const throwables = [];
+const launcherShots = [];
+
+const SECONDARY_STATS = {
+  'P-18':            { dmg: 14, fireCd: 0.18, heat: 1.0, ammo: 12, reserve: 96 },
+  'MP-2':            { dmg: 11, fireCd: 0.05, heat: 0.9, ammo: 30, reserve: 240 },
+  'Shock Pistol':    { dmg: 10, fireCd: 0.50, heat: 1.5, ammo: 8,  reserve: 64 },
+  'Signal Cutter':   { dmg: 8,  fireCd: 0.40, heat: 1.0, ammo: 16, reserve: 128 },
+  'Flare Marker':    { dmg: 6,  fireCd: 0.30, heat: 0.8, ammo: 12, reserve: 96 },
+  'Repair Injector': { dmg: 0,  fireCd: 0.50, heat: 0,   ammo: 6,  reserve: 36, healSelf: 35 },
+};
 
 const WORLD_SIZE = 150;
 
@@ -1962,7 +2002,10 @@ window.addEventListener('keydown', e => {
   if (k === 'r') startReload();
   if (k === 't') toggleThermal();
   if (k === 'f') player.aimToggle = !player.aimToggle;
-  if (k === 'g') deployTurret();
+  if (k === 'g') throwGrenade();
+  if (k === 'h') deployTurret();
+  if (k === 'b') swapWeapon();
+  if (k === 'c') fireLauncher();
 });
 
 function togglePause() {
@@ -2159,6 +2202,51 @@ function makeWeaponModel(weaponName) {
     // Muzzle aperture (glowing)
     const muzzle = makeBox(0.14, 0.14, 0.06, M.redBright);
     muzzle.position.set(0, 0, 0.93); g.add(muzzle);
+  } else if (['P-18','MP-2','Shock Pistol','Signal Cutter','Flare Marker','Repair Injector'].includes(weaponName)) {
+    // Compact secondary — generic short body + slot-specific accent
+    const wBody = makeBox(0.14, 0.16, 0.46, M.black);
+    g.add(wBody);
+    const wMag = makeBox(0.13, 0.24, 0.13, M.robotJoint);
+    wMag.position.set(0, -0.18, 0.04); g.add(wMag);
+    const wMuzzle = makeBox(0.1, 0.1, 0.06, M.black);
+    wMuzzle.position.set(0, 0, 0.26); g.add(wMuzzle);
+    const dot = makeBox(0.04, 0.04, 0.03, M.redBright);
+    dot.position.set(0, 0.11, 0.05); g.add(dot);
+    if (weaponName === 'MP-2') {
+      // Add small stock
+      const stock = makeBox(0.1, 0.13, 0.18, M.black);
+      stock.position.set(0, -0.04, -0.28); g.add(stock);
+      const handle = makeBox(0.06, 0.06, 0.18, M.black);
+      handle.position.set(0, 0.13, -0.05); g.add(handle);
+    } else if (weaponName === 'Shock Pistol') {
+      const ant = makeBox(0.04, 0.4, 0.04, M.black);
+      ant.position.set(0, 0.18, 0.1); g.add(ant);
+      const tip = makeBox(0.08, 0.08, 0.08, M.barrelStripe);
+      tip.position.set(0, 0.4, 0.1); g.add(tip);
+      const arc = makeBox(0.06, 0.06, 0.06, new THREE.MeshBasicMaterial({color: 0x4d99dd}));
+      arc.position.set(0, 0.42, 0.1); g.add(arc);
+    } else if (weaponName === 'Signal Cutter') {
+      const blade = makeBox(0.04, 0.18, 0.42, M.barrelStripe);
+      blade.position.set(0, 0.13, 0.18); g.add(blade);
+      const edge = makeBox(0.06, 0.04, 0.42, M.redBright);
+      edge.position.set(0, 0.22, 0.18); g.add(edge);
+    } else if (weaponName === 'Flare Marker') {
+      const flag = makeBox(0.05, 0.18, 0.22, M.red);
+      flag.position.set(0, 0.18, 0.05); g.add(flag);
+      const flagTop = makeBox(0.07, 0.04, 0.24, M.barrelStripe);
+      flagTop.position.set(0, 0.27, 0.05); g.add(flagTop);
+    } else if (weaponName === 'Repair Injector') {
+      const cross1 = makeBox(0.18, 0.04, 0.04, new THREE.MeshBasicMaterial({color: 0x33aa55}));
+      cross1.position.set(0, 0.13, 0.1); g.add(cross1);
+      const cross2 = makeBox(0.04, 0.18, 0.04, new THREE.MeshBasicMaterial({color: 0x33aa55}));
+      cross2.position.set(0, 0.13, 0.1); g.add(cross2);
+      const tank = makeBox(0.16, 0.16, 0.16, new THREE.MeshLambertMaterial({color: 0x357a4a}));
+      tank.position.set(0, -0.04, -0.18); g.add(tank);
+    } else {
+      // P-18 default: nothing extra
+      const stock = makeBox(0.08, 0.06, 0.16, M.black);
+      stock.position.set(0, 0.05, -0.25); g.add(stock);
+    }
   } else if (weaponName === 'CR-6') {
     // Carbine: AR-30 shorter, no scope, red dot only
     const wBody = makeBox(0.16, 0.18, 0.78, M.black);
@@ -4126,6 +4214,24 @@ void main(){
   player.ammo = wStats.ammo;
   player.reserve = wStats.reserve;
   player.weaponName = playerWeapon;
+  // Cache primary slot for swap
+  player.primaryStats = {
+    name: playerWeapon, dmg: wStats.dmg, fireCd: wStats.fireCd, heat: wStats.heat,
+    ammo: wStats.ammo, maxAmmo: wStats.ammo, reserve: wStats.reserve,
+  };
+  // Resolve secondary weapon from current loadout
+  const slotMap = (settings.loadoutSlots && settings.loadoutSlots[settings.loadout]) || {};
+  const ldDefaults = LOADOUT_DEFAULTS[settings.loadout] || LOADOUT_DEFAULTS.assault;
+  const secondaryName = slotMap.secondary || ldDefaults.secondary || 'P-18';
+  const ss = SECONDARY_STATS[secondaryName] || SECONDARY_STATS['P-18'];
+  player.secondaryStats = {
+    name: secondaryName, dmg: ss.dmg, fireCd: ss.fireCd, heat: ss.heat,
+    ammo: ss.ammo, maxAmmo: ss.ammo, reserve: ss.reserve,
+    healSelf: ss.healSelf || 0,
+  };
+  player.holding = 'primary';
+  player.throwableCharges = 3;
+  player.launcherCharges = 3;
   if (settings.character === 'wolf') {
     player.group = makeWolf(M.robotBody, M.robotEye, playerWeapon);
     player.group.scale.setScalar(0.85);
@@ -6153,6 +6259,227 @@ function updateSupplyPods(dt) {
   }
 }
 
+function swapWeaponVisual(name) {
+  if (!player.group || !player.group.userData.weapon) return;
+  const oldW = player.group.userData.weapon;
+  const oldPos = oldW.position.clone();
+  const oldRot = oldW.rotation.clone();
+  const oldScale = oldW.scale.clone();
+  player.group.remove(oldW);
+  const newW = makeWeaponModel(name);
+  newW.position.copy(oldPos);
+  newW.rotation.copy(oldRot);
+  newW.scale.copy(oldScale);
+  player.group.add(newW);
+  player.group.userData.weapon = newW;
+}
+
+function swapWeapon() {
+  if (!player.alive || !player.primaryStats || !player.secondaryStats) return;
+  const cur = player.holding === 'primary' ? player.primaryStats : player.secondaryStats;
+  cur.ammo = player.ammo;
+  cur.reserve = player.reserve;
+  player.holding = (player.holding === 'primary') ? 'secondary' : 'primary';
+  const next = player.holding === 'primary' ? player.primaryStats : player.secondaryStats;
+  player.damage = next.dmg;
+  player.fireRate = next.fireCd;
+  player.heatPerShot = next.heat;
+  player.ammo = next.ammo;
+  player.maxAmmo = next.maxAmmo;
+  player.reserve = next.reserve;
+  player.weaponName = next.name;
+  player.reloading = false;
+  player.reloadTime = 0;
+  swapWeaponVisual(next.name);
+  // Repair Injector heals on swap
+  if (next.healSelf && player.holding === 'secondary') {
+    player.hp = Math.min(player.maxHp, player.hp + next.healSelf);
+    showToast(`维修注入 · +${next.healSelf} HP`, 1200);
+  } else {
+    showToast(`${player.holding === 'primary' ? '主武器' : '副武器'} · ${next.name}`, 1000);
+  }
+  game.shake = Math.max(game.shake, 0.04);
+}
+
+function throwGrenade() {
+  if (!player.alive) return;
+  if (player.throwableCharges <= 0) { showToast('投掷物已耗尽'); return; }
+  player.throwableCharges--;
+  const origin = activeCamera.getWorldPosition(new THREE.Vector3());
+  const dir = new THREE.Vector3();
+  activeCamera.getWorldDirection(dir);
+  const startPos = origin.clone().addScaledVector(dir, 0.8);
+  const mesh = new THREE.Group();
+  const body = makeBox(0.32, 0.32, 0.32, M.barrelStripe);
+  mesh.add(body);
+  const stripe = makeBox(0.34, 0.08, 0.34, M.black);
+  stripe.position.y = 0.04; mesh.add(stripe);
+  const tip = makeBox(0.1, 0.05, 0.1, M.red);
+  tip.position.y = 0.18; mesh.add(tip);
+  mesh.position.copy(startPos);
+  scene.add(mesh);
+  const vel = dir.clone().multiplyScalar(20);
+  vel.y += 5;
+  throwables.push({ pos: startPos.clone(), vel, mesh, fuse: 1.8 });
+  showToast(`投掷 · 剩余 ${player.throwableCharges}`, 800);
+  game.shake = Math.max(game.shake, 0.05);
+}
+
+function updateThrowables(dt) {
+  for (let i = throwables.length - 1; i >= 0; i--) {
+    const t = throwables[i];
+    t.fuse -= dt;
+    t.vel.y -= 25 * dt;
+    t.pos.addScaledVector(t.vel, dt);
+    const groundY = getGroundY(t.pos.x, t.pos.z);
+    if (t.pos.y < groundY + 0.16) {
+      t.pos.y = groundY + 0.16;
+      t.vel.y = -t.vel.y * 0.4;
+      t.vel.x *= 0.55;
+      t.vel.z *= 0.55;
+    }
+    t.mesh.position.copy(t.pos);
+    t.mesh.rotation.x += dt * 5;
+    t.mesh.rotation.y += dt * 6;
+    if (t.fuse <= 0) {
+      createExplosion(t.pos.clone(), 'medium');
+      game.shake = Math.max(game.shake, 0.45);
+      const radius = 6.5;
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        const d = e.pos.distanceTo(t.pos);
+        if (d < radius) {
+          e.hp -= 70 * (1 - d/radius);
+          if (e.hp <= 0) {
+            e.alive = false;
+            scene.remove(e.group);
+            game.score += e.type === 'drone' ? 150 : 100;
+            game.killCount++;
+            addKillFeed('FRAG', e.type === 'drone' ? 'DRONE' : 'ROBOT-X');
+            rollPickupDrop(e.pos);
+          } else {
+            e.state = 'engage';
+            e.fireCd = 1 + Math.random();
+          }
+        }
+      }
+      if (player.alive && player.pos.distanceTo(t.pos) < 4.5) {
+        const d = player.pos.distanceTo(t.pos);
+        player.hp -= 22 * (1 - d/4.5);
+        player.lastHitTime = player.regenDelay;
+        flashHit();
+        if (player.hp <= 0) {
+          player.hp = 0; player.alive = false;
+          allies[0].alive = false; allies[0].hp = 0;
+          createExplosion(player.pos, 'big');
+          setTimeout(() => endGame(false), 1500);
+        }
+      }
+      scene.remove(t.mesh);
+      throwables.splice(i, 1);
+    }
+  }
+}
+
+function fireLauncher() {
+  if (!player.alive) return;
+  if (player.launcherCharges <= 0) { showToast('发射器已耗尽'); return; }
+  player.launcherCharges--;
+  const origin = activeCamera.getWorldPosition(new THREE.Vector3());
+  const dir = new THREE.Vector3();
+  activeCamera.getWorldDirection(dir);
+  const startPos = origin.clone().addScaledVector(dir, 1.5);
+  const rocket = new THREE.Group();
+  const rBody = makeBox(0.3, 0.3, 1.0, M.red);
+  rocket.add(rBody);
+  const rHead = makeBox(0.22, 0.22, 0.3, M.black);
+  rHead.position.z = 0.65; rocket.add(rHead);
+  const rTip = makeBox(0.15, 0.15, 0.05, M.barrelStripe);
+  rTip.position.z = 0.83; rocket.add(rTip);
+  const finV = makeBox(0.06, 0.5, 0.34, M.barrelStripe);
+  finV.position.z = -0.42; rocket.add(finV);
+  const finH = makeBox(0.5, 0.06, 0.34, M.barrelStripe);
+  finH.position.z = -0.42; rocket.add(finH);
+  const exhaust = makeBox(0.18, 0.18, 0.2, M.redBright);
+  exhaust.position.z = -0.62; rocket.add(exhaust);
+  rocket.position.copy(startPos);
+  rocket.lookAt(startPos.clone().add(dir));
+  scene.add(rocket);
+  launcherShots.push({
+    pos: startPos.clone(),
+    vel: dir.clone().multiplyScalar(48),
+    mesh: rocket,
+    life: 4.0,
+  });
+  game.shake = Math.max(game.shake, 0.22);
+  showToast(`发射 · 剩余 ${player.launcherCharges}`, 800);
+}
+
+function updateLauncherShots(dt) {
+  for (let i = launcherShots.length - 1; i >= 0; i--) {
+    const s = launcherShots[i];
+    s.pos.addScaledVector(s.vel, dt);
+    s.life -= dt;
+    s.mesh.position.copy(s.pos);
+    s.mesh.lookAt(s.pos.clone().add(s.vel));
+    let hit = false;
+    let hitPos = s.pos.clone();
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const ePos = new THREE.Vector3(e.pos.x, e.pos.y + (e.type === 'drone' ? 0 : 1), e.pos.z);
+      if (s.pos.distanceTo(ePos) < e.radius + 1.4) { hit = true; hitPos = ePos; break; }
+    }
+    if (!hit) {
+      for (const b of buildings) {
+        if (b._hive) continue;
+        if (s.pos.x > b.x && s.pos.x < b.x+b.w && s.pos.z > b.z && s.pos.z < b.z+b.d && s.pos.y < b.h && s.pos.y > 0.1) {
+          hit = true; break;
+        }
+      }
+    }
+    if (!hit) {
+      for (const h of droneHives) {
+        if (!h.alive) continue;
+        if (Math.abs(s.pos.x - h.pos.x) < 3.2 && Math.abs(s.pos.z - h.pos.z) < 3.2 && s.pos.y < 9) {
+          h.hp -= 280;
+          if (h.hp <= 0) destroyDroneHive(h);
+          hit = true; break;
+        }
+      }
+    }
+    if (s.pos.y < 0.1) hit = true;
+    if (hit || s.life <= 0) {
+      createExplosion(hitPos, 'big');
+      game.shake = Math.max(game.shake, 0.6);
+      const radius = 8.5;
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        const d = e.pos.distanceTo(s.pos);
+        if (d < radius) {
+          e.hp -= 120 * (1 - d/radius);
+          if (e.hp <= 0) {
+            e.alive = false;
+            scene.remove(e.group);
+            game.score += e.type === 'drone' ? 150 : 100;
+            game.killCount++;
+            addKillFeed('LAUNCHER', e.type === 'drone' ? 'DRONE' : 'ROBOT-X');
+            rollPickupDrop(e.pos);
+          }
+        }
+      }
+      // Detonate barrels in radius too
+      for (const bar of barrels) {
+        if (!bar.alive) continue;
+        if (bar.pos.distanceTo(s.pos) < radius + 0.5) {
+          setTimeout(() => explodeBarrel(bar), 100 + Math.random()*200);
+        }
+      }
+      scene.remove(s.mesh);
+      launcherShots.splice(i, 1);
+    }
+  }
+}
+
 function deployTurret() {
   if (!player.canDeployTurret) { showToast('需要 ENGINEER 配置才能部署砲塔'); return; }
   if (player.turretCharges <= 0) { showToast('砲塔已耗尽'); return; }
@@ -7630,6 +7957,19 @@ function updateHUD() {
   } else {
     document.getElementById('reloadBar').style.display = 'none';
   }
+  // Active weapon name + tactical row
+  const weaponNameEl = document.getElementById('weaponName');
+  if (weaponNameEl && player.weaponName) {
+    const stats = player.holding === 'primary' ? player.primaryStats : player.secondaryStats;
+    const slotLabel = player.holding === 'primary' ? '主武器' : '副武器';
+    weaponNameEl.textContent = `${player.weaponName} · ${slotLabel}`;
+  }
+  const slotEl = document.getElementById('weaponSlotIndicator');
+  if (slotEl) slotEl.textContent = (player.holding === 'primary') ? 'PRI' : 'SEC';
+  const grenadeEl = document.getElementById('grenadeCount');
+  if (grenadeEl) grenadeEl.textContent = String(player.throwableCharges || 0);
+  const launcherEl = document.getElementById('launcherCount');
+  if (launcherEl) launcherEl.textContent = String(player.launcherCharges || 0);
   // Drone
   document.getElementById('uavStat').textContent = drone.active ? 'ACTIVE' : (drone.battery > 15 ? 'READY' : 'LOW');
   document.getElementById('uavStat').className = drone.active ? 'v' : '';
@@ -8468,6 +8808,10 @@ function startGame() {
   signalTowers.length = 0;
   for (const p of supplyPods) scene.remove(p.mesh);
   supplyPods.length = 0;
+  for (const t of throwables) scene.remove(t.mesh);
+  throwables.length = 0;
+  for (const s of launcherShots) scene.remove(s.mesh);
+  launcherShots.length = 0;
   supplyPodTimer = 30;
   game.signalBoost = false;
   game.usCaps = 0; game.themCaps = 0;
@@ -8580,6 +8924,8 @@ function update(dt) {
   updateDroneHives(dt);
   updateSignalTowers(dt);
   updateSupplyPods(dt);
+  updateThrowables(dt);
+  updateLauncherShots(dt);
 
   // Deploy countdown ticking
   if (game.deployCountdown > 0) {
