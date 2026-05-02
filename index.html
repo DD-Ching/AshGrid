@@ -380,18 +380,18 @@ const player = {
 // damage / bulletSpeed / bulletLife: ballistics
 // soundIntensity: how far the gunshot reaches as an alert
 const WEAPONS = {
-  // Player rifle — accurate, fast follow
+  // Player rifle — accurate, fast follow.
+  // Gunshots are LOUD: 1500u carries across most of the 3200u map, so allies and
+  // enemies on the far side will react to a firefight.
   AR7: { follow: 0.18, swayAmp: 0.024, swayFreq: 0.06, movePenalty: 0.018,
          recoilPerShot: 0.10, recoilDecay: 0.86, spread: 0.04,
-         fireCd: 6,  damage: 14, bulletSpeed: 14, bulletLife: 60, soundIntensity: 900 },
-  // Ally squad rifle — slightly looser
+         fireCd: 6,  damage: 14, bulletSpeed: 14, bulletLife: 60, soundIntensity: 1500 },
   M4:  { follow: 0.14, swayAmp: 0.030, swayFreq: 0.07, movePenalty: 0.022,
          recoilPerShot: 0.09, recoilDecay: 0.87, spread: 0.06,
-         fireCd: 14, damage: 12, bulletSpeed: 13, bulletLife: 60, soundIntensity: 800 },
-  // Hostile soldier — slow follow, large spread, lower damage
+         fireCd: 14, damage: 12, bulletSpeed: 13, bulletLife: 60, soundIntensity: 1400 },
   AK:  { follow: 0.10, swayAmp: 0.034, swayFreq: 0.05, movePenalty: 0.026,
          recoilPerShot: 0.12, recoilDecay: 0.85, spread: 0.10,
-         fireCd: 32, damage: 9,  bulletSpeed: 8,  bulletLife: 70, soundIntensity: 700 },
+         fireCd: 32, damage: 9,  bulletSpeed: 8,  bulletLife: 70, soundIntensity: 1300 },
 };
 
 // Backward-compat shim — code that still reads `weapon` gets the player profile
@@ -434,7 +434,8 @@ const visionRays = 92;  // rays per cone (smoothness vs perf)
 const visionPoly = [];  // reused buffer
 const enemyVisionPoly = []; // reused buffer
 
-// Sound events for directional indicators + enemy alerts
+// Sound events for directional indicators + enemy alerts + squad intel.
+// Gunshots are LOUD (1300-1500u) so most of the map is within earshot.
 const soundEvents = [];
 function emitSound(x, y, intensity, fromPlayer) {
   soundEvents.push({ x, y, intensity, fromPlayer, life: 80, maxLife: 80 });
@@ -447,6 +448,47 @@ function emitSound(x, y, intensity, fromPlayer) {
       e.alerted = Math.max(e.alerted || 0, 120 + lvl * 120);
       e.alertX = x; e.alertY = y;
     }
+  }
+  // Hostile gunshot becomes squad intel — every friendly within earshot now knows
+  // approximately where the shot came from. Sight beats sound, so only set intel
+  // if it's currently weaker than what sound would give.
+  if (!fromPlayer) {
+    const inEar = (player.alive && Math.hypot(x - player.x, y - player.y) < intensity)
+                || allies.some(a => a.alive && Math.hypot(x - a.x, y - a.y) < intensity);
+    if (inEar && squadIntel.source !== 'sight') {
+      squadIntel.x = x; squadIntel.y = y;
+      squadIntel.fresh = SQUAD_INTEL_FRESH_FRAMES;
+      squadIntel.source = 'sound';
+      squadIntel.bornAt = game.time;
+    }
+  }
+}
+
+// Per-frame squad coordination — promotes any directly-sighted enemy into fresh intel.
+function updateSquadIntel() {
+  let bestEnemy = null, bestD = Infinity;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    if (!isVisibleToFriendly(e.x, e.y)) continue;
+    const d = Math.hypot(e.x - player.x, e.y - player.y);
+    if (d < bestD) { bestEnemy = e; bestD = d; }
+  }
+  for (const dr of enemyDrones) {
+    if (!dr.alive) continue;
+    if (!isVisibleToFriendly(dr.x, dr.y)) continue;
+    // Drones are higher-priority intel — score them tighter
+    const d = Math.hypot(dr.x - player.x, dr.y - player.y) * 0.6;
+    if (d < bestD) { bestEnemy = dr; bestD = d; }
+  }
+  if (bestEnemy) {
+    squadIntel.x = bestEnemy.x;
+    squadIntel.y = bestEnemy.y;
+    squadIntel.fresh = SQUAD_INTEL_FRESH_FRAMES;
+    squadIntel.source = 'sight';
+    squadIntel.bornAt = game.time;
+  } else if (squadIntel.fresh > 0) {
+    squadIntel.fresh--;
+    if (squadIntel.fresh === 0) squadIntel.source = 'none';
   }
 }
 
@@ -494,6 +536,17 @@ const ALLY_LOADOUT = [
   { callsign: 'BRAVO',   offsetX: -110, offsetY:  60 },
   { callsign: 'CHARLIE', offsetX:  110, offsetY:  60 },
 ];
+
+// Shared squad knowledge — updated when ANY friendly sees/hears an enemy.
+// Allies without a direct target investigate this point; goes stale over time.
+const squadIntel = {
+  x: 0, y: 0,
+  fresh: 0,        // frames remaining until intel goes cold
+  source: 'none',  // 'sight' | 'sound'
+  bornAt: 0,
+};
+const SQUAD_INTEL_FRESH_FRAMES = 240; // ~4s
+const SQUAD_IDLE_BEFORE_SCOUT = 240;  // ~4s of no contact triggers scout
 
 let currentMap = null;
 
@@ -1420,29 +1473,73 @@ function updateAllies() {
         a.walkPhase += 0.10;
         isMoving = true;
       }
-    } else {
-      // No target — follow the player at flanking offset, scan vision around player's facing.
-      // Offset rotates with player angle so squad keeps formation when player turns.
-      const cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
-      const fx = player.x + (a.offsetX*cosA - a.offsetY*sinA);
-      const fy = player.y + (a.offsetX*sinA + a.offsetY*cosA);
-      const dx = fx - a.x, dy = fy - a.y;
+    } else if (squadIntel.fresh > 0) {
+      // INVESTIGATE — squad has fresh intel on enemy position. Move toward it,
+      // facing it, ready to engage. This is the "regroup on contact" behavior.
+      a.scoutTimer = 0;
+      const dx = squadIntel.x - a.x, dy = squadIntel.y - a.y;
       const d = Math.hypot(dx, dy);
-      if (d > 30) {
-        const fa = Math.atan2(dy, dx);
-        const step = Math.min(a.speed, d);
-        a.x += Math.cos(fa) * step;
-        a.y += Math.sin(fa) * step;
-        a.walkPhase += 0.18;
+      desiredAngle = Math.atan2(dy, dx);
+      a.angle += angDiff(desiredAngle, a.angle) * 0.10;
+      if (d > 240) {
+        a.x += Math.cos(a.angle) * a.speed * 0.85;
+        a.y += Math.sin(a.angle) * a.speed * 0.85;
+        a.walkPhase += 0.15;
         isMoving = true;
-        // While moving in formation, body faces the player's look direction
-        desiredAngle = player.angle;
-      } else {
-        // Stationary — slowly scan around player's facing for tactical coverage
-        a.lookPhase += 0.012;
-        desiredAngle = player.angle + Math.sin(a.lookPhase) * 0.6;
       }
-      a.angle = desiredAngle;
+    } else {
+      // No target, no intel — follow the player at flanking offset OR scout out
+      // if no contact for a while.
+      a.scoutTimer = (a.scoutTimer || 0) + 1;
+      const scouting = a.scoutTimer > SQUAD_IDLE_BEFORE_SCOUT;
+
+      if (scouting) {
+        // Each ally picks a unique outward bearing (based on callsign hash)
+        // and patrols 380u from the player. They face their bearing — covers
+        // an arc of the squad's perimeter while they search.
+        if (!a.scoutBearing || a.scoutTimer % 360 === 0) {
+          const seed = (a.callsign.charCodeAt(0) + a.callsign.charCodeAt(1)) || 0;
+          a.scoutBearing = (seed * 0.7) % (Math.PI*2) + Math.sin(game.time*0.003 + seed) * 0.5;
+        }
+        const sx = player.x + Math.cos(a.scoutBearing) * 380;
+        const sy = player.y + Math.sin(a.scoutBearing) * 380;
+        const dx = sx - a.x, dy = sy - a.y;
+        const d = Math.hypot(dx, dy);
+        if (d > 40) {
+          desiredAngle = Math.atan2(dy, dx);
+          a.angle += angDiff(desiredAngle, a.angle) * 0.10;
+          a.x += Math.cos(a.angle) * a.speed * 0.7;
+          a.y += Math.sin(a.angle) * a.speed * 0.7;
+          a.walkPhase += 0.14;
+          isMoving = true;
+        } else {
+          // At scout post — face outward and scan
+          a.lookPhase += 0.018;
+          desiredAngle = a.scoutBearing + Math.sin(a.lookPhase) * 0.55;
+          a.angle += angDiff(desiredAngle, a.angle) * 0.06;
+        }
+      } else {
+        // FORMATION — flank the player. Offset rotates with player.angle so the
+        // formation keeps its shape as the player turns.
+        const cosA = Math.cos(player.angle), sinA = Math.sin(player.angle);
+        const fx = player.x + (a.offsetX*cosA - a.offsetY*sinA);
+        const fy = player.y + (a.offsetX*sinA + a.offsetY*cosA);
+        const dx = fx - a.x, dy = fy - a.y;
+        const d = Math.hypot(dx, dy);
+        if (d > 30) {
+          const fa = Math.atan2(dy, dx);
+          const step = Math.min(a.speed, d);
+          a.x += Math.cos(fa) * step;
+          a.y += Math.sin(fa) * step;
+          a.walkPhase += 0.18;
+          isMoving = true;
+          desiredAngle = player.angle;
+        } else {
+          a.lookPhase += 0.012;
+          desiredAngle = player.angle + Math.sin(a.lookPhase) * 0.6;
+        }
+        a.angle = desiredAngle;
+      }
     }
 
     pushOutOfBuildings(a, a.radius);
@@ -1552,6 +1649,14 @@ function buildVisionPoly(out, ox, oy, faceAngle, arc, range) {
     const hit = castVisionRay(ox, oy, a, range, blockers);
     out.push(hit);
   }
+}
+
+// Wrap (target - current) into [-PI, PI]. Used to drive damped rotations.
+function angDiff(target, current) {
+  let d = target - current;
+  while (d > Math.PI) d -= Math.PI*2;
+  while (d < -Math.PI) d += Math.PI*2;
+  return d;
 }
 
 function angleInCone(srcAngle, arc, ox, oy, tx, ty) {
@@ -1799,7 +1904,7 @@ function updateEnemies() {
 
     // Buzzing — periodic sound emit so the player gets directional warning
     if ((game.time + d.hoverPhase * 10 | 0) % 28 === 0) {
-      emitSound(d.x, d.y, 360, false);
+      emitSound(d.x, d.y, 850, false); // FPV buzz carries far — directional warning
     }
   }
 }
@@ -1870,6 +1975,7 @@ function update() {
     }
   }
 
+  updateSquadIntel();
   updateAllies();
   updateEnemies();
   updateBullets();
@@ -2505,11 +2611,11 @@ function renderWorld() {
   // Landmark top features (antenna spires, hive crowns) — last so they read as tall
   drawLandmarksTop();
 
-  // Tactical-only HUD overlays in world space:
-  //  - Sound indicators on the player's perception ring (off-cone gunshots / drone buzz)
-  //  - Gun-aim dashed line (where the bullet would actually go this frame, distinct from crosshair)
-  // No drawn vision cone — vision is implicit through what's rendered (enemies vanish outside it).
+  // Soft shared fog: friendlies' cones are punched out of a darkening blanket.
+  // Multiple cones merge naturally (no overlapping outlines). Cone vertex is
+  // offset forward so it doesn't look like a sharp triangle pinned to the unit.
   if (game.mode === 'tactical') {
+    drawSharedVisionFog();
     drawSoundIndicators();
     drawGunAimIndicator();
   }
@@ -3214,86 +3320,49 @@ function drawLandmarksTop() {
 }
 
 // ============ VISION / FOG / SOUND RENDERING ============
-function drawPlayerVisionFog() {
-  if (!player.alive) return;
-  buildVisionPoly(visionPoly, player.x, player.y, player.angle, VIEW.arc, VIEW.range);
-  // Bounding box that covers the visible viewport in world coords
+// Soft fog over the world. The cones of every alive friendly (player + allies)
+// are CUT OUT of the fog using destination-out compositing — overlapping cones
+// merge into one visible region, so the player never sees crossed cone edges.
+// The cone vertex is offset forward from each unit so the fan doesn't look like
+// a sharp triangle pinned to the character; instead it spreads out in front.
+const VISION_OFFSET = 24;
+const FOG_TINT = 'rgba(28, 26, 32, 0.36)';
+const _polyBuf = [];
+function drawSharedVisionFog() {
+  // Bounding box of the world viewport in world coords
   const camHalfW = W() / camera.scale + 400;
   const camHalfH = H() / camera.scale + 400;
   const fx = camera.x - camHalfW, fy = camera.y - camHalfH;
   const fw = camHalfW * 2, fh = camHalfH * 2;
 
   ctx.save();
-  // Blanket darkness over the world
-  ctx.fillStyle = `rgba(20, 18, 24, ${FOG_ALPHA})`;
+  ctx.fillStyle = FOG_TINT;
   ctx.fillRect(fx, fy, fw, fh);
-  // Cut the vision polygon out of the dark blanket
+
   ctx.globalCompositeOperation = 'destination-out';
-  ctx.beginPath();
-  ctx.moveTo(visionPoly[0].x, visionPoly[0].y);
-  for (let i = 1; i < visionPoly.length; i++) {
-    ctx.lineTo(visionPoly[i].x, visionPoly[i].y);
-  }
-  ctx.closePath();
-  ctx.fill();
-  // Soft fade at cone edge — second pass with smaller polygon at higher alpha
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.restore();
-}
 
-function drawPlayerConeOutline() {
-  if (!player.alive) return;
-  if (visionPoly.length < 3) return;
-  ctx.save();
-  // Subtle red outline of the cone perimeter
-  ctx.strokeStyle = 'rgba(200, 38, 28, 0.45)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  // Skip origin vertex to outline only the fan edge
-  ctx.moveTo(visionPoly[1].x, visionPoly[1].y);
-  for (let i = 2; i < visionPoly.length; i++) {
-    ctx.lineTo(visionPoly[i].x, visionPoly[i].y);
-  }
-  ctx.stroke();
-  // The two side rays (from player out to first/last fan vert)
-  ctx.beginPath();
-  ctx.moveTo(visionPoly[0].x, visionPoly[0].y);
-  ctx.lineTo(visionPoly[1].x, visionPoly[1].y);
-  ctx.moveTo(visionPoly[0].x, visionPoly[0].y);
-  ctx.lineTo(visionPoly[visionPoly.length-1].x, visionPoly[visionPoly.length-1].y);
-  ctx.stroke();
-  ctx.restore();
-}
+  const friendlies = [];
+  if (player.alive) friendlies.push(player);
+  for (const a of allies) if (a.alive) friendlies.push(a);
 
-function drawEnemyVisionCones() {
-  // Faint red triangles showing where each enemy is looking.
-  ctx.save();
-  ctx.fillStyle = 'rgba(200, 38, 28, 0.10)';
-  ctx.strokeStyle = 'rgba(200, 38, 28, 0.30)';
-  ctx.lineWidth = 1;
-  for (const e of enemies) {
-    if (!e.alive) continue;
-    if (e.angle == null) continue;
-    // Use a simpler triangular fan (no per-enemy raycasting — too expensive every frame).
-    const half = ENEMY_VIEW.arc / 2;
-    const r = ENEMY_VIEW.range;
+  for (const f of friendlies) {
+    const ox = f.x + Math.cos(f.angle) * VISION_OFFSET;
+    const oy = f.y + Math.sin(f.angle) * VISION_OFFSET;
+    buildVisionPoly(_polyBuf, ox, oy, f.angle, VIEW.arc, VIEW.range);
     ctx.beginPath();
-    ctx.moveTo(e.x, e.y);
-    const segs = 14;
-    for (let i = 0; i <= segs; i++) {
-      const a = e.angle - half + (ENEMY_VIEW.arc * i / segs);
-      ctx.lineTo(e.x + Math.cos(a)*r, e.y + Math.sin(a)*r);
+    ctx.moveTo(_polyBuf[0].x, _polyBuf[0].y);
+    for (let i = 1; i < _polyBuf.length; i++) {
+      ctx.lineTo(_polyBuf[i].x, _polyBuf[i].y);
     }
     ctx.closePath();
     ctx.fill();
-    if (e.lockTime > 0) {
-      // Brighter cone when actively engaging
-      ctx.fillStyle = 'rgba(230, 51, 41, 0.18)';
-      ctx.fill();
-      ctx.fillStyle = 'rgba(200, 38, 28, 0.10)';
-    }
-    ctx.stroke();
+    // Small "self halo" so the unit isn't sitting in dim fog
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, 56, 0, Math.PI*2);
+    ctx.fill();
   }
+
+  ctx.globalCompositeOperation = 'source-over';
   ctx.restore();
 }
 
