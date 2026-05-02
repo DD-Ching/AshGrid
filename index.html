@@ -707,6 +707,59 @@ canvas#game { display: block; position: fixed; inset: 0; }
   overflow-y: auto;
   padding: 2px;
 }
+.map-modal {
+  position: fixed; inset: 0;
+  background: rgba(15, 15, 15, 0.92);
+  z-index: 250;
+  display: flex; align-items: center; justify-content: center;
+  cursor: default;
+}
+.map-modal.hidden { display: none; }
+.map-modal-panel {
+  background: var(--bg-light);
+  border: 1px solid var(--line-bright);
+  border-left: 3px solid var(--red);
+  width: min(900px, 94vw);
+  max-height: 92vh;
+  display: flex; flex-direction: column;
+  padding: 28px 32px;
+  overflow: hidden;
+}
+.map-modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.map-modal-title { font-size: 22px; letter-spacing: 6px; font-weight: 900; color: var(--text); }
+.map-modal-close {
+  background: transparent; border: 1px solid var(--line-bright); color: var(--text);
+  font-family: inherit; font-size: 11px; padding: 6px 14px; cursor: pointer;
+  font-weight: 700; letter-spacing: 2px;
+}
+.map-modal-close:hover { border-color: var(--red); color: var(--red); }
+.map-modal-help {
+  font-size: 11px; letter-spacing: 2px;
+  color: var(--text-dim);
+  margin-bottom: 14px;
+}
+.map-modal-active {
+  background: var(--bg);
+  border: 1px solid var(--line-bright);
+  border-left: 3px solid var(--red);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 12px; letter-spacing: 2px;
+  color: var(--text);
+}
+.map-modal-active .accent { color: var(--red); margin-right: 8px; font-weight: 800; }
+.map-modal-active .desc { color: var(--text-dim); margin-left: 8px; font-size: 10px; }
+.map-modal-gallery {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.map-modal-gallery .map-card-icon { height: 90px; }
+.map-modal-gallery .map-card-name { font-size: 11px; padding: 6px 8px 2px; }
+.map-modal-gallery .map-card-cn { font-size: 11px; padding: 0 8px 8px; }
 .map-card {
   background: var(--bg);
   border: 1px solid var(--line-bright);
@@ -1154,6 +1207,7 @@ body.trackpad-mode .cursor-soft { display: none !important; }
     </div>
     <div class="start-menu-list">
       <button class="start-menu-item active" id="startBtn" data-action="deploy">DEPLOY · 部署</button>
+      <button class="start-menu-item" data-action="map">MAP · 地图</button>
       <button class="start-menu-item" data-action="loadout">LOADOUT · 装备</button>
       <button class="start-menu-item" data-action="customize">CUSTOMIZE · 涂装</button>
       <button class="start-menu-item" data-action="bp">BATTLE PASS · 通行证</button>
@@ -1371,6 +1425,19 @@ body.trackpad-mode .cursor-soft { display: none !important; }
   </div>
 </div>
 
+<!-- Map selection modal -->
+<div class="map-modal hidden" id="mapModal">
+  <div class="map-modal-panel">
+    <div class="map-modal-header">
+      <div class="map-modal-title">MAP SELECT · 选择地图</div>
+      <button class="map-modal-close" id="mapModalClose">✕ 关闭</button>
+    </div>
+    <div class="map-modal-help">// 19 张差异化战场 · 每张地图独立主题、地形、节奏。点击卡片切换 · DEPLOY 时使用</div>
+    <div class="map-modal-active" id="mapModalActive"></div>
+    <div class="map-modal-gallery" id="mapModalGallery"></div>
+  </div>
+</div>
+
 <!-- Settings modal -->
 <div class="settings-modal hidden" id="settingsModal">
   <div class="settings-panel">
@@ -1409,6 +1476,13 @@ body.trackpad-mode .cursor-soft { display: none !important; }
       <div class="settings-slider-row">
         <input type="range" class="settings-slider" id="sensSlider" min="0.3" max="2" step="0.1" value="1">
         <div class="settings-value" id="sensValue">1.0</div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-label">// 画面亮度 · BRIGHTNESS</div>
+      <div class="settings-slider-row">
+        <input type="range" class="settings-slider" id="brightSlider" min="0.4" max="1.8" step="0.05" value="1">
+        <div class="settings-value" id="brightValue">1.0</div>
       </div>
     </div>
     <div class="settings-section">
@@ -1467,12 +1541,14 @@ body.trackpad-mode .cursor-soft { display: none !important; }
 <script type="importmap">
 {
   "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
   }
 }
 </script>
 <script type="module">
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // ============ SETUP ============
 const canvas = document.getElementById('game');
@@ -1555,6 +1631,77 @@ const M = {
   capRing: new THREE.MeshLambertMaterial({ color: 0x8a8a8a, emissive: 0x1a1a1a }),
 };
 
+// ============ KENNEY ASSETS (CC0) ============
+// Prototype Textures + Factory Kit by Kenney — see assets/kenney/*/LICENSE.txt
+const texLoader = new THREE.TextureLoader();
+function loadProtoTex(path, repeat) {
+  const t = texLoader.load(`assets/kenney/prototype-textures/${path}`);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeat, repeat);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+const protoGroundTex = loadProtoTex('dark/texture_13.png', 40);
+const protoTileTex   = loadProtoTex('dark/texture_07.png', 1);
+const protoBuildDark = loadProtoTex('dark/texture_07.png', 1);
+const protoBuildMid  = loadProtoTex('light/texture_05.png', 1);
+const protoBuildLight= loadProtoTex('light/texture_07.png', 1);
+const protoRedAccent = loadProtoTex('red/texture_04.png', 1);
+M.groundDark.map = protoGroundTex;  M.groundDark.needsUpdate = true;
+M.groundMid.map  = protoGroundTex;  M.groundMid.needsUpdate = true;
+M.groundLight.map= protoTileTex;    M.groundLight.needsUpdate = true;
+M.buildDark.map  = protoBuildDark;  M.buildDark.needsUpdate = true;
+M.buildMid.map   = protoBuildMid;   M.buildMid.needsUpdate = true;
+M.buildLight.map = protoBuildLight; M.buildLight.needsUpdate = true;
+M.red.map        = protoRedAccent;  M.red.needsUpdate = true;
+
+// Factory Kit GLB library — pre-loaded async, used by the drone_hive_factory map
+const factoryKit = {};
+let factoryKitReady = false;
+const FACTORY_PIECES = [
+  'crane','crane-magnet','crane-lift',
+  'hopper-square','hopper-round','hopper-high-square','hopper-high-round',
+  'machine','machine-bed','machine-fortified','machine-window',
+  'pipe-large','pipe-large-bend','pipe-large-curve','pipe-large-junction','pipe-large-valve','pipe-large-long',
+  'catwalk-straight','catwalk-corner','catwalk-cross','catwalk-stairs','catwalk-junction',
+  'conveyor','conveyor-corner','conveyor-stripe',
+  'structure-tall','structure-medium','structure-short','structure-high',
+  'structure-doorway','structure-doorway-wide','structure-window-wide',
+  'box-large','box-long','box-small','box-wide',
+  'screen-flat','screen-hanging-wide','screen-panel-wide',
+  'warning-orange','warning-traffic',
+  'robot-arm-a','robot-arm-b',
+  'piston-round','piston-square',
+  'cog-a','cog-b',
+];
+{
+  const gltfLoader = new GLTFLoader();
+  let loaded = 0;
+  const total = FACTORY_PIECES.length;
+  FACTORY_PIECES.forEach(name => {
+    gltfLoader.load(
+      `assets/kenney/factory-kit/${name}.glb`,
+      gltf => {
+        factoryKit[name] = gltf.scene;
+        if (++loaded === total) factoryKitReady = true;
+      },
+      undefined,
+      () => { if (++loaded === total) factoryKitReady = true; }
+    );
+  });
+}
+function spawnFactoryProp(name, x, y, z, rotY = 0, scale = 1) {
+  const proto = factoryKit[name];
+  if (!proto) return null;
+  const inst = proto.clone(true);
+  inst.position.set(x, y, z);
+  inst.rotation.y = rotY;
+  inst.scale.setScalar(scale);
+  scene.add(inst);
+  return inst;
+}
+
 // ============ LOADOUTS ============
 const LOADOUTS = {
   assault: {
@@ -1616,6 +1763,7 @@ const settings = {
   loadoutSlots: (() => {
     try { return JSON.parse(localStorage.getItem('gv_ls') || '{}'); } catch (e) { return {}; }
   })(),
+  brightness: parseFloat(localStorage.getItem('gv_bright')) || 1.0,
 };
 function saveSettings() {
   localStorage.setItem('gv_ctrl', settings.controlMode);
@@ -1628,6 +1776,15 @@ function saveSettings() {
   localStorage.setItem('gv_theme', settings.mapTheme);
   localStorage.setItem('gv_lw', JSON.stringify(settings.loadoutWeapons || {}));
   localStorage.setItem('gv_ls', JSON.stringify(settings.loadoutSlots || {}));
+  localStorage.setItem('gv_bright', String(settings.brightness || 1.0));
+}
+
+function applyBrightness() {
+  const b = settings.brightness || 1.0;
+  if (typeof ambient !== 'undefined') ambient.intensity = 0.6 * b;
+  if (typeof sun !== 'undefined') sun.intensity = 0.7 * b;
+  if (typeof hemi !== 'undefined') hemi.intensity = 0.4 * b;
+  if (typeof renderer !== 'undefined') renderer.toneMappingExposure = b;
 }
 
 const GAME_MODES = {
@@ -1716,13 +1873,16 @@ const THEME_PARAMS = {
     signature: 'mega_skybridge',
   },
   bridge_sector: {
-    buildingFill: 0.18, paletteWeights: ['buildMid','buildDark','buildLight','buildMid'],
-    redAccentChance: 0.20, barrelCount: 18, crateCount: 80,
-    feature: 'bridges',
-    ambient: 0xc0c0c8, sun: 0xd6d6e0, hemi: 0xc8c8d0, hemiGround: 0x1a1a20,
-    groundColor: 0x12141a, ambientDrones: 12, smokeColumns: 6, searchBeams: 4,
-    skipWatchtowers: true,
+    buildingFill: 0.0, paletteWeights: ['buildMid','buildDark','buildLight','buildMid'],
+    redAccentChance: 0.25, barrelCount: 0, crateCount: 0,
+    feature: 'bridges_dominate',
+    ambient: 0xb0b0b8, sun: 0xc8c8d4, hemi: 0xb0b0bc, hemiGround: 0x040408,
+    groundColor: 0x030308, ambientDrones: 14, smokeColumns: 4, searchBeams: 6,
+    skipStandardBuildings: true, skipWatchtowers: true, skipBlastWalls: true,
+    skipWreckage: true, skipContainers: true, skipBanners: true, skipCraters: true,
+    enterableCount: 0, blockoutCount: 0,
     signature: 'mega_arch_bridge',
+    fallDeath: true, fallY: -10,
   },
   drone_yard: {
     buildingFill: 0.0, paletteWeights: ['buildLight','buildMid','buildLight','barrelStripe'],
@@ -2615,16 +2775,21 @@ function generateWorld() {
   sun.color.setHex(params.sun);
   hemi.color.setHex(params.hemi);
   hemi.groundColor.setHex(params.hemiGround);
+  applyBrightness();
 
   buildings.length = 0;
 
   // Ground (theme-tinted)
   const groundMat = params.groundColor !== undefined
-    ? new THREE.MeshLambertMaterial({ color: params.groundColor })
+    ? new THREE.MeshLambertMaterial({ color: params.groundColor, map: protoGroundTex })
     : M.groundDark;
+  // For dominate-bridge themes the ground drops away into a void so the bridge
+  // is the only walkable surface — falling off = death.
+  const isVoidTheme = params.feature === 'bridges_dominate';
   const ground = makeBox(WORLD_SIZE*2, 0.5, WORLD_SIZE*2, groundMat);
-  ground.position.y = -0.25;
+  ground.position.y = isVoidTheme ? -32 : -0.25;
   scene.add(ground);
+  game._voidWorld = !!isVoidTheme;
 
   // Floor pattern (lighter tiles)
   for (let i = -WORLD_SIZE; i < WORLD_SIZE; i += 6) {
@@ -2860,6 +3025,34 @@ function generateWorld() {
       scene.add(vent);
       buildings.push({ x: sx - 1.4, z: sz - 1.4, w: 2.8, d: 2.8, h: sh });
     }
+    // ★ Kenney Factory Kit — industrial dressing
+    // Pipe runs between smokestacks
+    for (let i = 0; i < 6; i++) {
+      const px = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      const pz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(px, pz) < 12) continue;
+      if (checkCollisionAt(px, pz, 1.5)) continue;
+      spawnFactoryProp('pipe-large-long', px, 1.5, pz, Math.random() * Math.PI, 2.4);
+      spawnFactoryProp('pipe-large-valve', px + 4, 1.5, pz, Math.random() * Math.PI, 2.4);
+    }
+    // Hopper clusters scattered
+    for (let i = 0; i < 5; i++) {
+      const hx = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
+      const hz = (Math.random() - 0.5) * WORLD_SIZE * 1.3;
+      if (Math.hypot(hx, hz) < 14) continue;
+      if (checkCollisionAt(hx, hz, 2)) continue;
+      spawnFactoryProp(i % 2 ? 'hopper-square' : 'hopper-round', hx, 0, hz, Math.random() * Math.PI, 2.4);
+      buildings.push({ x: hx - 1.5, z: hz - 1.5, w: 3, d: 3, h: 4 });
+    }
+    // Cog wheels as wall mounts
+    for (let i = 0; i < 4; i++) {
+      const cogX = -WORLD_SIZE * 0.9;
+      const cogZ = -WORLD_SIZE * 0.7 + i * (WORLD_SIZE * 0.4);
+      spawnFactoryProp(i % 2 ? 'cog-a' : 'cog-b', cogX, 6 + Math.random() * 3, cogZ, Math.PI/2, 2.0);
+    }
+    // Warning markers near smokestacks
+    spawnFactoryProp('warning-orange', 8, 0, -8, 0, 1.6);
+    spawnFactoryProp('warning-traffic', -8, 0, 8, Math.PI/2, 1.6);
   }
   if (params.feature === 'server_racks') {
     // DATA CORE — aligned rows of tall thin server-like buildings with blue panels
@@ -3004,6 +3197,110 @@ function generateWorld() {
       a.position.set(sx, ah/2, sz);
       scene.add(a);
     }
+  }
+  if (params.feature === 'bridges_dominate') {
+    // BRIDGE SECTOR (dominate) — the whole playable area IS the bridge.
+    // Drop the floor away, build a giant deck cross at y=14 with side branches
+    // and pylons going down into a void. Spawn lands on the bridge directly.
+    const deckY = 14;
+    const deckWidth = 14;
+    const mainLen = WORLD_SIZE * 1.8;
+    // Main north-south deck spanning whole world
+    const mainNS = makeBox(deckWidth, 1.0, mainLen, M.buildMid);
+    mainNS.position.set(0, deckY, 0); scene.add(mainNS);
+    buildings.push({ x: -deckWidth/2, z: -mainLen/2, w: deckWidth, d: mainLen, h: deckY + 0.5 });
+    // Cross east-west deck (slightly wider where they meet)
+    const mainEW = makeBox(mainLen, 1.0, deckWidth, M.buildMid);
+    mainEW.position.set(0, deckY, 0); scene.add(mainEW);
+    buildings.push({ x: -mainLen/2, z: -deckWidth/2, w: mainLen, d: deckWidth, h: deckY + 0.5 });
+    // Two side branches at +/-60 along Z
+    for (const branchZ of [-65, 65]) {
+      const branchLen = 80;
+      const branch = makeBox(branchLen, 1.0, deckWidth - 2, M.buildMid);
+      branch.position.set(0, deckY, branchZ); scene.add(branch);
+      buildings.push({ x: -branchLen/2, z: branchZ - (deckWidth-2)/2, w: branchLen, d: deckWidth - 2, h: deckY + 0.5 });
+    }
+    // Yellow center stripes along main decks
+    const stripeNS = makeBox(0.4, 0.04, mainLen, M.barrelStripe);
+    stripeNS.position.set(0, deckY + 0.55, 0); scene.add(stripeNS);
+    const stripeEW = makeBox(mainLen, 0.04, 0.4, M.barrelStripe);
+    stripeEW.position.set(0, deckY + 0.55, 0); scene.add(stripeEW);
+    // Side rails on every deck (low so player can hop them)
+    for (const [cx, cz, isNS, len] of [[0, deckWidth/2, true, mainLen], [0, -deckWidth/2, true, mainLen],
+                                        [deckWidth/2, 0, false, mainLen], [-deckWidth/2, 0, false, mainLen]]) {
+      const rail = isNS ? makeBox(0.18, 1.0, len, M.black) : makeBox(len, 1.0, 0.18, M.black);
+      rail.position.set(cx, deckY + 1.0, cz); scene.add(rail);
+      const cap = isNS ? makeBox(0.22, 0.12, len, M.barrelStripe) : makeBox(len, 0.12, 0.22, M.barrelStripe);
+      cap.position.set(cx, deckY + 1.5, cz); scene.add(cap);
+    }
+    // Side branch rails
+    for (const branchZ of [-65, 65]) {
+      const railA = makeBox(80, 0.9, 0.18, M.black);
+      railA.position.set(0, deckY + 0.9, branchZ - (deckWidth-2)/2); scene.add(railA);
+      const railB = makeBox(80, 0.9, 0.18, M.black);
+      railB.position.set(0, deckY + 0.9, branchZ + (deckWidth-2)/2); scene.add(railB);
+    }
+    // Big support pylons going down to the void below
+    const pylonPositions = [];
+    for (let i = -4; i <= 4; i++) {
+      pylonPositions.push([0, i * 28]);
+      pylonPositions.push([i * 28, 0]);
+    }
+    for (const [px, pz] of pylonPositions) {
+      // Skip duplicate at center
+      const pyW = 3.5;
+      const pylon = makeBox(pyW, deckY + 16, pyW, M.buildDark);
+      pylon.position.set(px, (deckY + 16)/2 - 16, pz); scene.add(pylon);
+      // Hazard band near top
+      const band = makeBox(pyW + 0.15, 0.4, pyW + 0.15, M.barrelStripe);
+      band.position.set(px, deckY - 2, pz); scene.add(band);
+      // Add as a building tower (collision)
+      buildings.push({ x: px - pyW/2, z: pz - pyW/2, w: pyW, d: pyW, h: deckY + 0.6 });
+    }
+    // Cross-bracing trusses underneath (visual only)
+    for (let i = 0; i < 8; i++) {
+      const tx = (i - 3.5) * 18;
+      const truss = makeBox(0.4, 0.4, deckWidth + 1.5, M.black);
+      truss.position.set(tx, deckY - 0.7, 0); scene.add(truss);
+    }
+    // 4 small intermediate platforms at lower height connecting main deck to nowhere
+    // (defensive overlooks the player can drop to)
+    for (const [px, pz, py] of [[20, 20, 9], [-20, 20, 9], [20, -20, 9], [-20, -20, 9]]) {
+      const plat = makeBox(8, 0.8, 8, M.buildLight);
+      plat.position.set(px, py, pz); scene.add(plat);
+      buildings.push({ x: px - 4, z: pz - 4, w: 8, d: 8, h: py + 0.4 });
+      // Stairs from main deck down to platform
+      for (let s = 0; s < 6; s++) {
+        const sh = py - s * (py - 0) / 6 + (deckY - py) - s * 0.5;
+        // simple ramp blocks
+      }
+      // Red beacon
+      const beacon = makeBox(0.4, 0.4, 0.4, M.redBright);
+      beacon.position.set(px, py + 0.8, pz); scene.add(beacon);
+      // Side rails
+      for (const [rx, rz, rw, rd] of [[0,-4,8,0.12],[0,4,8,0.12],[-4,0,0.12,8],[4,0,0.12,8]]) {
+        const rail = makeBox(rw, 0.7, rd, M.black);
+        rail.position.set(px + rx, py + 0.85, pz + rz); scene.add(rail);
+      }
+    }
+    // Bridge cabin towers at the four crossroads (every 60m)
+    for (const [tx, tz] of [[60, 0], [-60, 0], [0, 60], [0, -60]]) {
+      const cabH = 6;
+      const cab = makeBox(5, cabH, 5, M.buildDark);
+      cab.position.set(tx, deckY + cabH/2 + 0.5, tz); scene.add(cab);
+      buildings.push({ x: tx - 2.5, z: tz - 2.5, w: 5, d: 5, h: deckY + cabH + 1 });
+      // Glass front
+      const glass = makeBox(4.4, 2.2, 0.06, new THREE.MeshLambertMaterial({color: 0x305080, transparent: true, opacity: 0.6}));
+      glass.position.set(tx, deckY + 4.0, tz + 2.55); scene.add(glass);
+      // Antenna
+      const ant = makeBox(0.18, 4, 0.18, M.black);
+      ant.position.set(tx, deckY + cabH + 2.5, tz); scene.add(ant);
+      const beacon = makeBox(0.5, 0.5, 0.5, M.redBright);
+      beacon.position.set(tx, deckY + cabH + 4.6, tz); scene.add(beacon);
+    }
+    // Player spawn must start ON the bridge — adjust player.pos
+    player.pos.set(0, deckY + 0.5, 0);
+    game._bridgeMode = true;
   }
   if (params.feature === 'bridges') {
     // BRIDGE SECTOR — long elevated platforms with support pillars
@@ -3413,6 +3710,42 @@ function generateWorld() {
       slag.rotation.y = Math.random() * Math.PI;
       scene.add(slag);
     }
+    // ★ Kenney Factory Kit — heavy industry dressing
+    // Cranes lifting around the mill
+    for (let i = 0; i < 3; i++) {
+      let cx2, cz2, ok = false, tries = 0;
+      while (!ok && tries < 20) {
+        cx2 = (Math.random() - 0.5) * WORLD_SIZE * 1.2;
+        cz2 = (Math.random() - 0.5) * WORLD_SIZE * 1.2;
+        ok = !checkCollisionAt(cx2, cz2, 3) && Math.hypot(cx2, cz2) >= 16;
+        tries++;
+      }
+      if (!ok) continue;
+      spawnFactoryProp(i === 0 ? 'crane-magnet' : (i === 1 ? 'crane-lift' : 'crane'), cx2, 0, cz2, Math.random() * Math.PI * 2, 2.8);
+      buildings.push({ x: cx2 - 2, z: cz2 - 2, w: 4, d: 4, h: 8 });
+    }
+    // Machine row along one edge
+    for (let i = 0; i < 4; i++) {
+      const mx = -WORLD_SIZE * 0.85;
+      const mz = -WORLD_SIZE * 0.5 + i * (WORLD_SIZE * 0.35);
+      if (checkCollisionAt(mx, mz, 2)) continue;
+      spawnFactoryProp(['machine','machine-bed','machine-fortified','machine-window'][i], mx, 0, mz, Math.PI/2, 2.4);
+      buildings.push({ x: mx - 1.5, z: mz - 1.5, w: 3, d: 3, h: 3 });
+    }
+    // Pistons around furnaces (decorative)
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      const r = WORLD_SIZE * 0.6;
+      const px = Math.cos(ang) * r;
+      const pz = Math.sin(ang) * r;
+      if (checkCollisionAt(px, pz, 1.5)) continue;
+      spawnFactoryProp(i % 2 ? 'piston-round' : 'piston-square', px, 0, pz, ang, 1.8);
+    }
+    // Catwalks bridging high above
+    for (let i = -2; i <= 2; i++) {
+      spawnFactoryProp('catwalk-straight', 0, 8, i * 6, 0, 2.0);
+    }
+    spawnFactoryProp('catwalk-cross', 0, 8, 0, 0, 2.0);
   }
   if (params.feature === 'container_port') {
     // CONTAINER PORT — stacks of colored containers (3-5 high) + 2 gantry cranes
@@ -3611,6 +3944,42 @@ function generateWorld() {
       chain.position.set(sx, cH - 2.7, sz - 4.4); scene.add(chain);
       buildings.push({ x: sx - 1.3, z: sz - 1.3, w: 2.6, d: 2.6, h: cH });
     }
+    // ★ Kenney Factory Kit — junkyard dressing (broken machines, scattered boxes, pipes)
+    for (let i = 0; i < 12; i++) {
+      const bx = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      const bz = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      if (Math.hypot(bx, bz) < 8) continue;
+      if (checkCollisionAt(bx, bz, 1.5)) continue;
+      const piece = ['box-large','box-long','box-small','box-wide'][i % 4];
+      spawnFactoryProp(piece, bx, 0, bz, Math.random() * Math.PI * 2, 1.4 + Math.random() * 0.6);
+      buildings.push({ x: bx - 1, z: bz - 1, w: 2, d: 2, h: 1.5 });
+    }
+    for (let i = 0; i < 5; i++) {
+      const mx = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      const mz = (Math.random() - 0.5) * WORLD_SIZE * 1.4;
+      if (Math.hypot(mx, mz) < 12) continue;
+      if (checkCollisionAt(mx, mz, 2)) continue;
+      const m = spawnFactoryProp(['machine','machine-bed','machine-fortified','machine-window','machine'][i], mx, 0, mz, Math.random() * Math.PI * 2, 2.0);
+      if (m) m.rotation.z = (Math.random() - 0.5) * 0.3;
+      buildings.push({ x: mx - 1.5, z: mz - 1.5, w: 3, d: 3, h: 2.5 });
+    }
+    for (let i = 0; i < 8; i++) {
+      const px = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      const pz = (Math.random() - 0.5) * WORLD_SIZE * 1.5;
+      if (Math.hypot(px, pz) < 6) continue;
+      const piece = ['pipe-large-bend','pipe-large-curve','pipe-large-junction','pipe-large-long'][i % 4];
+      const p = spawnFactoryProp(piece, px, 0.3, pz, Math.random() * Math.PI * 2, 1.8);
+      if (p) p.rotation.z = Math.PI / 2;
+    }
+    for (let i = 0; i < 4; i++) {
+      const gx = (Math.random() - 0.5) * WORLD_SIZE * 1.2;
+      const gz = (Math.random() - 0.5) * WORLD_SIZE * 1.2;
+      if (Math.hypot(gx, gz) < 8) continue;
+      const cog = spawnFactoryProp(i % 2 ? 'cog-a' : 'cog-b', gx, 0.3, gz, Math.random() * Math.PI * 2, 1.6);
+      if (cog) cog.rotation.x = Math.PI / 2;
+    }
+    spawnFactoryProp('warning-orange',  10, 0, -12, 0, 1.4);
+    spawnFactoryProp('warning-traffic',-12, 0,  10, Math.PI/4, 1.4);
   }
   if (params.feature === 'subway_hub') {
     // SUBWAY HUB — station letter signs + concrete pillars + red emergency lights + benches
@@ -3913,6 +4282,44 @@ function generateWorld() {
       barrel.position.set(tx, 1.1, tz + 0.7); scene.add(barrel);
       buildings.push({ x: tx - 1, z: tz - 1, w: 2, d: 2, h: 1.6 });
     }
+    // ★ Kenney Factory Kit props — gracefully no-op if GLBs not yet loaded
+    // Hopper cluster on the south wall
+    for (let i = 0; i < 4; i++) {
+      const hx = -32 + i * 18, hz = -50;
+      spawnFactoryProp(i % 2 ? 'hopper-high-square' : 'hopper-high-round', hx, 0, hz, 0, 2.8);
+      buildings.push({ x: hx - 1.5, z: hz - 1.5, w: 3, d: 3, h: 5 });
+    }
+    // Pipe network running along the east edge
+    for (let i = -4; i <= 4; i++) {
+      spawnFactoryProp(i === 0 ? 'pipe-large-valve' : 'pipe-large-long', 55, 1.5, i * 6, Math.PI/2, 2.2);
+    }
+    spawnFactoryProp('pipe-large-curve', 55, 1.5, 30, 0, 2.2);
+    spawnFactoryProp('pipe-large-curve', 55, 1.5, -30, Math.PI, 2.2);
+    // Catwalk loop above the conveyor (decorative — does not collide)
+    for (let i = -3; i <= 3; i++) {
+      spawnFactoryProp('catwalk-straight', 40, 6, i * 4, 0, 2.0);
+    }
+    spawnFactoryProp('catwalk-stairs', 40, 3, -16, 0, 2.0);
+    spawnFactoryProp('catwalk-stairs', 40, 3, 16, Math.PI, 2.0);
+    // Corner machines & screens
+    for (const [mx, mz, rot] of [[-50, 30, 0],[50, -30, Math.PI],[-50, -30, Math.PI/2]]) {
+      spawnFactoryProp('machine-fortified', mx, 0, mz, rot, 2.4);
+      buildings.push({ x: mx - 1.5, z: mz - 1.5, w: 3, d: 3, h: 3 });
+    }
+    spawnFactoryProp('screen-hanging-wide', 0, 9, -55, 0, 3.0);
+    spawnFactoryProp('screen-hanging-wide', -40, 9, 0, Math.PI/2, 2.5);
+    // Warning markers + boxes scattered as cover
+    for (let i = 0; i < 8; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const r = 12 + Math.random() * 22;
+      const bx = Math.cos(ang) * r, bz = Math.sin(ang) * r;
+      if (checkCollisionAt(bx, bz, 1.5)) continue;
+      const piece = ['box-large','box-long','box-small','box-wide'][i % 4];
+      spawnFactoryProp(piece, bx, 0, bz, Math.random() * Math.PI * 2, 1.6);
+      buildings.push({ x: bx - 1, z: bz - 1, w: 2, d: 2, h: 1.5 });
+    }
+    spawnFactoryProp('warning-traffic', 6, 0, -8, 0, 1.8);
+    spawnFactoryProp('warning-orange', -6, 0, 8, 0, 1.8);
   }
   if (params.feature === 'sewers') {
     // SEWERS — large pipes at various heights + drainage channels + green slime puddles
@@ -5378,23 +5785,38 @@ function spawnSignatureLandmark(params) {
     const feedBeltTop = makeBox(2, 0.06, 16, M.barrelStripe);
     feedBeltTop.position.set(cx, 1.74, cz + 14); scene.add(feedBeltTop);
     buildings.push({ x: cx - 1, z: cz + 6, w: 2, d: 16, h: 1.74 });
-    // 4 robotic arms around the hive
+    // 4 robotic arms around the hive — Kenney robot-arm GLBs (with box fallback)
     for (let i = 0; i < 4; i++) {
       const ang = (i / 4) * Math.PI * 2 + Math.PI / 4;
       const r = 5;
       const ax = cx + Math.cos(ang) * r;
       const az = cz + Math.sin(ang) * r;
-      const armBase = makeBox(0.8, 1.5, 0.8, M.buildDark);
-      armBase.position.set(ax, 1.75, az); scene.add(armBase);
-      const armUpper = makeBox(0.5, 0.5, 3, M.buildMid);
-      armUpper.position.set(ax + Math.cos(ang) * 1.5, 2.7, az + Math.sin(ang) * 1.5);
-      armUpper.rotation.y = ang;
-      armUpper.rotation.x = -0.4;
-      scene.add(armUpper);
-      const armEnd = makeBox(0.6, 0.6, 0.6, M.barrelStripe);
-      armEnd.position.set(ax + Math.cos(ang) * 2.2, 1.8, az + Math.sin(ang) * 2.2);
-      scene.add(armEnd);
+      const armName = i % 2 === 0 ? 'robot-arm-a' : 'robot-arm-b';
+      const arm = spawnFactoryProp(armName, ax, 1.0, az, ang + Math.PI, 2.4);
+      if (!arm) {
+        const armBase = makeBox(0.8, 1.5, 0.8, M.buildDark);
+        armBase.position.set(ax, 1.75, az); scene.add(armBase);
+        const armUpper = makeBox(0.5, 0.5, 3, M.buildMid);
+        armUpper.position.set(ax + Math.cos(ang) * 1.5, 2.7, az + Math.sin(ang) * 1.5);
+        armUpper.rotation.y = ang;
+        armUpper.rotation.x = -0.4;
+        scene.add(armUpper);
+        const armEnd = makeBox(0.6, 0.6, 0.6, M.barrelStripe);
+        armEnd.position.set(ax + Math.cos(ang) * 2.2, 1.8, az + Math.sin(ang) * 2.2);
+        scene.add(armEnd);
+      }
     }
+    // ★ Kenney Factory Kit — central machinery ring around the hive
+    spawnFactoryProp('crane', cx + 12, 0, cz, -Math.PI/2, 2.6);
+    spawnFactoryProp('crane-magnet', cx - 12, 0, cz, Math.PI/2, 2.6);
+    spawnFactoryProp('hopper-high-square', cx - 8, 1.5, cz - 8, 0, 2.4);
+    spawnFactoryProp('hopper-high-round',  cx + 8, 1.5, cz - 8, 0, 2.4);
+    spawnFactoryProp('machine-bed', cx, 1.5, cz + 22, 0, 2.6);
+    spawnFactoryProp('cog-a', cx - 14, 4, cz + 18, 0, 1.8);
+    spawnFactoryProp('cog-b', cx + 14, 4, cz + 18, Math.PI/3, 1.8);
+    spawnFactoryProp('screen-hanging-wide', cx, 7, cz - 12, 0, 2.6);
+    spawnFactoryProp('warning-traffic', cx - 6, 1.5, cz, 0, 1.5);
+    spawnFactoryProp('warning-orange',  cx + 6, 1.5, cz, 0, 1.5);
   } else if (sig === 'mega_drainage_pit') {
     const pitFloor = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 0.4, 16), new THREE.MeshLambertMaterial({color: 0x101410}));
     pitFloor.position.set(cx, 0.02, cz); scene.add(pitFloor);
@@ -5689,7 +6111,9 @@ function checkCollisionAt(x, z, radius, atY = 0) {
 }
 
 function getGroundY(x, z) {
-  let gy = 0;
+  // Void worlds (e.g. dominate bridge) have no default floor — falling off the
+  // bridge structure means falling to the death pit at y < fallY.
+  let gy = game._voidWorld ? -50 : 0;
   for (const b of buildings) {
     if (x > b.x && x < b.x + b.w && z > b.z && z < b.z + b.d) {
       if (b.h > gy) gy = b.h;
@@ -7178,6 +7602,16 @@ function updateEnemyBullets(dt) {
 // ============ PLAYER ============
 function updatePlayerMovement(dt) {
   if (!player.alive) return;
+  // Fall-death — themes that mark fallDeath kill the player when below fallY
+  const themeNow = THEME_PARAMS[game.activeTheme];
+  if (themeNow && themeNow.fallDeath && player.pos.y < (themeNow.fallY || -10)) {
+    player.hp = 0; player.alive = false;
+    if (allies && allies[0]) { allies[0].alive = false; allies[0].hp = 0; }
+    showMessage('坠落 · FALLEN INTO VOID', 2);
+    flashHit();
+    setTimeout(() => endGame(false), 1500);
+    return;
+  }
 
   // Forward/right vectors based on yaw
   const fx = Math.sin(player.yaw);
@@ -8323,6 +8757,7 @@ document.querySelectorAll('.start-menu-item').forEach(btn => {
     btn.classList.add('active');
     switch (action) {
       case 'deploy': startGame(); break;
+      case 'map': openMapModal(); break;
       case 'loadout': openLoadoutModal(); break;
       case 'customize': showToast('CUSTOMIZE · 涂装系统即将开放'); break;
       case 'bp': showToast('BATTLE PASS · 通行证即将开放'); break;
@@ -8356,6 +8791,11 @@ function refreshSettingsUI() {
   });
   document.getElementById('sensSlider').value = settings.sensitivity;
   document.getElementById('sensValue').textContent = settings.sensitivity.toFixed(1);
+  const bs = document.getElementById('brightSlider');
+  if (bs) {
+    bs.value = settings.brightness || 1.0;
+    document.getElementById('brightValue').textContent = (settings.brightness || 1.0).toFixed(2);
+  }
   const inv = document.getElementById('invertToggle');
   inv.classList.toggle('on', settings.invertY);
   inv.querySelector('.settings-toggle-state').textContent = settings.invertY ? 'ON' : 'OFF';
@@ -8373,6 +8813,7 @@ function closeSettings() {
   applyControlMode();
 }
 document.getElementById('settingsClose').onclick = closeSettings;
+document.getElementById('mapModalClose').onclick = closeMapModal;
 document.querySelectorAll('.settings-opt[data-control]').forEach(b => {
   b.addEventListener('click', () => {
     settings.controlMode = b.dataset.control;
@@ -8389,6 +8830,12 @@ document.querySelectorAll('.settings-opt[data-character]').forEach(b => {
     refreshDeployConfig();
     showToast(settings.character === 'wolf' ? 'M-WLF 机器狼 · 重新部署生效' : 'UNIT-0451 · 重新部署生效');
   });
+});
+document.getElementById('brightSlider').addEventListener('input', e => {
+  settings.brightness = parseFloat(e.target.value);
+  document.getElementById('brightValue').textContent = settings.brightness.toFixed(2);
+  saveSettings();
+  applyBrightness();
 });
 document.getElementById('sensSlider').addEventListener('input', e => {
   settings.sensitivity = parseFloat(e.target.value);
@@ -8472,26 +8919,58 @@ function mapIconSVG(themeKey) {
 }
 
 function renderMapGallery() {
-  const wrap = document.getElementById('mapGallery');
-  if (!wrap) return;
-  wrap.innerHTML = '';
-  for (const [id, t] of Object.entries(MAP_THEMES)) {
-    const btn = document.createElement('button');
-    btn.className = 'map-card' + (id === settings.mapTheme ? ' active' : '');
-    btn.title = t.name;
-    btn.innerHTML = `
-      <div class="map-card-icon">${mapIconSVG(id)}${id === 'random' ? '<div class="map-card-tag">RAND</div>' : ''}</div>
-      <div class="map-card-name">${t.name}</div>
-      <div class="map-card-cn">${t.cn}</div>
-    `;
-    btn.addEventListener('click', () => {
-      settings.mapTheme = id;
-      saveSettings();
-      renderMapGallery();
-      refreshDeployConfig();
-    });
-    wrap.appendChild(btn);
+  const targets = ['mapGallery', 'mapModalGallery'];
+  for (const tid of targets) {
+    const wrap = document.getElementById(tid);
+    if (!wrap) continue;
+    wrap.innerHTML = '';
+    for (const [id, t] of Object.entries(MAP_THEMES)) {
+      const btn = document.createElement('button');
+      btn.className = 'map-card' + (id === settings.mapTheme ? ' active' : '');
+      btn.title = t.name;
+      btn.innerHTML = `
+        <div class="map-card-icon">${mapIconSVG(id)}${id === 'random' ? '<div class="map-card-tag">RAND</div>' : ''}</div>
+        <div class="map-card-name">${t.name}</div>
+        <div class="map-card-cn">${t.cn}</div>
+      `;
+      btn.addEventListener('click', () => {
+        settings.mapTheme = id;
+        saveSettings();
+        renderMapGallery();
+        refreshDeployConfig();
+        renderMapModalActive();
+      });
+      wrap.appendChild(btn);
+    }
   }
+}
+
+function renderMapModalActive() {
+  const el = document.getElementById('mapModalActive');
+  if (!el) return;
+  const t = MAP_THEMES[settings.mapTheme] || MAP_THEMES.random;
+  const params = THEME_PARAMS[settings.mapTheme];
+  let descBits = [];
+  if (params) {
+    if (params.skipStandardBuildings) descBits.push('封闭独立结构');
+    if (params.feature) descBits.push(params.feature);
+    if (params.signature) descBits.push('特色地标: ' + params.signature);
+  } else if (settings.mapTheme === 'random') {
+    descBits.push('随机抽取一张地图');
+  }
+  el.innerHTML = `
+    <span class="accent">已选 ACTIVE</span>${t.name} · ${t.cn}
+    <span class="desc">${descBits.join(' · ')}</span>
+  `;
+}
+
+function openMapModal() {
+  document.getElementById('mapModal').classList.remove('hidden');
+  renderMapGallery();
+  renderMapModalActive();
+}
+function closeMapModal() {
+  document.getElementById('mapModal').classList.add('hidden');
 }
 // Backwards-compat shim — anything that called refreshThemePills now hits the gallery
 function refreshThemePills() { renderMapGallery(); }
