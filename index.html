@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>未来战场 · 构成主义</title>
+<!-- ONNX Runtime Web: required for NN AI mode. CDN, ~2MB, lazy-loaded. -->
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
 <style>
 :root {
   --red: #C8261C;
@@ -281,6 +283,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
     <div style="display:flex; gap:16px; align-items:center;">
       <button class="start-btn" id="startBtn">战役模式 ▶</button>
       <button class="start-btn" id="skirmishBtn" style="background: var(--black);">对抗模式 ▶</button>
+      <button class="start-btn" id="nnBtn" style="background: var(--red-dim); font-size: 18px; letter-spacing: 4px;">神经网络 NN ▶</button>
     </div>
 
     <div class="footer-bar">
@@ -602,6 +605,8 @@ window.addEventListener('contextmenu', e => e.preventDefault());
 document.getElementById('startBtn').onclick = startGame;
 document.getElementById('restartBtn').onclick = startGame;
 document.getElementById('skirmishBtn').onclick = startSkirmish;
+const _nnBtn = document.getElementById('nnBtn');
+if (_nnBtn) _nnBtn.onclick = startNNSkirmish;
 
 function startSkirmish() {
   document.getElementById('start').classList.add('hidden');
@@ -627,6 +632,80 @@ function startSkirmish() {
   // Spawn initial enemies
   for (let i = 0; i < 6; i++) spawnSoldier({ soldierBias: 'ringFromPlayer' });
   showMessage('对抗模式 · 自由射击', 150);
+}
+
+async function startNNSkirmish() {
+  document.getElementById('start').classList.add('hidden');
+  document.getElementById('end').classList.add('hidden');
+
+  // Async load the ONNX model (cached after first call)
+  showMessage('载入神经网络...', 60);
+  const ok = await nnLoadModel();
+  if (!ok) {
+    showMessage('NN 载入失败 · 退回普通对抗', 180);
+    return startSkirmish();
+  }
+
+  game.state = 'playing';
+  game.mode = 'tactical';
+  game.wave = 1;
+  game.score = 0; game.killCount = 0; game.time = 0;
+  game.message = ''; game.waveBreak = 0; game.missionRetries = 0;
+  game._skirmish = true;
+  game._nnMode = true;                       // turn on NN dispatcher
+  game._nnEpochStart = 0;
+  game._nnTeamKills = [0, 0];
+
+  player.hp = player.maxHp;
+  player.ammo = player.maxAmmo; player.reserve = 120;
+  player.reloading = false; player.alive = true;
+  drone.deployed = false; drone.battery = drone.maxBattery;
+  fpv.active = false; fpv.available = fpv.max; fpv.trail = [];
+  bullets.length = 0; enemyBullets.length = 0;
+  enemies.length = 0; enemyDrones.length = 0;
+  explosions.length = 0; muzzleFlashes.length = 0;
+  soundEvents.length = 0;
+  NN.lastSound = null;
+
+  generateWorld(NN_ARENA_MAP_INDEX);
+
+  // Spawn 2 NN-controlled allies + 3 NN-controlled enemies (3v3 with player)
+  spawnAllies();
+  for (const a of allies) {
+    a._useNN = true;
+    a._nnFireCd = 0;
+    a._nnRecentDmg = 0;
+    a._nnLastSeenTick = -9999;
+    // Place inside the NN arena
+    a.x = NN_ARENA.x0 + 200;
+    a.y = NN_ARENA.y0 + 250 + (allies.indexOf(a)) * 200;
+    a.team = 0; // friendly
+  }
+  // Spawn enemy team
+  for (let i = 0; i < 3; i++) {
+    const e = {
+      x: NN_ARENA.x0 + NN_ARENA.w - 200,
+      y: NN_ARENA.y0 + 250 + i * 200,
+      hp: 50, maxHp: 50, angle: Math.PI,
+      fireCd: 0, fireRate: 50, radius: 13,
+      alive: true, walkPhase: Math.random() * Math.PI*2,
+      speed: 1.0,
+      team: 1,
+      _useNN: true,
+      _nnFireCd: 0,
+      _nnRecentDmg: 0,
+      _nnLastSeenTick: -9999,
+    };
+    enemies.push(e);
+  }
+
+  // Place player on the friendly side
+  player.x = NN_ARENA.x0 + 150;
+  player.y = NN_ARENA.y0 + NN_ARENA.h/2;
+  player.team = 0;
+
+  initMission({ type: 'skirmish', id: 'nn-skirmish' }, currentMap);
+  showMessage('NN 对抗模式 · 神经网络驱动', 200);
 }
 
 function startGame() {
@@ -1258,6 +1337,363 @@ MAPS.push({
   }
 });
 const ARENA_MAP_INDEX = MAPS.length - 1;
+
+// ---------- NN ARENA (1200×1200 sub-region, matches the trained PPO model) ----------
+// The PPO model was trained in a 1200×1200 world. We embed a 1200×1200
+// play area inside the JS world's top-left so the NN's spatial
+// normalisation matches its training. AI + player are clamped here.
+const NN_ARENA = { x0: 0, y0: 0, w: 1200, h: 1200 };
+MAPS.push({
+  id: 'nnArena',
+  name: 'NN 竞技场',
+  nameEn: 'NN ARENA',
+  subtitle: '神经网络对抗 · 1200×1200',
+  rhythmHint: 'NEURAL NET COMBAT / PPO 推论',
+  playerSpawn: { x: NN_ARENA.x0 + 250, y: NN_ARENA.y0 + NN_ARENA.h/2 },
+  spawn: {
+    soldierBase: 3, soldierPerWave: 0,
+    droneBase: 0,  dronePerWave: 0,
+    soldierBias: 'nnArena',
+    droneBias: 'open',
+    soldierSpeedMul: 1.0,
+    soldierFireFast: false,
+  },
+  build() {
+    // Cream base only inside the 1200×1200 region; outside left grey-ish
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: '#9a978c' });
+    addTheme({ kind: 'rect', x: NN_ARENA.x0, y: NN_ARENA.y0, w: NN_ARENA.w, h: NN_ARENA.h, color: COLORS.cream });
+    // Border
+    addTheme({ kind: 'rect', x: NN_ARENA.x0, y: NN_ARENA.y0 - 4, w: NN_ARENA.w, h: 8, color: COLORS.red });
+    addTheme({ kind: 'rect', x: NN_ARENA.x0, y: NN_ARENA.y0 + NN_ARENA.h - 4, w: NN_ARENA.w, h: 8, color: COLORS.red });
+    addTheme({ kind: 'rect', x: NN_ARENA.x0 - 4, y: NN_ARENA.y0, w: 8, h: NN_ARENA.h, color: COLORS.red });
+    addTheme({ kind: 'rect', x: NN_ARENA.x0 + NN_ARENA.w - 4, y: NN_ARENA.y0, w: 8, h: NN_ARENA.h, color: COLORS.red });
+    // Light grid for scale reference
+    for (let x = NN_ARENA.x0 + 200; x < NN_ARENA.x0 + NN_ARENA.w; x += 200) {
+      addTheme({ kind: 'line-v', x, y: NN_ARENA.y0, w: 1, h: NN_ARENA.h, color: COLORS.creamDark, alpha: 0.4 });
+    }
+    for (let y = NN_ARENA.y0 + 200; y < NN_ARENA.y0 + NN_ARENA.h; y += 200) {
+      addTheme({ kind: 'line-h', x: NN_ARENA.x0, y, w: NN_ARENA.w, h: 1, color: COLORS.creamDark, alpha: 0.4 });
+    }
+    // Walls — sparser than the full arena, scaled to the 1200×1200 play area
+    addBuilding(NN_ARENA.x0 + 280, NN_ARENA.y0 + 280, 80, 80, COLORS.gray, { accent: true });
+    addBuilding(NN_ARENA.x0 + 840, NN_ARENA.y0 + 280, 80, 80, COLORS.gray, { accent: true });
+    addBuilding(NN_ARENA.x0 + 280, NN_ARENA.y0 + 840, 80, 80, COLORS.gray);
+    addBuilding(NN_ARENA.x0 + 840, NN_ARENA.y0 + 840, 80, 80, COLORS.gray);
+    addBuilding(NN_ARENA.x0 + 570, NN_ARENA.y0 + 400, 60, 400, COLORS.black);
+    // Crate clusters (low cover)
+    addLowCover(NN_ARENA.x0 + 200, NN_ARENA.y0 + 560, 90, 90, COLORS.creamDark, { kind: 'crate' });
+    addLowCover(NN_ARENA.x0 + 910, NN_ARENA.y0 + 560, 90, 90, COLORS.creamDark);
+    addLowCover(NN_ARENA.x0 + 560, NN_ARENA.y0 + 200, 80, 80, COLORS.creamDark);
+    addLowCover(NN_ARENA.x0 + 560, NN_ARENA.y0 + 920, 80, 80, COLORS.creamDark);
+    // Spawn markers
+    addRoute(NN_ARENA.x0 + 50, NN_ARENA.y0 + NN_ARENA.h/2 - 100, 80, 200, 'side', { label: '友军 NN_BLUE' });
+    addRoute(NN_ARENA.x0 + NN_ARENA.w - 130, NN_ARENA.y0 + NN_ARENA.h/2 - 100, 80, 200, 'side', { label: '敌军 NN_RED' });
+
+    addLandmark({ kind: 'arena', x: NN_ARENA.x0 + NN_ARENA.w/2, y: NN_ARENA.y0 + NN_ARENA.h/2, r: 60, name: 'NN ARENA' });
+  }
+});
+const NN_ARENA_MAP_INDEX = MAPS.length - 1;
+
+// ============ NN AI MODULE (PPO ONNX inference) ============
+// The trained PPO policy expects:
+//   input "observation":  Float32Array shape [batch, 65], values in [-1, 1]
+//   output "action_probs": Float32Array shape [batch, 18], softmax probs
+// Action 0..17 decoded as: move_dir = action // 2 (0..8), fire = action % 2 (0..1)
+//   move_dir 0=idle, 1=N, 2=NE, 3=E, 4=SE, 5=S, 6=SW, 7=W, 8=NW
+const NN = {
+  session: null,           // ort.InferenceSession when loaded
+  loading: false,
+  loaded: false,
+  error: null,
+  modelPath: 'ai_arena/onnx/model.onnx',
+  // Constants must match the Python combat_env exactly
+  WORLD_W: 1200,
+  WORLD_H: 1200,
+  PLAYER_HP: 100,
+  PLAYER_SPEED: 2.8,
+  FIRE_CD: 8,
+  AIM_LERP: 0.30,
+  VIEW_RANGE: 720,
+  VIEW_ARC: Math.PI * 0.78,   // 140°
+  OBS_DIM: 65,
+  ACTION_DIM: 18,
+  // 9 movement directions matching Python MOVE_DIRS
+  MOVE_DIRS: [
+    [0, 0],
+    [0, -1],
+    [Math.SQRT1_2, -Math.SQRT1_2],
+    [1, 0],
+    [Math.SQRT1_2, Math.SQRT1_2],
+    [0, 1],
+    [-Math.SQRT1_2, Math.SQRT1_2],
+    [-1, 0],
+    [-Math.SQRT1_2, -Math.SQRT1_2],
+  ],
+  lastSound: null,           // {x, y, tick, team} — most recent gunshot
+};
+
+async function nnLoadModel() {
+  if (NN.loaded || NN.loading) return NN.loaded;
+  if (typeof ort === 'undefined') {
+    NN.error = 'onnxruntime-web not loaded';
+    console.warn(NN.error);
+    return false;
+  }
+  NN.loading = true;
+  try {
+    NN.session = await ort.InferenceSession.create(NN.modelPath, {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all',
+    });
+    NN.loaded = true;
+    console.log('NN model loaded:', NN.modelPath);
+  } catch (e) {
+    NN.error = String(e);
+    console.error('NN load failed:', e);
+  } finally {
+    NN.loading = false;
+  }
+  return NN.loaded;
+}
+
+// NN-specific vision check: 720u range, 140° cone, LoS via existing lineOfSight
+function nnIsVisible(me, target) {
+  if (!target.alive) return false;
+  const dx = target.x - me.x, dy = target.y - me.y;
+  const d2 = dx*dx + dy*dy;
+  if (d2 > NN.VIEW_RANGE * NN.VIEW_RANGE) return false;
+  const a = Math.atan2(dy, dx);
+  let diff = a - me.angle;
+  while (diff >  Math.PI) diff -= Math.PI*2;
+  while (diff < -Math.PI) diff += Math.PI*2;
+  if (Math.abs(diff) > NN.VIEW_ARC / 2) return false;
+  if (lineOfSight(me.x, me.y, target.x, target.y) === false) return false;
+  return true;
+}
+
+// Build the 65-dim observation EXACTLY matching ai_arena/combat_env.py _build_obs_for_unit.
+// `me` is the unit asking, `friendlies` and `enemies` are arrays of units (alive or not).
+function nnBuildObs(me, friendlies, enemies, outBuf) {
+  const obs = outBuf;
+  let i = 0;
+  const W = NN.WORLD_W, H = NN.WORLD_H;
+
+  // --- Self (8) ---
+  obs[i++] = me.x / W * 2 - 1;
+  obs[i++] = me.y / H * 2 - 1;
+  obs[i++] = Math.sin(me.angle);
+  obs[i++] = Math.cos(me.angle);
+  obs[i++] = me.alive ? me.hp / NN.PLAYER_HP : 0;
+  obs[i++] = (me._nnRecentDmg || 0) > 0 ? 1 : 0;
+  obs[i++] = me._nnFireCd > 0 ? me._nnFireCd / NN.FIRE_CD : 0;
+  obs[i++] = me.alive ? 1 : 0;
+
+  // --- Visible enemies × 3 (6 each = 18) ---
+  const enemySorted = enemies.filter(e => e.alive).slice().sort((a, b) => {
+    const va = nnIsVisible(me, a) ? 1 : 0;
+    const vb = nnIsVisible(me, b) ? 1 : 0;
+    if (va !== vb) return vb - va;
+    return Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y);
+  });
+  for (let k = 0; k < 3; k++) {
+    if (k < enemySorted.length) {
+      const e = enemySorted[k];
+      obs[i++] = (e.x - me.x) / W * 2;
+      obs[i++] = (e.y - me.y) / H * 2;
+      obs[i++] = Math.hypot(e.x - me.x, e.y - me.y) / W;
+      obs[i++] = e.hp / NN.PLAYER_HP;
+      obs[i++] = nnIsVisible(me, e) ? 1 : 0;
+      obs[i++] = 0;
+    } else {
+      i += 6; // zero-padded
+    }
+  }
+
+  // --- Friendly teammates × 2 (6 each = 12) ---
+  const teammates = friendlies.filter(f => f !== me).sort((a, b) =>
+    Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y));
+  for (let k = 0; k < 2; k++) {
+    if (k < teammates.length) {
+      const t = teammates[k];
+      obs[i++] = (t.x - me.x) / W * 2;
+      obs[i++] = (t.y - me.y) / H * 2;
+      obs[i++] = Math.hypot(t.x - me.x, t.y - me.y) / W;
+      obs[i++] = t.alive ? t.hp / NN.PLAYER_HP : 0;
+      obs[i++] = t.alive ? 1 : 0;
+      obs[i++] = nnIsVisible(me, t) ? 1 : 0;
+    } else {
+      i += 6;
+    }
+  }
+
+  // --- Cover points × 5 (3 each = 15) ---
+  const cps = coverPoints.slice().sort((a, b) =>
+    (a.x - me.x)**2 + (a.y - me.y)**2 - ((b.x - me.x)**2 + (b.y - me.y)**2));
+  for (let k = 0; k < 5; k++) {
+    if (k < cps.length) {
+      const cp = cps[k];
+      obs[i++] = (cp.x - me.x) / W * 2;
+      obs[i++] = (cp.y - me.y) / H * 2;
+      obs[i++] = Math.hypot(cp.x - me.x, cp.y - me.y) / W;
+    } else {
+      i += 3;
+    }
+  }
+
+  // --- Last seen enemy intel (4) ---
+  if (me._nnLastSeenTick != null && me._nnLastSeenTick > -9999) {
+    obs[i++] = (me._nnLastSeenX - me.x) / W * 2;
+    obs[i++] = (me._nnLastSeenY - me.y) / H * 2;
+    obs[i++] = Math.min(1, (game.time - me._nnLastSeenTick) / 90);
+    obs[i++] = 1;
+  } else {
+    i += 4;
+  }
+
+  // --- Last sound (4) ---
+  if (NN.lastSound) {
+    const s = NN.lastSound;
+    obs[i++] = (s.x - me.x) / W * 2;
+    obs[i++] = (s.y - me.y) / H * 2;
+    obs[i++] = Math.max(0, 1 - (game.time - s.tick) / 90);
+    obs[i++] = (s.team === me.team) ? 1 : -1;
+  } else {
+    i += 4;
+  }
+
+  // --- Match state (4) ---
+  // We don't have a strict match clock in skirmish; use a 60s rolling window.
+  const matchTicks = 60 * 60;
+  const elapsed = (game.time - (game._nnEpochStart || 0));
+  obs[i++] = Math.max(0, 1 - elapsed / matchTicks);
+  obs[i++] = (game._nnTeamKills?.[me.team] || 0) / 20;
+  obs[i++] = (game._nnTeamKills?.[1 - me.team] || 0) / 20;
+  const aliveTeam = friendlies.filter(f => f.alive).length;
+  obs[i++] = aliveTeam / 3;
+
+  return i; // should be 65
+}
+
+// Apply a discrete action (0..17) to a unit. Mirrors combat_env._apply_action.
+function nnApplyAction(unit, action, friendlies, enemies) {
+  if (!unit.alive) return;
+  const moveDir = action >> 1;        // 0..8
+  const fire = action & 1;            // 0|1
+  const [dx, dy] = NN.MOVE_DIRS[moveDir] || [0, 0];
+
+  if (dx !== 0 || dy !== 0) {
+    unit.x += dx * NN.PLAYER_SPEED;
+    unit.y += dy * NN.PLAYER_SPEED;
+    unit.angle = Math.atan2(dy, dx);
+    unit.walkPhase = (unit.walkPhase || 0) + 0.18;
+  } else {
+    // Idle but visible enemy: slowly aim at it
+    const tgt = nnNearestVisibleEnemy(unit, enemies);
+    if (tgt) {
+      const desired = Math.atan2(tgt.y - unit.y, tgt.x - unit.x);
+      let d = desired - unit.angle;
+      while (d > Math.PI) d -= Math.PI*2;
+      while (d < -Math.PI) d += Math.PI*2;
+      unit.angle += d * NN.AIM_LERP;
+    }
+  }
+
+  // Clamp to NN arena play area
+  unit.x = Math.max(NN_ARENA.x0 + 20, Math.min(NN_ARENA.x0 + NN_ARENA.w - 20, unit.x));
+  unit.y = Math.max(NN_ARENA.y0 + 20, Math.min(NN_ARENA.y0 + NN_ARENA.h - 20, unit.y));
+  pushOutOfBuildings(unit, unit.radius || 14);
+
+  // Decrement fire cooldown
+  if (unit._nnFireCd > 0) unit._nnFireCd--;
+  if (unit._nnRecentDmg > 0) unit._nnRecentDmg--;
+
+  if (fire && unit._nnFireCd <= 0) {
+    const tgt = nnNearestVisibleEnemy(unit, enemies);
+    if (tgt && lineOfSight(unit.x, unit.y, tgt.x, tgt.y)) {
+      const aim = Math.atan2(tgt.y - unit.y, tgt.x - unit.x) + (Math.random() - 0.5) * 0.05;
+      unit.angle = aim;
+      const isAlly = friendlies.includes(unit) && unit !== player;
+      const isPlayer = unit === player;
+      // Push to the right bullet array
+      const bulletList = (isPlayer || isAlly) ? bullets : enemyBullets;
+      bulletList.push({
+        x: unit.x + Math.cos(aim) * 16,
+        y: unit.y + Math.sin(aim) * 16,
+        vx: Math.cos(aim) * 14,
+        vy: Math.sin(aim) * 14,
+        life: 60,
+        damage: 14,
+        fromAlly: isAlly,
+      });
+      muzzleFlashes.push({ x: unit.x + Math.cos(aim)*22, y: unit.y + Math.sin(aim)*22, angle: aim, life: 5 });
+      unit._nnFireCd = NN.FIRE_CD;
+      unit._nnLastSeenX = tgt.x;
+      unit._nnLastSeenY = tgt.y;
+      unit._nnLastSeenTick = game.time;
+      NN.lastSound = { x: unit.x, y: unit.y, tick: game.time, team: unit.team || 0 };
+      emitSound(unit.x, unit.y, 1300, isPlayer || isAlly);
+    }
+  }
+}
+
+function nnNearestVisibleEnemy(me, enemies) {
+  let best = null, bestD2 = Infinity;
+  for (const e of enemies) {
+    if (!e.alive || e === me) continue;
+    if (!nnIsVisible(me, e)) continue;
+    const d2 = (e.x - me.x)**2 + (e.y - me.y)**2;
+    if (d2 < bestD2) { best = e; bestD2 = d2; }
+  }
+  if (best) {
+    me._nnLastSeenX = best.x;
+    me._nnLastSeenY = best.y;
+    me._nnLastSeenTick = game.time;
+  }
+  return best;
+}
+
+// Per-frame batch dispatcher: collect all NN-controlled units, run one inference, apply actions.
+const _nnObsBuf = new Float32Array(NN.OBS_DIM * 16); // up to 16 units
+let _nnInferring = false;
+async function nnTick() {
+  if (!NN.loaded || _nnInferring) return;
+  if (game.state !== 'playing' || !game._nnMode) return;
+
+  // Collect all alive NN-controlled units (allies + enemies marked nn=true)
+  const nnUnits = [];
+  for (const a of allies) if (a._useNN && a.alive) nnUnits.push({u: a, friendly: allies, hostile: enemies});
+  for (const e of enemies) if (e._useNN && e.alive) nnUnits.push({u: e, friendly: enemies, hostile: [...allies, ...(player.alive ? [player] : [])]});
+
+  if (nnUnits.length === 0) return;
+
+  // Build batched observation
+  const N = nnUnits.length;
+  const obsArr = new Float32Array(N * NN.OBS_DIM);
+  for (let k = 0; k < N; k++) {
+    const sub = obsArr.subarray(k * NN.OBS_DIM, (k+1) * NN.OBS_DIM);
+    nnBuildObs(nnUnits[k].u, nnUnits[k].friendly, nnUnits[k].hostile, sub);
+  }
+
+  _nnInferring = true;
+  try {
+    const tensor = new ort.Tensor('float32', obsArr, [N, NN.OBS_DIM]);
+    const out = await NN.session.run({ observation: tensor });
+    const probs = out.action_probs.data;  // Float32Array length = N * ACTION_DIM
+    for (let k = 0; k < N; k++) {
+      // argmax
+      let bestI = 0, bestP = probs[k * NN.ACTION_DIM];
+      for (let a = 1; a < NN.ACTION_DIM; a++) {
+        const p = probs[k * NN.ACTION_DIM + a];
+        if (p > bestP) { bestP = p; bestI = a; }
+      }
+      nnApplyAction(nnUnits[k].u, bestI, nnUnits[k].friendly, nnUnits[k].hostile);
+    }
+  } catch (e) {
+    console.error('NN inference failed:', e);
+  } finally {
+    _nnInferring = false;
+  }
+}
 
 // ============ MISSIONS (campaign of 6 objectives across the 5 maps) ============
 // Each entry pairs a map with a mission type. Missions own their own win/loss
@@ -2275,6 +2711,14 @@ function pickBiasedSpawn(bias) {
       const d = 700 + r()*400;
       return { x: player.x + Math.cos(a)*d, y: player.y + Math.sin(a)*d };
     }
+    case 'nnArena': {
+      // Spawn enemy team on the right side of the NN arena, evenly spread
+      const idx = enemies.length;
+      return {
+        x: NN_ARENA.x0 + NN_ARENA.w - 200,
+        y: NN_ARENA.y0 + 250 + (idx % 4) * 200,
+      };
+    }
   }
   // Default: ring around player
   const a = r() * Math.PI*2;
@@ -2401,6 +2845,7 @@ function nearestVisibleEnemy(ax, ay, fromAngle, range) {
 function updateAllies() {
   for (const a of allies) {
     if (!a.alive) continue;
+    if (a._useNN) continue; // NN dispatcher owns this unit's per-tick movement
     // Stuck detector — sidestep when blocked
     if (a._lastX == null) { a._lastX = a.x; a._lastY = a.y; a._stuckFrames = 0; }
     if (Math.hypot(a.x - a._lastX, a.y - a._lastY) < 2) a._stuckFrames++;
@@ -2779,6 +3224,7 @@ function updateEnemies() {
   const visibleAttackers = [];
   for (const e of enemies) {
     if (!e.alive) continue;
+    if (e._useNN) continue; // NN dispatcher owns this unit's per-tick movement
     e._sees = (e.attackTarget && e.attackTarget.alive)
       ? e.attackTarget
       : nearestVisibleFriendly(e.x, e.y, e.angle, ENEMY_VIEW.range, ENEMY_VIEW.arc);
@@ -2799,6 +3245,7 @@ function updateEnemies() {
 
   for (const e of enemies) {
     if (!e.alive) continue;
+    if (e._useNN) continue; // NN dispatcher owns this unit's per-tick movement
     if (e.angle == null) e.angle = Math.random() * Math.PI*2;
     if (e.alerted == null) e.alerted = 0;
     if (e.lockTime == null) e.lockTime = 0;
@@ -3139,6 +3586,9 @@ function update() {
   }
 
   updateSquadIntel();
+  // NN AI inference (async, fires every other frame so it doesn't dominate the loop)
+  if (game._nnMode && (game.time & 1)) nnTick();
+
   updateAllies();
   updateEnemies();
   updateMission();   // mission tick (movement, capture progress, breach, spawn pressure)
