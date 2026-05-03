@@ -547,8 +547,8 @@ const enemyVisionPoly = []; // reused buffer
 // Sound events for directional indicators + enemy alerts + squad intel.
 // Gunshots are LOUD (1300-1500u) so most of the map is within earshot.
 const soundEvents = [];
-function emitSound(x, y, intensity, fromPlayer) {
-  soundEvents.push({ x, y, intensity, fromPlayer, life: 80, maxLife: 80 });
+function emitSound(x, y, intensity, fromPlayer, isPlayerSelf = false) {
+  soundEvents.push({ x, y, intensity, fromPlayer, isPlayerSelf, life: 80, maxLife: 80 });
   // Alert nearby enemies (turn toward sound; investigate)
   for (const e of enemies) {
     if (!e.alive) continue;
@@ -1759,10 +1759,14 @@ function nnApplyAction(unit, action, friendlies, enemies) {
     if (tgt && lineOfSight(unit.x, unit.y, tgt.x, tgt.y)) {
       const aim = Math.atan2(tgt.y - unit.y, tgt.x - unit.x) + (Math.random() - 0.5) * 0.05;
       unit.angle = aim;
-      const isAlly = friendlies.includes(unit) && unit !== player;
+      // Use team to pick the right bullet pool. unit.team 0 = friendly, 1 = hostile.
+      // Previous bug: relied on `friendlies.includes(unit)` which is also true for
+      // an enemy NN unit (its dispatcher passes the enemies array as `friendlies`),
+      // so enemy bullets ended up in the friendly array and never damaged us.
+      const isFriendlyTeam = unit.team === 0 || unit === player;
+      const isAlly = isFriendlyTeam && unit !== player;
       const isPlayer = unit === player;
-      // Push to the right bullet array
-      const bulletList = (isPlayer || isAlly) ? bullets : enemyBullets;
+      const bulletList = isFriendlyTeam ? bullets : enemyBullets;
       bulletList.push({
         x: unit.x + Math.cos(aim) * 16,
         y: unit.y + Math.sin(aim) * 16,
@@ -3952,7 +3956,7 @@ function fire() {
   });
   muzzleFlashes.push({ x: player.x + Math.cos(barrel)*22, y: player.y + Math.sin(barrel)*22, angle: barrel, life: 5 });
   applyRecoil(player, w);
-  emitSound(player.x, player.y, w.soundIntensity, true);
+  emitSound(player.x, player.y, w.soundIntensity, true, true);  // isPlayerSelf=true → no on-screen indicator
 }
 
 function updateBullets() {
@@ -5269,6 +5273,7 @@ function drawSoundIndicators() {
   if (!player.alive || soundEvents.length === 0) return;
   ctx.save();
   for (const s of soundEvents) {
+    if (s.isPlayerSelf) continue;   // your own gunshots don't need an indicator
     const dx = s.x - player.x, dy = s.y - player.y;
     const a = Math.atan2(dy, dx);
     const dist = Math.hypot(dx, dy);
