@@ -1,54 +1,55 @@
 # AI Arena — Neural Network (PPO) Trainer  ·  Curriculum Edition
 
 PPO + curriculum learning + behavior-cloning warm-start for the AshGrid combat AI.
-**Kaggle GPU notebook required.** Cannot easily train locally on macOS.
+**Kaggle GPU notebook required.** Cannot train locally on macOS.
 
-## What's new in this version
+## tl;dr — paste-and-run
 
-The previous 4M-step training produced a weak AI ("看到敌人也不怎么打"). This
-rewrite adds three things that should fix that:
+The notebook is now **fully self-contained** — combat env, GA opponent,
+curriculum, behavior cloning, PPO, and ONNX export all live inside
+`train_ppo.ipynb`. No file uploads, no datasets, no `+ Add Data` step.
 
-1. **4-stage curriculum** — small map / close spawn / static opponents
-   first, gradually expanding to deployment scale. Solves the "agents never
-   see each other so the gradient is zero" problem of the original env.
-2. **Behavior-cloning warm-start** — supervised pretrain of the policy net
-   from GA-best self-play before PPO begins. Saves ~5M steps of
-   "discover what the fire button does".
-3. **Reward shaping with decay** — visibility/approach/aim-cone bonuses
-   in stages 1–3, fading to zero by stage 4 so the final policy uses pure
+1. Kaggle → **+ Create → New Notebook** (Python 3)
+2. **Settings** (right panel) → **Accelerator** = **GPU T4 ×2**, **Internet** = ON
+3. **File → Upload Notebook** → upload `train_ppo.ipynb`
+4. Click **▶ Run All**
+5. Walk away for 7.5 hours. Come back, download `model.onnx` from the Output panel.
+
+That's it.
+
+## What it does
+
+1. **Behavior-cloning warm-start** — collects 500k (obs, action) pairs from
+   GA-best self-play, then supervised-trains the policy net for 50 epochs.
+   Skips ~5M PPO steps of "discover what the fire button does".
+2. **4-stage curriculum** — small map / close spawn / static opponents
+   first, expanding to deployment scale (1200×1200, 700u spawn).
+3. **Decaying reward shaping** — visibility / approach / aim-cone bonuses
+   in stages 1–3, fading to zero by stage 4. Final policy trains on pure
    kill/death signal.
-
-Plus: **bigger budget** (16M steps default, ~3 hours on Kaggle T4 GPU).
+4. **Time-budgeted training** — `TIME_LIMIT_HOURS` (default 7.5h) drives
+   when training stops; the curriculum advances against elapsed time so
+   stages take fixed fractions regardless of GPU throughput.
 
 ## Files
 
 | File | What it is |
 |---|---|
-| `combat_env.py` | Curriculum-enabled Gym env. Imported by the notebook. |
-| `train_ppo.ipynb` | Kaggle notebook — paste/upload, set GPU, run all. |
-| `kaggle_train.py` | (From the GA branch.) Used as BC teacher + curriculum opponent. |
+| `train_ppo.ipynb` | **The only file you need.** Self-contained Kaggle notebook. |
+| `combat_env.py` | Curriculum-enabled Gym env (embedded inside the notebook as base64; this file is for reference + local dev). |
+| `kaggle_train.py` | (Other branch.) The original GA trainer — not needed for NN training. |
 
-## Smoke test first (5 minutes)
+## Smoke test first (3 minutes)
 
-In the notebook, set `SMOKE_TEST = True` in the CONFIG cell. This drops:
+In the notebook's CONFIG cell, set `SMOKE_TEST = True`. This drops:
 
-- `TOTAL_STEPS` to 100k
+- `TIME_LIMIT_HOURS` to 0.05 (3 minutes)
 - `BC_ROLLOUT_STEPS` to 20k
 - `BC_EPOCHS` to 10
 
-Just enough to verify the entire pipeline (BC + curriculum stage 1+2 + ONNX
-export + sanity check) runs end-to-end without crashing. Expect a weak AI
-but no errors.
-
-### Steps
-
-1. **Kaggle → New Notebook** (Python 3) → switch **Accelerator** to **GPU T4 ×2**
-2. **+ Add Data → Upload Dataset** → upload `combat_env.py` AND `kaggle_train.py`
-   together as one dataset (any name, e.g. `ai-arena-files`)
-3. **Files → Upload** → upload `train_ppo.ipynb` (or paste cells into a new notebook)
-4. The notebook auto-detects the dataset path. If it can't find them, edit
-   the `candidates` list in the "Load combat_env" cell.
-5. Click **Run All**
+End-to-end check: env wires up, BC trains, PPO runs a few rollouts, ONNX
+exports, sanity test runs. Weak AI but no crashes. After this passes,
+flip back to `False` and Run All again.
 
 ### What you'll see (smoke test)
 
