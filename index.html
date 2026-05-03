@@ -360,7 +360,7 @@ const player = {
   angle: 0,           // view angle — follows mouse instantly (where you LOOK)
   gunAngle: 0,        // gun barrel — lags behind, has sway + recoil
   gunRecoil: 0,       // current recoil offset added to gunAngle
-  hp: 130, maxHp: 130,   // bumped from 100 — survives a full kamikaze hit + a few stray rounds
+  hp: 100, maxHp: 100,   // back down — game now lethal both ways; cover matters
   ammo: 30, maxAmmo: 30, reserve: 120,
   reloading: false, reloadTime: 0,
   fireCooldown: 0,
@@ -381,18 +381,20 @@ const player = {
 // damage / bulletSpeed / bulletLife: ballistics
 // soundIntensity: how far the gunshot reaches as an alert
 const WEAPONS = {
-  // Player rifle — accurate, fast follow.
-  // Gunshots are LOUD: 1500u carries across most of the 3200u map, so allies and
-  // enemies on the far side will react to a firefight.
+  // Lethal-pass tuning: everyone dies fast. Fire density similar across sides.
+  // Player still has cleanest weapon (low spread, fast follow) but enemies under
+  // cover can match the player's bullet pressure, so positioning matters.
   AR7: { follow: 0.18, swayAmp: 0.024, swayFreq: 0.06, movePenalty: 0.018,
          recoilPerShot: 0.10, recoilDecay: 0.86, spread: 0.04,
-         fireCd: 6,  damage: 14, bulletSpeed: 14, bulletLife: 60, soundIntensity: 1500 },
+         fireCd: 8,  damage: 18, bulletSpeed: 14, bulletLife: 60, soundIntensity: 1500 },
   M4:  { follow: 0.14, swayAmp: 0.030, swayFreq: 0.07, movePenalty: 0.022,
          recoilPerShot: 0.09, recoilDecay: 0.87, spread: 0.06,
-         fireCd: 14, damage: 12, bulletSpeed: 13, bulletLife: 60, soundIntensity: 1400 },
+         fireCd: 14, damage: 16, bulletSpeed: 13, bulletLife: 60, soundIntensity: 1400 },
+  // AK was slow-fire low-damage. Bumped fire rate AND damage so enemies
+  // actually hurt — a soldier in cover should be a real threat.
   AK:  { follow: 0.10, swayAmp: 0.034, swayFreq: 0.05, movePenalty: 0.026,
-         recoilPerShot: 0.12, recoilDecay: 0.85, spread: 0.10,
-         fireCd: 32, damage: 9,  bulletSpeed: 8,  bulletLife: 70, soundIntensity: 1300 },
+         recoilPerShot: 0.12, recoilDecay: 0.85, spread: 0.09,
+         fireCd: 16, damage: 14, bulletSpeed: 11, bulletLife: 70, soundIntensity: 1300 },
 };
 
 // Backward-compat shim — code that still reads `weapon` gets the player profile
@@ -679,6 +681,8 @@ function showMessage(text, time = 90) {
 }
 
 // ============ MAP HELPERS ============
+const coverPoints = []; // generated per map; {x, y, ownerCx, ownerCy} — soldiers/allies seek these for cover
+
 function clearWorld() {
   buildings.length = 0;
   lowCovers.length = 0;
@@ -689,6 +693,7 @@ function clearWorld() {
   themeShapes.length = 0;
   decorations.length = 0;
   networkNodes.length = 0;
+  coverPoints.length = 0;
 }
 
 function addBuilding(x, y, w, h, color, opts={}) {
@@ -2039,6 +2044,7 @@ function generateWorld(mapIndex) {
   clearWorld();
   currentMap = MAPS[mapIndex % MAPS.length];
   currentMap.build();
+  buildCoverPoints();
   // Move player to map's spawn
   if (currentMap.playerSpawn) {
     player.x = currentMap.playerSpawn.x;
@@ -2046,6 +2052,50 @@ function generateWorld(mapIndex) {
   } else {
     player.x = WORLD.w/2; player.y = WORLD.h/2;
   }
+}
+
+// Generate cover positions adjacent to every full obstacle and every low cover.
+// Each point sits ~32u outside the obstacle on one of its four sides;
+// soldiers stand here to put the obstacle between them and a threat.
+function buildCoverPoints() {
+  coverPoints.length = 0;
+  const offset = 32;
+  const sources = [...buildings, ...lowCovers];
+  for (const r of sources) {
+    const cx = r.x + r.w/2, cy = r.y + r.h/2;
+    coverPoints.push({ x: cx,             y: r.y - offset,    ownerCx: cx, ownerCy: cy });
+    coverPoints.push({ x: cx,             y: r.y + r.h+offset,ownerCx: cx, ownerCy: cy });
+    coverPoints.push({ x: r.x - offset,   y: cy,              ownerCx: cx, ownerCy: cy });
+    coverPoints.push({ x: r.x+r.w+offset, y: cy,              ownerCx: cx, ownerCy: cy });
+  }
+}
+
+// Find the best cover from `threat` reachable from (myX, myY).
+// "Best" = nearest cover point such that the obstacle blocks LoS from threat.
+// Returns null if no cover available.
+function findCover(myX, myY, threatX, threatY, maxDist = 600) {
+  let best = null, bestD = Infinity;
+  for (const cp of coverPoints) {
+    const d = Math.hypot(cp.x - myX, cp.y - myY);
+    if (d < 24 || d > maxDist) continue;
+    // Cover only counts if the obstacle actually breaks LoS from the threat.
+    if (lineOfSight(threatX, threatY, cp.x, cp.y)) continue;
+    // Tiny penalty for cover already in front of (closer to) threat than us
+    const tDist = Math.hypot(cp.x - threatX, cp.y - threatY);
+    const myDist = Math.hypot(myX - threatX, myY - threatY);
+    const score = d + Math.max(0, myDist - tDist) * 0.5;
+    if (score < bestD) { best = cp; bestD = score; }
+  }
+  return best;
+}
+
+// "Peek angle" from a cover point: the direction perpendicular to the cover's
+// shielded direction, so the unit can step out a half-step to fire.
+function peekOffset(cp, threatX, threatY) {
+  // Vector from cover to threat (the dir we want to peek along)
+  const a = Math.atan2(threatY - cp.y, threatX - cp.x);
+  // We don't actually move into the obstacle; offset slightly toward threat
+  return { x: cp.x + Math.cos(a)*18, y: cp.y + Math.sin(a)*18 };
 }
 
 function spawnWave(n) {
@@ -2239,23 +2289,73 @@ function updateAllies() {
     let isMoving = false;
 
     if (target) {
-      // Engage — face target, hold position roughly, fire.
-      desiredAngle = Math.atan2(target.y - a.y, target.x - a.x);
-      a.angle = desiredAngle; // body turns instantly to face threat
-      // Move toward a comfortable engagement distance (~280)
-      const dx = target.x - a.x, dy = target.y - a.y;
-      const dist = Math.hypot(dx, dy);
-      const ideal = 280;
-      if (dist > ideal + 60) {
-        a.x += Math.cos(desiredAngle) * a.speed * 0.7;
-        a.y += Math.sin(desiredAngle) * a.speed * 0.7;
-        a.walkPhase += 0.16;
-        isMoving = true;
-      } else if (dist < ideal - 60) {
-        a.x -= Math.cos(desiredAngle) * a.speed * 0.4;
-        a.y -= Math.sin(desiredAngle) * a.speed * 0.4;
-        a.walkPhase += 0.10;
-        isMoving = true;
+      // ENGAGE branch with cover-seeking + corner peek — mirror of soldier AI
+      const tx = target.x, ty = target.y;
+      const dist = Math.hypot(tx - a.x, ty - a.y);
+      const lowHp = a.hp < a.maxHp * 0.40;
+      const inCoverNow = a.coverPick && Math.hypot(a.x - a.coverPick.x, a.y - a.coverPick.y) < 28;
+
+      if (lowHp) {
+        // Low HP — fall back to FAR cover
+        if (!a.coverPick || inCoverNow) {
+          a.coverPick = findCover(a.x, a.y, tx, ty, 900) || a.coverPick;
+        }
+        a.allyMode = 'flee';
+      } else if (inCoverNow) {
+        a.allyMode = 'cornerPeek';
+      } else {
+        if (!a.coverPick || (game.time - (a.coverPickedAt || 0)) > 90
+            || lineOfSight(tx, ty, a.coverPick.x, a.coverPick.y)) {
+          a.coverPick = findCover(a.x, a.y, tx, ty, 500);
+          a.coverPickedAt = game.time;
+        }
+        a.allyMode = a.coverPick ? 'seekCover' : 'engage';
+      }
+
+      switch (a.allyMode) {
+        case 'engage': {
+          desiredAngle = Math.atan2(ty - a.y, tx - a.x);
+          a.angle = desiredAngle;
+          const ideal = 280;
+          if (dist > ideal + 60) {
+            a.x += Math.cos(desiredAngle) * a.speed * 0.7;
+            a.y += Math.sin(desiredAngle) * a.speed * 0.7;
+            a.walkPhase += 0.16; isMoving = true;
+          } else if (dist < ideal - 60) {
+            a.x -= Math.cos(desiredAngle) * a.speed * 0.4;
+            a.y -= Math.sin(desiredAngle) * a.speed * 0.4;
+            a.walkPhase += 0.10; isMoving = true;
+          }
+          break;
+        }
+        case 'seekCover':
+        case 'flee': {
+          const cp = a.coverPick;
+          const dxc = cp.x - a.x, dyc = cp.y - a.y;
+          const goAng = Math.atan2(dyc, dxc);
+          a.angle += angDiff(goAng, a.angle) * 0.18;
+          const speedMul = a.allyMode === 'flee' ? 1.3 : 1.0;
+          a.x += Math.cos(a.angle) * a.speed * speedMul;
+          a.y += Math.sin(a.angle) * a.speed * speedMul;
+          a.walkPhase += 0.20; isMoving = true;
+          break;
+        }
+        case 'cornerPeek': {
+          const angleToTarget = Math.atan2(ty - a.y, tx - a.x);
+          a.angle += angDiff(angleToTarget, a.angle) * 0.22;
+          a.peekTimer = (a.peekTimer || 0) + 1;
+          const peeking = (a.peekTimer % 100) < 45;
+          const tgtPos = peeking ? peekOffset(a.coverPick, tx, ty) : a.coverPick;
+          const dxp = tgtPos.x - a.x, dyp = tgtPos.y - a.y;
+          const dp = Math.hypot(dxp, dyp);
+          if (dp > 1) {
+            a.x += (dxp/dp) * 0.6;
+            a.y += (dyp/dp) * 0.6;
+            isMoving = peeking;
+          }
+          a._peekingNow = peeking;
+          break;
+        }
       }
     } else if (squadIntel.fresh > 0) {
       // INVESTIGATE — squad has fresh intel on enemy position. Move toward it,
@@ -2335,7 +2435,11 @@ function updateAllies() {
     const barrel = tickShooter(a, a.angle, w, isMoving);
 
     a.fireCd--;
-    if (a.fireCd <= 0 && target) {
+    // Fire only with a clean shot. While in cover but NOT peeking, the wall
+    // blocks our shot — hold fire (no wasted bullets, no shooting through walls).
+    let canFire = !!target && lineOfSight(a.x, a.y, target.x, target.y);
+    if (a.allyMode === 'cornerPeek' && !a._peekingNow) canFire = false;
+    if (a.fireCd <= 0 && canFire) {
       const ang = barrel + (Math.random()-0.5)*w.spread;
       bullets.push({
         x: a.x + Math.cos(ang)*16,
@@ -2535,90 +2639,164 @@ function updateEnemies() {
     if (e.angle == null) e.angle = Math.random() * Math.PI*2;
     if (e.alerted == null) e.alerted = 0;
     if (e.lockTime == null) e.lockTime = 0;
+    if (e.behavior == null) e.behavior = 'patrol';
+    if (e.coverPick == null) e.coverPick = null;
+    if (e.peekTimer == null) e.peekTimer = 0;
+    if (e.recentDamage == null) e.recentDamage = 0;
+    e.recentDamage = Math.max(0, e.recentDamage - 1);
 
-    // Mission-spawned ambushers have a hard target (e.g. the convoy UGV).
-    // They KNOW where it is and chase it relentlessly — no patrol behaviour.
+    // Pick target: hard-target (e.g. convoy UGV) > nearest visible friendly
     const hasHardTarget = e.attackTarget && e.attackTarget.alive;
-    let tgt;
-    if (hasHardTarget) {
-      tgt = e.attackTarget;
-    } else {
-      tgt = nearestVisibleFriendly(e.x, e.y, e.angle, ENEMY_VIEW.range, ENEMY_VIEW.arc);
-    }
+    const tgt = hasHardTarget
+                ? e.attackTarget
+                : nearestVisibleFriendly(e.x, e.y, e.angle, ENEMY_VIEW.range, ENEMY_VIEW.arc);
     const canSee = tgt != null;
     const tx = tgt ? tgt.x : null, ty = tgt ? tgt.y : null;
     const dist = tgt ? Math.hypot(tx - e.x, ty - e.y) : 0;
     let isMoving = false;
+    const lowHp = e.hp < e.maxHp * 0.35;
 
+    // === Behavior tree (FSM) ===
+    // Transitions:
+    //  - low HP under fire        → flee (find very far cover)
+    //  - target visible & no cover → seekCover (find nearest blocking obstacle)
+    //  - in cover with target     → cornerPeek (hold position, fire when peeking)
+    //  - target visible, no cover available → engage (advance fire-and-move)
+    //  - no target & no intel     → patrol
     if (canSee) {
-      e.lockTime = 60;
+      e.lockTime = 90;
       e.lastSeenX = tx; e.lastSeenY = ty;
-      const angleToTarget = Math.atan2(ty - e.y, tx - e.x);
-      let aDiff = angleToTarget - e.angle;
-      while (aDiff > Math.PI) aDiff -= Math.PI*2;
-      while (aDiff < -Math.PI) aDiff += Math.PI*2;
-      e.angle += aDiff * 0.18;
-      if (dist > 280) {
-        e.x += Math.cos(e.angle) * e.speed;
-        e.y += Math.sin(e.angle) * e.speed;
-        e.walkPhase += 0.18;
-        isMoving = true;
-      } else if (dist < 180) {
-        e.x -= Math.cos(e.angle) * e.speed * 0.5;
-        e.y -= Math.sin(e.angle) * e.speed * 0.5;
-        e.walkPhase += 0.1;
-        isMoving = true;
+
+      const inCoverNow = e.coverPick && Math.hypot(e.x - e.coverPick.x, e.y - e.coverPick.y) < 28;
+
+      if (lowHp && e.recentDamage > 0) {
+        // Critical: flee far cover
+        if (!e.coverPick || inCoverNow) {
+          e.coverPick = findCover(e.x, e.y, tx, ty, 900) || e.coverPick;
+        }
+        e.behavior = 'flee';
+      } else if (inCoverNow) {
+        e.behavior = 'cornerPeek';
+      } else {
+        // Try to take cover; refresh choice every 90 frames or if cover invalid
+        if (!e.coverPick || (game.time - (e.coverPickedAt || 0)) > 90
+            || lineOfSight(tx, ty, e.coverPick.x, e.coverPick.y)) {
+          e.coverPick = findCover(e.x, e.y, tx, ty, 500);
+          e.coverPickedAt = game.time;
+        }
+        e.behavior = e.coverPick ? 'seekCover' : 'engage';
       }
     } else if (e.lockTime > 0) {
+      e.behavior = 'lastKnown';
       e.lockTime--;
-      const lx = e.lastSeenX, ly = e.lastSeenY;
-      if (lx != null) {
-        const ldx = lx - e.x, ldy = ly - e.y;
-        const lAng = Math.atan2(ldy, ldx);
-        let d = lAng - e.angle;
-        while (d > Math.PI) d -= Math.PI*2;
-        while (d < -Math.PI) d += Math.PI*2;
-        e.angle += d * 0.08;
-        if (Math.hypot(ldx, ldy) > 80) {
-          e.x += Math.cos(e.angle) * e.speed * 0.7;
-          e.y += Math.sin(e.angle) * e.speed * 0.7;
-          e.walkPhase += 0.12;
-          isMoving = true;
-        }
-      }
     } else if (e.alerted > 0) {
+      e.behavior = 'investigate';
       e.alerted--;
-      const tdx = e.alertX - e.x, tdy = e.alertY - e.y;
-      const tdist = Math.hypot(tdx, tdy);
-      if (tdist > 1) {
-        const tAng = Math.atan2(tdy, tdx);
-        let d = tAng - e.angle;
-        while (d > Math.PI) d -= Math.PI*2;
-        while (d < -Math.PI) d += Math.PI*2;
-        e.angle += d * 0.06;
-        if (tdist > 100) {
-          e.x += Math.cos(e.angle) * e.speed * 0.55;
-          e.y += Math.sin(e.angle) * e.speed * 0.55;
-          e.walkPhase += 0.1;
-          isMoving = true;
-        }
-      }
     } else {
-      e.angle += Math.sin(game.time * 0.011 + (e.walkPhase || 0)) * 0.012;
+      e.behavior = 'patrol';
+      e.coverPick = null;
+    }
+
+    // === Movement per behavior ===
+    switch (e.behavior) {
+      case 'engage': {
+        const angleToTarget = Math.atan2(ty - e.y, tx - e.x);
+        e.angle += angDiff(angleToTarget, e.angle) * 0.18;
+        if (dist > 320) {
+          e.x += Math.cos(e.angle) * e.speed;
+          e.y += Math.sin(e.angle) * e.speed;
+          e.walkPhase += 0.18; isMoving = true;
+        } else if (dist < 180) {
+          e.x -= Math.cos(e.angle) * e.speed * 0.5;
+          e.y -= Math.sin(e.angle) * e.speed * 0.5;
+          e.walkPhase += 0.1; isMoving = true;
+        }
+        break;
+      }
+      case 'seekCover':
+      case 'flee': {
+        const cp = e.coverPick;
+        if (!cp) break;
+        const dx = cp.x - e.x, dy = cp.y - e.y;
+        const goAng = Math.atan2(dy, dx);
+        e.angle += angDiff(goAng, e.angle) * 0.18;
+        const speedMul = e.behavior === 'flee' ? 1.3 : 1.0;
+        e.x += Math.cos(e.angle) * e.speed * speedMul;
+        e.y += Math.sin(e.angle) * e.speed * speedMul;
+        e.walkPhase += 0.20; isMoving = true;
+        break;
+      }
+      case 'cornerPeek': {
+        // Stay at cover; rotate to face threat. Periodically peek out 18u to fire.
+        const angleToTarget = Math.atan2(ty - e.y, tx - e.x);
+        e.angle += angDiff(angleToTarget, e.angle) * 0.22;
+        e.peekTimer++;
+        // Peek every ~70 frames for ~40 frames
+        const peeking = (e.peekTimer % 110) < 40;
+        if (peeking) {
+          const peek = peekOffset(e.coverPick, tx, ty);
+          const dx = peek.x - e.x, dy = peek.y - e.y;
+          const d = Math.hypot(dx, dy);
+          if (d > 1) {
+            e.x += (dx/d) * 0.6;
+            e.y += (dy/d) * 0.6;
+            e.walkPhase += 0.06; isMoving = true;
+          }
+          e._peekingNow = true;
+        } else {
+          // Recoil back to cover
+          const dx = e.coverPick.x - e.x, dy = e.coverPick.y - e.y;
+          const d = Math.hypot(dx, dy);
+          if (d > 1) {
+            e.x += (dx/d) * 0.6;
+            e.y += (dy/d) * 0.6;
+          }
+          e._peekingNow = false;
+        }
+        break;
+      }
+      case 'lastKnown': {
+        const lx = e.lastSeenX, ly = e.lastSeenY;
+        if (lx != null) {
+          const lAng = Math.atan2(ly - e.y, lx - e.x);
+          e.angle += angDiff(lAng, e.angle) * 0.10;
+          if (Math.hypot(lx - e.x, ly - e.y) > 80) {
+            e.x += Math.cos(e.angle) * e.speed * 0.7;
+            e.y += Math.sin(e.angle) * e.speed * 0.7;
+            e.walkPhase += 0.12; isMoving = true;
+          }
+        }
+        break;
+      }
+      case 'investigate': {
+        const tdx = e.alertX - e.x, tdy = e.alertY - e.y;
+        if (Math.hypot(tdx, tdy) > 1) {
+          const tAng = Math.atan2(tdy, tdx);
+          e.angle += angDiff(tAng, e.angle) * 0.06;
+          if (Math.hypot(tdx, tdy) > 100) {
+            e.x += Math.cos(e.angle) * e.speed * 0.55;
+            e.y += Math.sin(e.angle) * e.speed * 0.55;
+            e.walkPhase += 0.1; isMoving = true;
+          }
+        }
+        break;
+      }
+      default: { // patrol
+        e.angle += Math.sin(game.time * 0.011 + (e.walkPhase || 0)) * 0.012;
+      }
     }
 
     pushOutOfBuildings(e, e.radius);
     e.x = Math.max(20, Math.min(WORLD.w-20, e.x));
     e.y = Math.max(20, Math.min(WORLD.h-20, e.y));
 
-    // Gun barrel: same lag/sway/recoil mechanic, with the AK profile (looser)
     const barrel = tickShooter(e, e.angle, w, isMoving);
 
+    // Firing — only if a clear shot exists
     e.fireCd--;
-    // Fire only when there's a clear shot. Hard-target enemies still need LoS
-    // so they don't shoot through walls when chasing the UGV.
-    const canFire = canSee && dist < 520
-                    && (!hasHardTarget || lineOfSight(e.x, e.y, tx, ty));
+    let canFire = canSee && dist < 520 && lineOfSight(e.x, e.y, tx, ty);
+    // While in cover but NOT peeking, the obstacle blocks our shot — don't waste bullets
+    if (e.behavior === 'cornerPeek' && !e._peekingNow) canFire = false;
     if (e.fireCd <= 0 && canFire) {
       const ang = barrel + (Math.random()-0.5) * w.spread;
       enemyBullets.push({
@@ -2628,7 +2806,7 @@ function updateEnemies() {
         life: w.bulletLife, damage: w.damage,
       });
       applyRecoil(e, w);
-      e.fireCd = w.fireCd + Math.floor(Math.random()*16);
+      e.fireCd = w.fireCd + Math.floor(Math.random()*8);
       emitSound(e.x, e.y, w.soundIntensity, false);
     }
   }
@@ -2905,6 +3083,10 @@ function updateBullets() {
       if (!e.alive) continue;
       if (Math.hypot(b.x-e.x, b.y-e.y) < e.radius) {
         e.hp -= b.damage;
+        e.recentDamage = 60;     // marks "I'm under fire" for FSM low-HP flee branch
+        e.alerted = Math.max(e.alerted || 0, 240);
+        e.alertX = b.x - b.vx*4; // alert toward where the shot came from
+        e.alertY = b.y - b.vy*4;
         if (e.hp <= 0) { e.alive = false; game.score += 100; game.killCount++; createExplosion(e.x, e.y, 'small'); }
         hit = true; break;
       }
