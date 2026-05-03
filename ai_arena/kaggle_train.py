@@ -85,7 +85,7 @@ PLAYER_HP         = 100
 BULLET_SPEED      = 14.0
 BULLET_LIFE       = 60
 BULLET_DAMAGE     = 14
-RAY_STEPS         = 24                  # LoS check resolution
+RAY_STEPS         = 12                  # LoS check resolution (12 = 2x faster than 24, still accurate enough)
 
 
 # ============================================================
