@@ -173,6 +173,77 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 }
 
 /* End screen */
+/* NN Skirmish lobby */
+.nn-lobby {
+  background: rgba(20, 18, 24, 0.92);
+  display: flex; align-items: center; justify-content: center;
+}
+.lobby-card {
+  background: var(--cream);
+  padding: 36px 56px 28px;
+  border: 4px solid var(--red);
+  position: relative;
+  max-width: 720px;
+}
+.lobby-card::after {
+  content: ''; position: absolute; inset: -4px -4px auto auto;
+  width: 80px; height: 8px; background: var(--black);
+}
+.lobby-tag {
+  font-size: 11px; letter-spacing: 6px; font-weight: 800;
+  color: var(--red); margin-bottom: 8px;
+}
+.lobby-card h2 {
+  font-size: 32px; letter-spacing: 6px; font-weight: 900;
+  color: var(--black); margin-bottom: 4px;
+  border-left: 6px solid var(--red); padding-left: 14px;
+}
+.lobby-card .lobby-sub {
+  font-size: 11px; letter-spacing: 4px; color: var(--gray);
+  margin: 4px 0 24px 20px;
+}
+.lobby-settings {
+  display: flex; gap: 48px; justify-content: center;
+  border-top: 2px solid var(--black); border-bottom: 1px solid var(--black);
+  padding: 24px 0;
+}
+.team-pick { text-align: center; }
+.team-pick label {
+  display: block; font-size: 11px; letter-spacing: 5px;
+  margin-bottom: 12px; font-weight: 800;
+}
+.team-pick.blue label { color: var(--black); }
+.team-pick.red label  { color: var(--red); }
+.counter {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--cream-dark); padding: 8px 16px;
+  border: 2px solid var(--black);
+}
+.counter button {
+  width: 36px; height: 36px; font-size: 22px; font-weight: 900;
+  background: var(--black); color: var(--cream);
+  border: none; cursor: pointer; font-family: inherit;
+}
+.counter button:hover { background: var(--red); }
+.counter .val {
+  font-size: 40px; font-weight: 900; color: var(--black);
+  min-width: 36px; text-align: center; font-family: "Courier New", monospace;
+  line-height: 1;
+}
+.lobby-actions {
+  display: flex; gap: 16px; align-items: center; margin-top: 24px;
+}
+.lobby-cancel {
+  background: transparent; border: 2px solid var(--black);
+  color: var(--black); padding: 14px 28px; font-family: inherit;
+  font-size: 12px; letter-spacing: 6px; font-weight: 800; cursor: pointer;
+}
+.lobby-cancel:hover { background: var(--black); color: var(--cream); }
+.lobby-hint {
+  font-size: 10px; letter-spacing: 3px; color: var(--gray);
+  margin-left: auto;
+}
+
 .end-screen {
   background: var(--cream);
   display: flex; flex-direction: column;
@@ -290,6 +361,38 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
       <span>俄乌战争逻辑的未来延伸</span>
       <span>SECTOR 7G · UNIT 0451</span>
       <span>建议 1080p+ 全屏体验</span>
+    </div>
+  </div>
+</div>
+
+<!-- NN Skirmish team-size lobby -->
+<div class="overlay nn-lobby hidden" id="nnLobby">
+  <div class="lobby-card">
+    <div class="lobby-tag">单元 0451 · 神经网络对抗 / NN SKIRMISH</div>
+    <h2>对抗设置</h2>
+    <div class="lobby-sub">PPO 模型驱动 · 双方共用同一神经网络</div>
+    <div class="lobby-settings">
+      <div class="team-pick blue">
+        <label>友军 BLUE (含你)</label>
+        <div class="counter">
+          <button data-team="blue" data-dir="-1">−</button>
+          <span class="val" id="blueSizeLabel">3</span>
+          <button data-team="blue" data-dir="+1">+</button>
+        </div>
+      </div>
+      <div class="team-pick red">
+        <label>敌军 RED</label>
+        <div class="counter">
+          <button data-team="red" data-dir="-1">−</button>
+          <span class="val" id="redSizeLabel">3</span>
+          <button data-team="red" data-dir="+1">+</button>
+        </div>
+      </div>
+    </div>
+    <div class="lobby-actions">
+      <button class="start-btn" id="lobbyStartBtn">开始战斗 ▶</button>
+      <button class="lobby-cancel" id="lobbyCancelBtn">返回</button>
+      <span class="lobby-hint">每方 1-4 人 · 不对称也可以 (1v3、3v1)</span>
     </div>
   </div>
 </div>
@@ -605,8 +708,34 @@ window.addEventListener('contextmenu', e => e.preventDefault());
 document.getElementById('startBtn').onclick = startGame;
 document.getElementById('restartBtn').onclick = startGame;
 document.getElementById('skirmishBtn').onclick = startSkirmish;
+
+// ---- NN Skirmish: button opens lobby for team-size selection ----
+const _lobby = { blue: 3, red: 3, min: 1, max: 4 };
 const _nnBtn = document.getElementById('nnBtn');
-if (_nnBtn) _nnBtn.onclick = startNNSkirmish;
+if (_nnBtn) {
+  _nnBtn.onclick = () => {
+    document.getElementById('start').classList.add('hidden');
+    document.getElementById('nnLobby').classList.remove('hidden');
+    document.getElementById('blueSizeLabel').textContent = _lobby.blue;
+    document.getElementById('redSizeLabel').textContent  = _lobby.red;
+  };
+}
+document.querySelectorAll('#nnLobby .counter button').forEach(btn => {
+  btn.onclick = () => {
+    const team = btn.dataset.team;
+    const dir = parseInt(btn.dataset.dir, 10);
+    _lobby[team] = Math.max(_lobby.min, Math.min(_lobby.max, _lobby[team] + dir));
+    document.getElementById(team + 'SizeLabel').textContent = _lobby[team];
+  };
+});
+document.getElementById('lobbyCancelBtn').onclick = () => {
+  document.getElementById('nnLobby').classList.add('hidden');
+  document.getElementById('start').classList.remove('hidden');
+};
+document.getElementById('lobbyStartBtn').onclick = () => {
+  document.getElementById('nnLobby').classList.add('hidden');
+  startNNSkirmish(_lobby.blue, _lobby.red);
+};
 
 function startSkirmish() {
   document.getElementById('start').classList.add('hidden');
@@ -634,9 +763,13 @@ function startSkirmish() {
   showMessage('对抗模式 · 自由射击', 150);
 }
 
-async function startNNSkirmish() {
+async function startNNSkirmish(blueSize = 3, redSize = 3) {
   document.getElementById('start').classList.add('hidden');
+  document.getElementById('nnLobby')?.classList.add('hidden');
   document.getElementById('end').classList.add('hidden');
+
+  blueSize = Math.max(1, Math.min(4, blueSize));
+  redSize  = Math.max(1, Math.min(4, redSize));
 
   // Async load the ONNX model (cached after first call)
   showMessage('载入神经网络...', 60);
@@ -652,60 +785,74 @@ async function startNNSkirmish() {
   game.score = 0; game.killCount = 0; game.time = 0;
   game.message = ''; game.waveBreak = 0; game.missionRetries = 0;
   game._skirmish = true;
-  game._nnMode = true;                       // turn on NN dispatcher
+  game._nnMode = true;
   game._nnEpochStart = 0;
   game._nnTeamKills = [0, 0];
 
   player.hp = player.maxHp;
   player.ammo = player.maxAmmo; player.reserve = 120;
   player.reloading = false; player.alive = true;
+  player._respawnAt = null;
   drone.deployed = false; drone.battery = drone.maxBattery;
   fpv.active = false; fpv.available = fpv.max; fpv.trail = [];
   bullets.length = 0; enemyBullets.length = 0;
   enemies.length = 0; enemyDrones.length = 0;
   explosions.length = 0; muzzleFlashes.length = 0;
   soundEvents.length = 0;
+  allies.length = 0;
   NN.lastSound = null;
 
   generateWorld(NN_ARENA_MAP_INDEX);
 
-  // Spawn 2 NN-controlled allies + 3 NN-controlled enemies (3v3 with player)
-  spawnAllies();
-  for (const a of allies) {
-    a._useNN = true;
-    a._nnFireCd = 0;
-    a._nnRecentDmg = 0;
-    a._nnLastSeenTick = -9999;
-    // Place inside the NN arena
-    a.x = NN_ARENA.x0 + 200;
-    a.y = NN_ARENA.y0 + 250 + (allies.indexOf(a)) * 200;
-    a.team = 0; // friendly
+  // Team spawn anchors — store for respawn use
+  game._nnSpawnBlue = { x: NN_ARENA.x0 + 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
+  game._nnSpawnRed  = { x: NN_ARENA.x0 + NN_ARENA.w - 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
+
+  // Player counts as ONE blue. Spawn (blueSize - 1) NN allies.
+  const allySpacing = NN_ARENA.h / (blueSize + 1);
+  for (let i = 0; i < blueSize - 1; i++) {
+    allies.push({
+      callsign: ['BRAVO', 'CHARLIE', 'DELTA', 'ECHO'][i] || ('A' + i),
+      offsetX: -110, offsetY: 60,
+      x: NN_ARENA.x0 + 200,
+      y: NN_ARENA.y0 + allySpacing * (i + 1),
+      angle: 0, gunAngle: 0, gunRecoil: 0, swayPhase: Math.random() * Math.PI*2,
+      hp: 80, maxHp: 80,
+      alive: true, radius: 13, walkPhase: Math.random() * Math.PI*2,
+      speed: 2.5,
+      fireCd: 0,
+      weaponId: 'M4',
+      target: null,
+      lookPhase: Math.random() * Math.PI*2,
+      team: 0,
+      _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+      _respawnAt: null,
+    });
   }
-  // Spawn enemy team
-  for (let i = 0; i < 3; i++) {
-    const e = {
+
+  // Enemy team: redSize NN-driven enemies
+  const enemySpacing = NN_ARENA.h / (redSize + 1);
+  for (let i = 0; i < redSize; i++) {
+    enemies.push({
       x: NN_ARENA.x0 + NN_ARENA.w - 200,
-      y: NN_ARENA.y0 + 250 + i * 200,
+      y: NN_ARENA.y0 + enemySpacing * (i + 1),
       hp: 50, maxHp: 50, angle: Math.PI,
       fireCd: 0, fireRate: 50, radius: 13,
       alive: true, walkPhase: Math.random() * Math.PI*2,
       speed: 1.0,
       team: 1,
-      _useNN: true,
-      _nnFireCd: 0,
-      _nnRecentDmg: 0,
-      _nnLastSeenTick: -9999,
-    };
-    enemies.push(e);
+      _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+      _respawnAt: null,
+    });
   }
 
-  // Place player on the friendly side
-  player.x = NN_ARENA.x0 + 150;
-  player.y = NN_ARENA.y0 + NN_ARENA.h/2;
+  // Player at the player slot
+  player.x = game._nnSpawnBlue.x - 50;
+  player.y = NN_ARENA.y0 + allySpacing * blueSize;   // last slot
   player.team = 0;
 
-  initMission({ type: 'skirmish', id: 'nn-skirmish' }, currentMap);
-  showMessage('NN 对抗模式 · 神经网络驱动', 200);
+  initMission({ type: 'nnDeathmatch', id: 'nn-deathmatch' }, currentMap);
+  showMessage(`NN 对抗 · 蓝 ${blueSize} vs 红 ${redSize}`, 200);
 }
 
 function startGame() {
@@ -2466,6 +2613,111 @@ MISSION_FACTORIES.skirmish = function(mapDef) {
         `波次   ${waveCount}`,
         `敌方   ${enemies.filter(e=>e.alive).length}`,
         `按 ESC / 返回菜单`,
+      ]);
+    },
+  };
+};
+
+// ---------- NN DEATHMATCH ----------
+// Both teams use the same neural network. Each death respawns the unit at
+// the team's spawn point after 5 seconds. Match ends when a team accumulates
+// KILL_GOAL kills, OR at the 90-second mark (more kills wins).
+MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
+  const TIME_LIMIT_TICKS = 90 * 60;       // 90 seconds
+  const RESPAWN_TICKS    = 5 * 60;        // 5 seconds
+  const startTick = game.time;
+  const teamKills = [0, 0];               // [blue, red]
+  let lastBlueAlive = -1, lastRedAlive = -1;
+  let winner = null;                      // null | 'blue' | 'red' | 'draw'
+  // KILL_GOAL scaled by team size — 3 kills per defender
+  const blueSize = (player.alive ? 1 : 0) + allies.length;
+  const redSize  = enemies.length;
+  const KILL_GOAL = Math.max(5, 3 * Math.max(blueSize, redSize));
+
+  return {
+    title: 'NN 对抗',
+    titleEn: 'NN DEATHMATCH',
+    objective: `首达 ${KILL_GOAL} 击杀 · 或 90 秒内击杀更多`,
+    teamKills, KILL_GOAL,
+
+    update() {
+      const elapsed = game.time - startTick;
+
+      // Detect team deaths this tick (alive count went down) → credit kills to opposing team
+      const blueAlive = (player.alive ? 1 : 0) + allies.filter(a => a.alive).length;
+      const redAlive  = enemies.filter(e => e.alive).length;
+      if (lastBlueAlive >= 0) {
+        const blueDeaths = Math.max(0, lastBlueAlive - blueAlive);
+        const redDeaths  = Math.max(0, lastRedAlive  - redAlive);
+        teamKills[1] += blueDeaths;   // red killed blue
+        teamKills[0] += redDeaths;    // blue killed red
+      }
+      lastBlueAlive = blueAlive;
+      lastRedAlive  = redAlive;
+
+      // Set respawn timers for newly-dead units
+      if (!player.alive && player._respawnAt == null) {
+        player._respawnAt = game.time + RESPAWN_TICKS;
+      }
+      for (const a of allies) {
+        if (!a.alive && a._respawnAt == null) a._respawnAt = game.time + RESPAWN_TICKS;
+      }
+      for (const e of enemies) {
+        if (!e.alive && e._respawnAt == null) e._respawnAt = game.time + RESPAWN_TICKS;
+      }
+
+      // Process respawns
+      if (!player.alive && player._respawnAt != null && game.time >= player._respawnAt) {
+        player.alive = true;
+        player.hp = player.maxHp;
+        player.ammo = player.maxAmmo;
+        player.x = game._nnSpawnBlue.x;
+        player.y = game._nnSpawnBlue.y + (Math.random() - 0.5) * 60;
+        player._respawnAt = null;
+        player.gunRecoil = 0;
+      }
+      for (const a of allies) {
+        if (!a.alive && a._respawnAt != null && game.time >= a._respawnAt) {
+          a.alive = true;
+          a.hp = a.maxHp;
+          a.x = game._nnSpawnBlue.x;
+          a.y = game._nnSpawnBlue.y + (Math.random() - 0.5) * 200;
+          a._respawnAt = null;
+          a._nnFireCd = 0; a._nnRecentDmg = 0;
+        }
+      }
+      for (const e of enemies) {
+        if (!e.alive && e._respawnAt != null && game.time >= e._respawnAt) {
+          e.alive = true;
+          e.hp = e.maxHp;
+          e.x = game._nnSpawnRed.x;
+          e.y = game._nnSpawnRed.y + (Math.random() - 0.5) * 200;
+          e._respawnAt = null;
+          e._nnFireCd = 0; e._nnRecentDmg = 0;
+        }
+      }
+
+      // Win conditions
+      if (winner == null) {
+        if (teamKills[0] >= KILL_GOAL && teamKills[0] > teamKills[1]) winner = 'blue';
+        else if (teamKills[1] >= KILL_GOAL && teamKills[1] > teamKills[0]) winner = 'red';
+        else if (elapsed >= TIME_LIMIT_TICKS) {
+          winner = teamKills[0] > teamKills[1] ? 'blue' :
+                   teamKills[1] > teamKills[0] ? 'red'  : 'draw';
+        }
+      }
+    },
+
+    isComplete() { return winner === 'blue'; },
+    isFailed()   { return winner === 'red'; },
+
+    renderHUD() {
+      const elapsed = game.time - startTick;
+      const remaining = Math.max(0, Math.ceil((TIME_LIMIT_TICKS - elapsed) / 60));
+      drawObjectivePanel([
+        `BLUE  ${teamKills[0]}    RED  ${teamKills[1]}    目标 ${KILL_GOAL}`,
+        winner ? `${winner === 'draw' ? '平手' : winner.toUpperCase() + ' 获胜！'}`
+               : `时间剩余 ${remaining}s`,
       ]);
     },
   };
