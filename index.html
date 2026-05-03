@@ -1884,6 +1884,12 @@ function updateMission() {
 }
 
 function onMissionSuccess() {
+  // NN deathmatch: return to NN lobby instead of campaign progression
+  if (game._nnMode) {
+    showMessage(`BLUE 获胜！`, 220);
+    setTimeout(() => returnToNNLobby(), 2000);
+    return;
+  }
   game.score += 800;
   game.missionRetries = 0; // reset retry counter on each successful mission
   showMessage(`任务完成 +800`, 200);
@@ -1894,6 +1900,13 @@ function onMissionSuccess() {
 // Allies and the player respawn full HP, the same map+objective is re-initialised.
 // On the third failure of the same mission, the campaign ends.
 function onMissionFailed() {
+  // NN deathmatch: return to NN lobby instead of retry/end-game
+  if (game._nnMode) {
+    showMessage(mission && mission.teamKills && mission.teamKills[0] === mission.teamKills[1]
+      ? `平手` : `RED 获胜`, 220);
+    setTimeout(() => returnToNNLobby(), 2000);
+    return;
+  }
   game.missionRetries = (game.missionRetries || 0) + 1;
   if (game.missionRetries >= 3) {
     showMessage(`任务三次失败 · 撤退`, 200);
@@ -1902,6 +1915,20 @@ function onMissionFailed() {
   }
   showMessage(`任务失败 · 重试 (${game.missionRetries}/3)`, 200);
   setTimeout(() => retryCurrentMission(), 1800);
+}
+
+function returnToNNLobby() {
+  game._nnMode = false;
+  game._skirmish = false;
+  game.state = 'menu';
+  bullets.length = 0;
+  enemyBullets.length = 0;
+  enemies.length = 0;
+  allies.length = 0;
+  soundEvents.length = 0;
+  mission = null;
+  const lobby = document.getElementById('nnLobby');
+  if (lobby) lobby.classList.remove('hidden');
 }
 
 function retryCurrentMission() {
@@ -2712,8 +2739,24 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       }
     },
 
-    isComplete() { return winner === 'blue'; },
-    isFailed()   { return winner === 'red'; },
+    // Latch the win for 4 seconds: keep mission "active" so respawn logic in
+    // update() keeps running (otherwise units gradually die and the field empties).
+    // The banner stays visible during this window too.
+    _endAt: null,
+    isComplete() {
+      if (winner === 'blue') {
+        if (this._endAt == null) this._endAt = game.time + 240;
+        return game.time >= this._endAt;
+      }
+      return false;
+    },
+    isFailed() {
+      if (winner === 'red' || winner === 'draw') {
+        if (this._endAt == null) this._endAt = game.time + 240;
+        return game.time >= this._endAt;
+      }
+      return false;
+    },
 
     renderHUD() {
       const elapsed = game.time - startTick;
