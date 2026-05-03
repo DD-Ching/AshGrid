@@ -278,8 +278,9 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
       </div>
     </div>
 
-    <div>
-      <button class="start-btn" id="startBtn">进入战场 ▶</button>
+    <div style="display:flex; gap:16px; align-items:center;">
+      <button class="start-btn" id="startBtn">战役模式 ▶</button>
+      <button class="start-btn" id="skirmishBtn" style="background: var(--black);">对抗模式 ▶</button>
     </div>
 
     <div class="footer-bar">
@@ -429,8 +430,8 @@ const VIEW = {
   arc: Math.PI * 0.62,// ~112° fan
 };
 const ENEMY_VIEW = {
-  range: 540,
-  arc: Math.PI * 0.55,// ~99°
+  range: 620,            // bumped — they can spot from further
+  arc: Math.PI * 0.78,   // ~140° — soldiers are alert, not blinkered
 };
 const FOG_ALPHA = 0.62; // darkness outside cone
 const visionRays = 92;  // rays per cone (smoothness vs perf)
@@ -583,6 +584,12 @@ window.addEventListener('keydown', e => {
         onMissionSuccess();
       }
     }
+    // ESC returns to main menu (works in skirmish too)
+    else if (e.key === 'Escape') {
+      game.state = 'menu';
+      game._skirmish = false;
+      document.getElementById('start').classList.remove('hidden');
+    }
   }
 });
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
@@ -594,6 +601,33 @@ window.addEventListener('contextmenu', e => e.preventDefault());
 // ============ GAME LIFECYCLE ============
 document.getElementById('startBtn').onclick = startGame;
 document.getElementById('restartBtn').onclick = startGame;
+document.getElementById('skirmishBtn').onclick = startSkirmish;
+
+function startSkirmish() {
+  document.getElementById('start').classList.add('hidden');
+  document.getElementById('end').classList.add('hidden');
+  game.state = 'playing';
+  game.mode = 'tactical';
+  game.wave = 1; // not really a wave — just a marker
+  game.score = 0; game.killCount = 0; game.time = 0;
+  game.message = ''; game.waveBreak = 0; game.missionRetries = 0;
+  game._skirmish = true;
+  player.hp = player.maxHp;
+  player.ammo = player.maxAmmo; player.reserve = 120;
+  player.reloading = false; player.alive = true;
+  drone.deployed = false; drone.battery = drone.maxBattery;
+  fpv.active = false; fpv.available = fpv.max; fpv.trail = [];
+  bullets.length = 0; enemyBullets.length = 0;
+  enemies.length = 0; enemyDrones.length = 0;
+  explosions.length = 0; muzzleFlashes.length = 0;
+  soundEvents.length = 0;
+  generateWorld(ARENA_MAP_INDEX);
+  spawnAllies();
+  initMission({ type: 'skirmish', id: 'skirmish' }, currentMap);
+  // Spawn initial enemies
+  for (let i = 0; i < 6; i++) spawnSoldier({ soldierBias: 'ringFromPlayer' });
+  showMessage('对抗模式 · 自由射击', 150);
+}
 
 function startGame() {
   document.getElementById('start').classList.add('hidden');
@@ -646,6 +680,7 @@ function endGame(victory) {
 }
 
 function startNextWave() {
+  if (game._skirmish) return; // skirmish never auto-advances
   game.wave++;
   if (game.wave > MISSIONS.length) { endGame(true); return; }
   const missionDef = MISSIONS[game.wave - 1];
@@ -1169,6 +1204,60 @@ MAPS.push({
     for (let i = 0; i < 8; i++) addNode(Math.random()*WORLD.w, Math.random()*WORLD.h);
   }
 });
+
+// ---------- SKIRMISH ARENA (dev / sandbox map) ----------
+// A small maze for pure combat — no mission, no objectives. Used to verify
+// AI behaviour and test loadout balance.
+MAPS.push({
+  id: 'arena',
+  name: '竞技场',
+  nameEn: 'SKIRMISH ARENA',
+  subtitle: '迷宫对抗 · 纯射击',
+  rhythmHint: 'PURE COMBAT / 纯对抗',
+  playerSpawn: { x: 400, y: WORLD.h/2 },
+  spawn: {
+    soldierBase: 6, soldierPerWave: 0,
+    droneBase: 0,  dronePerWave: 0,
+    soldierBias: 'ringFromPlayer',
+    droneBias: 'open',
+    soldierSpeedMul: 1.0,
+    soldierFireFast: false,
+  },
+  build() {
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.cream });
+    // Light grid background to show scale
+    for (let x = 200; x < WORLD.w; x += 200) addTheme({ kind: 'line-v', x, y: 0, w: 1, h: WORLD.h, color: COLORS.creamDark, alpha: 0.5 });
+    for (let y = 200; y < WORLD.h; y += 200) addTheme({ kind: 'line-h', x: 0, y, w: WORLD.w, h: 1, color: COLORS.creamDark, alpha: 0.5 });
+
+    // Maze walls — strategically placed so cover-seeking AI has options.
+    // Vertical walls
+    addBuilding(800, 600, 60, 700, COLORS.gray, { accent: true });
+    addBuilding(1500, 300, 60, 800, COLORS.gray);
+    addBuilding(1500, 1700, 60, 800, COLORS.gray);
+    addBuilding(2200, 800, 60, 1100, COLORS.gray, { accent: true });
+    addBuilding(2700, 1500, 60, 700, COLORS.gray);
+    // Horizontal walls
+    addBuilding(800, 1700, 700, 60, COLORS.black);
+    addBuilding(1700, 1100, 600, 60, COLORS.black, { accent: true });
+    addBuilding(1700, 2300, 600, 60, COLORS.black);
+    addBuilding(400, 2400, 500, 60, COLORS.black);
+    // Crate clusters (low cover)
+    addLowCover(1200, 800, 90, 90, COLORS.creamDark, { kind: 'crate' });
+    addLowCover(1200, 1400, 90, 90, COLORS.creamDark);
+    addLowCover(2400, 600, 90, 90, COLORS.creamDark);
+    addLowCover(2400, 2200, 90, 90, COLORS.creamDark);
+    addLowCover(1900, 1500, 90, 90, COLORS.creamDark);
+    addLowCover(600, 1100, 90, 90, COLORS.creamDark);
+    addLowCover(600, 2000, 90, 90, COLORS.creamDark);
+
+    // Spawn-room markers (visual: friendly side / enemy side)
+    addRoute(120, WORLD.h/2 - 200, 200, 400, 'side', { label: '友军 SQUAD' });
+    addRoute(WORLD.w - 320, WORLD.h/2 - 200, 200, 400, 'side', { label: '敌军 HOSTILE' });
+
+    addLandmark({ kind: 'arena', x: WORLD.w/2, y: WORLD.h/2, r: 80, name: '中央 ARENA' });
+  }
+});
+const ARENA_MAP_INDEX = MAPS.length - 1;
 
 // ============ MISSIONS (campaign of 6 objectives across the 5 maps) ============
 // Each entry pairs a map with a mission type. Missions own their own win/loss
@@ -1912,6 +2001,40 @@ MISSION_FACTORIES.hold = function(mapDef) {
   };
 };
 
+// ---------- SKIRMISH "mission": kill all hostiles, no objective. ----------
+// Refills the arena periodically so it stays a continuous fight.
+MISSION_FACTORIES.skirmish = function(mapDef) {
+  let waveCount = 1;
+  let respawnCd = 0;
+  return {
+    title: '对抗模式',
+    titleEn: 'SKIRMISH',
+    objective: '清除所有敌方单位 · 测试 AI 与小组协同',
+    update() {
+      const enemiesAlive = enemies.filter(e=>e.alive).length;
+      if (enemiesAlive === 0) {
+        respawnCd--;
+        if (respawnCd <= 0) {
+          waveCount++;
+          for (let i = 0; i < 6; i++) spawnSoldier({ soldierBias: 'ringFromPlayer' });
+          respawnCd = 180;
+        }
+      } else {
+        respawnCd = 180;
+      }
+    },
+    isComplete() { return false; }, // never ends — sandbox
+    isFailed()   { return !player.alive && allies.every(a => !a.alive); },
+    renderHUD() {
+      drawObjectivePanel([
+        `波次   ${waveCount}`,
+        `敌方   ${enemies.filter(e=>e.alive).length}`,
+        `按 ESC / 返回菜单`,
+      ]);
+    },
+  };
+};
+
 // Helper for missions: spawn a soldier at a specific point (no bias logic)
 function spawnSoldierAt(x, y) {
   enemies.push({
@@ -2145,6 +2268,13 @@ function pickBiasedSpawn(bias) {
       const d = 800 + r()*400;
       return { x: WORLD.w/2 + Math.cos(a)*d, y: WORLD.h*0.40 + Math.sin(a)*d };
     }
+    case 'ringFromPlayer': {
+      // Skirmish: 700-1100u from the player on a random arc — close enough to
+      // be inside their detection range, but with maze cover between them.
+      const a = r() * Math.PI*2;
+      const d = 700 + r()*400;
+      return { x: player.x + Math.cos(a)*d, y: player.y + Math.sin(a)*d };
+    }
   }
   // Default: ring around player
   const a = r() * Math.PI*2;
@@ -2167,8 +2297,11 @@ function spawnSoldier(cfg) {
     tries++;
   }
   if (!ok) { x = player.x + 700; y = player.y; }
-  const speedMul = cfg ? cfg.soldierSpeedMul : 1;
-  const fast = cfg && cfg.soldierFireFast;
+  // Defensive defaults — partial cfg (e.g. {soldierBias:'…'} alone) should
+  // still produce finite stats. Previously soldierSpeedMul=undefined → NaN
+  // speed → enemies with NaN positions stuck invisible after one tick.
+  const speedMul = (cfg && cfg.soldierSpeedMul != null) ? cfg.soldierSpeedMul : 1;
+  const fast = !!(cfg && cfg.soldierFireFast);
   enemies.push({
     x, y,
     hp: 50, maxHp: 50,
@@ -2268,17 +2401,24 @@ function nearestVisibleEnemy(ax, ay, fromAngle, range) {
 function updateAllies() {
   for (const a of allies) {
     if (!a.alive) continue;
-    // Stuck detector — record last position; if we haven't moved >2u in 90 frames,
-    // sidestep perpendicular to the current facing for a moment to break free.
+    // Stuck detector — sidestep when blocked
     if (a._lastX == null) { a._lastX = a.x; a._lastY = a.y; a._stuckFrames = 0; }
     if (Math.hypot(a.x - a._lastX, a.y - a._lastY) < 2) a._stuckFrames++;
     else { a._stuckFrames = 0; a._lastX = a.x; a._lastY = a.y; }
-    if (a._stuckFrames > 90) {
+    if (a._stuckFrames > 60) {
       const side = (a.callsign.charCodeAt(0) % 2) ? 1 : -1;
       a.x += -Math.sin(a.angle) * a.speed * side;
       a.y +=  Math.cos(a.angle) * a.speed * side;
       a._stuckFrames = 0;
       a._lastX = a.x; a._lastY = a.y;
+    }
+    // Don't block the player — soft push if too close
+    const pdx = a.x - player.x, pdy = a.y - player.y;
+    const pd = Math.hypot(pdx, pdy);
+    if (pd < a.radius + player.radius + 4 && pd > 0.001 && player.alive) {
+      const k = (a.radius + player.radius + 4 - pd) / pd;
+      a.x += pdx * k;
+      a.y += pdy * k;
     }
 
     // Look first (turn body toward target if any), then move.
@@ -2634,155 +2774,186 @@ function nearestVisibleFriendly(sx, sy, sAngle, range, arc) {
 
 function updateEnemies() {
   const w = WEAPONS.AK;
+  // Squad-level intel: count enemies that have a visible target right now,
+  // assign one per visible target as the flanker.
+  const visibleAttackers = [];
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    e._sees = (e.attackTarget && e.attackTarget.alive)
+      ? e.attackTarget
+      : nearestVisibleFriendly(e.x, e.y, e.angle, ENEMY_VIEW.range, ENEMY_VIEW.arc);
+    if (e._sees) visibleAttackers.push(e);
+  }
+  // If 2+ attackers see a target, pick the one farthest away as the flanker.
+  if (visibleAttackers.length >= 2) {
+    visibleAttackers.sort((a,b) => {
+      const ta = a.attackTarget && a.attackTarget.alive ? a.attackTarget : (a._sees || player);
+      const tb = b.attackTarget && b.attackTarget.alive ? b.attackTarget : (b._sees || player);
+      return Math.hypot(b.x - tb.x, b.y - tb.y) - Math.hypot(a.x - ta.x, a.y - ta.y);
+    });
+    visibleAttackers[0]._flanker = true;
+    for (let i = 1; i < visibleAttackers.length; i++) visibleAttackers[i]._flanker = false;
+  } else {
+    for (const e of visibleAttackers) e._flanker = false;
+  }
+
   for (const e of enemies) {
     if (!e.alive) continue;
     if (e.angle == null) e.angle = Math.random() * Math.PI*2;
     if (e.alerted == null) e.alerted = 0;
     if (e.lockTime == null) e.lockTime = 0;
-    if (e.behavior == null) e.behavior = 'patrol';
     if (e.coverPick == null) e.coverPick = null;
     if (e.peekTimer == null) e.peekTimer = 0;
     if (e.recentDamage == null) e.recentDamage = 0;
     e.recentDamage = Math.max(0, e.recentDamage - 1);
 
-    // Pick target: hard-target (e.g. convoy UGV) > nearest visible friendly
     const hasHardTarget = e.attackTarget && e.attackTarget.alive;
     const tgt = hasHardTarget
-                ? e.attackTarget
-                : nearestVisibleFriendly(e.x, e.y, e.angle, ENEMY_VIEW.range, ENEMY_VIEW.arc);
+      ? e.attackTarget
+      : nearestVisibleFriendly(e.x, e.y, e.angle, ENEMY_VIEW.range, ENEMY_VIEW.arc);
     const canSee = tgt != null;
     const tx = tgt ? tgt.x : null, ty = tgt ? tgt.y : null;
     const dist = tgt ? Math.hypot(tx - e.x, ty - e.y) : 0;
     let isMoving = false;
-    const lowHp = e.hp < e.maxHp * 0.35;
+    const losClear = canSee && lineOfSight(e.x, e.y, tx, ty);
+    const lowHp = e.hp < e.maxHp * 0.30;
 
-    // === Behavior tree (FSM) ===
-    // Transitions:
-    //  - low HP under fire        → flee (find very far cover)
-    //  - target visible & no cover → seekCover (find nearest blocking obstacle)
-    //  - in cover with target     → cornerPeek (hold position, fire when peeking)
-    //  - target visible, no cover available → engage (advance fire-and-move)
-    //  - no target & no intel     → patrol
-    if (canSee) {
-      e.lockTime = 90;
-      e.lastSeenX = tx; e.lastSeenY = ty;
+    // ----- BEHAVIOUR PER USER SPEC -----
+    // 1. Cover: if I see target AND took recent damage AND not currently in cover
+    //    → grab nearest cover that breaks LoS to target, sidestep toward it.
+    // 2. Peek-fire: if target visible AND I'm at cover → 60-frame fire / 60-frame
+    //    hide cycle + small reposition. Always fire when LoS is clear,
+    //    regardless of peek phase.
+    // 3. Flank: marked _flanker (when 2+ enemies see target) circles 90° around
+    //    instead of approaching head-on.
+    // 4. Suppression: target NOT visible but recently was (lockTime>0) → fire
+    //    toward last known position with extra spread, even without direct LoS,
+    //    to keep player pinned.
+    // 5. Low HP retreat: HP < 30% → flee toward far cover behind us.
+    // 6. Patrol when idle.
 
-      const inCoverNow = e.coverPick && Math.hypot(e.x - e.coverPick.x, e.y - e.coverPick.y) < 28;
-
-      if (lowHp && e.recentDamage > 0) {
-        // Critical: flee far cover
-        if (!e.coverPick || inCoverNow) {
-          e.coverPick = findCover(e.x, e.y, tx, ty, 900) || e.coverPick;
-        }
-        e.behavior = 'flee';
-      } else if (inCoverNow) {
-        e.behavior = 'cornerPeek';
-      } else {
-        // Try to take cover; refresh choice every 90 frames or if cover invalid
-        if (!e.coverPick || (game.time - (e.coverPickedAt || 0)) > 90
+    let mode = 'patrol';
+    if (lowHp && e.recentDamage > 0) {
+      if (!e.coverPick || (game.time - (e.coverPickedAt||0)) > 60) {
+        e.coverPick = findCover(e.x, e.y, tx || player.x, ty || player.y, 1000);
+        e.coverPickedAt = game.time;
+      }
+      mode = 'flee';
+    } else if (canSee) {
+      // Decide: take cover sideways, or engage / flank
+      if (e.recentDamage > 0 || (e.behavior === 'inCover')) {
+        // Refresh cover pick periodically
+        if (!e.coverPick || (game.time - (e.coverPickedAt||0)) > 120
             || lineOfSight(tx, ty, e.coverPick.x, e.coverPick.y)) {
           e.coverPick = findCover(e.x, e.y, tx, ty, 500);
           e.coverPickedAt = game.time;
         }
-        e.behavior = e.coverPick ? 'seekCover' : 'engage';
       }
+      const inCoverNow = e.coverPick && Math.hypot(e.x - e.coverPick.x, e.y - e.coverPick.y) < 30;
+      mode = inCoverNow ? 'inCover'
+           : (e.coverPick ? 'moveToCover'
+           : (e._flanker ? 'flank' : 'engage'));
     } else if (e.lockTime > 0) {
-      e.behavior = 'lastKnown';
+      // Lost sight but recently saw — suppression fire toward last known position
+      mode = 'suppress';
       e.lockTime--;
     } else if (e.alerted > 0) {
-      e.behavior = 'investigate';
+      mode = 'investigate';
       e.alerted--;
-    } else {
-      e.behavior = 'patrol';
-      e.coverPick = null;
     }
+    e.behavior = mode;
 
-    // === Movement per behavior ===
-    switch (e.behavior) {
+    // ----- Movement -----
+    switch (mode) {
       case 'engage': {
-        const angleToTarget = Math.atan2(ty - e.y, tx - e.x);
-        e.angle += angDiff(angleToTarget, e.angle) * 0.18;
-        if (dist > 320) {
+        const a = Math.atan2(ty - e.y, tx - e.x);
+        e.angle += angDiff(a, e.angle) * 0.22;
+        if (dist > 340) {
           e.x += Math.cos(e.angle) * e.speed;
           e.y += Math.sin(e.angle) * e.speed;
           e.walkPhase += 0.18; isMoving = true;
-        } else if (dist < 180) {
-          e.x -= Math.cos(e.angle) * e.speed * 0.5;
-          e.y -= Math.sin(e.angle) * e.speed * 0.5;
-          e.walkPhase += 0.1; isMoving = true;
         }
         break;
       }
-      case 'seekCover':
-      case 'flee': {
+      case 'flank': {
+        // Move 90° around the target (clockwise based on enemy id)
+        const aToTarget = Math.atan2(ty - e.y, tx - e.x);
+        const side = (e.x + e.y) % 2 ? 1 : -1;
+        const flankAngle = aToTarget + side * Math.PI/2;
+        e.angle += angDiff(aToTarget, e.angle) * 0.18; // body still faces threat
+        e.x += Math.cos(flankAngle) * e.speed * 0.85;
+        e.y += Math.sin(flankAngle) * e.speed * 0.85;
+        e.walkPhase += 0.18; isMoving = true;
+        break;
+      }
+      case 'moveToCover': {
         const cp = e.coverPick;
-        if (!cp) break;
-        const dx = cp.x - e.x, dy = cp.y - e.y;
-        const goAng = Math.atan2(dy, dx);
-        e.angle += angDiff(goAng, e.angle) * 0.18;
-        const speedMul = e.behavior === 'flee' ? 1.3 : 1.0;
-        e.x += Math.cos(e.angle) * e.speed * speedMul;
-        e.y += Math.sin(e.angle) * e.speed * speedMul;
+        const a = Math.atan2(cp.y - e.y, cp.x - e.x);
+        e.angle += angDiff(a, e.angle) * 0.22;
+        e.x += Math.cos(a) * e.speed * 1.1;
+        e.y += Math.sin(a) * e.speed * 1.1;
         e.walkPhase += 0.20; isMoving = true;
         break;
       }
-      case 'cornerPeek': {
-        // Stay at cover; rotate to face threat. Periodically peek out 18u to fire.
-        const angleToTarget = Math.atan2(ty - e.y, tx - e.x);
-        e.angle += angDiff(angleToTarget, e.angle) * 0.22;
-        e.peekTimer++;
-        // Peek every ~70 frames for ~40 frames
-        const peeking = (e.peekTimer % 110) < 40;
-        if (peeking) {
-          const peek = peekOffset(e.coverPick, tx, ty);
-          const dx = peek.x - e.x, dy = peek.y - e.y;
-          const d = Math.hypot(dx, dy);
-          if (d > 1) {
-            e.x += (dx/d) * 0.6;
-            e.y += (dy/d) * 0.6;
-            e.walkPhase += 0.06; isMoving = true;
-          }
-          e._peekingNow = true;
-        } else {
-          // Recoil back to cover
-          const dx = e.coverPick.x - e.x, dy = e.coverPick.y - e.y;
-          const d = Math.hypot(dx, dy);
-          if (d > 1) {
-            e.x += (dx/d) * 0.6;
-            e.y += (dy/d) * 0.6;
-          }
-          e._peekingNow = false;
+      case 'flee': {
+        const cp = e.coverPick;
+        if (cp) {
+          const a = Math.atan2(cp.y - e.y, cp.x - e.x);
+          e.angle += angDiff(a, e.angle) * 0.22;
+          e.x += Math.cos(a) * e.speed * 1.4;
+          e.y += Math.sin(a) * e.speed * 1.4;
+        } else if (canSee) {
+          // Just back away from threat
+          const a = Math.atan2(ty - e.y, tx - e.x);
+          e.x -= Math.cos(a) * e.speed * 1.2;
+          e.y -= Math.sin(a) * e.speed * 1.2;
         }
+        e.walkPhase += 0.22; isMoving = true;
         break;
       }
-      case 'lastKnown': {
+      case 'inCover': {
+        // Always face threat. Peek 60 fire / 60 hide cycle, slight sidestep.
+        const a = Math.atan2(ty - e.y, tx - e.x);
+        e.angle += angDiff(a, e.angle) * 0.30; // snappy aim
+        e.peekTimer++;
+        const peeking = (e.peekTimer % 120) < 60;
+        const peekTarget = peeking ? peekOffset(e.coverPick, tx, ty) : e.coverPick;
+        const dx = peekTarget.x - e.x, dy = peekTarget.y - e.y;
+        const dl = Math.hypot(dx, dy);
+        if (dl > 1) {
+          e.x += (dx/dl) * 0.7;
+          e.y += (dy/dl) * 0.7;
+          if (peeking) isMoving = true;
+        }
+        e._peekingNow = peeking;
+        break;
+      }
+      case 'suppress': {
+        // Face last seen, fire toward there even without LoS (high-spread spam)
         const lx = e.lastSeenX, ly = e.lastSeenY;
         if (lx != null) {
-          const lAng = Math.atan2(ly - e.y, lx - e.x);
-          e.angle += angDiff(lAng, e.angle) * 0.10;
-          if (Math.hypot(lx - e.x, ly - e.y) > 80) {
-            e.x += Math.cos(e.angle) * e.speed * 0.7;
-            e.y += Math.sin(e.angle) * e.speed * 0.7;
-            e.walkPhase += 0.12; isMoving = true;
-          }
+          const a = Math.atan2(ly - e.y, lx - e.x);
+          e.angle += angDiff(a, e.angle) * 0.18;
         }
         break;
       }
       case 'investigate': {
-        const tdx = e.alertX - e.x, tdy = e.alertY - e.y;
-        if (Math.hypot(tdx, tdy) > 1) {
-          const tAng = Math.atan2(tdy, tdx);
-          e.angle += angDiff(tAng, e.angle) * 0.06;
-          if (Math.hypot(tdx, tdy) > 100) {
-            e.x += Math.cos(e.angle) * e.speed * 0.55;
-            e.y += Math.sin(e.angle) * e.speed * 0.55;
-            e.walkPhase += 0.1; isMoving = true;
+        const tdx = (e.alertX || 0) - e.x, tdy = (e.alertY || 0) - e.y;
+        const td = Math.hypot(tdx, tdy);
+        if (td > 1) {
+          const a = Math.atan2(tdy, tdx);
+          // SNAP-turn on hearing the gunshot — alert reaction
+          e.angle += angDiff(a, e.angle) * 0.30;
+          if (td > 100) {
+            e.x += Math.cos(e.angle) * e.speed * 0.7;
+            e.y += Math.sin(e.angle) * e.speed * 0.7;
+            e.walkPhase += 0.14; isMoving = true;
           }
         }
         break;
       }
-      default: { // patrol
-        e.angle += Math.sin(game.time * 0.011 + (e.walkPhase || 0)) * 0.012;
+      default: { // patrol — wider, faster scan than before so they actually see things
+        e.angle += Math.sin(game.time * 0.022 + (e.walkPhase || 0)) * 0.045;
       }
     }
 
@@ -2792,13 +2963,24 @@ function updateEnemies() {
 
     const barrel = tickShooter(e, e.angle, w, isMoving);
 
-    // Firing — only if a clear shot exists
+    // ----- Firing -----
+    // Always fire when LoS is clear and target in range. inCover doesn't gate
+    // firing — peek phase happens to expose us; non-peek the wall blocks LoS
+    // naturally so canFire becomes false on its own.
     e.fireCd--;
-    let canFire = canSee && dist < 520 && lineOfSight(e.x, e.y, tx, ty);
-    // While in cover but NOT peeking, the obstacle blocks our shot — don't waste bullets
-    if (e.behavior === 'cornerPeek' && !e._peekingNow) canFire = false;
-    if (e.fireCd <= 0 && canFire) {
-      const ang = barrel + (Math.random()-0.5) * w.spread;
+    let canFire = false;
+    if (mode === 'suppress' && e.lastSeenX != null) {
+      // Fire toward last seen with extra spread, even if no LoS — suppression
+      canFire = e.fireCd <= 0;
+    } else {
+      canFire = canSee && dist < 520 && losClear && e.fireCd <= 0;
+    }
+    if (canFire) {
+      const aimX = (mode === 'suppress') ? e.lastSeenX : tx;
+      const aimY = (mode === 'suppress') ? e.lastSeenY : ty;
+      const aimAng = Math.atan2(aimY - e.y, aimX - e.x);
+      const extra = (mode === 'suppress') ? w.spread * 2 : w.spread;
+      const ang = (mode === 'suppress' ? aimAng : barrel) + (Math.random()-0.5) * extra;
       enemyBullets.push({
         x: e.x + Math.cos(ang)*16,
         y: e.y + Math.sin(ang)*16,
@@ -3625,9 +3807,12 @@ function renderWorld() {
     mission.renderWorld();
   }
 
-  // Soft shared fog: friendlies' cones are punched out of a darkening blanket.
+  // No darkening overlay anywhere. Visible area = fully bright (enemies look
+  // sharp). The "fog of war" is implicit: enemies/drones/enemy bullets are
+  // simply not rendered when outside friendly vision (already culled in their
+  // render passes above). Map geometry is permanently visible (you remember the
+  // terrain).
   if (game.mode === 'tactical') {
-    drawSharedVisionFog();
     drawSoundIndicators();
     drawGunAimIndicator();
   }
