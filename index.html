@@ -566,6 +566,21 @@ window.addEventListener('keydown', e => {
     else if (k === 't') game.mode = (game.mode === 'thermal') ? 'tactical' : 'thermal';
     else if (k === 'tab') { e.preventDefault(); game.mode = (game.mode === 'command') ? 'tactical' : 'command'; }
     else if (k === 'r') startReload();
+    // Dev: jump straight to mission N (1-6). Useful while iterating on a single mission.
+    else if (e.key >= '1' && e.key <= '6') {
+      const idx = parseInt(e.key);
+      if (idx <= MISSIONS.length) {
+        game.wave = idx - 1; // startNextWave will increment to idx
+        startNextWave();
+      }
+    }
+    // Dev: skip current mission (treat as success)
+    else if (k === 'n') {
+      if (mission && mission.status === 'active') {
+        mission.status = 'success';
+        onMissionSuccess();
+      }
+    }
   }
 });
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
@@ -1241,24 +1256,80 @@ function retryCurrentMission() {
 
 // ---------- MISSION 1: CONVOY ESCORT ----------
 MISSION_FACTORIES.escort = function(mapDef) {
-  // Path along the quay road on Container Yard (south to north along x ~ WORLD.w*0.20)
+  // Convoy runs the full length of the quay road, south to north.
+  // Spawn point bottom, dest at the top — clearly marked.
   const xLane = WORLD.w * 0.21;
   const path = [
-    { x: xLane, y: WORLD.h - 240 },
-    { x: xLane, y: WORLD.h - 1200 },
-    { x: xLane, y: 240 },
+    { x: xLane, y: WORLD.h - 200 },  // start
+    { x: xLane, y: 200 },            // destination
   ];
   const ugv = {
-    x: path[0].x, y: path[0].y, angle: -Math.PI/2,
-    hp: 320, maxHp: 320, radius: 26, speed: 0.85,
+    x: path[0].x, y: path[0].y,
+    angle: -Math.PI/2,
+    targetAngle: -Math.PI/2,         // smoothed
+    hp: 320, maxHp: 320,
+    radius: 26,
+    speed: 1.5,                      // 0.85 → 1.5; the convoy actually moves
+    cruiseSpeed: 1.5,
     pathIdx: 1, alive: true, arrivedAt: null,
+    threatCloseFrames: 0,
   };
+  let nextAmbushFrame = 0;
+  function spawnAmbushAhead() {
+    // Spawn 1-3 hostile ambushers ahead of the UGV with intent to destroy it.
+    const dest = path[path.length-1];
+    const dirX = Math.sign(dest.x - ugv.x) || 0;
+    const dirY = Math.sign(dest.y - ugv.y) || -1;
+    const aheadDist = 600;
+    const baseX = ugv.x + dirX*aheadDist;
+    const baseY = ugv.y + dirY*aheadDist;
+    const count = 1 + Math.floor(Math.random()*2);
+    for (let i = 0; i < count; i++) {
+      const offset = (i - (count-1)/2) * 90;
+      // Lateral offset perpendicular to UGV travel direction
+      const px = baseX + offset * Math.abs(dirY);
+      const py = baseY + offset * Math.abs(dirX);
+      spawnConvoyAmbusher(px, py, ugv);
+    }
+    // Occasionally a drone too — they really want this convoy dead.
+    if (Math.random() < 0.5) {
+      const a = Math.random()*Math.PI*2;
+      const x = ugv.x + Math.cos(a)*700;
+      const y = ugv.y + Math.sin(a)*700;
+      enemyDrones.push({
+        x: Math.max(60, Math.min(WORLD.w-60, x)),
+        y: Math.max(60, Math.min(WORLD.h-60, y)),
+        hp: 18, maxHp: 18, radius: 11, alive: true,
+        angle: Math.atan2(ugv.y - y, ugv.x - x),
+        speed: 3.4, turnRate: 0.034, armed: true,
+        hoverPhase: Math.random()*Math.PI*2,
+        explodeRadius: 55, explodeDamage: 35,
+        attackTarget: ugv,             // drones already pick nearest, but record intent
+      });
+    }
+  }
   return {
     title: '护送补给车',
     titleEn: 'CONVOY ESCORT',
     objective: '保护 Cargo UGV 抵达终点',
     ugv, path,
     update() {
+      // First-frame: any enemies that pre-spawned via spawnWave get the UGV
+      // as their hard target so nobody is "wandering far away with no purpose".
+      if (!this._initialAssigned) {
+        for (const e of enemies) if (e.alive && !e.attackTarget) {
+          e.attackTarget = ugv;
+          // Also pull them slightly toward the UGV so they're not 2km away
+          if (Math.hypot(e.x - ugv.x, e.y - ugv.y) > 1400) {
+            const a = Math.atan2(ugv.y - e.y, ugv.x - e.x);
+            const d = Math.hypot(e.x - ugv.x, e.y - ugv.y) - 1000;
+            e.x += Math.cos(a) * d;
+            e.y += Math.sin(a) * d;
+          }
+        }
+        for (const dr of enemyDrones) if (dr.alive) dr.attackTarget = ugv;
+        this._initialAssigned = true;
+      }
       if (!ugv.alive) return;
       if (ugv.pathIdx >= path.length) return;
       const wp = path[ugv.pathIdx];
@@ -1269,13 +1340,23 @@ MISSION_FACTORIES.escort = function(mapDef) {
         if (ugv.pathIdx >= path.length) ugv.arrivedAt = game.time;
         return;
       }
-      ugv.angle = Math.atan2(dy, dx);
-      ugv.x += Math.cos(ugv.angle) * ugv.speed;
-      ugv.y += Math.sin(ugv.angle) * ugv.speed;
-      // Periodic spawn: more enemies the further the convoy goes
-      if (game.time % 240 === 0) {
-        if (Math.random() < 0.7) spawnSoldier({ soldierBias: 'corridor' });
-        if (Math.random() < 0.4) spawnDroneEnemy({ droneBias: 'open' });
+      ugv.targetAngle = Math.atan2(dy, dx);
+      ugv.angle += angDiff(ugv.targetAngle, ugv.angle) * 0.18; // smoother
+
+      // Slow down when threats are CLOSE — convoy plays it safe under fire
+      let nearThreats = 0;
+      for (const e of enemies) if (e.alive && Math.hypot(e.x - ugv.x, e.y - ugv.y) < 360) nearThreats++;
+      for (const dr of enemyDrones) if (dr.alive && Math.hypot(dr.x - ugv.x, dr.y - ugv.y) < 360) nearThreats++;
+      ugv.threatCloseFrames = nearThreats > 0 ? Math.min(60, ugv.threatCloseFrames+1) : Math.max(0, ugv.threatCloseFrames-2);
+      const slow = ugv.threatCloseFrames > 30 ? 0.45 : 1.0;
+      ugv.x += Math.cos(ugv.angle) * ugv.cruiseSpeed * slow;
+      ugv.y += Math.sin(ugv.angle) * ugv.cruiseSpeed * slow;
+
+      // AMBUSHES — spawn enemies AHEAD of the UGV at fixed intervals.
+      // No more random "enemies who don't know what to do" far away.
+      if (game.time >= nextAmbushFrame) {
+        spawnAmbushAhead();
+        nextAmbushFrame = game.time + 360 + Math.floor(Math.random()*180);
       }
     },
     isComplete() { return ugv.alive && ugv.pathIdx >= path.length; },
@@ -1288,50 +1369,131 @@ MISSION_FACTORIES.escort = function(mapDef) {
       }
       return false;
     },
+    onExplosion(ex, ey, r, dmg) {
+      if (!ugv.alive) return;
+      const d = Math.hypot(ugv.x - ex, ugv.y - ey);
+      if (d < r) {
+        ugv.hp -= Math.round(dmg * (1 - d/r));
+        if (ugv.hp <= 0) { ugv.alive = false; createExplosion(ugv.x, ugv.y, 'big'); }
+      }
+    },
     renderWorld() {
-      // Path
+      // 1. The CONVOY HIGHWAY — wide cream strip, very obvious
       ctx.save();
-      ctx.strokeStyle = 'rgba(200, 38, 28, 0.35)';
-      ctx.lineWidth = 5; ctx.setLineDash([14, 14]);
+      ctx.fillStyle = 'rgba(200, 38, 28, 0.18)';
+      ctx.fillRect(xLane - 60, 200, 120, WORLD.h - 400);
+      // Center dashed line down the highway
+      ctx.strokeStyle = COLORS.red;
+      ctx.lineWidth = 4; ctx.setLineDash([24, 18]);
       ctx.beginPath();
-      ctx.moveTo(path[0].x, path[0].y);
-      for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
-      ctx.stroke(); ctx.setLineDash([]);
-      // Destination marker
-      const dest = path[path.length-1];
-      ctx.strokeStyle = COLORS.red; ctx.lineWidth = 3;
-      ctx.setLineDash([8, 8]);
-      ctx.beginPath(); ctx.arc(dest.x, dest.y, 60, 0, Math.PI*2); ctx.stroke();
+      ctx.moveTo(xLane, path[0].y);
+      ctx.lineTo(xLane, path[1].y);
+      ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = COLORS.red; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText('终点 EXTRACT', dest.x, dest.y + 4); ctx.textAlign = 'left';
-      // UGV body
-      if (ugv.alive) {
-        ctx.translate(ugv.x, ugv.y); ctx.rotate(ugv.angle);
-        ctx.fillStyle = COLORS.creamDark; ctx.fillRect(-30, -18, 60, 36);
-        ctx.fillStyle = COLORS.black; ctx.fillRect(-26, -14, 52, 28);
-        ctx.fillStyle = COLORS.red; ctx.fillRect(-22, -12, 18, 24);
-        ctx.fillStyle = COLORS.red; ctx.fillRect(4, -12, 18, 24);
-        ctx.fillStyle = COLORS.red; ctx.fillRect(24, -8, 6, 16);
+      // Distance markers along the highway every 400u
+      ctx.fillStyle = COLORS.black;
+      ctx.font = 'bold 12px monospace';
+      const dest = path[path.length-1];
+      for (let y = 400; y < WORLD.h - 200; y += 400) {
+        ctx.fillRect(xLane - 60, y, 12, 4);
+        ctx.fillRect(xLane + 48, y, 12, 4);
+        ctx.fillText(`${Math.hypot(0, y - dest.y).toFixed(0)}m`, xLane + 70, y + 4);
       }
       ctx.restore();
-      // HP bar
+
+      // 2. DESTINATION marker — huge pulsing
+      ctx.save();
+      const pulse = 0.6 + Math.sin(game.time * 0.08) * 0.4;
+      ctx.strokeStyle = COLORS.red; ctx.lineWidth = 4;
+      ctx.setLineDash([12, 8]);
+      ctx.beginPath(); ctx.arc(dest.x, dest.y, 90, 0, Math.PI*2); ctx.stroke();
+      ctx.globalAlpha = pulse;
+      ctx.beginPath(); ctx.arc(dest.x, dest.y, 110 + pulse*20, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      // "EXTRACT" stamp
+      ctx.fillStyle = COLORS.red;
+      ctx.fillRect(dest.x - 80, dest.y - 18, 160, 36);
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('终点 EXTRACT', dest.x, dest.y + 6);
+      ctx.textAlign = 'left';
+      ctx.restore();
+
+      // 3. UGV body
       if (ugv.alive) {
-        ctx.fillStyle = COLORS.black; ctx.fillRect(ugv.x-32, ugv.y-34, 64, 4);
+        ctx.save();
+        ctx.translate(ugv.x, ugv.y); ctx.rotate(ugv.angle);
+        // Drop shadow
+        ctx.fillStyle = 'rgba(26, 26, 26, 0.25)';
+        ctx.fillRect(-32, -16, 64, 36);
+        // Body
+        ctx.fillStyle = COLORS.creamDark; ctx.fillRect(-32, -20, 64, 40);
+        ctx.fillStyle = COLORS.black; ctx.fillRect(-28, -16, 56, 32);
+        // Cargo containers
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(-24, -14, 22, 28);
+        ctx.fillStyle = COLORS.gray;
+        ctx.fillRect(2, -14, 22, 28);
+        // Cab
+        ctx.fillStyle = COLORS.creamDark;
+        ctx.fillRect(24, -10, 6, 20);
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(30, -6, 4, 12);
+        // Tracks indicator
+        ctx.fillStyle = COLORS.black;
+        ctx.fillRect(-28, -22, 56, 4);
+        ctx.fillRect(-28, 18, 56, 4);
+        // CARGO label
+        ctx.rotate(-ugv.angle); // unrotate so text is upright
+        ctx.fillStyle = COLORS.cream;
+        ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+        ctx.fillText('CARGO', 0, 4);
+        ctx.textAlign = 'left';
+        ctx.restore();
+        // HP bar above UGV
+        ctx.fillStyle = COLORS.black; ctx.fillRect(ugv.x-36, ugv.y-44, 72, 6);
         ctx.fillStyle = ugv.hp > ugv.maxHp*0.3 ? COLORS.red : COLORS.redBright;
-        ctx.fillRect(ugv.x-32, ugv.y-34, 64 * ugv.hp/ugv.maxHp, 4);
+        ctx.fillRect(ugv.x-36, ugv.y-44, 72 * ugv.hp/ugv.maxHp, 6);
+        ctx.fillStyle = COLORS.cream;
+        ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(`UGV ${ugv.hp}/${ugv.maxHp}`, ugv.x, ugv.y-46);
+        ctx.textAlign = 'left';
+        // Threat warning halo when enemies are close
+        if (ugv.threatCloseFrames > 30) {
+          ctx.strokeStyle = `rgba(230, 51, 41, ${0.3 + Math.sin(game.time*0.2)*0.3})`;
+          ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(ugv.x, ugv.y, 50, 0, Math.PI*2); ctx.stroke();
+        }
       }
     },
     renderHUD() {
       const dest = path[path.length-1];
       const dist = ugv.alive ? Math.hypot(dest.x - ugv.x, dest.y - ugv.y).toFixed(0) : 'KIA';
+      const totalDist = Math.hypot(path[0].x - dest.x, path[0].y - dest.y);
+      const pct = ugv.alive ? Math.floor((1 - Math.hypot(dest.x - ugv.x, dest.y - ugv.y)/totalDist) * 100) : 0;
       drawObjectivePanel([
         `UGV   ${ugv.alive ? ugv.hp + '/' + ugv.maxHp : '已损毁'}`,
-        `距离  ${dist}u`,
+        `进度  ${pct}%   剩 ${dist}m`,
       ]);
     },
   };
 };
+
+// Spawn a soldier that has a SPECIFIC target (the UGV in escort mission).
+// Their AI will path TOWARD the target rather than just patrolling.
+function spawnConvoyAmbusher(x, y, target) {
+  enemies.push({
+    x: Math.max(40, Math.min(WORLD.w-40, x)),
+    y: Math.max(40, Math.min(WORLD.h-40, y)),
+    hp: 50, maxHp: 50, angle: Math.atan2(target.y - y, target.x - x),
+    fireCd: 30 + Math.random()*30, fireRate: 50,
+    radius: 13, alive: true,
+    walkPhase: Math.random() * Math.PI*2,
+    speed: 1.0 + Math.random()*0.4,
+    attackTarget: target,             // they CHASE this thing
+  });
+}
 
 // ---------- MISSION 2: CAPTURE SIGNAL NODES ----------
 MISSION_FACTORIES.capture = function(mapDef) {
@@ -2374,8 +2536,15 @@ function updateEnemies() {
     if (e.alerted == null) e.alerted = 0;
     if (e.lockTime == null) e.lockTime = 0;
 
-    // Pick whichever friendly the enemy can see right now.
-    const tgt = nearestVisibleFriendly(e.x, e.y, e.angle, ENEMY_VIEW.range, ENEMY_VIEW.arc);
+    // Mission-spawned ambushers have a hard target (e.g. the convoy UGV).
+    // They KNOW where it is and chase it relentlessly — no patrol behaviour.
+    const hasHardTarget = e.attackTarget && e.attackTarget.alive;
+    let tgt;
+    if (hasHardTarget) {
+      tgt = e.attackTarget;
+    } else {
+      tgt = nearestVisibleFriendly(e.x, e.y, e.angle, ENEMY_VIEW.range, ENEMY_VIEW.arc);
+    }
     const canSee = tgt != null;
     const tx = tgt ? tgt.x : null, ty = tgt ? tgt.y : null;
     const dist = tgt ? Math.hypot(tx - e.x, ty - e.y) : 0;
@@ -2446,7 +2615,11 @@ function updateEnemies() {
     const barrel = tickShooter(e, e.angle, w, isMoving);
 
     e.fireCd--;
-    if (e.fireCd <= 0 && canSee && dist < 520) {
+    // Fire only when there's a clear shot. Hard-target enemies still need LoS
+    // so they don't shoot through walls when chasing the UGV.
+    const canFire = canSee && dist < 520
+                    && (!hasHardTarget || lineOfSight(e.x, e.y, tx, ty));
+    if (e.fireCd <= 0 && canFire) {
       const ang = barrel + (Math.random()-0.5) * w.spread;
       enemyBullets.push({
         x: e.x + Math.cos(ang)*16,
@@ -2468,16 +2641,22 @@ function updateEnemies() {
     if (!d.alive) continue;
     d.hoverPhase += 0.18;
 
-    // Target = nearest alive friendly. Underground hides them from the drone.
+    // Target = mission-assigned target if alive (e.g. convoy UGV); otherwise
+    // nearest alive friendly. Underground hides friendlies from the drone.
     let tgt = null, bestD = Infinity;
-    if (player.alive && !isInUnderground(player.x, player.y)) {
-      bestD = Math.hypot(player.x - d.x, player.y - d.y);
-      tgt = player;
-    }
-    for (const a of allies) {
-      if (!a.alive) continue;
-      const dd = Math.hypot(a.x - d.x, a.y - d.y);
-      if (dd < bestD) { tgt = a; bestD = dd; }
+    if (d.attackTarget && d.attackTarget.alive) {
+      tgt = d.attackTarget;
+      bestD = Math.hypot(tgt.x - d.x, tgt.y - d.y);
+    } else {
+      if (player.alive && !isInUnderground(player.x, player.y)) {
+        bestD = Math.hypot(player.x - d.x, player.y - d.y);
+        tgt = player;
+      }
+      for (const a of allies) {
+        if (!a.alive) continue;
+        const dd = Math.hypot(a.x - d.x, a.y - d.y);
+        if (dd < bestD) { tgt = a; bestD = dd; }
+      }
     }
 
     if (tgt) {
@@ -2559,6 +2738,8 @@ function kamikazeExplode(d) {
       if (a.hp <= 0) { a.alive = false; }
     }
   }
+  // Mission-owned damageable entity in radius (UGV / heavy / relay)
+  if (mission && mission.onExplosion) mission.onExplosion(d.x, d.y, d.explodeRadius, d.explodeDamage);
 }
 
 function updateSoundEvents() {
@@ -3119,11 +3300,21 @@ function renderWorld() {
     ctx.globalAlpha = 1;
   }
 
-  // Enemies — only render those visible to the friendly squad (player + allies).
-  // Outside vision: no rendering at all. To find them, switch to radar/thermal/UAV.
+  // Enemies — visibility memory prevents flicker:
+  //  - Visible right now → full alpha + refresh _lastSeen.
+  //  - Recently lost LoS (within 3s) → fade-out "memory" silhouette.
+  //  - Beyond memory window → not rendered at all.
   for (const e of enemies) {
     if (!e.alive) continue;
-    if (!isVisibleToFriendly(e.x, e.y)) continue;
+    let alpha = 0;
+    if (isVisibleToFriendly(e.x, e.y)) {
+      e._lastSeen = game.time;
+      alpha = 1;
+    } else if (e._lastSeen != null && game.time - e._lastSeen < 180) {
+      alpha = Math.max(0.25, 1 - (game.time - e._lastSeen) / 180);
+    }
+    if (alpha === 0) continue;
+    ctx.globalAlpha = alpha;
     drawHumanoid(e.x, e.y, e.angle, e.walkPhase, COLORS.red, true);
     if (e.hp < e.maxHp) {
       ctx.fillStyle = COLORS.black;
@@ -3131,12 +3322,21 @@ function renderWorld() {
       ctx.fillStyle = COLORS.red;
       ctx.fillRect(e.x-15, e.y-26, 30 * e.hp/e.maxHp, 3);
     }
+    ctx.globalAlpha = 1;
   }
 
-  // Kamikaze drones — diving silhouettes; hide when outside friendly vision
+  // Kamikaze drones — same visibility memory
   for (const d of enemyDrones) {
     if (!d.alive) continue;
-    if (!isVisibleToFriendly(d.x, d.y)) continue;
+    let alpha = 0;
+    if (isVisibleToFriendly(d.x, d.y)) {
+      d._lastSeen = game.time;
+      alpha = 1;
+    } else if (d._lastSeen != null && game.time - d._lastSeen < 180) {
+      alpha = Math.max(0.25, 1 - (game.time - d._lastSeen) / 180);
+    }
+    if (alpha === 0) continue;
+    ctx.globalAlpha = alpha;
     drawDrone(d.x, d.y, COLORS.red, d.hoverPhase + game.time*0.2);
     // Aim line so the player can read which way it's diving
     ctx.save();
@@ -3155,6 +3355,7 @@ function renderWorld() {
       ctx.fillStyle = COLORS.red;
       ctx.fillRect(d.x-12, d.y-22, 24 * d.hp/d.maxHp, 2);
     }
+    ctx.globalAlpha = 1;
   }
 
   // Allies (squad)
@@ -4529,20 +4730,24 @@ function renderHUD() {
   ctx.moveTo(mapX + player.x*sx, mapY + player.y*sy);
   ctx.lineTo(mapX + player.x*sx + Math.cos(player.angle)*10, mapY + player.y*sy + Math.sin(player.angle)*10);
   ctx.stroke();
-  // Enemies — only show those visible to the squad (fog applies on the minimap too)
+  // Enemies — only show those visible OR seen recently (memory window)
   ctx.fillStyle = COLORS.red;
   for (const e of enemies) {
     if (!e.alive) continue;
-    if (!isVisibleToFriendly(e.x, e.y)) continue;
+    if (e._lastSeen == null || game.time - e._lastSeen > 180) continue;
+    ctx.globalAlpha = e._lastSeen === game.time ? 1 : 0.4;
     ctx.fillRect(mapX + e.x*sx - 2, mapY + e.y*sy - 2, 4, 4);
   }
+  ctx.globalAlpha = 1;
   for (const d of enemyDrones) {
     if (!d.alive) continue;
-    if (!isVisibleToFriendly(d.x, d.y)) continue;
+    if (d._lastSeen == null || game.time - d._lastSeen > 180) continue;
+    ctx.globalAlpha = d._lastSeen === game.time ? 1 : 0.4;
     ctx.beginPath();
     ctx.arc(mapX + d.x*sx, mapY + d.y*sy, 2, 0, Math.PI*2);
     ctx.fill();
   }
+  ctx.globalAlpha = 1;
   // Drone
   if (drone.deployed) {
     ctx.fillStyle = COLORS.black;
