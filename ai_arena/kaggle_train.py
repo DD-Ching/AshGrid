@@ -440,7 +440,12 @@ def update_unit(u, units, walls, cps, p, tick, bullets, my_idx):
             is_moving = True
 
     else:  # patrol
+        # Scan + slowly drift forward. Without forward drift, units with low
+        # view_range never close the gap to engage and the GA gets zero signal.
         u.angle += math.sin(tick * 0.022) * p['patrol_scan_speed']
+        u.x += math.cos(u.angle) * PLAYER_SPEED * 0.4
+        u.y += math.sin(u.angle) * PLAYER_SPEED * 0.4
+        is_moving = True
 
     push_out_of_walls(u, walls)
     u.x = max(20, min(WORLD_W - 20, u.x))
@@ -469,25 +474,36 @@ def update_unit(u, units, walls, cps, p, tick, bullets, my_idx):
 # ============================================================
 
 def run_match(g_a, g_b, walls, seed=0, squad_size=SQUAD_SIZE):
-    """One match. Returns dict {kills_a, kills_b, deaths_a, deaths_b}."""
+    """One match. Returns dict with kill / death / damage / hit / winner stats.
+
+    damage_a/damage_b = total damage delivered TO the opposing team by this team.
+    hits_a/hits_b    = number of bullet hits (regardless of damage).
+    These give the GA a smooth gradient even when no one dies in a match
+    (which happens often when both AIs are early-generation random).
+    """
     random.seed(seed)
     p_a = to_dict(g_a)
     p_b = to_dict(g_b)
     cps = cover_points_for(walls)
 
+    # Spawn distance must be < typical view_range so units have a chance of
+    # seeing each other before any patrol drift. 250 vs WORLD-250 = 700u
+    # which fits inside view_range upper bound (900) and max move range.
     units: List[Unit] = []
     for i in range(squad_size):
         units.append(Unit(
-            x=120, y=200 + i * 80, angle=0.0, hp=PLAYER_HP, team=0,
-            spawn_x=120, spawn_y=200 + i * 80,
+            x=250, y=200 + i * 80, angle=0.0, hp=PLAYER_HP, team=0,
+            spawn_x=250, spawn_y=200 + i * 80,
         ))
     for i in range(squad_size):
         units.append(Unit(
-            x=WORLD_W - 120, y=200 + i * 80, angle=math.pi, hp=PLAYER_HP, team=1,
-            spawn_x=WORLD_W - 120, spawn_y=200 + i * 80,
+            x=WORLD_W - 250, y=200 + i * 80, angle=math.pi, hp=PLAYER_HP, team=1,
+            spawn_x=WORLD_W - 250, spawn_y=200 + i * 80,
         ))
 
     bullets: List[Bullet] = []
+    damage_by_team = [0, 0]   # damage dealt by team 0, team 1
+    hits_by_team   = [0, 0]
 
     for tick in range(MATCH_TICKS):
         # Units
@@ -530,9 +546,12 @@ def run_match(g_a, g_b, walls, seed=0, squad_size=SQUAD_SIZE):
                     hit_unit = u
                     break
             if hit_unit is not None:
+                applied = min(b.damage, hit_unit.hp)  # damage actually applied (cap at remaining HP)
                 hit_unit.hp -= b.damage
                 hit_unit.recent_damage_ticks = 60
                 hit_unit.last_attacker_idx = b.shooter_idx
+                damage_by_team[b.team] += max(0, applied)
+                hits_by_team[b.team]   += 1
                 if hit_unit.hp <= 0:
                     hit_unit.alive = False
                     hit_unit.deaths += 1
@@ -547,31 +566,72 @@ def run_match(g_a, g_b, walls, seed=0, squad_size=SQUAD_SIZE):
     kills_b  = sum(u.kills  for u in units if u.team == 1)
     deaths_a = sum(u.deaths for u in units if u.team == 0)
     deaths_b = sum(u.deaths for u in units if u.team == 1)
+
+    if kills_a > kills_b:
+        winner = 0
+    elif kills_b > kills_a:
+        winner = 1
+    else:
+        winner = -1
+
     return {
-        'kills_a': kills_a, 'kills_b': kills_b,
+        'kills_a':  kills_a,  'kills_b':  kills_b,
         'deaths_a': deaths_a, 'deaths_b': deaths_b,
+        'damage_a': damage_by_team[0], 'damage_b': damage_by_team[1],
+        'hits_a':   hits_by_team[0],   'hits_b':   hits_by_team[1],
+        'winner':   winner,
     }
 
 
 # ============================================================
 # GA evaluation
 # ============================================================
+# Fitness components and weights. Tuned to give SMOOTH gradient even when
+# no kills happen in a match (common with early random AIs).
+W_KILL        = 30   # +30 per kill scored
+W_DEATH       = 20   # -20 per death suffered
+W_DAMAGE_OUT  = 0.4  # +0.4 per HP of damage dealt
+W_DAMAGE_IN   = 0.2  # -0.2 per HP of damage taken
+W_HIT_OUT     = 1.0  # +1 per bullet that landed (rewards aim, not just kills)
+W_WIN_BONUS   = 50   # +50 if won this match (more kills), -50 if lost
 
 def evaluate(args):
     """Evaluate one candidate vs a list of opponents on random maps.
     Plays both home + away (swapped sides) for fairness.
-    Fitness = mean (candidate kills - candidate deaths) per matchup."""
+
+    Fitness uses kills + damage + hits + win bonus, not just kills - deaths.
+    This ensures we get USEFUL signal even early in training when most
+    random genomes can't actually finish a kill in 60 sec."""
     candidate, opponents, seed_base = args
     if not opponents:
         return 0.0
-    total = 0
+    total = 0.0
     for i, opp in enumerate(opponents):
         walls = pick_map(seed_base + i)
+        # r1: candidate=team0, opp=team1
+        # r2: opp=team0, candidate=team1   (swap so spawn-side is fair)
         r1 = run_match(candidate, opp, walls, seed=seed_base + i)
         r2 = run_match(opp, candidate, walls, seed=seed_base + i + 99991)
-        cand_kills  = r1['kills_a'] + r2['kills_b']
+
+        # Aggregate from candidate's POV across both directions
+        cand_kills  = r1['kills_a']  + r2['kills_b']
         cand_deaths = r1['deaths_a'] + r2['deaths_b']
-        total += (cand_kills - cand_deaths)
+        cand_dmg_o  = r1['damage_a'] + r2['damage_b']
+        cand_dmg_i  = r1['damage_b'] + r2['damage_a']
+        cand_hits   = r1['hits_a']   + r2['hits_b']
+
+        win1 = (W_WIN_BONUS if r1['winner'] == 0 else
+                -W_WIN_BONUS if r1['winner'] == 1 else 0)
+        win2 = (W_WIN_BONUS if r2['winner'] == 1 else
+                -W_WIN_BONUS if r2['winner'] == 0 else 0)
+
+        score = (cand_kills  * W_KILL
+               - cand_deaths * W_DEATH
+               + cand_dmg_o  * W_DAMAGE_OUT
+               - cand_dmg_i  * W_DAMAGE_IN
+               + cand_hits   * W_HIT_OUT
+               + win1 + win2)
+        total += score
     return total / len(opponents)
 
 
