@@ -74,38 +74,47 @@ but no errors.
 
 ## Real training (after smoke test passes)
 
-In the CONFIG cell:
+Training is **time-budgeted**, not step-budgeted. Set how many hours you
+have, the trainer runs until then:
 
 ```python
-SMOKE_TEST = False
-TOTAL_STEPS = 16_000_000   # ~3 h on Kaggle T4
+SMOKE_TEST       = False
+TIME_LIMIT_HOURS = 7.5     # default; Kaggle session limit is 9h
 ```
 
-Or scale up further:
+The curriculum advances against ELAPSED TIME, so the 4 stages take fixed
+*fractions* of your budget regardless of throughput:
 
-```python
-TOTAL_STEPS = 32_000_000   # ~6 h, use save+resume for Kaggle's 9h limit
-```
+| Hours into 7.5h budget | Stage | What's happening |
+|---|---|---|
+| 0:00 – 1:08 | 1 | Aim/fire reflex (600×600, close spawn, static opps) |
+| 1:08 – 2:38 | 2 | Tracking (900×900, runner+GA opps) |
+| 2:38 – 4:08 | 3 | Full combat (1000×, GA+self, decaying shaping) |
+| **4:08 – 7:30** | **4** | **Deployment scale (1200×1200, no shaping) — bulk of training** |
 
-Each `CHECKPOINT_EVERY` (default 1M) steps a `.zip` is saved — these become
+Stage 4 gets 45% of the budget — that's where the policy actually
+converges to a strong deployment-scale agent.
+
+Each `CHECKPOINT_EVERY` (default 2M) steps a `.zip` is saved — these become
 the **difficulty tiers**:
-- `ppo_combat_2000000.zip`  → easy AI (rookie)
-- `ppo_combat_8000000.zip`  → medium AI
-- `ppo_combat_16000000.zip` → hard AI (final)
+- `ppo_combat_2000000.zip`   → easy AI (still in stage 1/2)
+- `ppo_combat_8000000.zip`   → medium AI (stage 3)
+- `ppo_combat_<final>.zip`   → hard AI (final stage 4 polish)
 
 Convert each to its own ONNX (re-run the export cell with that checkpoint
 loaded) and name them `model_easy.onnx` / `model_medium.onnx` / `model_hard.onnx`.
 
 ## Curriculum stages
 
-The training step counter drives a 4-stage schedule:
+Time progress drives a 4-stage schedule (back-loaded toward stage 4 for
+extra deployment-scale refinement):
 
-| Stage | Step range | World | Spawn dist | Opponent mix | Reward shaping |
+| Stage | Time range | World | Spawn dist | Opponent mix | Reward shaping |
 |------:|-----------:|:------|:-----------|:-------------|:---------------|
-| 1 | 0% – 25%   | 600×600 → | 200 → 300u | 70% static + GA + random | heavy (vis 0.10) |
-| 2 | 25% – 50%  | 900×900   | 350 → 450u | runner + GA + self-old | medium (vis 0.06) |
-| 3 | 50% – 75%  | 1000×1000 → 1100×1100 | 500 → 600u | GA + self-old | light, decaying |
-| 4 | 75% – 100% | **1200×1200** (deploy) | **700u** (deploy) | 50% self + 40% GA + 10% rand | **none** |
+| 1 | 0% – 15%   | 600×600                | 200 → 300u | 70% static + GA + random | heavy (vis 0.10) |
+| 2 | 15% – 35%  | 900×900                | 350 → 450u | runner + GA + self-old   | medium (vis 0.06) |
+| 3 | 35% – 55%  | 1000×1000 → 1100×1100  | 500 → 600u | GA + self-old            | light, decaying |
+| 4 | **55% – 100%** | **1200×1200** (deploy) | **700u** | 50% self + 40% GA + 10% rand | **none** |
 
 Stage 4 matches the JS `NN_ARENA` exactly — no distribution shift between
 training and deployment.

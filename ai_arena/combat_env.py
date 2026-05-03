@@ -131,19 +131,22 @@ class Curriculum:
 def curriculum_for_step(step: int, total_steps: int) -> Curriculum:
     """Map a global step counter onto a Curriculum snapshot.
 
-    4 stages, each takes 25% of training:
-      Stage 1 (0-25%):     600x600,   200u spawn, vs 70% static + 30% random,    heavy shaping
-      Stage 2 (25-50%):    900x900,   400u spawn, vs 30% runner + 50% GA + 20% random
-      Stage 3 (50-75%):    1100x1100, 550u spawn, vs 50% GA + 40% self + 10% random
-      Stage 4 (75-100%):   1200x1200, 700u spawn, vs 50% GA + 40% self + 10% random
-                                                 (deployment scale, matches JS)
-    Reward shaping coefficients decay linearly to 0 by the end of stage 3.
+    Stage budget is tilted toward stage 4 (deployment scale) — that's
+    where the policy gets refined for the actual game-time distribution.
+
+      Stage 1 (0-15%):    600x600   spawn 200u   static+random opp,    heavy shaping
+      Stage 2 (15-35%):   900x900   spawn 400u   runner+GA+self,       medium shaping
+      Stage 3 (35-55%):   1100x1100 spawn 550u   GA+self,              light shaping
+      Stage 4 (55-100%):  1200x1200 spawn 700u   GA+self,              NO shaping
+                                                 (deployment scale, matches JS NN_ARENA)
+    Reward shaping decays to 0 by the end of stage 3 → stage 4 trains on
+    pure kill/death signal at deployment scale.
     """
     p = max(0.0, min(1.0, step / max(1, total_steps)))
 
-    if p < 0.25:
-        # Stage 1: cramped, close spawn, slow opponent — pure aim/fire training
-        s = p / 0.25
+    if p < 0.15:
+        # Stage 1: cramped, close spawn, slow opponent — aim/fire reflex
+        s = p / 0.15
         return Curriculum(
             world_w=600, world_h=600,
             spawn_dist=200 + s * 100,                # 200 → 300
@@ -157,9 +160,9 @@ def curriculum_for_step(step: int, total_steps: int) -> Curriculum:
             coef_approach=0.004,
             coef_aimcone=0.02,
         )
-    elif p < 0.50:
-        # Stage 2: medium map, runner+GA opponents — learn tracking + decent fight
-        s = (p - 0.25) / 0.25
+    elif p < 0.35:
+        # Stage 2: medium map, runner+GA opponents — tracking + decent fight
+        s = (p - 0.15) / 0.20
         return Curriculum(
             world_w=900, world_h=900,
             spawn_dist=350 + s * 100,                # 350 → 450
@@ -173,9 +176,9 @@ def curriculum_for_step(step: int, total_steps: int) -> Curriculum:
             coef_approach=0.0025,
             coef_aimcone=0.012,
         )
-    elif p < 0.75:
-        # Stage 3: near-deployment map, varied opponents — full combat
-        s = (p - 0.50) / 0.25
+    elif p < 0.55:
+        # Stage 3: near-deployment, varied opponents — full combat with decaying shaping
+        s = (p - 0.35) / 0.20
         return Curriculum(
             world_w=int(1000 + s * 100),             # 1000 → 1100
             world_h=int(1000 + s * 100),
@@ -190,7 +193,7 @@ def curriculum_for_step(step: int, total_steps: int) -> Curriculum:
             coef_aimcone=0.006 * (1 - s),
         )
     else:
-        # Stage 4: deployment scale, no shaping — clean reward signal
+        # Stage 4 (45% of budget): deployment scale, no shaping — pure reward signal
         return Curriculum(
             world_w=DEPLOY_WORLD_W, world_h=DEPLOY_WORLD_H,
             spawn_dist=700.0,
