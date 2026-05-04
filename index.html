@@ -681,12 +681,19 @@ function playSfx(name, opts = {}) {
   if (!AUDIO.ctx) return;
   const ctx = AUDIO.ctx;
   const presets = {
-    hit:       { freq:  220, dur: 0.10, decay: 14, type: 'lowpass',  vol: 0.50, sweepTo: 80   },
-    death:     { freq:  140, dur: 0.55, decay:  4, type: 'lowpass',  vol: 0.85, sweepTo: 50   },
-    respawn:   { freq:  440, dur: 0.25, decay:  9, type: 'bandpass', vol: 0.40, sweepTo: 1320, q: 4 },
-    reload:    { freq: 2400, dur: 0.06, decay: 30, type: 'bandpass', vol: 0.30, q: 6 },
-    whiz:      { freq: 4500, dur: 0.06, decay: 35, type: 'bandpass', vol: 0.32, q: 12 },
-    countdown: { freq:  660, dur: 0.10, decay: 22, type: 'bandpass', vol: 0.30, q: 8 },
+    hit:          { freq:  220, dur: 0.10, decay: 14, type: 'lowpass',  vol: 0.50, sweepTo: 80   },
+    death:        { freq:  140, dur: 0.55, decay:  4, type: 'lowpass',  vol: 0.85, sweepTo: 50   },
+    respawn:      { freq:  440, dur: 0.25, decay:  9, type: 'bandpass', vol: 0.40, sweepTo: 1320, q: 4 },
+    reload:       { freq: 2400, dur: 0.06, decay: 30, type: 'bandpass', vol: 0.30, q: 6 },
+    whiz:         { freq: 4500, dur: 0.06, decay: 35, type: 'bandpass', vol: 0.32, q: 12 },
+    countdown:    { freq:  660, dur: 0.10, decay: 22, type: 'bandpass', vol: 0.30, q: 8 },
+    // New presets
+    kill_confirm: { freq:  880, dur: 0.18, decay:  8, type: 'bandpass', vol: 0.45, sweepTo: 1760, q: 5 },  // bright up-chirp
+    empty_click:  { freq: 3200, dur: 0.04, decay: 50, type: 'bandpass', vol: 0.28, q: 10 },                 // dry click
+    lowhp:        { freq:  120, dur: 0.16, decay:  6, type: 'lowpass',  vol: 0.35, sweepTo: 60   },         // heartbeat thump
+    match_start:  { freq:  330, dur: 0.30, decay:  5, type: 'bandpass', vol: 0.55, sweepTo: 990,  q: 3 },   // long up-tone "begin"
+    match_win:    { freq:  523, dur: 0.45, decay:  4, type: 'bandpass', vol: 0.65, sweepTo: 1568, q: 3 },   // bright C-G triumph
+    match_loss:   { freq:  392, dur: 0.55, decay:  3, type: 'lowpass',  vol: 0.60, sweepTo: 130          },  // descending "down"
   };
   const p = presets[name];
   if (!p) return;
@@ -1004,6 +1011,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard') {
   // on (open / pillars / cross / maze / corridor / random procedural)
   const variant = buildNNArenaVariant();
   showMessage(`地图: ${variant.name}`, 120);
+  playSfx('match_start');
 
   // Team spawn anchors — store for respawn use
   game._nnSpawnBlue = { x: NN_ARENA.x0 + 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
@@ -2256,6 +2264,7 @@ function onMissionSuccess() {
   // NN deathmatch: return to NN lobby instead of campaign progression
   if (game._nnMode) {
     showMessage(`BLUE 获胜！`, 220);
+    playSfx('match_win');
     setTimeout(() => returnToNNLobby(), 2000);
     return;
   }
@@ -2271,8 +2280,9 @@ function onMissionSuccess() {
 function onMissionFailed() {
   // NN deathmatch: return to NN lobby instead of retry/end-game
   if (game._nnMode) {
-    showMessage(mission && mission.teamKills && mission.teamKills[0] === mission.teamKills[1]
-      ? `平手` : `RED 获胜`, 220);
+    const tied = mission && mission.teamKills && mission.teamKills[0] === mission.teamKills[1];
+    showMessage(tied ? `平手` : `RED 获胜`, 220);
+    playSfx(tied ? 'match_start' : 'match_loss');   // tied → neutral 'start' tone, not loss
     setTimeout(() => returnToNNLobby(), 2000);
     return;
   }
@@ -4247,6 +4257,18 @@ function update() {
   }
   if (game.hitFlash > 0) game.hitFlash--;
 
+  // Low-HP heartbeat — periodic thump while HP < 25%. Tempo speeds up as HP drops.
+  if (player.alive && player.hp > 0 && player.hp < player.maxHp * 0.25) {
+    const hpFrac = player.hp / player.maxHp;       // 0..0.25 in this branch
+    const periodTicks = Math.round(48 + hpFrac * 80);   // 48 ticks @ 0% HP → 68 @ 25%
+    if (game.time - (player._lastBeat || 0) >= periodTicks) {
+      player._lastBeat = game.time;
+      playSfx('lowhp');
+    }
+  } else {
+    player._lastBeat = game.time;
+  }
+
   if (game.mode === 'drone' && drone.deployed) {
     updateDroneControl();
     updatePlayerAux();
@@ -4326,6 +4348,11 @@ function updatePlayer() {
 
   player.fireCooldown--;
   if (mouse.down && player.fireCooldown <= 0 && player.ammo > 0 && !player.reloading) fire();
+  // Empty trigger click: clicking when out of ammo + can't reload (no reserve)
+  if (mouse.down && !mouse._wasDown && player.ammo === 0 && player.reserve === 0) {
+    playSfx('empty_click');
+  }
+  mouse._wasDown = mouse.down;
   if (player.ammo === 0 && player.reserve > 0 && !player.reloading) startReload();
 
   if (player.reloading) {
@@ -4408,7 +4435,7 @@ function updateBullets() {
         e.alerted = Math.max(e.alerted || 0, 240);
         e.alertX = b.x - b.vx*4; // alert toward where the shot came from
         e.alertY = b.y - b.vy*4;
-        if (e.hp <= 0) { e.alive = false; game.score += 100; game.killCount++; createExplosion(e.x, e.y, 'small'); }
+        if (e.hp <= 0) { e.alive = false; game.score += 100; game.killCount++; createExplosion(e.x, e.y, 'small'); playSfx('kill_confirm'); }
         hit = true; break;
       }
     }
@@ -4416,7 +4443,7 @@ function updateBullets() {
       if (!d.alive) continue;
       if (Math.hypot(b.x-d.x, b.y-d.y) < d.radius) {
         d.hp -= b.damage;
-        if (d.hp <= 0) { d.alive = false; game.score += 150; game.killCount++; createExplosion(d.x, d.y, 'small'); }
+        if (d.hp <= 0) { d.alive = false; game.score += 150; game.killCount++; createExplosion(d.x, d.y, 'small'); playSfx('kill_confirm'); }
         hit = true; break;
       }
     }
