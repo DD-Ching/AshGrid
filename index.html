@@ -164,6 +164,27 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   z-index: -1;
 }
 .start-btn:hover { transform: translate(4px, -4px); background: var(--red-bright); }
+.settings-row {
+  display: flex; gap: 12px; align-items: center; margin-top: 16px;
+}
+.settings-toggle {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-size: 11px; letter-spacing: 4px; font-weight: 800;
+  color: var(--gray); cursor: pointer; user-select: none;
+}
+.settings-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.settings-mark {
+  width: 18px; height: 18px;
+  border: 2px solid var(--black);
+  background: var(--cream);
+  display: inline-block; flex-shrink: 0;
+  position: relative;
+}
+.settings-toggle input:checked + .settings-mark::after {
+  content: ''; position: absolute; inset: 2px;
+  background: var(--red);
+}
+.settings-toggle:hover .settings-mark { border-color: var(--red); }
 .footer-bar {
   display: flex; justify-content: space-between;
   font-size: 10px; letter-spacing: 3px; color: var(--gray);
@@ -403,6 +424,14 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
       <button class="start-btn" id="nnBtn" style="background: var(--red-dim); font-size: 18px; letter-spacing: 4px;">神经网络 NN ▶</button>
     </div>
 
+    <div class="settings-row">
+      <label class="settings-toggle">
+        <input type="checkbox" id="visionConeToggle">
+        <span class="settings-mark"></span>
+        <span class="settings-label">视野盲区辅助 / VISION CONE</span>
+      </label>
+    </div>
+
     <div class="footer-bar">
       <span>俄乌战争逻辑的未来延伸</span>
       <span>SECTOR 7G · UNIT 0451</span>
@@ -525,6 +554,13 @@ const game = {
   message: '',
   messageTime: 0,
   hitFlash: 0,
+  settings: {
+    // Player vision cone overlay — translucent fan showing where you can see
+    visionCone: (() => {
+      try { return localStorage.getItem('ag.visionCone') === '1'; }
+      catch (e) { return false; }
+    })(),
+  },
 };
 
 const player = {
@@ -991,6 +1027,17 @@ window.addEventListener('contextmenu', e => e.preventDefault());
 document.getElementById('startBtn').onclick = startGame;
 document.getElementById('restartBtn').onclick = startGame;
 document.getElementById('skirmishBtn').onclick = startSkirmish;
+
+// Vision-cone overlay toggle (persists in localStorage as 'ag.visionCone')
+const _visionToggle = document.getElementById('visionConeToggle');
+if (_visionToggle) {
+  _visionToggle.checked = !!game.settings.visionCone;
+  _visionToggle.onchange = () => {
+    game.settings.visionCone = _visionToggle.checked;
+    try { localStorage.setItem('ag.visionCone', _visionToggle.checked ? '1' : '0'); }
+    catch (e) {}
+  };
+}
 
 // ---- NN Skirmish: button opens lobby for team-size + difficulty selection ----
 const _lobby = { blue: 3, red: 3, min: 1, max: 4, difficulty: 'evolved', weapon: 'RIFLE' };
@@ -5094,6 +5141,26 @@ function renderWorld() {
 
   // Cull enemy bullets that fly through dark
   // (The render is a separate loop above — visibility check happens there.)
+
+  // Optional vision-cone overlay (settings toggle on the start screen).
+  // Draws a translucent cream fan from the player along the view direction so
+  // you can see WHERE you're looking — same arc the AI/NN uses for visibility.
+  if (player.alive && game.settings && game.settings.visionCone) {
+    const range = VIEW.range;
+    const half = VIEW.arc / 2;
+    const a0 = player.angle - half, a1 = player.angle + half;
+    ctx.save();
+    ctx.fillStyle = 'rgba(232, 228, 216, 0.13)';
+    ctx.strokeStyle = 'rgba(200, 38, 28, 0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(player.x, player.y);
+    ctx.arc(player.x, player.y, range, a0, a1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // Player
   if (player.alive) drawHumanoid(player.x, player.y, player.angle, player.walkPhase, COLORS.black, false);
