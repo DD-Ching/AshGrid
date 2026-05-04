@@ -620,6 +620,20 @@ function applyWeaponToPlayer(w) {
   player.reloadTime = 0;
 }
 
+// Weapons NN units can spawn with. Same trade-offs as player picks.
+const NN_WEAPON_POOL = ['SMG', 'RIFLE', 'LMG', 'SNIPER', 'SHOTGUN'];
+function pickRandomNNWeaponId() {
+  return NN_WEAPON_POOL[Math.floor(Math.random() * NN_WEAPON_POOL.length)];
+}
+
+// Pool used for random NN assignment. Excludes any test/legacy weapons.
+const NN_WEAPON_POOL = ['SMG', 'RIFLE', 'LMG', 'SNIPER', 'SHOTGUN'];
+function assignNNWeapon(unit) {
+  const id = NN_WEAPON_POOL[Math.floor(Math.random() * NN_WEAPON_POOL.length)];
+  unit._weapon = WEAPONS[id];
+  unit._weaponId = id;
+}
+
 // Backward-compat shim — code that still reads `weapon` gets the player profile
 const weapon = WEAPONS.AR7;
 
@@ -1121,6 +1135,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
       speed: 2.5,
       fireCd: 0,
       weaponId: 'M4',
+      _weapon: WEAPONS[pickRandomNNWeaponId()],  // ← random weapon from pool
       target: null,
       lookPhase: Math.random() * Math.PI*2,
       team: 0,
@@ -1140,6 +1155,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
       alive: true, walkPhase: Math.random() * Math.PI*2,
       speed: 1.0,
       team: 1,
+      _weapon: WEAPONS[pickRandomNNWeaponId()],  // ← random weapon from pool
       _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
       _respawnAt: null,
     });
@@ -2205,25 +2221,33 @@ function nnApplyAction(unit, action, friendlies, enemies) {
       const isAlly = isFriendlyTeam && unit !== player;
       const isPlayer = unit === player;
       const bulletList = isFriendlyTeam ? bullets : enemyBullets;
-      // NN units use a RIFLE-tier weapon, matched to player RIFLE 22dmg.
-      // (Original was 14 — strictly weaker than the player and made every
-      // match feel one-sided.)
-      bulletList.push({
-        x: unit.x + Math.cos(aim) * 16,
-        y: unit.y + Math.sin(aim) * 16,
-        vx: Math.cos(aim) * 14,
-        vy: Math.sin(aim) * 14,
-        life: 60,
-        damage: 22,
-        fromAlly: isAlly,
-      });
+      // NN units use whatever weapon they were assigned at spawn (random
+      // from the player weapon pool — see assignNNWeapon). Fall back to
+      // RIFLE if somehow unassigned. Spread + pellets honored, so NN
+      // shotgunners spray and NN snipers hit hard but rarely.
+      const w = unit._weapon || WEAPONS.RIFLE;
+      const pellets = w.pellets || 1;
+      for (let i = 0; i < pellets; i++) {
+        const a = (pellets > 1)
+          ? aim + (Math.random() - 0.5) * w.spread
+          : aim;
+        bulletList.push({
+          x: unit.x + Math.cos(a) * 16,
+          y: unit.y + Math.sin(a) * 16,
+          vx: Math.cos(a) * w.bulletSpeed,
+          vy: Math.sin(a) * w.bulletSpeed,
+          life: w.bulletLife,
+          damage: w.damage,
+          fromAlly: isAlly,
+        });
+      }
       muzzleFlashes.push({ x: unit.x + Math.cos(aim)*22, y: unit.y + Math.sin(aim)*22, angle: aim, life: 5 });
-      unit._nnFireCd = NN.FIRE_CD;
+      unit._nnFireCd = w.fireCd;
       unit._nnLastSeenX = tgt.x;
       unit._nnLastSeenY = tgt.y;
       unit._nnLastSeenTick = game.time;
       NN.lastSound = { x: unit.x, y: unit.y, tick: game.time, team: unit.team || 0 };
-      emitSound(unit.x, unit.y, 1300, isPlayer || isAlly);
+      emitSound(unit.x, unit.y, w.soundIntensity || 1300, isPlayer || isAlly);
     }
   }
 }
@@ -3207,6 +3231,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           a.y = game._nnSpawnBlue.y + (Math.random() - 0.5) * 200;
           a._respawnAt = null;
           a._nnFireCd = 0; a._nnRecentDmg = 0;
+          a._weapon = WEAPONS[pickRandomNNWeaponId()];   // re-roll weapon on respawn
         }
       }
       for (const e of enemies) {
@@ -3217,6 +3242,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           e.y = game._nnSpawnRed.y + (Math.random() - 0.5) * 200;
           e._respawnAt = null;
           e._nnFireCd = 0; e._nnRecentDmg = 0;
+          e._weapon = WEAPONS[pickRandomNNWeaponId()];   // re-roll weapon on respawn
         }
       }
 
