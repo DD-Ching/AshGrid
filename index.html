@@ -276,6 +276,50 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   background: var(--black); color: var(--cream); border-color: var(--black);
 }
 .weap-btn.active span { color: var(--cream); opacity: 0.75; }
+
+.lineup-toggle {
+  background: var(--cream-dark); border: 2px solid var(--black);
+  color: var(--black); font-family: inherit;
+  font-size: 11px; font-weight: 800; letter-spacing: 3px;
+  padding: 8px 16px; cursor: pointer;
+}
+.lineup-toggle:hover { background: var(--cream); }
+.lineup-toggle.active { background: var(--red); color: var(--cream); border-color: var(--red); }
+.lineup-panel {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 12px 0; border-top: 1px solid var(--black);
+}
+.lineup-panel.hidden { display: none; }
+.lineup-team {
+  display: flex; align-items: center; gap: 12px;
+}
+.lineup-team-label {
+  font-size: 11px; letter-spacing: 4px; font-weight: 800;
+  min-width: 100px;
+}
+.lineup-team-label.blue { color: var(--black); }
+.lineup-team-label.red  { color: var(--red); }
+.lineup-slots { display: flex; gap: 8px; flex-wrap: wrap; }
+.lineup-slot {
+  display: flex; flex-direction: column; gap: 4px;
+  border: 1px solid var(--black);
+  padding: 6px 8px;
+  background: var(--cream);
+  min-width: 110px;
+}
+.lineup-slot.player { background: var(--cream-dark); }
+.lineup-slot-tag {
+  font-size: 9px; letter-spacing: 2px; font-weight: 800;
+  color: var(--gray);
+}
+.lineup-slot-note {
+  font-size: 9px; letter-spacing: 1px; color: var(--gray);
+}
+.lineup-select {
+  font-size: 10px; padding: 2px 4px; font-family: inherit;
+  border: 1px solid var(--black); background: var(--cream);
+  color: var(--black); cursor: pointer;
+}
 .lobby-actions {
   display: flex; gap: 16px; align-items: center; margin-top: 24px;
 }
@@ -453,6 +497,21 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
         <button data-weapon="LMG"     class="weap-btn">机枪<span>压制·重</span></button>
         <button data-weapon="SNIPER"  class="weap-btn">狙击<span>一枪秒·单发</span></button>
         <button data-weapon="SHOTGUN" class="weap-btn">霰弹<span>近战毁灭</span></button>
+      </div>
+    </div>
+
+    <div class="difficulty-row" style="border-bottom: none;">
+      <label class="difficulty-label">阵容 LINEUP</label>
+      <button id="lineupToggle" class="lineup-toggle">默认（全队同设置） ▼</button>
+    </div>
+    <div class="lineup-panel hidden" id="lineupPanel">
+      <div class="lineup-team">
+        <div class="lineup-team-label blue">蓝队 BLUE</div>
+        <div class="lineup-slots" id="blueSlots"></div>
+      </div>
+      <div class="lineup-team">
+        <div class="lineup-team-label red">敌军 RED</div>
+        <div class="lineup-slots" id="redSlots"></div>
       </div>
     </div>
     <div class="lobby-actions">
@@ -1094,7 +1153,14 @@ document.getElementById('skirmishBtn').onclick = startSkirmish;
 
 
 // ---- NN Skirmish: button opens lobby for team-size + difficulty selection ----
-const _lobby = { blue: 3, red: 3, min: 1, max: 4, difficulty: 'evolved', weapon: 'RIFLE' };
+const _lobby = {
+  blue: 3, red: 3, min: 1, max: 4,
+  difficulty: 'evolved', weapon: 'RIFLE',
+  lineupOpen: false,
+  // lineup[team][slotIdx] = { difficulty, weapon } — undefined entries fall
+  // back to global picks at startNNSkirmish time
+  lineup: { blue: [], red: [] },
+};
 const _nnBtn = document.getElementById('nnBtn');
 if (_nnBtn) {
   _nnBtn.onclick = () => {
@@ -1102,6 +1168,7 @@ if (_nnBtn) {
     document.getElementById('nnLobby').classList.remove('hidden');
     document.getElementById('blueSizeLabel').textContent = _lobby.blue;
     document.getElementById('redSizeLabel').textContent  = _lobby.red;
+    if (_lobby.lineupOpen) rebuildLineupUI();
   };
 }
 document.querySelectorAll('#nnLobby .counter button').forEach(btn => {
@@ -1110,6 +1177,7 @@ document.querySelectorAll('#nnLobby .counter button').forEach(btn => {
     const dir = parseInt(btn.dataset.dir, 10);
     _lobby[team] = Math.max(_lobby.min, Math.min(_lobby.max, _lobby[team] + dir));
     document.getElementById(team + 'SizeLabel').textContent = _lobby[team];
+    if (_lobby.lineupOpen) rebuildLineupUI();   // re-render slots when team size changes
   };
 });
 document.querySelectorAll('#nnLobby .diff-btn').forEach(btn => {
@@ -1126,13 +1194,89 @@ document.querySelectorAll('#nnLobby .weap-btn').forEach(btn => {
       b.classList.toggle('active', b === btn));
   };
 });
+
+// === Lineup editor (per-unit difficulty/weapon picker) ===
+const DIFF_LABELS = { easy: '简单', medium: '中等', hard: '困难', evolved: '进化' };
+const WPN_LABELS  = { SMG:'冲锋', RIFLE:'步枪', LMG:'机枪', SNIPER:'狙击', SHOTGUN:'霰弹' };
+function rebuildLineupUI() {
+  const blueSlots = document.getElementById('blueSlots');
+  const redSlots  = document.getElementById('redSlots');
+  if (!blueSlots || !redSlots) return;
+  blueSlots.innerHTML = ''; redSlots.innerHTML = '';
+  // Blue slots — slot 0 is YOU (player), 1..N are NN allies
+  for (let i = 0; i < _lobby.blue; i++) {
+    const isPlayer = i === 0;
+    const tag = isPlayer ? 'YOU 你' : ['BRAVO','CHARLIE','DELTA','ECHO'][i-1];
+    blueSlots.appendChild(makeSlotCard('blue', i, tag, isPlayer));
+  }
+  for (let i = 0; i < _lobby.red; i++) {
+    redSlots.appendChild(makeSlotCard('red', i, `RED ${i+1}`, false));
+  }
+}
+function makeSlotCard(team, idx, tag, isPlayer) {
+  const card = document.createElement('div');
+  card.className = `lineup-slot${isPlayer ? ' player' : ''}`;
+  const tagEl = document.createElement('div');
+  tagEl.className = 'lineup-slot-tag';
+  tagEl.textContent = tag;
+  card.appendChild(tagEl);
+  if (isPlayer) {
+    const note = document.createElement('div');
+    note.className = 'lineup-slot-note';
+    note.textContent = '武器看上方武器栏';
+    card.appendChild(note);
+    return card;
+  }
+  // Difficulty dropdown
+  const diff = document.createElement('select');
+  diff.className = 'lineup-select';
+  for (const d of ['easy','medium','hard','evolved']) {
+    const opt = document.createElement('option');
+    opt.value = d; opt.textContent = DIFF_LABELS[d];
+    diff.appendChild(opt);
+  }
+  diff.value = (_lobby.lineup[team][idx]?.difficulty) || _lobby.difficulty;
+  diff.onchange = () => {
+    if (!_lobby.lineup[team][idx]) _lobby.lineup[team][idx] = {};
+    _lobby.lineup[team][idx].difficulty = diff.value;
+  };
+  card.appendChild(diff);
+  // Weapon dropdown
+  const wpn = document.createElement('select');
+  wpn.className = 'lineup-select';
+  for (const w of ['SMG','RIFLE','LMG','SNIPER','SHOTGUN']) {
+    const opt = document.createElement('option');
+    opt.value = w; opt.textContent = WPN_LABELS[w];
+    wpn.appendChild(opt);
+  }
+  wpn.value = (_lobby.lineup[team][idx]?.weapon) || 'RIFLE';
+  wpn.onchange = () => {
+    if (!_lobby.lineup[team][idx]) _lobby.lineup[team][idx] = {};
+    _lobby.lineup[team][idx].weapon = wpn.value;
+  };
+  card.appendChild(wpn);
+  return card;
+}
+const _lineupToggle = document.getElementById('lineupToggle');
+if (_lineupToggle) {
+  _lineupToggle.onclick = () => {
+    _lobby.lineupOpen = !_lobby.lineupOpen;
+    document.getElementById('lineupPanel').classList.toggle('hidden', !_lobby.lineupOpen);
+    _lineupToggle.classList.toggle('active', _lobby.lineupOpen);
+    _lineupToggle.textContent = _lobby.lineupOpen ? '自定义阵容 ▲' : '默认（全队同设置） ▼';
+    if (_lobby.lineupOpen) rebuildLineupUI();
+  };
+}
+
 document.getElementById('lobbyCancelBtn').onclick = () => {
   document.getElementById('nnLobby').classList.add('hidden');
   document.getElementById('start').classList.remove('hidden');
 };
 document.getElementById('lobbyStartBtn').onclick = () => {
   document.getElementById('nnLobby').classList.add('hidden');
-  startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty, _lobby.weapon);
+  // Pass lineup only if user enabled custom mode
+  const lineup = _lobby.lineupOpen ? _lobby.lineup : null;
+  startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty, _lobby.weapon, lineup);
 };
 
 function startSkirmish() {
@@ -1161,7 +1305,7 @@ function startSkirmish() {
   showMessage('对抗模式 · 自由射击', 150);
 }
 
-async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', weaponId = 'RIFLE') {
+async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', weaponId = 'RIFLE', lineup = null) {
   document.getElementById('start').classList.add('hidden');
   document.getElementById('nnLobby')?.classList.add('hidden');
   document.getElementById('end').classList.add('hidden');
@@ -1169,10 +1313,22 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   blueSize = Math.max(1, Math.min(4, blueSize));
   redSize  = Math.max(1, Math.min(4, redSize));
 
-  // Async load the ONNX model for the selected difficulty (cached per-tier)
+  // Resolve which difficulties + weapons each NN unit will use.
+  // If `lineup` is provided (advanced editor), respect per-slot config.
+  // Otherwise fall back to the global difficulty for all NN units.
+  // Player slot (blue index 0) uses the global weaponId (you).
+  const blueLineup = (lineup?.blue) || [];
+  const redLineup  = (lineup?.red)  || [];
+  const slotDiff = (team, idx) => (team === 'blue' ? blueLineup[idx] : redLineup[idx])?.difficulty || difficulty;
+  const slotWpn  = (team, idx) => (team === 'blue' ? blueLineup[idx] : redLineup[idx])?.weapon     || pickRandomNNWeaponId();
+
+  // Pre-load every difficulty actually referenced (could be just 1 or up to 4)
+  const allDiffs = new Set([difficulty]);
+  for (let i = 1; i < blueSize; i++) allDiffs.add(slotDiff('blue', i));
+  for (let i = 0; i < redSize;  i++) allDiffs.add(slotDiff('red',  i));
   const tierLabel = { easy: '简单', medium: '中等', hard: '困难', evolved: '进化' }[difficulty] || '进化';
-  showMessage(`载入神经网络 · ${tierLabel}...`, 60);
-  const ok = await nnLoadModel(difficulty);
+  showMessage(`载入神经网络 · ${[...allDiffs].length === 1 ? tierLabel : '多脑混合'}...`, 60);
+  const ok = await nnLoadAll([...allDiffs]);
   if (!ok) {
     showMessage('NN 载入失败 · 退回普通对抗', 180);
     return startSkirmish();
@@ -1214,9 +1370,11 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   game._nnSpawnBlue = { x: NN_ARENA.x0 + 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
   game._nnSpawnRed  = { x: NN_ARENA.x0 + NN_ARENA.w - 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
 
-  // Player counts as ONE blue. Spawn (blueSize - 1) NN allies.
+  // Player counts as ONE blue (slot 0). Spawn (blueSize - 1) NN allies in slots 1..N.
   const allySpacing = NN_ARENA.h / (blueSize + 1);
   for (let i = 0; i < blueSize - 1; i++) {
+    const slotIdx = i + 1;   // ally i fills slot i+1 (slot 0 = player)
+    const wid = slotWpn('blue', slotIdx);
     allies.push({
       callsign: ['BRAVO', 'CHARLIE', 'DELTA', 'ECHO'][i] || ('A' + i),
       offsetX: -110, offsetY: 60,
@@ -1228,7 +1386,8 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
       speed: 2.5,
       fireCd: 0,
       weaponId: 'M4',
-      _weapon: WEAPONS[pickRandomNNWeaponId()],  // ← random weapon from pool
+      _weapon: WEAPONS[wid] || WEAPONS.RIFLE,
+      _nnDifficulty: slotDiff('blue', slotIdx),
       target: null,
       lookPhase: Math.random() * Math.PI*2,
       team: 0,
@@ -1237,9 +1396,10 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
     });
   }
 
-  // Enemy team: redSize NN-driven enemies
+  // Enemy team: redSize NN-driven enemies (slots 0..N-1 of red)
   const enemySpacing = NN_ARENA.h / (redSize + 1);
   for (let i = 0; i < redSize; i++) {
+    const wid = slotWpn('red', i);
     enemies.push({
       x: NN_ARENA.x0 + NN_ARENA.w - 200,
       y: NN_ARENA.y0 + enemySpacing * (i + 1),
@@ -1248,7 +1408,8 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
       alive: true, walkPhase: Math.random() * Math.PI*2,
       speed: 1.0,
       team: 1,
-      _weapon: WEAPONS[pickRandomNNWeaponId()],  // ← random weapon from pool
+      _weapon: WEAPONS[wid] || WEAPONS.RIFLE,
+      _nnDifficulty: slotDiff('red', i),
       _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
       _respawnAt: null,
     });
@@ -2231,34 +2392,48 @@ const NN = {
   lastSound: null,           // {x, y, tick, team} — most recent gunshot
 };
 
+// Per-difficulty session cache. Multiple difficulties can be loaded at once
+// (used by the lineup editor — different units fight with different brains).
+NN.sessions = {};
+
 async function nnLoadModel(difficulty = 'hard') {
-  // If we're already loaded with the requested difficulty, fast-path
-  if (NN.loaded && NN.difficulty === difficulty) return true;
-  if (NN.loading) return NN.loaded;
+  // Fast-path: already cached
+  if (NN.sessions[difficulty]) {
+    NN.session = NN.sessions[difficulty];
+    NN.loaded = true;
+    NN.difficulty = difficulty;
+    return true;
+  }
   if (typeof ort === 'undefined') {
     NN.error = 'onnxruntime-web not loaded';
     console.warn(NN.error);
     return false;
   }
   const path = NN.modelPaths[difficulty] || NN.modelPath;
-  NN.loading = true;
-  NN.loaded  = false;
-  NN.session = null;
   try {
-    NN.session = await ort.InferenceSession.create(path, {
+    const sess = await ort.InferenceSession.create(path, {
       executionProviders: ['wasm'],
       graphOptimizationLevel: 'all',
     });
+    NN.sessions[difficulty] = sess;
+    NN.session = sess;
     NN.loaded = true;
     NN.difficulty = difficulty;
     console.log('NN model loaded:', path, '(difficulty:', difficulty + ')');
+    return true;
   } catch (e) {
     NN.error = String(e);
     console.error('NN load failed:', e);
-  } finally {
-    NN.loading = false;
+    return false;
   }
-  return NN.loaded;
+}
+
+// Pre-load multiple difficulties in parallel — used by the lineup editor when
+// the user mixes different brains across units.
+async function nnLoadAll(difficulties) {
+  const uniq = [...new Set(difficulties.filter(Boolean))];
+  const results = await Promise.all(uniq.map(d => nnLoadModel(d)));
+  return results.every(Boolean);
 }
 
 // NN-specific vision check: 720u range, 140° cone, LoS via existing lineOfSight
@@ -2571,49 +2746,59 @@ async function nnTick() {
   if (!NN.loaded || _nnInferring) return;
   if (game.state !== 'playing' || !game._nnMode) return;
 
-  // Collect all alive NN-controlled units (allies + enemies marked nn=true).
-  // flipX = true for team-1 (red) so they look like blue to the model — the
-  // model was only ever trained on team-0's POV.
+  // Collect alive NN-controlled units, tagged with their personal difficulty.
+  // (lineup editor lets each unit have its own brain.)
   const nnUnits = [];
-  for (const a of allies)   if (a._useNN && a.alive) nnUnits.push({u: a, friendly: allies,  hostile: enemies, flipX: false});
-  for (const e of enemies)  if (e._useNN && e.alive) nnUnits.push({u: e, friendly: enemies, hostile: [...allies, ...(player.alive ? [player] : [])], flipX: true});
-
+  for (const a of allies) {
+    if (a._useNN && a.alive) {
+      nnUnits.push({u: a, friendly: allies, hostile: enemies, flipX: false,
+                    diff: a._nnDifficulty || NN.difficulty || 'evolved'});
+    }
+  }
+  for (const e of enemies) {
+    if (e._useNN && e.alive) {
+      nnUnits.push({u: e, friendly: enemies, hostile: [...allies, ...(player.alive ? [player] : [])], flipX: true,
+                    diff: e._nnDifficulty || NN.difficulty || 'evolved'});
+    }
+  }
   if (nnUnits.length === 0) return;
 
-  // Build batched observation
-  const N = nnUnits.length;
-  const obsArr = new Float32Array(N * NN.OBS_DIM);
-  for (let k = 0; k < N; k++) {
-    const sub = obsArr.subarray(k * NN.OBS_DIM, (k+1) * NN.OBS_DIM);
-    nnBuildObs(nnUnits[k].u, nnUnits[k].friendly, nnUnits[k].hostile, sub, nnUnits[k].flipX);
+  // Group units by difficulty so we can call each session with one batched run
+  const groups = {};
+  for (const ent of nnUnits) {
+    (groups[ent.diff] = groups[ent.diff] || []).push(ent);
   }
 
   _nnInferring = true;
   try {
-    const tensor = new ort.Tensor('float32', obsArr, [N, NN.OBS_DIM]);
-    // Read input/output names dynamically from the loaded session — they
-    // can vary between exports ('obs' vs 'observation', 'action_probs' vs
-    // 'output', etc.). This keeps us compatible with any SB3-exported ONNX.
-    const inName  = NN.session.inputNames[0];
-    const outName = NN.session.outputNames[0];
-    const feeds = {}; feeds[inName] = tensor;
-    const out = await NN.session.run(feeds);
-    const probs = out[outName].data;  // Float32Array length = N * ACTION_DIM
-    for (let k = 0; k < N; k++) {
-      let bestI = 0, bestP = probs[k * NN.ACTION_DIM];
-      for (let a = 1; a < NN.ACTION_DIM; a++) {
-        const p = probs[k * NN.ACTION_DIM + a];
-        if (p > bestP) { bestP = p; bestI = a; }
+    for (const diff of Object.keys(groups)) {
+      const session = NN.sessions[diff] || NN.sessions[NN.difficulty] || NN.session;
+      if (!session) continue;
+      const batch = groups[diff];
+      const N = batch.length;
+      const obsArr = new Float32Array(N * NN.OBS_DIM);
+      for (let k = 0; k < N; k++) {
+        const sub = obsArr.subarray(k * NN.OBS_DIM, (k+1) * NN.OBS_DIM);
+        nnBuildObs(batch[k].u, batch[k].friendly, batch[k].hostile, sub, batch[k].flipX);
       }
-      // If we mirrored the obs for this unit, mirror the action back so
-      // "model thinks E" → "real-world W" for red units.
-      const realAction = nnUnits[k].flipX ? NN_ACTION_MIRROR_X[bestI] : bestI;
-      nnApplyAction(nnUnits[k].u, realAction, nnUnits[k].friendly, nnUnits[k].hostile);
+      const tensor = new ort.Tensor('float32', obsArr, [N, NN.OBS_DIM]);
+      const inName  = session.inputNames[0];
+      const outName = session.outputNames[0];
+      const feeds = {}; feeds[inName] = tensor;
+      const out = await session.run(feeds);
+      const probs = out[outName].data;
+      for (let k = 0; k < N; k++) {
+        let bestI = 0, bestP = probs[k * NN.ACTION_DIM];
+        for (let a = 1; a < NN.ACTION_DIM; a++) {
+          const p = probs[k * NN.ACTION_DIM + a];
+          if (p > bestP) { bestP = p; bestI = a; }
+        }
+        const realAction = batch[k].flipX ? NN_ACTION_MIRROR_X[bestI] : bestI;
+        nnApplyAction(batch[k].u, realAction, batch[k].friendly, batch[k].hostile);
+      }
     }
   } catch (e) {
-    // Surface this loudly — silent failure here used to make NN units appear motionless.
-    console.error('NN inference failed:', e, '\n  inputNames=', NN.session?.inputNames,
-                                              '\n  outputNames=', NN.session?.outputNames);
+    console.error('NN inference failed:', e);
     NN.error = String(e);
   } finally {
     _nnInferring = false;
@@ -3510,7 +3695,8 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           a.y = game._nnSpawnBlue.y + (Math.random() - 0.5) * 200;
           a._respawnAt = null;
           a._nnFireCd = 0; a._nnRecentDmg = 0;
-          a._weapon = WEAPONS[pickRandomNNWeaponId()];   // re-roll weapon on respawn
+          // Keep the lineup-assigned weapon + difficulty (don't re-roll if explicitly set)
+          if (!a._nnDifficulty) a._weapon = WEAPONS[pickRandomNNWeaponId()];
         }
       }
       for (const e of enemies) {
@@ -3521,7 +3707,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           e.y = game._nnSpawnRed.y + (Math.random() - 0.5) * 200;
           e._respawnAt = null;
           e._nnFireCd = 0; e._nnRecentDmg = 0;
-          e._weapon = WEAPONS[pickRandomNNWeaponId()];   // re-roll weapon on respawn
+          if (!e._nnDifficulty) e._weapon = WEAPONS[pickRandomNNWeaponId()];
         }
       }
 
