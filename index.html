@@ -579,11 +579,116 @@ const visionRays = 92;  // rays per cone (smoothness vs perf)
 const visionPoly = [];  // reused buffer
 const enemyVisionPoly = []; // reused buffer
 
-// Sound events for directional indicators + enemy alerts + squad intel.
-// Gunshots are LOUD (1300-1500u) so most of the map is within earshot.
+// ============ Positional audio ============
+// WebAudio synthesizes a short noise-burst gunshot per emitSound() call,
+// applies distance attenuation + stereo pan based on the source's offset
+// relative to the player's view direction. Auto-resumes on first user click
+// (browser autoplay policy). Master volume tunable via AUDIO.volume.
+const AUDIO = {
+  ctx: null,
+  master: null,
+  volume: 0.35,    // master gain; lower if it's too loud
+  enabled: true,
+  unlocked: false,
+};
+function audioInit() {
+  if (AUDIO.ctx) return;
+  try {
+    AUDIO.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    AUDIO.master = AUDIO.ctx.createGain();
+    AUDIO.master.gain.value = AUDIO.volume;
+    AUDIO.master.connect(AUDIO.ctx.destination);
+  } catch (e) { AUDIO.enabled = false; }
+}
+function audioUnlock() {
+  audioInit();
+  if (AUDIO.ctx && AUDIO.ctx.state === 'suspended') AUDIO.ctx.resume();
+  AUDIO.unlocked = true;
+}
+// Wire any user gesture as the unlock event
+document.addEventListener('pointerdown', audioUnlock, { once: true });
+document.addEventListener('keydown',     audioUnlock, { once: true });
+
+// Play a short synthetic gunshot at world (sx, sy) heard from the player's position.
+// `kind`: 'shot' (sharp crack), 'buzz' (drone), 'self' (your own weapon — full vol, center pan)
+function playPositionalSound(sx, sy, intensity, kind = 'shot', isSelf = false) {
+  if (!AUDIO.enabled || !AUDIO.unlocked) return;
+  audioInit();
+  if (!AUDIO.ctx) return;
+  const ctx = AUDIO.ctx;
+
+  // Distance attenuation (relative to listener = player)
+  const dx = sx - player.x, dy = sy - player.y;
+  const dist = Math.hypot(dx, dy);
+  const maxDist = intensity || 1500;
+  let vol;
+  if (isSelf) {
+    vol = 0.7;     // your own gunshot — full, slightly less than master
+  } else {
+    if (dist > maxDist) return;
+    vol = Math.max(0, 1 - dist / maxDist) ** 1.4;   // mild non-linear falloff
+    if (vol < 0.005) return;
+  }
+
+  // Stereo pan: rotate offset into player's local frame, map left/right to [-1, 1].
+  // viewAngle is the player's look direction; we treat that as "forward".
+  const va = (player.viewAngle != null) ? player.viewAngle : (player.angle || 0);
+  const localX = dx * Math.cos(-va) - dy * Math.sin(-va);   // +x = right of view
+  const pan = isSelf ? 0 : Math.max(-1, Math.min(1, localX / 350));
+
+  // Synthesis: noise burst → bandpass for "crack" → pan → master
+  const dur = (kind === 'buzz') ? 0.08 : 0.18;
+  const buf = ctx.createBuffer(1, Math.max(64, Math.floor(ctx.sampleRate * dur)), ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  const decay = (kind === 'buzz') ? 18 : 11;
+  for (let i = 0; i < data.length; i++) {
+    const t = i / data.length;
+    const env = Math.exp(-t * decay);
+    data[i] = (Math.random() * 2 - 1) * env;
+  }
+
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = (kind === 'buzz') ? 1200 : (kind === 'self' ? 480 : 600);
+  bp.Q.value = (kind === 'buzz') ? 2.0 : 0.7;
+
+  // Distant sounds lose high frequencies — simulate with a lowpass that opens up close
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  const closeness = isSelf ? 1 : Math.max(0, 1 - dist / maxDist);
+  lp.frequency.value = 600 + closeness * 5000;
+
+  const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+  if (panner) panner.pan.value = pan;
+
+  const gain = ctx.createGain();
+  gain.gain.value = vol;
+
+  let chain = src.connect(bp).connect(lp);
+  if (panner) chain = chain.connect(panner);
+  chain.connect(gain).connect(AUDIO.master);
+  src.start();
+}
+
+// Sound events for directional indicators + enemy alerts + squad intel +
+// positional audio. Gunshots are LOUD (1300-1500u) so most of the map is
+// within earshot.
 const soundEvents = [];
 function emitSound(x, y, intensity, fromPlayer, isPlayerSelf = false) {
   soundEvents.push({ x, y, intensity, fromPlayer, isPlayerSelf, life: 80, maxLife: 80 });
+  // Audio: actually play it. Drone buzz (intensity ~700-850) is emitted every
+  // frame so we throttle it. Gunshots (>=1000) play every event.
+  if (intensity >= 1000) {
+    playPositionalSound(x, y, intensity, 'shot', isPlayerSelf);
+  } else {
+    // Throttled drone buzz — at most once per 12 frames per drone (rate limit globally)
+    if ((emitSound._buzzCt = (emitSound._buzzCt || 0) + 1) % 12 === 0) {
+      playPositionalSound(x, y, intensity, 'buzz', false);
+    }
+  }
   // Alert nearby enemies (turn toward sound; investigate)
   for (const e of enemies) {
     if (!e.alive) continue;
