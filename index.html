@@ -3970,12 +3970,15 @@ function castVisionRay(x0, y0, angle, maxDist, blockers) {
   return { x: x0 + dx * best, y: y0 + dy * best, t: best };
 }
 
-// Render fog-of-war: dark fill across the visible world, then cut out the
-// UNION of every friendly vision polygon (player + alive allies). Walls cast
-// shadows because each poly is built via raycasting against blockers, so
-// you only see what isn't behind a wall. Called inside the camera transform
-// so polys are in world space.
-const _fogPlayerPoly = [];
+// Render fog-of-war as a SUBTLE dim+desaturate effect outside the union of
+// friendly vision polygons. This is NOT a black-out mask — bullets, enemies,
+// and walls outside vision stay legible, just visually demoted. Inside the
+// cones the world renders at full saturation/brightness (no overlay).
+//
+// Implementation: cool blue-grey overlay (alpha 0.32) outside the polys.
+// Combined with a slight desaturation tint (the cool color shifts whatever's
+// underneath toward grey), this reads as "you can see this is HAPPENING but
+// it's outside your direct view".
 const _fogAllyPolys = [];
 function renderFogOfWar() {
   if (!(game.settings && game.settings.visionCone)) return;
@@ -3986,7 +3989,7 @@ function renderFogOfWar() {
   const vx = camera.x - halfVW, vy = camera.y - halfVH;
   const vw = halfVW * 2, vh = halfVH * 2;
 
-  // Build polygons for every alive friendly observer
+  // Build polygons for every alive friendly observer (player + allies)
   const observers = [];
   if (player.alive) observers.push({ x: player.x, y: player.y, angle: player.angle, range: VIEW.range, arc: VIEW.arc });
   for (const a of allies) {
@@ -3994,26 +3997,28 @@ function renderFogOfWar() {
     const lookAngle = (a.gunAngle != null) ? a.gunAngle : (a.angle || 0);
     observers.push({ x: a.x, y: a.y, angle: lookAngle, range: VIEW.range * 0.85, arc: VIEW.arc });
   }
+  // No friendlies alive — apply the dim everywhere (still legible)
   if (observers.length === 0) {
-    // Pure dark — nobody can see
-    ctx.fillStyle = 'rgba(20, 18, 24, 0.78)';
+    ctx.fillStyle = 'rgba(50, 60, 80, 0.42)';
     ctx.fillRect(vx, vy, vw, vh);
     return;
   }
 
-  // Reuse buffers — one for player, others rebuilt per call (allies are few)
   while (_fogAllyPolys.length < observers.length) _fogAllyPolys.push([]);
-
   for (let i = 0; i < observers.length; i++) {
     const o = observers[i];
     buildVisionPoly(_fogAllyPolys[i], o.x, o.y, o.angle, o.arc, o.range);
   }
 
   ctx.save();
-  // Dark layer over the visible world
-  ctx.fillStyle = 'rgba(20, 18, 24, 0.72)';
+  // Subtle cool-tone dim layer — passes through bullets/enemies but signals
+  // "this is in your peripheral / out of view". 0.32 alpha = 68% of the
+  // underlying world still visible. Blue-grey tint reads as "shadow / dusk"
+  // rather than "covered up".
+  ctx.fillStyle = 'rgba(50, 60, 80, 0.32)';
   ctx.fillRect(vx, vy, vw, vh);
-  // Cut out each friendly vision polygon
+  // Cut the friendly vision polygons OUT of the dim layer — inside the cones
+  // the world renders at 100% brightness/saturation.
   ctx.globalCompositeOperation = 'destination-out';
   for (let i = 0; i < observers.length; i++) {
     const poly = _fogAllyPolys[i];
