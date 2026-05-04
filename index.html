@@ -1883,10 +1883,15 @@ async function nnTick() {
   _nnInferring = true;
   try {
     const tensor = new ort.Tensor('float32', obsArr, [N, NN.OBS_DIM]);
-    const out = await NN.session.run({ observation: tensor });
-    const probs = out.action_probs.data;  // Float32Array length = N * ACTION_DIM
+    // Read input/output names dynamically from the loaded session — they
+    // can vary between exports ('obs' vs 'observation', 'action_probs' vs
+    // 'output', etc.). This keeps us compatible with any SB3-exported ONNX.
+    const inName  = NN.session.inputNames[0];
+    const outName = NN.session.outputNames[0];
+    const feeds = {}; feeds[inName] = tensor;
+    const out = await NN.session.run(feeds);
+    const probs = out[outName].data;  // Float32Array length = N * ACTION_DIM
     for (let k = 0; k < N; k++) {
-      // argmax
       let bestI = 0, bestP = probs[k * NN.ACTION_DIM];
       for (let a = 1; a < NN.ACTION_DIM; a++) {
         const p = probs[k * NN.ACTION_DIM + a];
@@ -1895,7 +1900,10 @@ async function nnTick() {
       nnApplyAction(nnUnits[k].u, bestI, nnUnits[k].friendly, nnUnits[k].hostile);
     }
   } catch (e) {
-    console.error('NN inference failed:', e);
+    // Surface this loudly — silent failure here used to make NN units appear motionless.
+    console.error('NN inference failed:', e, '\n  inputNames=', NN.session?.inputNames,
+                                              '\n  outputNames=', NN.session?.outputNames);
+    NN.error = String(e);
   } finally {
     _nnInferring = false;
   }
@@ -3978,8 +3986,17 @@ function updatePlayer() {
     player.walkPhase += 0.22;
   }
   pushOutOfBuildings(player, player.radius);
-  player.x = Math.max(player.radius, Math.min(WORLD.w-player.radius, player.x));
-  player.y = Math.max(player.radius, Math.min(WORLD.h-player.radius, player.y));
+  // In NN mode, confine the player to the NN_ARENA box (the red border) so
+  // they can't wander out into the empty void around it.
+  if (game._nnMode) {
+    player.x = Math.max(NN_ARENA.x0 + player.radius,
+                        Math.min(NN_ARENA.x0 + NN_ARENA.w - player.radius, player.x));
+    player.y = Math.max(NN_ARENA.y0 + player.radius,
+                        Math.min(NN_ARENA.y0 + NN_ARENA.h - player.radius, player.y));
+  } else {
+    player.x = Math.max(player.radius, Math.min(WORLD.w-player.radius, player.x));
+    player.y = Math.max(player.radius, Math.min(WORLD.h-player.radius, player.y));
+  }
 
   const wp = screenToWorld(mouse.x, mouse.y);
   mouse.worldX = wp.x; mouse.worldY = wp.y;
