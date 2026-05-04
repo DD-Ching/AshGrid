@@ -1675,16 +1675,26 @@ function nnIsVisible(me, target) {
 
 // Build the 65-dim observation EXACTLY matching ai_arena/combat_env.py _build_obs_for_unit.
 // `me` is the unit asking, `friendlies` and `enemies` are arrays of units (alive or not).
-function nnBuildObs(me, friendlies, enemies, outBuf) {
+// `flipX = true` mirrors observations across the vertical axis of the arena.
+// The model was trained only on team-0 data (blue, spawning on the LEFT side
+// of NN_ARENA), so for team-1 units (red, spawning on the RIGHT side) we
+// mirror everything so they look like blue to the model — then mirror the
+// resulting action back so "move E" becomes "move W" in world coords.
+function nnBuildObs(me, friendlies, enemies, outBuf, flipX = false) {
   const obs = outBuf;
   let i = 0;
   const W = NN.WORLD_W, H = NN.WORLD_H;
+  // Flip helpers: when flipX, x_world is reflected across the arena's vertical center.
+  const meX = flipX ? (W - me.x) : me.x;
+  const flipDX = flipX ? -1 : 1;
+  // sin(π - a) = sin(a), cos(π - a) = -cos(a) → flip cos only
+  const cosFlip = flipX ? -1 : 1;
 
   // --- Self (8) ---
-  obs[i++] = me.x / W * 2 - 1;
+  obs[i++] = meX / W * 2 - 1;
   obs[i++] = me.y / H * 2 - 1;
   obs[i++] = Math.sin(me.angle);
-  obs[i++] = Math.cos(me.angle);
+  obs[i++] = Math.cos(me.angle) * cosFlip;
   obs[i++] = me.alive ? me.hp / NN.PLAYER_HP : 0;
   obs[i++] = (me._nnRecentDmg || 0) > 0 ? 1 : 0;
   obs[i++] = me._nnFireCd > 0 ? me._nnFireCd / NN.FIRE_CD : 0;
@@ -1700,7 +1710,7 @@ function nnBuildObs(me, friendlies, enemies, outBuf) {
   for (let k = 0; k < 3; k++) {
     if (k < enemySorted.length) {
       const e = enemySorted[k];
-      obs[i++] = (e.x - me.x) / W * 2;
+      obs[i++] = (e.x - me.x) / W * 2 * flipDX;
       obs[i++] = (e.y - me.y) / H * 2;
       obs[i++] = Math.hypot(e.x - me.x, e.y - me.y) / W;
       obs[i++] = e.hp / NN.PLAYER_HP;
@@ -1717,7 +1727,7 @@ function nnBuildObs(me, friendlies, enemies, outBuf) {
   for (let k = 0; k < 2; k++) {
     if (k < teammates.length) {
       const t = teammates[k];
-      obs[i++] = (t.x - me.x) / W * 2;
+      obs[i++] = (t.x - me.x) / W * 2 * flipDX;
       obs[i++] = (t.y - me.y) / H * 2;
       obs[i++] = Math.hypot(t.x - me.x, t.y - me.y) / W;
       obs[i++] = t.alive ? t.hp / NN.PLAYER_HP : 0;
@@ -1734,7 +1744,7 @@ function nnBuildObs(me, friendlies, enemies, outBuf) {
   for (let k = 0; k < 5; k++) {
     if (k < cps.length) {
       const cp = cps[k];
-      obs[i++] = (cp.x - me.x) / W * 2;
+      obs[i++] = (cp.x - me.x) / W * 2 * flipDX;
       obs[i++] = (cp.y - me.y) / H * 2;
       obs[i++] = Math.hypot(cp.x - me.x, cp.y - me.y) / W;
     } else {
@@ -1744,7 +1754,7 @@ function nnBuildObs(me, friendlies, enemies, outBuf) {
 
   // --- Last seen enemy intel (4) ---
   if (me._nnLastSeenTick != null && me._nnLastSeenTick > -9999) {
-    obs[i++] = (me._nnLastSeenX - me.x) / W * 2;
+    obs[i++] = (me._nnLastSeenX - me.x) / W * 2 * flipDX;
     obs[i++] = (me._nnLastSeenY - me.y) / H * 2;
     obs[i++] = Math.min(1, (game.time - me._nnLastSeenTick) / 90);
     obs[i++] = 1;
@@ -1755,7 +1765,7 @@ function nnBuildObs(me, friendlies, enemies, outBuf) {
   // --- Last sound (4) ---
   if (NN.lastSound) {
     const s = NN.lastSound;
-    obs[i++] = (s.x - me.x) / W * 2;
+    obs[i++] = (s.x - me.x) / W * 2 * flipDX;
     obs[i++] = (s.y - me.y) / H * 2;
     obs[i++] = Math.max(0, 1 - (game.time - s.tick) / 90);
     obs[i++] = (s.team === me.team) ? 1 : -1;
@@ -1860,15 +1870,34 @@ function nnNearestVisibleEnemy(me, enemies) {
 
 // Per-frame batch dispatcher: collect all NN-controlled units, run one inference, apply actions.
 const _nnObsBuf = new Float32Array(NN.OBS_DIM * 16); // up to 16 units
+// Mirror an action across the vertical axis (E↔W, NE↔NW, SE↔SW; N/S/idle unchanged).
+// Built from action = move_dir * 2 + fire, where move_dirs 1..8 are
+// [N, NE, E, SE, S, SW, W, NW]. Mirroring across X swaps E↔W → swaps move_dirs
+// (3, 4) ↔ (7, 8) and (2, 5)? Actually: NE↔NW (2↔8), E↔W (3↔7), SE↔SW (4↔6).
+// N (1), S (5), idle (0) stay. Fire bit unchanged.
+const NN_ACTION_MIRROR_X = [
+  /* idle */    0,  1,
+  /* N    */    2,  3,
+  /* NE   */   16, 17,    // -> NW
+  /* E    */   14, 15,    // -> W
+  /* SE   */   12, 13,    // -> SW
+  /* S    */   10, 11,
+  /* SW   */    8,  9,    // -> SE
+  /* W    */    6,  7,    // -> E
+  /* NW   */    4,  5,    // -> NE
+];
+
 let _nnInferring = false;
 async function nnTick() {
   if (!NN.loaded || _nnInferring) return;
   if (game.state !== 'playing' || !game._nnMode) return;
 
-  // Collect all alive NN-controlled units (allies + enemies marked nn=true)
+  // Collect all alive NN-controlled units (allies + enemies marked nn=true).
+  // flipX = true for team-1 (red) so they look like blue to the model — the
+  // model was only ever trained on team-0's POV.
   const nnUnits = [];
-  for (const a of allies) if (a._useNN && a.alive) nnUnits.push({u: a, friendly: allies, hostile: enemies});
-  for (const e of enemies) if (e._useNN && e.alive) nnUnits.push({u: e, friendly: enemies, hostile: [...allies, ...(player.alive ? [player] : [])]});
+  for (const a of allies)   if (a._useNN && a.alive) nnUnits.push({u: a, friendly: allies,  hostile: enemies, flipX: false});
+  for (const e of enemies)  if (e._useNN && e.alive) nnUnits.push({u: e, friendly: enemies, hostile: [...allies, ...(player.alive ? [player] : [])], flipX: true});
 
   if (nnUnits.length === 0) return;
 
@@ -1877,7 +1906,7 @@ async function nnTick() {
   const obsArr = new Float32Array(N * NN.OBS_DIM);
   for (let k = 0; k < N; k++) {
     const sub = obsArr.subarray(k * NN.OBS_DIM, (k+1) * NN.OBS_DIM);
-    nnBuildObs(nnUnits[k].u, nnUnits[k].friendly, nnUnits[k].hostile, sub);
+    nnBuildObs(nnUnits[k].u, nnUnits[k].friendly, nnUnits[k].hostile, sub, nnUnits[k].flipX);
   }
 
   _nnInferring = true;
@@ -1897,7 +1926,10 @@ async function nnTick() {
         const p = probs[k * NN.ACTION_DIM + a];
         if (p > bestP) { bestP = p; bestI = a; }
       }
-      nnApplyAction(nnUnits[k].u, bestI, nnUnits[k].friendly, nnUnits[k].hostile);
+      // If we mirrored the obs for this unit, mirror the action back so
+      // "model thinks E" → "real-world W" for red units.
+      const realAction = nnUnits[k].flipX ? NN_ACTION_MIRROR_X[bestI] : bestI;
+      nnApplyAction(nnUnits[k].u, realAction, nnUnits[k].friendly, nnUnits[k].hostile);
     }
   } catch (e) {
     // Surface this loudly — silent failure here used to make NN units appear motionless.
@@ -5846,13 +5878,25 @@ function renderHUD() {
   ctx.lineWidth = 1;
   ctx.strokeRect(mapX, mapY, mapW, mapH);
 
-  const sx = mapW / WORLD.w, sy = mapH / WORLD.h;
+  // In NN mode, scope the minimap to the NN_ARENA box (the red border) instead
+  // of the full 3200x3200 world — units only live in the arena, so the rest is
+  // empty white space that wastes screen.
+  const useArena = game._nnMode;
+  const srcOx = useArena ? NN_ARENA.x0 : 0;
+  const srcOy = useArena ? NN_ARENA.y0 : 0;
+  const srcW  = useArena ? NN_ARENA.w  : WORLD.w;
+  const srcH  = useArena ? NN_ARENA.h  : WORLD.h;
+  const sx = mapW / srcW, sy = mapH / srcH;
+  // World→minimap conversion. Origin is shifted by srcOx/srcOy so units in
+  // NN_ARENA at (0..1200) map across the full minimap, not just the upper-left.
+  const wx = wx0 => mapX + (wx0 - srcOx) * sx;
+  const wy = wy0 => mapY + (wy0 - srcOy) * sy;
 
   // Underground tunnels (dashed)
   ctx.strokeStyle = COLORS.gray;
   ctx.setLineDash([3, 3]);
   for (const u of undergrounds) {
-    ctx.strokeRect(mapX + u.x*sx, mapY + u.y*sy, Math.max(1, u.w*sx), Math.max(1, u.h*sy));
+    ctx.strokeRect(wx(u.x), wy(u.y), Math.max(1, u.w*sx), Math.max(1, u.h*sy));
   }
   ctx.setLineDash([]);
 
@@ -5866,66 +5910,67 @@ function renderHUD() {
     else if (r.type === 'drone') { col = COLORS.red; alpha = 0.4; }
     ctx.fillStyle = col;
     ctx.globalAlpha = alpha;
-    ctx.fillRect(mapX + r.x*sx, mapY + r.y*sy, Math.max(1, r.w*sx), Math.max(1, r.h*sy));
+    ctx.fillRect(wx(r.x), wy(r.y), Math.max(1, r.w*sx), Math.max(1, r.h*sy));
   }
   ctx.globalAlpha = 1;
 
   // Buildings
   ctx.fillStyle = COLORS.lightGray;
   for (const b of buildings) {
-    ctx.fillRect(mapX + b.x*sx, mapY + b.y*sy, Math.max(1, b.w*sx), Math.max(1, b.h*sy));
+    ctx.fillRect(wx(b.x), wy(b.y), Math.max(1, b.w*sx), Math.max(1, b.h*sy));
   }
   // Low covers (mid gray)
   ctx.fillStyle = COLORS.creamDark;
   for (const lc of lowCovers) {
-    ctx.fillRect(mapX + lc.x*sx, mapY + lc.y*sy, Math.max(1, lc.w*sx), Math.max(1, lc.h*sy));
+    ctx.fillRect(wx(lc.x), wy(lc.y), Math.max(1, lc.w*sx), Math.max(1, lc.h*sy));
   }
   // Overheads (dark)
   ctx.fillStyle = COLORS.black;
   for (const o of overheads) {
-    ctx.fillRect(mapX + o.x*sx, mapY + o.y*sy, Math.max(1, o.w*sx), Math.max(1, o.h*sy));
+    ctx.fillRect(wx(o.x), wy(o.y), Math.max(1, o.w*sx), Math.max(1, o.h*sy));
   }
   // Landmark — big star/circle
   for (const lm of landmarks) {
     ctx.fillStyle = COLORS.red;
     if (lm.r) {
       ctx.beginPath();
-      ctx.arc(mapX + lm.x*sx, mapY + lm.y*sy, Math.max(4, lm.r*sx*0.9), 0, Math.PI*2);
+      ctx.arc(wx(lm.x), wy(lm.y), Math.max(4, lm.r*sx*0.9), 0, Math.PI*2);
       ctx.fill();
       ctx.strokeStyle = COLORS.black;
       ctx.lineWidth = 1.5;
       ctx.stroke();
     } else if (lm.w) {
       const w = Math.max(8, lm.w*sx*0.5), h = Math.max(8, lm.h*sx*0.5);
-      ctx.fillRect(mapX + lm.x*sx - w/2, mapY + lm.y*sy - h/2, w, h);
+      ctx.fillRect(wx(lm.x) - w/2, wy(lm.y) - h/2, w, h);
     }
   }
   // Allies (cream squares)
   for (const a of allies) {
     if (!a.alive) continue;
     ctx.fillStyle = COLORS.creamDark;
-    ctx.fillRect(mapX + a.x*sx - 3, mapY + a.y*sy - 3, 6, 6);
+    ctx.fillRect(wx(a.x) - 3, wy(a.y) - 3, 6, 6);
     ctx.strokeStyle = COLORS.black;
     ctx.lineWidth = 0.5;
-    ctx.strokeRect(mapX + a.x*sx - 3, mapY + a.y*sy - 3, 6, 6);
+    ctx.strokeRect(wx(a.x) - 3, wy(a.y) - 3, 6, 6);
   }
   // Player
   ctx.fillStyle = COLORS.black;
-  ctx.fillRect(mapX + player.x*sx - 3, mapY + player.y*sy - 3, 6, 6);
+  ctx.fillRect(wx(player.x) - 3, wy(player.y) - 3, 6, 6);
   // Player view direction
   ctx.strokeStyle = COLORS.black;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(mapX + player.x*sx, mapY + player.y*sy);
-  ctx.lineTo(mapX + player.x*sx + Math.cos(player.angle)*10, mapY + player.y*sy + Math.sin(player.angle)*10);
+  ctx.moveTo(wx(player.x), wy(player.y));
+  ctx.lineTo(wx(player.x) + Math.cos(player.angle)*10, wy(player.y) + Math.sin(player.angle)*10);
   ctx.stroke();
-  // Enemies — only show those visible OR seen recently (memory window)
+  // Enemies — only show those visible OR seen recently (memory window).
+  // In NN mode show all enemies (they're already in the small arena, no fog).
   ctx.fillStyle = COLORS.red;
   for (const e of enemies) {
     if (!e.alive) continue;
-    if (e._lastSeen == null || game.time - e._lastSeen > 180) continue;
-    ctx.globalAlpha = e._lastSeen === game.time ? 1 : 0.4;
-    ctx.fillRect(mapX + e.x*sx - 2, mapY + e.y*sy - 2, 4, 4);
+    if (!useArena && (e._lastSeen == null || game.time - e._lastSeen > 180)) continue;
+    ctx.globalAlpha = (useArena || e._lastSeen === game.time) ? 1 : 0.4;
+    ctx.fillRect(wx(e.x) - 2, wy(e.y) - 2, 4, 4);
   }
   ctx.globalAlpha = 1;
   for (const d of enemyDrones) {
@@ -5933,7 +5978,7 @@ function renderHUD() {
     if (d._lastSeen == null || game.time - d._lastSeen > 180) continue;
     ctx.globalAlpha = d._lastSeen === game.time ? 1 : 0.4;
     ctx.beginPath();
-    ctx.arc(mapX + d.x*sx, mapY + d.y*sy, 2, 0, Math.PI*2);
+    ctx.arc(wx(d.x), wy(d.y), 2, 0, Math.PI*2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -5941,18 +5986,18 @@ function renderHUD() {
   if (drone.deployed) {
     ctx.fillStyle = COLORS.black;
     ctx.beginPath();
-    ctx.arc(mapX + drone.x*sx, mapY + drone.y*sy, 3, 0, Math.PI*2);
+    ctx.arc(wx(drone.x), wy(drone.y), 3, 0, Math.PI*2);
     ctx.fill();
     ctx.strokeStyle = COLORS.black;
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.arc(mapX + drone.x*sx, mapY + drone.y*sy, drone.visionRadius*sx, 0, Math.PI*2);
+    ctx.arc(wx(drone.x), wy(drone.y), drone.visionRadius*sx, 0, Math.PI*2);
     ctx.stroke();
   }
   // FPV
   if (fpv.active) {
     ctx.fillStyle = COLORS.red;
-    ctx.fillRect(mapX + fpv.x*sx - 2, mapY + fpv.y*sy - 2, 4, 4);
+    ctx.fillRect(wx(fpv.x) - 2, wy(fpv.y) - 2, 4, 4);
   }
 
   // Mode-specific overlays
