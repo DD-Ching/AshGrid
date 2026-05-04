@@ -164,27 +164,6 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   z-index: -1;
 }
 .start-btn:hover { transform: translate(4px, -4px); background: var(--red-bright); }
-.settings-row {
-  display: flex; gap: 12px; align-items: center; margin-top: 16px;
-}
-.settings-toggle {
-  display: inline-flex; align-items: center; gap: 10px;
-  font-size: 11px; letter-spacing: 4px; font-weight: 800;
-  color: var(--gray); cursor: pointer; user-select: none;
-}
-.settings-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
-.settings-mark {
-  width: 18px; height: 18px;
-  border: 2px solid var(--black);
-  background: var(--cream);
-  display: inline-block; flex-shrink: 0;
-  position: relative;
-}
-.settings-toggle input:checked + .settings-mark::after {
-  content: ''; position: absolute; inset: 2px;
-  background: var(--red);
-}
-.settings-toggle:hover .settings-mark { border-color: var(--red); }
 .footer-bar {
   display: flex; justify-content: space-between;
   font-size: 10px; letter-spacing: 3px; color: var(--gray);
@@ -424,13 +403,6 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
       <button class="start-btn" id="nnBtn" style="background: var(--red-dim); font-size: 18px; letter-spacing: 4px;">神经网络 NN ▶</button>
     </div>
 
-    <div class="settings-row">
-      <label class="settings-toggle">
-        <input type="checkbox" id="visionConeToggle">
-        <span class="settings-mark"></span>
-        <span class="settings-label">视野盲区辅助 / VISION CONE</span>
-      </label>
-    </div>
 
     <div class="footer-bar">
       <span>俄乌战争逻辑的未来延伸</span>
@@ -554,13 +526,6 @@ const game = {
   message: '',
   messageTime: 0,
   hitFlash: 0,
-  settings: {
-    // Player vision cone overlay — translucent fan showing where you can see
-    visionCone: (() => {
-      try { return localStorage.getItem('ag.visionCone') === '1'; }
-      catch (e) { return false; }
-    })(),
-  },
 };
 
 const player = {
@@ -1028,16 +993,6 @@ document.getElementById('startBtn').onclick = startGame;
 document.getElementById('restartBtn').onclick = startGame;
 document.getElementById('skirmishBtn').onclick = startSkirmish;
 
-// Vision-cone overlay toggle (persists in localStorage as 'ag.visionCone')
-const _visionToggle = document.getElementById('visionConeToggle');
-if (_visionToggle) {
-  _visionToggle.checked = !!game.settings.visionCone;
-  _visionToggle.onchange = () => {
-    game.settings.visionCone = _visionToggle.checked;
-    try { localStorage.setItem('ag.visionCone', _visionToggle.checked ? '1' : '0'); }
-    catch (e) {}
-  };
-}
 
 // ---- NN Skirmish: button opens lobby for team-size + difficulty selection ----
 const _lobby = { blue: 3, red: 3, min: 1, max: 4, difficulty: 'evolved', weapon: 'RIFLE' };
@@ -3970,68 +3925,6 @@ function castVisionRay(x0, y0, angle, maxDist, blockers) {
   return { x: x0 + dx * best, y: y0 + dy * best, t: best };
 }
 
-// Render fog-of-war as a SUBTLE dim+desaturate effect outside the union of
-// friendly vision polygons. This is NOT a black-out mask — bullets, enemies,
-// and walls outside vision stay legible, just visually demoted. Inside the
-// cones the world renders at full saturation/brightness (no overlay).
-//
-// Implementation: cool blue-grey overlay (alpha 0.32) outside the polys.
-// Combined with a slight desaturation tint (the cool color shifts whatever's
-// underneath toward grey), this reads as "you can see this is HAPPENING but
-// it's outside your direct view".
-const _fogAllyPolys = [];
-function renderFogOfWar() {
-  if (!(game.settings && game.settings.visionCone)) return;
-  if (game.state !== 'playing') return;
-  // Visible world rect in world-space (the rectangle the camera transform projects).
-  const halfVW = (W() / camera.scale) / 2;
-  const halfVH = (H() / camera.scale) / 2;
-  const vx = camera.x - halfVW, vy = camera.y - halfVH;
-  const vw = halfVW * 2, vh = halfVH * 2;
-
-  // Build polygons for every alive friendly observer (player + allies)
-  const observers = [];
-  if (player.alive) observers.push({ x: player.x, y: player.y, angle: player.angle, range: VIEW.range, arc: VIEW.arc });
-  for (const a of allies) {
-    if (!a.alive) continue;
-    const lookAngle = (a.gunAngle != null) ? a.gunAngle : (a.angle || 0);
-    observers.push({ x: a.x, y: a.y, angle: lookAngle, range: VIEW.range * 0.85, arc: VIEW.arc });
-  }
-  // No friendlies alive — apply the dim everywhere (still legible)
-  if (observers.length === 0) {
-    ctx.fillStyle = 'rgba(50, 60, 80, 0.42)';
-    ctx.fillRect(vx, vy, vw, vh);
-    return;
-  }
-
-  while (_fogAllyPolys.length < observers.length) _fogAllyPolys.push([]);
-  for (let i = 0; i < observers.length; i++) {
-    const o = observers[i];
-    buildVisionPoly(_fogAllyPolys[i], o.x, o.y, o.angle, o.arc, o.range);
-  }
-
-  ctx.save();
-  // Subtle cool-tone dim layer — passes through bullets/enemies but signals
-  // "this is in your peripheral / out of view". 0.32 alpha = 68% of the
-  // underlying world still visible. Blue-grey tint reads as "shadow / dusk"
-  // rather than "covered up".
-  ctx.fillStyle = 'rgba(50, 60, 80, 0.32)';
-  ctx.fillRect(vx, vy, vw, vh);
-  // Cut the friendly vision polygons OUT of the dim layer — inside the cones
-  // the world renders at 100% brightness/saturation.
-  ctx.globalCompositeOperation = 'destination-out';
-  for (let i = 0; i < observers.length; i++) {
-    const poly = _fogAllyPolys[i];
-    if (poly.length < 3) continue;
-    ctx.beginPath();
-    ctx.moveTo(poly[0].x, poly[0].y);
-    for (let k = 1; k < poly.length; k++) ctx.lineTo(poly[k].x, poly[k].y);
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
 // Build a fan-shaped visibility polygon from origin (numRays + 2 verts).
 function buildVisionPoly(out, ox, oy, faceAngle, arc, range) {
   out.length = 0;
@@ -4935,10 +4828,6 @@ function render() {
   if (game.mode === 'radar') renderRadarWorld();
   else if (game.mode === 'thermal') renderThermalWorld();
   else renderWorld();
-
-  // Fog-of-war overlay (settings toggle: vision cone). Drawn AFTER all world
-  // content so it darkens everything outside the friendlies' line-of-sight.
-  if (game.mode !== 'radar' && game.mode !== 'thermal') renderFogOfWar();
 
   ctx.restore();
 
