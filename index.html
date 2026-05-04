@@ -544,8 +544,88 @@ const player = {
   // Sprint / stamina (Shift-to-sprint)
   stamina: 100, maxStamina: 100,
   sprinting: false,
-  staminaRegenLockUntil: 0,    // game.time before which regen is blocked (post-sprint cooldown)
+  staminaRegenLockUntil: 0,
+  // Grenades
+  grenades: 3, maxGrenades: 3,
 };
+
+// ============ GRENADES ============
+const grenades = [];
+const GRENADE_FUSE       = 90;     // 1.5s @ 60fps
+const GRENADE_RADIUS     = 130;    // explosion radius (units)
+const GRENADE_DAMAGE_MAX = 90;     // dmg at center; falls off linearly to 0 at edge
+const GRENADE_THROW_MAX  = 420;    // max throw distance (units)
+const GRENADE_THROW_MIN  = 80;     // min — clicking right next to you still goes a bit out
+const GRENADE_FRICTION   = 0.92;   // velocity decay per frame after release
+
+function throwGrenade() {
+  if (!player.alive) return;
+  if (player.grenades <= 0) { playSfx('empty_click', { vol: 0.4 }); return; }
+  player.grenades--;
+  const wp = screenToWorld(mouse.x, mouse.y);
+  const dx = wp.x - player.x, dy = wp.y - player.y;
+  const targetDist = Math.max(GRENADE_THROW_MIN,
+                              Math.min(GRENADE_THROW_MAX, Math.hypot(dx, dy)));
+  const a = Math.atan2(dy, dx);
+  // Initial velocity tuned so friction (0.92) decays it to ~0 right at targetDist
+  // sum of geometric series: v0 / (1 - 0.92) = v0 / 0.08 = ~12.5×v0 traveled
+  const v0 = targetDist * 0.10;
+  grenades.push({
+    x: player.x + Math.cos(a) * 16,
+    y: player.y + Math.sin(a) * 16,
+    vx: Math.cos(a) * v0,
+    vy: Math.sin(a) * v0,
+    fuse: GRENADE_FUSE,
+  });
+  playSfx('reload', { vol: 0.5 });
+}
+
+function updateGrenades() {
+  for (let i = grenades.length - 1; i >= 0; i--) {
+    const g = grenades[i];
+    g.x += g.vx; g.y += g.vy;
+    g.vx *= GRENADE_FRICTION; g.vy *= GRENADE_FRICTION;
+    // Stop if it hits a wall (push out, lose all velocity)
+    for (const b of buildings) {
+      if (g.x > b.x && g.x < b.x + b.w && g.y > b.y && g.y < b.y + b.h) {
+        // Push to nearest edge
+        const cx = b.x + b.w/2, cy = b.y + b.h/2;
+        if (Math.abs(g.x - cx) > Math.abs(g.y - cy)) g.x = (g.x > cx) ? b.x + b.w + 1 : b.x - 1;
+        else g.y = (g.y > cy) ? b.y + b.h + 1 : b.y - 1;
+        g.vx = g.vy = 0;
+        break;
+      }
+    }
+    g.fuse--;
+    if (g.fuse <= 0) { explodeGrenade(g); grenades.splice(i, 1); }
+  }
+}
+
+function explodeGrenade(g) {
+  createExplosion(g.x, g.y, 'big');
+  playSfx('death', { vol: 0.6 });
+  emitSound(g.x, g.y, 1500, false);
+  const targets = [player, ...allies, ...enemies];
+  for (const u of targets) {
+    if (!u.alive) continue;
+    const d = Math.hypot(u.x - g.x, u.y - g.y);
+    if (d > GRENADE_RADIUS) continue;
+    // Optional: walls between explosion and target absorb damage (use lineOfSight as proxy)
+    const blocked = !lineOfSight(g.x, g.y, u.x, u.y);
+    const dmg = Math.round(GRENADE_DAMAGE_MAX * (1 - d / GRENADE_RADIUS) * (blocked ? 0.35 : 1));
+    if (dmg <= 0) continue;
+    u.hp -= dmg;
+    if (u === player) {
+      game.hitFlash = 16;
+      playSfx('hit');
+    }
+    if (u.hp <= 0 && u.alive) {
+      u.hp = 0; u.alive = false;
+      createExplosion(u.x, u.y, 'small');
+      if (u === player) playSfx('death');
+    }
+  }
+}
 
 // Sprint tuning
 const SPRINT_SPEED_MUL    = 1.65;   // ×base speed while sprinting
@@ -630,6 +710,10 @@ function applyWeaponToPlayer(w) {
   player.reserve = w.reserveStart;
   player.reloading = false;
   player.reloadTime = 0;
+  // Refill grenades + stamina on weapon change / match start / respawn
+  player.grenades = player.maxGrenades;
+  player.stamina = player.maxStamina;
+  player._spentToZero = false;
 }
 
 // Weapons NN units can spawn with. Same trade-offs as player picks.
@@ -928,6 +1012,8 @@ const buildings = [];     // full obstacles — block movement + bullets
 const lowCovers = [];     // waist-high — block bullets, walk-through
 const overheads = [];     // catwalk / crane rails — block FPV; ground units pass under
 const undergrounds = [];  // tunnels / pits — concealment from soldiers + drone vision
+const highGrounds = [];   // 制高點: vision range +50%, sees over lowCovers
+const trenches = [];      // 壕溝: hides occupant from enemies > 200u away
 const routes = [];        // visualized tactical paths {x,y,w,h,angle,type,style}
 const landmarks = [];     // map's signature structures (drawn separately)
 const themeShapes = [];   // big themed geometry covering 70%+ of the map (drawn under buildings)
@@ -970,6 +1056,7 @@ window.addEventListener('keydown', e => {
     else if (k === 't') game.mode = (game.mode === 'thermal') ? 'tactical' : 'thermal';
     else if (k === 'tab') { e.preventDefault(); game.mode = (game.mode === 'command') ? 'tactical' : 'command'; }
     else if (k === 'r') startReload();
+    else if (k === 'g') throwGrenade();
     // Dev: jump straight to mission N (1-6). Useful while iterating on a single mission.
     else if (e.key >= '1' && e.key <= '6') {
       const idx = parseInt(e.key);
@@ -1269,6 +1356,8 @@ function clearWorld() {
   lowCovers.length = 0;
   overheads.length = 0;
   undergrounds.length = 0;
+  highGrounds.length = 0;
+  trenches.length = 0;
   routes.length = 0;
   landmarks.length = 0;
   themeShapes.length = 0;
@@ -1288,6 +1377,63 @@ function addOverhead(x, y, w, h, color, opts={}) {
 }
 function addUnderground(x, y, w, h, opts={}) {
   undergrounds.push({ x, y, w, h, kind: opts.kind || 'tunnel', label: opts.label || '' });
+}
+function addHighGround(x, y, w, h, opts={}) {
+  highGrounds.push({ x, y, w, h, label: opts.label || '高地' });
+}
+function addTrench(x, y, w, h, opts={}) {
+  trenches.push({ x, y, w, h, label: opts.label || '壕沟' });
+}
+// Returns the highGround/trench rect a unit (or world point) is currently in, else null
+function unitOnHighGround(u) {
+  for (const h of highGrounds) {
+    if (u.x >= h.x && u.x <= h.x + h.w && u.y >= h.y && u.y <= h.y + h.h) return h;
+  }
+  return null;
+}
+function unitInTrench(u) {
+  for (const t of trenches) {
+    if (u.x >= t.x && u.x <= t.x + t.w && u.y >= t.y && u.y <= t.y + t.h) return t;
+  }
+  return null;
+}
+// Vision range multiplier (bumped on high ground)
+function visionRangeMul(u) {
+  return unitOnHighGround(u) ? 1.5 : 1.0;
+}
+// Symmetric "can A see B" check that honors high ground + trench rules.
+// Used by both player-side and NN-side visibility paths so both teams play
+// by the same rules.
+//   - HighGround shooter sees OVER lowCovers (only buildings break LoS).
+//   - Target inside a trench is hidden from observers >200u away unless the
+//     observer is on high ground or also in the same trench.
+function symVisibleAB(ax, ay, bx, by, observer, target) {
+  const dist = Math.hypot(bx - ax, by - ay);
+  const obsHigh = observer && unitOnHighGround(observer);
+  const tgtTrench = target && unitInTrench(target);
+  if (tgtTrench && !obsHigh) {
+    const obsTrench = observer && unitInTrench(observer);
+    if (obsTrench !== tgtTrench && dist > 200) return false;
+  }
+  // LoS: walls always block; lowCovers block UNLESS observer is on high ground
+  return _losCustom(ax, ay, bx, by, !!obsHigh);
+}
+function _losCustom(x1, y1, x2, y2, ignoreLowCovers) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const steps = 12;
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const px = x1 + dx * t, py = y1 + dy * t;
+    for (const b of buildings) {
+      if (px > b.x && px < b.x + b.w && py > b.y && py < b.y + b.h) return false;
+    }
+    if (!ignoreLowCovers) {
+      for (const lc of lowCovers) {
+        if (px > lc.x && px < lc.x + lc.w && py > lc.y && py < lc.y + lc.h) return false;
+      }
+    }
+  }
+  return true;
 }
 function addRoute(x, y, w, h, type, opts={}) {
   routes.push({ x, y, w, h, angle: opts.angle || 0, type, style: opts.style || 'solid', label: opts.label || '' });
@@ -1889,10 +2035,8 @@ const NN_MAP_VARIANTS = [
   },
   { id: 'random',   name: '随机 RANDOM',
     walls: () => {
-      // Mirror combat_env._map_random: 2-6 rectangles, 60-220 wide/tall,
-      // 120u from any edge.
       const rng = Math.random;
-      const n = 2 + Math.floor(rng() * 5);   // 2..6
+      const n = 2 + Math.floor(rng() * 5);
       const out = [];
       const margin = 120;
       for (let i = 0; i < n; i++) {
@@ -1904,6 +2048,28 @@ const NN_MAP_VARIANTS = [
       }
       return out;
     }
+  },
+  // === New tactical variants ===
+  { id: 'highground', name: '制高点 OVERWATCH',
+    walls: () => [
+      { x: 200, y: 200, w: 60, h: 200, kind: 'building' },
+      { x: 940, y: 600, w: 60, h: 200, kind: 'building' },
+      { x: 460, y: 510, w: 80, h: 80, kind: 'cover' },
+      { x: 660, y: 510, w: 80, h: 80, kind: 'cover' },
+    ],
+    highGrounds: [
+      { x: 480, y: 100, w: 240, h: 120, label: '北高地' },
+      { x: 480, y: 980, w: 240, h: 120, label: '南高地' },
+    ],
+  },
+  { id: 'trenches',   name: '壕沟 TRENCHWAR',
+    walls: () => [
+      { x: 560, y: 460, w: 80, h: 280, kind: 'building' },
+    ],
+    trenches: [
+      { x: 100, y: 350, w: 360, h: 70, label: '北壕沟' },
+      { x: 740, y: 780, w: 360, h: 70, label: '南壕沟' },
+    ],
   },
 ];
 
@@ -1922,7 +2088,13 @@ function buildNNArenaVariant(idx) {
       addBuilding(x, y, w.w, w.h, w.color || COLORS.gray, { accent: !!w.accent });
     }
   }
-  // Refresh cover-points so AI/NN can use them
+  // Tactical terrain (制高点 / 壕沟) — translate to arena coords like walls
+  for (const h of v.highGrounds || []) {
+    addHighGround(NN_ARENA.x0 + h.x, NN_ARENA.y0 + h.y, h.w, h.h, { label: h.label });
+  }
+  for (const t of v.trenches || []) {
+    addTrench(NN_ARENA.x0 + t.x, NN_ARENA.y0 + t.y, t.w, t.h, { label: t.label });
+  }
   buildCoverPoints();
   game._nnVariantId = v.id;
   return v;
@@ -2008,13 +2180,16 @@ function nnIsVisible(me, target) {
   if (!target.alive) return false;
   const dx = target.x - me.x, dy = target.y - me.y;
   const d2 = dx*dx + dy*dy;
-  if (d2 > NN.VIEW_RANGE * NN.VIEW_RANGE) return false;
+  // High ground extends vision range
+  const range = NN.VIEW_RANGE * visionRangeMul(me);
+  if (d2 > range * range) return false;
   const a = Math.atan2(dy, dx);
   let diff = a - me.angle;
   while (diff >  Math.PI) diff -= Math.PI*2;
   while (diff < -Math.PI) diff += Math.PI*2;
   if (Math.abs(diff) > NN.VIEW_ARC / 2) return false;
-  if (lineOfSight(me.x, me.y, target.x, target.y) === false) return false;
+  // Symmetric LoS + high-ground/trench rules — same for both teams
+  if (!symVisibleAB(me.x, me.y, target.x, target.y, me, target)) return false;
   return true;
 }
 
@@ -4458,6 +4633,7 @@ function update() {
   updateEnemies();
   updateMission();   // mission tick (movement, capture progress, breach, spawn pressure)
   updateBullets();
+  updateGrenades();
   updateExplosions();
   updateRadar();
   updateSoundEvents();
@@ -4961,6 +5137,51 @@ function renderWorld() {
   // Low covers (waist-high — between buildings & units in z-order)
   drawLowCovers();
 
+  // Trenches (壕沟) — recessed dark strips, drawn UNDER unit z-order so soldiers
+  // appear to stand inside them.
+  for (const t of trenches) {
+    ctx.fillStyle = '#3A3A42';
+    ctx.fillRect(t.x, t.y, t.w, t.h);
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(t.x, t.y, t.w, t.h);
+    // Diagonal hatching to read as "below ground"
+    ctx.strokeStyle = '#1A1A1A';
+    ctx.lineWidth = 1;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(t.x, t.y, t.w, t.h); ctx.clip();
+    for (let xx = t.x - t.h; xx < t.x + t.w; xx += 14) {
+      ctx.beginPath();
+      ctx.moveTo(xx, t.y); ctx.lineTo(xx + t.h, t.y + t.h);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // Label
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText(t.label || '壕沟', t.x + 6, t.y + 12);
+  }
+
+  // High ground (制高点) — raised platform with deep shadow underneath
+  for (const h of highGrounds) {
+    // Drop shadow (offset down/right) gives the "elevated" feel
+    ctx.fillStyle = 'rgba(20, 18, 24, 0.55)';
+    ctx.fillRect(h.x + 8, h.y + 8, h.w, h.h);
+    // Platform body — slightly darker than cream, with red accent corner
+    ctx.fillStyle = COLORS.creamDark;
+    ctx.fillRect(h.x, h.y, h.w, h.h);
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(h.x, h.y, h.w, h.h);
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(h.x, h.y, 18, 18);
+    // Label
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText(h.label || '高地', h.x + 6, h.y + h.h - 6);
+  }
+
   // Landmark mid layer (silhouette body that sits with buildings)
   drawLandmarksMid();
 
@@ -4992,6 +5213,28 @@ function renderWorld() {
     ctx.moveTo(b.x, b.y);
     ctx.lineTo(b.x - b.vx*1.6, b.y - b.vy*1.6);
     ctx.stroke();
+  }
+
+  // Grenades — black sphere + pulsing red fuse light + flashing in last 0.5s
+  for (const g of grenades) {
+    const final = g.fuse < 30;            // last 0.5s — flash white
+    const flash = final && (game.time & 4) === 0;
+    ctx.fillStyle = flash ? COLORS.cream : COLORS.black;
+    ctx.beginPath(); ctx.arc(g.x, g.y, 6, 0, Math.PI*2); ctx.fill();
+    // Fuse pulse (slow → fast as fuse runs out)
+    const fusePeriod = Math.max(4, Math.floor(g.fuse / 6));
+    if ((game.time % fusePeriod) < (fusePeriod / 2)) {
+      ctx.fillStyle = COLORS.red;
+      ctx.beginPath(); ctx.arc(g.x, g.y - 8, 2.5, 0, Math.PI*2); ctx.fill();
+    }
+    // Aim/range hint while still in flight (faint dotted circle showing kill radius)
+    if (final) {
+      ctx.strokeStyle = 'rgba(200, 38, 28, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath(); ctx.arc(g.x, g.y, GRENADE_RADIUS, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
 
   // Muzzle flashes
@@ -6419,6 +6662,16 @@ function renderHUD() {
   ctx.font = 'bold 10px monospace';
   ctx.fillText(`Q UAV ${drone.battery.toFixed(0)}%`, barX + 320, barY + 20);
   ctx.fillText('E FPV', barX + 320, barY + 38);
+  // Grenade count (G key) — small dots for visual indicator
+  ctx.font = 'bold 10px monospace';
+  ctx.fillStyle = COLORS.black;
+  ctx.fillText(`G ${player.grenades}/${player.maxGrenades}`, barX + 280, barY + 20);
+  for (let i = 0; i < player.maxGrenades; i++) {
+    ctx.fillStyle = i < player.grenades ? COLORS.black : COLORS.lightGray;
+    ctx.beginPath();
+    ctx.arc(barX + 285 + i*9, barY + 32, 3, 0, Math.PI*2);
+    ctx.fill();
+  }
   ctx.fillStyle = COLORS.creamDark;
   ctx.fillRect(barX + 396, barY + 12, 152, 6);
   ctx.fillStyle = drone.battery > 30 ? COLORS.black : COLORS.red;
