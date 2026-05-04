@@ -823,7 +823,10 @@ def _ga_decide_action(unit: Unit, env: CombatEnv, p: dict) -> int:
         dy = target.y - unit.y
         dist = math.hypot(dx, dy)
         engage_d = p.get('engage_distance', 280)
-        if dist > engage_d * 1.2:
+        if dist < 0.001:
+            # Units exactly overlap (rare edge case) — hold position, fire
+            mx, my = 0.0, 0.0
+        elif dist > engage_d * 1.2:
             mx, my = dx / dist, dy / dist
         elif dist < engage_d * 0.7:
             mx, my = -dx / dist, -dy / dist
