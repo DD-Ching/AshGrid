@@ -751,7 +751,8 @@ function applyRecoil(s, w) {
 // Vision system
 const VIEW = {
   range: 720,         // player vision distance
-  arc: Math.PI * 0.62,// ~112° fan
+  arc: Math.PI * 0.78,// 140° fan — matches NN.VIEW_ARC so both teams play
+                       // by the same angular awareness rule
 };
 const ENEMY_VIEW = {
   range: 620,            // bumped — they can spot from further
@@ -2003,20 +2004,27 @@ const NN_ARENA_MAP_INDEX = MAPS.length - 1;
 // sees the same map distribution it trained on.
 const NN_MAP_VARIANTS = [
   { id: 'open',     name: '开阔 OPEN',
-    walls: () => [] },
+    walls: () => [],
+    highGrounds: [{ x: 540, y: 540, w: 120, h: 120, label: '中心丘' }],
+  },
   { id: 'pillars',  name: '四柱 PILLARS',
     walls: () => [
       { x: 280, y: 280, w: 80, h: 80, kind: 'building', accent: true },
       { x: 840, y: 280, w: 80, h: 80, kind: 'building', accent: true },
       { x: 280, y: 840, w: 80, h: 80, kind: 'building' },
       { x: 840, y: 840, w: 80, h: 80, kind: 'building' },
-    ]
+    ],
+    highGrounds: [{ x: 540, y: 540, w: 120, h: 120, label: '中央高台' }],
   },
   { id: 'cross',    name: '十字 CROSS',
     walls: () => [
       { x: 400, y: 570, w: 400, h: 60, kind: 'building', color: '#1A1A1A' },
       { x: 570, y: 400, w: 60, h: 400, kind: 'building', color: '#1A1A1A' },
-    ]
+    ],
+    trenches: [
+      { x: 120, y: 120, w: 220, h: 70, label: 'NW 壕' },
+      { x: 860, y: 1010, w: 220, h: 70, label: 'SE 壕' },
+    ],
   },
   { id: 'maze',     name: '迷阵 MAZE',
     walls: () => [
@@ -2025,13 +2033,20 @@ const NN_MAP_VARIANTS = [
       { x: 400, y: 600, w: 220, h: 60, kind: 'cover' },
       { x: 600, y: 200, w: 220, h: 60, kind: 'cover' },
       { x: 500, y: 800, w: 60, h: 200, kind: 'building' },
-    ]
+    ],
+    trenches: [
+      { x: 280, y: 540, w: 280, h: 60, label: '迷宫沟' },
+    ],
   },
   { id: 'corridor', name: '走廊 CORRIDOR',
     walls: () => [
       { x: 150, y: 380, w: 900, h: 60, kind: 'building' },
       { x: 150, y: 760, w: 900, h: 60, kind: 'building' },
-    ]
+    ],
+    highGrounds: [
+      { x:  60, y: 540, w: 100, h: 100, label: '西哨位' },
+      { x: 1040, y: 540, w: 100, h: 100, label: '东哨位' },
+    ],
   },
   { id: 'random',   name: '随机 RANDOM',
     walls: () => {
@@ -2047,9 +2062,18 @@ const NN_MAP_VARIANTS = [
         out.push({ x, y, w, h, kind: i % 2 === 0 ? 'building' : 'cover' });
       }
       return out;
-    }
+    },
+    // 50/50 chance of a random high ground or trench
+    highGrounds: () => Math.random() < 0.5
+      ? [{ x: 200 + Math.floor(Math.random()*700), y: 200 + Math.floor(Math.random()*700),
+           w: 100 + Math.floor(Math.random()*100), h: 100 + Math.floor(Math.random()*100), label: '随机高地' }]
+      : [],
+    trenches: () => Math.random() < 0.5
+      ? [{ x: 200 + Math.floor(Math.random()*500), y: 200 + Math.floor(Math.random()*700),
+           w: 220 + Math.floor(Math.random()*200), h: 60, label: '随机壕沟' }]
+      : [],
   },
-  // === New tactical variants ===
+  // === Dedicated terrain variants ===
   { id: 'highground', name: '制高点 OVERWATCH',
     walls: () => [
       { x: 200, y: 200, w: 60, h: 200, kind: 'building' },
@@ -2062,7 +2086,7 @@ const NN_MAP_VARIANTS = [
       { x: 480, y: 980, w: 240, h: 120, label: '南高地' },
     ],
   },
-  { id: 'trenches',   name: '壕沟 TRENCHWAR',
+  { id: 'trenches', name: '壕沟 TRENCHWAR',
     walls: () => [
       { x: 560, y: 460, w: 80, h: 280, kind: 'building' },
     ],
@@ -2070,6 +2094,65 @@ const NN_MAP_VARIANTS = [
       { x: 100, y: 350, w: 360, h: 70, label: '北壕沟' },
       { x: 740, y: 780, w: 360, h: 70, label: '南壕沟' },
     ],
+  },
+  // === 4 new variants ===
+  { id: 'fortress', name: '堡垒 FORTRESS',
+    walls: () => [
+      { x: 500, y: 500, w: 200, h: 200, kind: 'building', accent: true },
+      { x: 480, y: 480, w: 60,  h: 60,  kind: 'cover' },
+      { x: 660, y: 480, w: 60,  h: 60,  kind: 'cover' },
+      { x: 480, y: 660, w: 60,  h: 60,  kind: 'cover' },
+      { x: 660, y: 660, w: 60,  h: 60,  kind: 'cover' },
+    ],
+    trenches: [
+      { x: 100, y: 200, w: 320, h: 60, label: '围城北沟' },
+      { x: 780, y: 940, w: 320, h: 60, label: '围城南沟' },
+    ],
+  },
+  { id: 'crossfire', name: '交叉火力 CROSSFIRE',
+    walls: () => [
+      { x: 540, y: 200, w: 120, h: 120, kind: 'cover' },
+      { x: 540, y: 880, w: 120, h: 120, kind: 'cover' },
+      { x: 200, y: 540, w: 120, h: 120, kind: 'cover' },
+      { x: 880, y: 540, w: 120, h: 120, kind: 'cover' },
+    ],
+    highGrounds: [
+      { x: 100, y: 100, w: 140, h: 140, label: 'NW 哨' },
+      { x: 960, y: 100, w: 140, h: 140, label: 'NE 哨' },
+      { x: 100, y: 960, w: 140, h: 140, label: 'SW 哨' },
+      { x: 960, y: 960, w: 140, h: 140, label: 'SE 哨' },
+    ],
+  },
+  { id: 'tunnel', name: '隧道 TUNNEL',
+    walls: () => [
+      { x: 100, y: 320, w: 1000, h: 60, kind: 'building' },
+      { x: 100, y: 820, w: 1000, h: 60, kind: 'building' },
+      { x: 540, y: 380, w: 120, h: 80, kind: 'cover' },
+      { x: 540, y: 740, w: 120, h: 80, kind: 'cover' },
+    ],
+    highGrounds: [
+      { x:  60, y: 540, w: 100, h: 120, label: '西嘴' },
+      { x: 1040, y: 540, w: 100, h: 120, label: '东嘴' },
+    ],
+    trenches: [
+      { x: 300, y: 580, w: 600, h: 40, label: '中央壕' },
+    ],
+  },
+  { id: 'arena', name: '竞技场 ARENA',
+    walls: () => {
+      const out = [];
+      const cx = 600, cy = 600, r = 380;
+      // 8 covers in a ring
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const x = cx + Math.cos(a) * r - 40;
+        const y = cy + Math.sin(a) * r - 40;
+        out.push({ x: Math.round(x), y: Math.round(y), w: 80, h: 80,
+                   kind: i % 2 === 0 ? 'building' : 'cover' });
+      }
+      return out;
+    },
+    highGrounds: [{ x: 540, y: 540, w: 120, h: 120, label: '决斗台' }],
   },
 ];
 
@@ -2088,11 +2171,14 @@ function buildNNArenaVariant(idx) {
       addBuilding(x, y, w.w, w.h, w.color || COLORS.gray, { accent: !!w.accent });
     }
   }
-  // Tactical terrain (制高点 / 壕沟) — translate to arena coords like walls
-  for (const h of v.highGrounds || []) {
+  // Tactical terrain (制高点 / 壕沟). Some variants (e.g. random) define these
+  // as factories so they can roll fresh terrain per match.
+  const hgs = typeof v.highGrounds === 'function' ? v.highGrounds() : (v.highGrounds || []);
+  const trs = typeof v.trenches    === 'function' ? v.trenches()    : (v.trenches    || []);
+  for (const h of hgs) {
     addHighGround(NN_ARENA.x0 + h.x, NN_ARENA.y0 + h.y, h.w, h.h, { label: h.label });
   }
-  for (const t of v.trenches || []) {
+  for (const t of trs) {
     addTrench(NN_ARENA.x0 + t.x, NN_ARENA.y0 + t.y, t.w, t.h, { label: t.label });
   }
   buildCoverPoints();
