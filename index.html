@@ -3970,6 +3970,63 @@ function castVisionRay(x0, y0, angle, maxDist, blockers) {
   return { x: x0 + dx * best, y: y0 + dy * best, t: best };
 }
 
+// Render fog-of-war: dark fill across the visible world, then cut out the
+// UNION of every friendly vision polygon (player + alive allies). Walls cast
+// shadows because each poly is built via raycasting against blockers, so
+// you only see what isn't behind a wall. Called inside the camera transform
+// so polys are in world space.
+const _fogPlayerPoly = [];
+const _fogAllyPolys = [];
+function renderFogOfWar() {
+  if (!(game.settings && game.settings.visionCone)) return;
+  if (game.state !== 'playing') return;
+  // Visible world rect in world-space (the rectangle the camera transform projects).
+  const halfVW = (W() / camera.scale) / 2;
+  const halfVH = (H() / camera.scale) / 2;
+  const vx = camera.x - halfVW, vy = camera.y - halfVH;
+  const vw = halfVW * 2, vh = halfVH * 2;
+
+  // Build polygons for every alive friendly observer
+  const observers = [];
+  if (player.alive) observers.push({ x: player.x, y: player.y, angle: player.angle, range: VIEW.range, arc: VIEW.arc });
+  for (const a of allies) {
+    if (!a.alive) continue;
+    const lookAngle = (a.gunAngle != null) ? a.gunAngle : (a.angle || 0);
+    observers.push({ x: a.x, y: a.y, angle: lookAngle, range: VIEW.range * 0.85, arc: VIEW.arc });
+  }
+  if (observers.length === 0) {
+    // Pure dark — nobody can see
+    ctx.fillStyle = 'rgba(20, 18, 24, 0.78)';
+    ctx.fillRect(vx, vy, vw, vh);
+    return;
+  }
+
+  // Reuse buffers — one for player, others rebuilt per call (allies are few)
+  while (_fogAllyPolys.length < observers.length) _fogAllyPolys.push([]);
+
+  for (let i = 0; i < observers.length; i++) {
+    const o = observers[i];
+    buildVisionPoly(_fogAllyPolys[i], o.x, o.y, o.angle, o.arc, o.range);
+  }
+
+  ctx.save();
+  // Dark layer over the visible world
+  ctx.fillStyle = 'rgba(20, 18, 24, 0.72)';
+  ctx.fillRect(vx, vy, vw, vh);
+  // Cut out each friendly vision polygon
+  ctx.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < observers.length; i++) {
+    const poly = _fogAllyPolys[i];
+    if (poly.length < 3) continue;
+    ctx.beginPath();
+    ctx.moveTo(poly[0].x, poly[0].y);
+    for (let k = 1; k < poly.length; k++) ctx.lineTo(poly[k].x, poly[k].y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 // Build a fan-shaped visibility polygon from origin (numRays + 2 verts).
 function buildVisionPoly(out, ox, oy, faceAngle, arc, range) {
   out.length = 0;
@@ -4874,6 +4931,10 @@ function render() {
   else if (game.mode === 'thermal') renderThermalWorld();
   else renderWorld();
 
+  // Fog-of-war overlay (settings toggle: vision cone). Drawn AFTER all world
+  // content so it darkens everything outside the friendlies' line-of-sight.
+  if (game.mode !== 'radar' && game.mode !== 'thermal') renderFogOfWar();
+
   ctx.restore();
 
   renderHUD();
@@ -5141,26 +5202,6 @@ function renderWorld() {
 
   // Cull enemy bullets that fly through dark
   // (The render is a separate loop above — visibility check happens there.)
-
-  // Optional vision-cone overlay (settings toggle on the start screen).
-  // Draws a translucent cream fan from the player along the view direction so
-  // you can see WHERE you're looking — same arc the AI/NN uses for visibility.
-  if (player.alive && game.settings && game.settings.visionCone) {
-    const range = VIEW.range;
-    const half = VIEW.arc / 2;
-    const a0 = player.angle - half, a1 = player.angle + half;
-    ctx.save();
-    ctx.fillStyle = 'rgba(232, 228, 216, 0.13)';
-    ctx.strokeStyle = 'rgba(200, 38, 28, 0.35)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(player.x, player.y);
-    ctx.arc(player.x, player.y, range, a0, a1);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-  }
 
   // Player
   if (player.alive) drawHumanoid(player.x, player.y, player.angle, player.walkPhase, COLORS.black, false);
