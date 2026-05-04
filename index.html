@@ -626,14 +626,6 @@ function pickRandomNNWeaponId() {
   return NN_WEAPON_POOL[Math.floor(Math.random() * NN_WEAPON_POOL.length)];
 }
 
-// Pool used for random NN assignment. Excludes any test/legacy weapons.
-const NN_WEAPON_POOL = ['SMG', 'RIFLE', 'LMG', 'SNIPER', 'SHOTGUN'];
-function assignNNWeapon(unit) {
-  const id = NN_WEAPON_POOL[Math.floor(Math.random() * NN_WEAPON_POOL.length)];
-  unit._weapon = WEAPONS[id];
-  unit._weaponId = id;
-}
-
 // Backward-compat shim — code that still reads `weapon` gets the player profile
 const weapon = WEAPONS.AR7;
 
