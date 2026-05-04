@@ -433,9 +433,13 @@ class CombatEnv:
         return self._observe_team(team=0)
 
     # ---- step ----
-    def step(self, friendly_actions: List[int]):
+    def step(self, agent_actions: List[int], agent_team: int = 0):
+        """Apply agent_actions to agent_team's units. Other team is driven by
+        opponent_policy. Defaults to agent_team=0 for backward compatibility
+        with training code that always trained as the blue/team-0 side."""
         if self.done:
             raise RuntimeError("Episode is done. Call reset().")
+        opp_team = 1 - agent_team
 
         for u in self.units:
             u.damage_dealt_this_tick = 0
@@ -455,21 +459,24 @@ class CombatEnv:
                     u.y = u.spawn_y
                     u.fire_cd = 0
 
-        # Friendly actions
-        for i, action in enumerate(friendly_actions):
-            unit = self.units[i]
-            if unit.alive:
-                self._apply_action(unit, int(action), my_idx=i)
+        agent_offset = agent_team * self.squad_size
+        opp_offset   = opp_team   * self.squad_size
 
-        # Enemy actions
-        enemy_obs = [self._build_obs_for_unit(self.units[self.squad_size + i],
-                                               friendly_team=1)
-                     for i in range(self.squad_size)]
-        enemy_actions = self.opponent_policy(enemy_obs, self)
-        for i, action in enumerate(enemy_actions):
-            unit = self.units[self.squad_size + i]
+        # Agent's actions
+        for i, action in enumerate(agent_actions):
+            unit = self.units[agent_offset + i]
             if unit.alive:
-                self._apply_action(unit, int(action), my_idx=self.squad_size + i)
+                self._apply_action(unit, int(action), my_idx=agent_offset + i)
+
+        # Opponent actions (built from opponent's POV)
+        opp_obs = [self._build_obs_for_unit(self.units[opp_offset + i],
+                                             friendly_team=opp_team)
+                   for i in range(self.squad_size)]
+        opp_actions = self.opponent_policy(opp_obs, self)
+        for i, action in enumerate(opp_actions):
+            unit = self.units[opp_offset + i]
+            if unit.alive:
+                self._apply_action(unit, int(action), my_idx=opp_offset + i)
 
         self._update_bullets()
 
@@ -481,25 +488,26 @@ class CombatEnv:
         self.tick += 1
         self.done = self.tick >= self.match_ticks
 
-        rewards = [self._reward_for(self.units[i]) for i in range(self.squad_size)]
-        obs = self._observe_team(team=0)
+        rewards = [self._reward_for(self.units[agent_offset + i]) for i in range(self.squad_size)]
+        obs = self._observe_team(team=agent_team)
 
         info = {}
         if self.done:
-            kills_a = self.team_kills[0]
-            kills_b = self.team_kills[1]
-            if kills_a > kills_b:
+            kills_agent = self.team_kills[agent_team]
+            kills_opp   = self.team_kills[opp_team]
+            if kills_agent > kills_opp:
                 bonus = +self.cur.coef_episode_win
-                info['winner'] = 0
-            elif kills_b > kills_a:
+                info['winner'] = agent_team
+            elif kills_opp > kills_agent:
                 bonus = -self.cur.coef_episode_win
-                info['winner'] = 1
+                info['winner'] = opp_team
             else:
                 bonus = 0.0
                 info['winner'] = -1
             for i in range(self.squad_size):
                 rewards[i] += bonus
-            info.update({'kills_a': kills_a, 'kills_b': kills_b})
+            info.update({'kills_agent': kills_agent, 'kills_opp': kills_opp,
+                         'agent_team': agent_team})
 
         return obs, rewards, self.done, info
 
@@ -940,7 +948,16 @@ class SinglePerspectiveEnv(_GymBase):
                  curriculum_provider: Optional[Callable[[], Curriculum]] = None,
                  opponent_factory: Optional[Callable[[Curriculum], Callable]] = None,
                  squad_size: int = SQUAD_SIZE,
-                 seed: Optional[int] = None):
+                 seed: Optional[int] = None,
+                 agent_team_provider: Optional[Callable[[], int]] = None):
+        """
+        agent_team_provider: callable () -> 0 or 1, queried at every reset().
+            Default returns 0 always (backward-compatible — only trains team 0).
+            Pass `lambda: random.randint(0, 1)` to randomize each episode and
+            train a bilateral policy that handles both spawn sides equally.
+            opponent_factory may inspect curriculum (and its own state) to
+            choose an appropriate opponent for whichever side the agent is on.
+        """
         if not _HAS_GYM:
             raise RuntimeError(
                 "SinglePerspectiveEnv needs gymnasium or gym installed. "
@@ -952,6 +969,7 @@ class SinglePerspectiveEnv(_GymBase):
 
         self._curriculum_provider = curriculum_provider or (lambda: Curriculum())
         self._opponent_factory = opponent_factory or (lambda c: random_opponent)
+        self._agent_team_provider = agent_team_provider or (lambda: 0)
         self._squad_size = squad_size
 
         c0 = self._curriculum_provider()
@@ -963,13 +981,18 @@ class SinglePerspectiveEnv(_GymBase):
         )
         self._cur_friendly_idx = 0
         self._pending_actions = [0] * squad_size
+        self._agent_team = 0
         self._last_obs = self._inner._observe_team(team=0)
 
     def reset(self, seed: Optional[int] = None, options=None):
         c = self._curriculum_provider()
         self._inner.curriculum = c
+        # Pick which side the agent plays this episode
+        self._agent_team = int(self._agent_team_provider()) & 1
         self._inner.opponent_policy = self._opponent_factory(c)
-        obs_list = self._inner.reset(seed=seed)
+        self._inner.reset(seed=seed)
+        # Build obs from the agent's actual POV (could be team 0 or team 1)
+        obs_list = self._inner._observe_team(team=self._agent_team)
         self._last_obs = obs_list
         self._cur_friendly_idx = 0
         self._pending_actions = [0] * self._squad_size
@@ -983,7 +1006,8 @@ class SinglePerspectiveEnv(_GymBase):
             obs = self._last_obs[self._cur_friendly_idx]
             return obs, 0.0, False, False, {}
 
-        obs_list, rewards, done, info = self._inner.step(self._pending_actions)
+        obs_list, rewards, done, info = self._inner.step(
+            self._pending_actions, agent_team=self._agent_team)
         total_reward = float(sum(rewards) / self._squad_size)
         self._last_obs = obs_list
         self._cur_friendly_idx = 0
