@@ -673,6 +673,55 @@ function playPositionalSound(sx, sy, intensity, kind = 'shot', isSelf = false) {
   src.start();
 }
 
+// Generic synthesized SFX (hit/death/respawn/reload/whiz/countdown).
+// Lighter weight than playPositionalSound — single oscillator + envelope.
+function playSfx(name, opts = {}) {
+  if (!AUDIO.enabled || !AUDIO.unlocked) return;
+  audioInit();
+  if (!AUDIO.ctx) return;
+  const ctx = AUDIO.ctx;
+  const presets = {
+    hit:       { freq:  220, dur: 0.10, decay: 14, type: 'lowpass',  vol: 0.50, sweepTo: 80   },
+    death:     { freq:  140, dur: 0.55, decay:  4, type: 'lowpass',  vol: 0.85, sweepTo: 50   },
+    respawn:   { freq:  440, dur: 0.25, decay:  9, type: 'bandpass', vol: 0.40, sweepTo: 1320, q: 4 },
+    reload:    { freq: 2400, dur: 0.06, decay: 30, type: 'bandpass', vol: 0.30, q: 6 },
+    whiz:      { freq: 4500, dur: 0.06, decay: 35, type: 'bandpass', vol: 0.32, q: 12 },
+    countdown: { freq:  660, dur: 0.10, decay: 22, type: 'bandpass', vol: 0.30, q: 8 },
+  };
+  const p = presets[name];
+  if (!p) return;
+  const vol = (opts.vol != null ? opts.vol : p.vol);
+  const pan = opts.pan || 0;
+
+  const dur = p.dur;
+  const buf = ctx.createBuffer(1, Math.max(64, Math.floor(ctx.sampleRate * dur)), ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    const t = i / data.length;
+    const env = Math.exp(-t * p.decay);
+    data[i] = (Math.random() * 2 - 1) * env;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const filt = ctx.createBiquadFilter();
+  filt.type = p.type;
+  filt.frequency.value = p.freq;
+  if (p.q) filt.Q.value = p.q;
+  if (p.sweepTo) {
+    filt.frequency.linearRampToValueAtTime(p.sweepTo, ctx.currentTime + dur * 0.9);
+  }
+  const gain = ctx.createGain();
+  gain.gain.value = vol;
+  let chain = src.connect(filt);
+  if (ctx.createStereoPanner && pan !== 0) {
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    chain = chain.connect(panner);
+  }
+  chain.connect(gain).connect(AUDIO.master);
+  src.start();
+}
+
 // Sound events for directional indicators + enemy alerts + squad intel +
 // positional audio. Gunshots are LOUD (1300-1500u) so most of the map is
 // within earshot.
@@ -3017,6 +3066,16 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         if (!e.alive && e._respawnAt == null) e._respawnAt = game.time + RESPAWN_TICKS;
       }
 
+      // Player respawn countdown beep — once per remaining whole second
+      if (!player.alive && player._respawnAt != null) {
+        const ticksLeft = player._respawnAt - game.time;
+        const sLeft = Math.ceil(ticksLeft / 60);
+        if (player._lastBeepSec !== sLeft && sLeft > 0 && sLeft <= 5) {
+          playSfx('countdown', { vol: sLeft === 1 ? 0.5 : 0.3 });
+          player._lastBeepSec = sLeft;
+        }
+      } else { player._lastBeepSec = -1; }
+
       // Process respawns
       if (!player.alive && player._respawnAt != null && game.time >= player._respawnAt) {
         player.alive = true;
@@ -3026,6 +3085,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         player.y = game._nnSpawnBlue.y + (Math.random() - 0.5) * 60;
         player._respawnAt = null;
         player.gunRecoil = 0;
+        playSfx('respawn');
       }
       for (const a of allies) {
         if (!a.alive && a._respawnAt != null && game.time >= a._respawnAt) {
@@ -3691,6 +3751,7 @@ function startReload() {
   if (player.reloading || player.ammo >= player.maxAmmo || player.reserve <= 0) return;
   player.reloading = true;
   player.reloadTime = 80;
+  playSfx('reload');
 }
 
 // ============ VISION RAYCASTING ============
@@ -4378,11 +4439,24 @@ function updateBullets() {
       player.hp -= b.damage;
       game.hitFlash = 12;
       hit = true;
+      playSfx('hit');
       if (player.hp <= 0) {
         player.hp = 0;
         player.alive = false;
         createExplosion(player.x, player.y, 'big');
+        playSfx('death');
         // Player death — onMissionFailed handles retry/campaign-end
+      }
+    }
+    // Bullet whiz: enemy bullet passing very close to player without hitting
+    if (!hit && player.alive) {
+      const d = Math.hypot(b.x - player.x, b.y - player.y);
+      if (d < 50 && d >= player.radius && !b._whizzed) {
+        b._whizzed = true;
+        // Pan based on bullet's angle relative to player view
+        const va = (player.viewAngle != null) ? player.viewAngle : (player.angle || 0);
+        const lx = (b.x - player.x) * Math.cos(-va) - (b.y - player.y) * Math.sin(-va);
+        playSfx('whiz', { pan: Math.max(-1, Math.min(1, lx / 50)), vol: 0.32 * (1 - d/50) });
       }
     }
     if (!hit) for (const a of allies) {
@@ -4392,6 +4466,7 @@ function updateBullets() {
         if (a.hp <= 0) {
           a.alive = false;
           createExplosion(a.x, a.y, 'small');
+          playPositionalSound(a.x, a.y, 1500, 'shot', false);  // distant ally death
         }
         hit = true;
         break;
@@ -6038,6 +6113,40 @@ function renderHUD() {
   ctx.fillText(getModeLabel(), W()/2, 36);
   ctx.textAlign = 'left';
 
+  // Respawn countdown overlay — when player is dead in NN mode and waiting
+  // for the 5-second respawn timer to elapse. Big "重生中 N" text + ring.
+  if (game._nnMode && !player.alive && player._respawnAt != null) {
+    const ticksLeft = Math.max(0, player._respawnAt - game.time);
+    const sLeft = Math.ceil(ticksLeft / 60);
+    const fracLeft = ticksLeft / (5 * 60);
+    const cx = W() / 2, cy = H() / 2;
+    // Dim backdrop
+    ctx.fillStyle = 'rgba(20, 18, 24, 0.55)';
+    ctx.fillRect(0, 0, W(), H());
+    // Tag
+    ctx.textAlign = 'center';
+    ctx.fillStyle = COLORS.red;
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('—  阵亡  ·  重生中  —', cx, cy - 110);
+    // Big countdown number
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 140px sans-serif';
+    ctx.fillText(`${sLeft}`, cx, cy + 30);
+    // Ring around it (drains as time passes)
+    ctx.strokeStyle = COLORS.red;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(cx, cy - 10, 100, -Math.PI/2, -Math.PI/2 + Math.PI*2 * fracLeft);
+    ctx.stroke();
+    // Hint
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = '11px sans-serif';
+    ctx.globalAlpha = 0.7;
+    ctx.fillText('在出生点重新部署 / RESPAWN AT BLUE BASE', cx, cy + 80);
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+  }
+
   // Mission objective panel + off-screen compass
   if (mission && mission.renderHUD) mission.renderHUD();
   if (mission && (game.mode === 'tactical' || game.mode === 'command')) drawObjectiveCompass();
@@ -6273,8 +6382,9 @@ function renderHUD() {
     ctx.restore();
   }
 
-  // Player dead overlay
-  if (!player.alive && game.state === 'playing') {
+  // Player dead overlay (campaign / non-NN modes only — NN mode draws its own
+  // respawn-countdown overlay above; this one would obscure it)
+  if (!player.alive && game.state === 'playing' && !game._nnMode) {
     ctx.fillStyle = 'rgba(200, 38, 28, 0.45)';
     ctx.fillRect(0, 0, W(), H());
     ctx.fillStyle = COLORS.cream;
