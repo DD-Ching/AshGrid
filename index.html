@@ -541,7 +541,18 @@ const player = {
   radius: 14,
   alive: true,
   walkPhase: 0,
+  // Sprint / stamina (Shift-to-sprint)
+  stamina: 100, maxStamina: 100,
+  sprinting: false,
+  staminaRegenLockUntil: 0,    // game.time before which regen is blocked (post-sprint cooldown)
 };
+
+// Sprint tuning
+const SPRINT_SPEED_MUL    = 1.65;   // ×base speed while sprinting
+const STAMINA_DRAIN_PER_F = 0.7;    // drain per frame while sprinting (~42/s at 60fps)
+const STAMINA_REGEN_PER_F = 0.35;   // regen per frame while not sprinting (~21/s)
+const STAMINA_REGEN_DELAY = 30;     // ticks (0.5s) after stopping sprint before regen begins
+const STAMINA_RECOVERY_MIN = 25;    // empty bar must recover to this much before sprint allowed again
 
 // All shooters use the same lag/sway/recoil mechanic — they just pick a weapon profile.
 // follow: how fast the gun barrel angle damps toward the target angle (1=instant, 0.05=sluggish)
@@ -4470,11 +4481,31 @@ function updatePlayer() {
   if (keys['a']) mx -= 1;
   if (keys['d']) mx += 1;
   const moving = mx || my;
+
+  // Sprint logic: hold Shift while moving + have stamina. If empty, must
+  // recover to STAMINA_RECOVERY_MIN before sprint re-engages (prevents
+  // stuttering on/off as it dips around 0).
+  const shiftHeld = !!(keys['shift']);
+  const wantsSprint = shiftHeld && moving && player.stamina > 0
+                     && (!player._spentToZero || player.stamina >= STAMINA_RECOVERY_MIN);
+  player.sprinting = wantsSprint;
+
+  if (player.sprinting) {
+    player.stamina = Math.max(0, player.stamina - STAMINA_DRAIN_PER_F);
+    if (player.stamina === 0) player._spentToZero = true;
+    player.staminaRegenLockUntil = game.time + STAMINA_REGEN_DELAY;
+  } else if (game.time >= player.staminaRegenLockUntil && player.stamina < player.maxStamina) {
+    player.stamina = Math.min(player.maxStamina, player.stamina + STAMINA_REGEN_PER_F);
+    if (player.stamina >= STAMINA_RECOVERY_MIN) player._spentToZero = false;
+  }
+
   if (moving) {
     const len = Math.hypot(mx, my);
     mx /= len; my /= len;
     // Heavy weapons (LMG/SNIPER/SHOTGUN) slow the player; light (SMG) speeds up.
-    const speedMul = (playerWeapon && playerWeapon.speedMul) ? playerWeapon.speedMul : 1.0;
+    const wpnMul = (playerWeapon && playerWeapon.speedMul) ? playerWeapon.speedMul : 1.0;
+    const sprintMul = player.sprinting ? SPRINT_SPEED_MUL : 1.0;
+    const speedMul = wpnMul * sprintMul;
     player.x += mx * player.speed * speedMul;
     player.y += my * player.speed * speedMul;
     player.walkPhase += 0.22 * speedMul;
@@ -6358,6 +6389,13 @@ function renderHUD() {
   ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 12px sans-serif';
   ctx.fillText(`HP ${Math.floor(player.hp)}/${player.maxHp}`, barX + 18, barY + 36);
+  // Stamina sliver (just below HP bar) — orange when sprinting, dim when locked.
+  const stamFrac = player.stamina / player.maxStamina;
+  const stamLocked = player._spentToZero && player.stamina < STAMINA_RECOVERY_MIN;
+  ctx.fillStyle = COLORS.creamDark;
+  ctx.fillRect(barX + 12, barY + 42, hpw, 5);
+  ctx.fillStyle = stamLocked ? '#7A4030' : (player.sprinting ? '#E67A2C' : '#B25F2A');
+  ctx.fillRect(barX + 12, barY + 42, hpw * stamFrac, 5);
   // Ammo (middle)
   ctx.fillStyle = COLORS.black;
   ctx.font = 'bold 22px sans-serif';
