@@ -1857,16 +1857,58 @@ function nnBuildObs(me, friendlies, enemies, outBuf, flipX = false) {
   return i; // should be 65
 }
 
-// Apply a discrete action (0..17) to a unit. Mirrors combat_env._apply_action.
+// Returns true if the unit's current AABB overlaps any building.
+function nnUnitOverlapsBuilding(unit, radius) {
+  for (const b of buildings) {
+    if (unit.x > b.x - radius && unit.x < b.x+b.w+radius &&
+        unit.y > b.y - radius && unit.y < b.y+b.h+radius) return true;
+  }
+  return false;
+}
+
+// Apply a discrete action (0..17) to a unit. Mirrors combat_env._apply_action,
+// but also handles "stuck on wall" — the trained model sometimes confidently
+// picks a direction that's blocked by a wall, so we slide along the wall and
+// nudge perpendicularly if the unit hasn't progressed.
 function nnApplyAction(unit, action, friendlies, enemies) {
   if (!unit.alive) return;
-  const moveDir = action >> 1;        // 0..8
-  const fire = action & 1;            // 0|1
+  const r = unit.radius || 14;
+  const speed = NN.PLAYER_SPEED;
+  let moveDir = action >> 1;        // 0..8
+  const fire = action & 1;          // 0|1
+
+  // Stuck breaker: if this unit has been stuck (<2u progress) for >=20 ticks
+  // while NN keeps trying to move, override with a random non-blocked dir.
+  unit._nnStuckCt = unit._nnStuckCt || 0;
+  if (moveDir !== 0 && unit._nnStuckCt > 20) {
+    // Try perpendicular dirs (rotate 90° each way) until one would clear a wall
+    const rotations = [2, -2, 4, -4, 1, -1];   // ±90°, ±180°, ±45° (in 45° steps)
+    for (const off of rotations) {
+      let trialDir = ((moveDir - 1 + off) % 8 + 8) % 8 + 1;   // stays in 1..8
+      const [tdx, tdy] = NN.MOVE_DIRS[trialDir];
+      const trialX = unit.x + tdx * speed;
+      const trialY = unit.y + tdy * speed;
+      const saveX = unit.x, saveY = unit.y;
+      unit.x = trialX; unit.y = trialY;
+      const blocked = nnUnitOverlapsBuilding(unit, r);
+      unit.x = saveX; unit.y = saveY;
+      if (!blocked) { moveDir = trialDir; break; }
+    }
+    unit._nnStuckCt = 0;
+  }
+
   const [dx, dy] = NN.MOVE_DIRS[moveDir] || [0, 0];
+  const oldX = unit.x, oldY = unit.y;
 
   if (dx !== 0 || dy !== 0) {
-    unit.x += dx * NN.PLAYER_SPEED;
-    unit.y += dy * NN.PLAYER_SPEED;
+    // Axis-decoupled movement: try X then Y separately so a diagonal blocked
+    // on one axis still slides along the wall on the other.
+    const tryX = oldX + dx * speed;
+    unit.x = tryX;
+    if (nnUnitOverlapsBuilding(unit, r)) unit.x = oldX;
+    const tryY = oldY + dy * speed;
+    unit.y = tryY;
+    if (nnUnitOverlapsBuilding(unit, r)) unit.y = oldY;
     unit.angle = Math.atan2(dy, dx);
     unit.walkPhase = (unit.walkPhase || 0) + 0.18;
   } else {
@@ -1881,10 +1923,17 @@ function nnApplyAction(unit, action, friendlies, enemies) {
     }
   }
 
-  // Clamp to NN arena play area
+  // Track progress for the stuck-breaker (only count when NN tried to move)
+  if (moveDir !== 0) {
+    const progressed = Math.hypot(unit.x - oldX, unit.y - oldY);
+    if (progressed < 0.5) unit._nnStuckCt++;
+    else unit._nnStuckCt = 0;
+  }
+
+  // Clamp to NN arena play area, then a final wall push as a safety net
   unit.x = Math.max(NN_ARENA.x0 + 20, Math.min(NN_ARENA.x0 + NN_ARENA.w - 20, unit.x));
   unit.y = Math.max(NN_ARENA.y0 + 20, Math.min(NN_ARENA.y0 + NN_ARENA.h - 20, unit.y));
-  pushOutOfBuildings(unit, unit.radius || 14);
+  pushOutOfBuildings(unit, r);
 
   // Decrement fire cooldown
   if (unit._nnFireCd > 0) unit._nnFireCd--;
