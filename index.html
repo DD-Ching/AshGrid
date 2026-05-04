@@ -419,9 +419,10 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
     <div class="difficulty-row">
       <label class="difficulty-label">难度 DIFFICULTY</label>
       <div class="difficulty-pick">
-        <button data-diff="easy"   class="diff-btn">简单<span>6M步</span></button>
-        <button data-diff="medium" class="diff-btn">中等<span>10M步</span></button>
-        <button data-diff="hard"   class="diff-btn active">困难<span>18M步</span></button>
+        <button data-diff="easy"    class="diff-btn">简单<span>6M步</span></button>
+        <button data-diff="medium"  class="diff-btn">中等<span>10M步</span></button>
+        <button data-diff="hard"    class="diff-btn">困难<span>18M步</span></button>
+        <button data-diff="evolved" class="diff-btn active">进化<span>18M+续训</span></button>
       </div>
     </div>
     <div class="lobby-actions">
@@ -906,7 +907,7 @@ document.getElementById('restartBtn').onclick = startGame;
 document.getElementById('skirmishBtn').onclick = startSkirmish;
 
 // ---- NN Skirmish: button opens lobby for team-size + difficulty selection ----
-const _lobby = { blue: 3, red: 3, min: 1, max: 4, difficulty: 'hard' };
+const _lobby = { blue: 3, red: 3, min: 1, max: 4, difficulty: 'evolved' };
 const _nnBtn = document.getElementById('nnBtn');
 if (_nnBtn) {
   _nnBtn.onclick = () => {
@@ -975,7 +976,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard') {
   redSize  = Math.max(1, Math.min(4, redSize));
 
   // Async load the ONNX model for the selected difficulty (cached per-tier)
-  const tierLabel = { easy: '简单', medium: '中等', hard: '困难' }[difficulty] || '困难';
+  const tierLabel = { easy: '简单', medium: '中等', hard: '困难', evolved: '进化' }[difficulty] || '进化';
   showMessage(`载入神经网络 · ${tierLabel}...`, 60);
   const ok = await nnLoadModel(difficulty);
   if (!ok) {
@@ -1828,11 +1829,12 @@ const NN = {
   loading: false,
   loaded: false,
   error: null,
-  difficulty: null,        // 'easy' | 'medium' | 'hard' | null  — currently-loaded tier
+  difficulty: null,        // 'easy' | 'medium' | 'hard' | 'evolved' | null
   modelPaths: {
-    easy:   'ai_arena/onnx/model_easy.onnx',
-    medium: 'ai_arena/onnx/model_medium.onnx',
-    hard:   'ai_arena/onnx/model_hard.onnx',
+    easy:    'ai_arena/onnx/model_easy.onnx',
+    medium:  'ai_arena/onnx/model_medium.onnx',
+    hard:    'ai_arena/onnx/model_hard.onnx',
+    evolved: 'ai_arena/onnx/model_evolved.onnx',
   },
   modelPath: 'ai_arena/onnx/model.onnx',  // legacy fallback
   // Constants must match the Python combat_env exactly
