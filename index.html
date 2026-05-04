@@ -2211,7 +2211,21 @@ function nnApplyAction(unit, action, friendlies, enemies) {
   if (fire && unit._nnFireCd <= 0) {
     const tgt = nnNearestVisibleEnemy(unit, enemies);
     if (tgt && lineOfSight(unit.x, unit.y, tgt.x, tgt.y)) {
-      const aim = Math.atan2(tgt.y - unit.y, tgt.x - unit.x) + (Math.random() - 0.5) * 0.05;
+      const w = unit._weapon || WEAPONS.RIFLE;
+      // Target leading: predict where the target will be when the bullet
+      // arrives. Uses the velocity tracked at the start of update(). Without
+      // this, NN bullets always miss a strafing player because the bullet
+      // takes (dist / bulletSpeed) frames to arrive — at d=200 + RIFLE bullet
+      // speed 14, that's 14 frames, during which the player moves 14 × 2.8 =
+      // 40 units. Imperfect prediction (target also accelerates / changes
+      // direction) but cuts the error roughly 5×.
+      const dx0 = tgt.x - unit.x, dy0 = tgt.y - unit.y;
+      const dist0 = Math.hypot(dx0, dy0);
+      const flightTime = dist0 / w.bulletSpeed;
+      const tvx = tgt._velX || 0, tvy = tgt._velY || 0;
+      const leadX = tgt.x + tvx * flightTime;
+      const leadY = tgt.y + tvy * flightTime;
+      const aim = Math.atan2(leadY - unit.y, leadX - unit.x) + (Math.random() - 0.5) * 0.05;
       unit.angle = aim;
       // Use team to pick the right bullet pool. unit.team 0 = friendly, 1 = hostile.
       // Previous bug: relied on `friendlies.includes(unit)` which is also true for
@@ -2225,7 +2239,6 @@ function nnApplyAction(unit, action, friendlies, enemies) {
       // from the player weapon pool — see assignNNWeapon). Fall back to
       // RIFLE if somehow unassigned. Spread + pellets honored, so NN
       // shotgunners spray and NN snipers hit hard but rarely.
-      const w = unit._weapon || WEAPONS.RIFLE;
       const pellets = w.pellets || 1;
       for (let i = 0; i < pellets; i++) {
         const a = (pellets > 1)
@@ -4378,6 +4391,23 @@ function updateSoundEvents() {
 function update() {
   if (game.state !== 'playing') return;
   game.time++;
+
+  // Per-unit velocity tracking — needed so NN auto-aim can lead a strafing
+  // target. Without this, NN bullets always aim at where you ARE, not where
+  // you'll BE when the bullet arrives → circling the enemy = invincible.
+  // Save current position; the diff vs last frame becomes _velX/_velY.
+  const _trackVel = (u) => {
+    if (u._lastX != null) {
+      u._velX = u.x - u._lastX;
+      u._velY = u.y - u._lastY;
+    } else {
+      u._velX = 0; u._velY = 0;
+    }
+    u._lastX = u.x; u._lastY = u.y;
+  };
+  _trackVel(player);
+  for (const a of allies)  _trackVel(a);
+  for (const e of enemies) _trackVel(e);
 
   if (game.message) {
     game.messageTime--;
