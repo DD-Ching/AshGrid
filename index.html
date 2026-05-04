@@ -257,6 +257,25 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   background: var(--red); color: var(--cream); border-color: var(--red);
 }
 .diff-btn.active span { color: var(--cream); opacity: 0.85; }
+.weapon-pick { display: flex; gap: 0; flex-wrap: nowrap; }
+.weap-btn {
+  background: var(--cream-dark); border: 2px solid var(--black);
+  color: var(--black); font-family: inherit;
+  font-size: 12px; font-weight: 800; letter-spacing: 2px;
+  padding: 8px 12px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center;
+  border-right-width: 1px; min-width: 78px;
+}
+.weap-btn:last-child { border-right-width: 2px; }
+.weap-btn span {
+  font-size: 8px; letter-spacing: 1px; color: var(--gray);
+  margin-top: 2px; font-weight: 600;
+}
+.weap-btn:hover { background: var(--cream); }
+.weap-btn.active {
+  background: var(--black); color: var(--cream); border-color: var(--black);
+}
+.weap-btn.active span { color: var(--cream); opacity: 0.75; }
 .lobby-actions {
   display: flex; gap: 16px; align-items: center; margin-top: 24px;
 }
@@ -425,6 +444,16 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
         <button data-diff="evolved" class="diff-btn active">进化<span>18M+续训</span></button>
       </div>
     </div>
+    <div class="difficulty-row">
+      <label class="difficulty-label">武器 WEAPON</label>
+      <div class="weapon-pick">
+        <button data-weapon="SMG"     class="weap-btn">冲锋<span>近战·快</span></button>
+        <button data-weapon="RIFLE"   class="weap-btn active">步枪<span>平衡</span></button>
+        <button data-weapon="LMG"     class="weap-btn">机枪<span>压制·重</span></button>
+        <button data-weapon="SNIPER"  class="weap-btn">狙击<span>一枪秒·单发</span></button>
+        <button data-weapon="SHOTGUN" class="weap-btn">霰弹<span>近战毁灭</span></button>
+      </div>
+    </div>
     <div class="lobby-actions">
       <button class="start-btn" id="lobbyStartBtn">开始战斗 ▶</button>
       <button class="lobby-cancel" id="lobbyCancelBtn">返回</button>
@@ -524,21 +553,72 @@ const player = {
 // damage / bulletSpeed / bulletLife: ballistics
 // soundIntensity: how far the gunshot reaches as an alert
 const WEAPONS = {
-  // Lethal-pass tuning: everyone dies fast. Fire density similar across sides.
-  // Player still has cleanest weapon (low spread, fast follow) but enemies under
-  // cover can match the player's bullet pressure, so positioning matters.
-  AR7: { follow: 0.18, swayAmp: 0.024, swayFreq: 0.06, movePenalty: 0.018,
-         recoilPerShot: 0.10, recoilDecay: 0.86, spread: 0.04,
-         fireCd: 8,  damage: 18, bulletSpeed: 14, bulletLife: 60, soundIntensity: 1500 },
+  // Player-selectable weapons, each with clear trade-offs. Stats:
+  //  fireCd       frames between shots (8 = ~7.5 rounds/sec at 60fps)
+  //  damage       hp loss per hit (player.maxHp = 100)
+  //  bulletSpeed  travel per frame; range = bulletSpeed × bulletLife
+  //  bulletLife   how many frames the bullet lives before dissipating
+  //  spread       random aim noise per shot (rad)
+  //  magSize      shots per mag
+  //  reserveStart starting reserve ammo
+  //  speedMul     player movement multiplier (heavy gun → slower)
+  //  auto         true = full-auto, false = semi-auto (one shot per click)
+  //  reloadFrames frames to reload (default 80 = 1.33s)
+  //  follow / swayAmp / recoilPerShot etc. — barrel handling for tickShooter
+  // All damages tuned for fast lethality (player.maxHp = 100). Easy to bump
+  // individual numbers — each weapon's `damage` is a single dial.
+  SMG:    { name: 'SMG / 冲锋枪', follow: 0.22, swayAmp: 0.040, swayFreq: 0.08, movePenalty: 0.030,
+            recoilPerShot: 0.07, recoilDecay: 0.88, spread: 0.10,
+            fireCd: 4,  damage: 14, bulletSpeed: 13, bulletLife: 42, soundIntensity: 1200,
+            magSize: 30, reserveStart: 180, speedMul: 1.10, auto: true,  reloadFrames: 60,
+            blurb: '高射速·近战' },
+  RIFLE:  { name: 'AR / 步枪',  follow: 0.18, swayAmp: 0.024, swayFreq: 0.06, movePenalty: 0.018,
+            recoilPerShot: 0.10, recoilDecay: 0.86, spread: 0.04,
+            fireCd: 8,  damage: 22, bulletSpeed: 14, bulletLife: 60, soundIntensity: 1500,
+            magSize: 30, reserveStart: 120, speedMul: 1.00, auto: true,  reloadFrames: 80,
+            blurb: '平衡·全能' },
+  LMG:    { name: 'LMG / 机枪',  follow: 0.10, swayAmp: 0.034, swayFreq: 0.05, movePenalty: 0.026,
+            recoilPerShot: 0.13, recoilDecay: 0.84, spread: 0.07,
+            fireCd: 6,  damage: 20, bulletSpeed: 14, bulletLife: 70, soundIntensity: 1600,
+            magSize: 75, reserveStart: 150, speedMul: 0.85, auto: true,  reloadFrames: 140,
+            blurb: '持续压制·重' },
+  SNIPER: { name: 'DMR / 狙击', follow: 0.30, swayAmp: 0.018, swayFreq: 0.04, movePenalty: 0.014,
+            recoilPerShot: 0.30, recoilDecay: 0.78, spread: 0.005,
+            fireCd: 50, damage: 100, bulletSpeed: 22, bulletLife: 100, soundIntensity: 1800,
+            magSize: 5,  reserveStart: 30,  speedMul: 0.90, auto: false, reloadFrames: 100,
+            blurb: '一枪秒·单发' },
+  SHOTGUN:{ name: 'SG / 霰弹', follow: 0.16, swayAmp: 0.028, swayFreq: 0.07, movePenalty: 0.022,
+            recoilPerShot: 0.40, recoilDecay: 0.78, spread: 0.30,
+            fireCd: 30, damage: 18, bulletSpeed: 16, bulletLife: 24, soundIntensity: 1600,
+            magSize: 6,  reserveStart: 30,  speedMul: 0.95, auto: false, reloadFrames: 110,
+            pellets: 7, blurb: '近战毁灭·散布' },
+
+  // Allies (campaign) — kept separate so balancing AI doesn't bleed into player picks
   M4:  { follow: 0.14, swayAmp: 0.030, swayFreq: 0.07, movePenalty: 0.022,
          recoilPerShot: 0.09, recoilDecay: 0.87, spread: 0.06,
          fireCd: 14, damage: 16, bulletSpeed: 13, bulletLife: 60, soundIntensity: 1400 },
-  // AK was slow-fire low-damage. Bumped fire rate AND damage so enemies
-  // actually hurt — a soldier in cover should be a real threat.
   AK:  { follow: 0.10, swayAmp: 0.034, swayFreq: 0.05, movePenalty: 0.026,
          recoilPerShot: 0.12, recoilDecay: 0.85, spread: 0.09,
          fireCd: 16, damage: 14, bulletSpeed: 11, bulletLife: 70, soundIntensity: 1300 },
+
+  // Backward-compat alias — old code paths reference WEAPONS.AR7.
+  // Points at RIFLE so AR7 references stay valid until everything migrates.
+  get AR7() { return this.RIFLE; },
 };
+
+// Currently-selected player weapon (mutable). Default RIFLE = balanced baseline.
+let playerWeapon = WEAPONS.RIFLE;
+
+// Apply a weapon's mag size + starting reserve to the player. Call at game start
+// or when switching weapons mid-game.
+function applyWeaponToPlayer(w) {
+  playerWeapon = w;
+  player.maxAmmo = w.magSize;
+  player.ammo = w.magSize;
+  player.reserve = w.reserveStart;
+  player.reloading = false;
+  player.reloadTime = 0;
+}
 
 // Backward-compat shim — code that still reads `weapon` gets the player profile
 const weapon = WEAPONS.AR7;
@@ -907,7 +987,7 @@ document.getElementById('restartBtn').onclick = startGame;
 document.getElementById('skirmishBtn').onclick = startSkirmish;
 
 // ---- NN Skirmish: button opens lobby for team-size + difficulty selection ----
-const _lobby = { blue: 3, red: 3, min: 1, max: 4, difficulty: 'evolved' };
+const _lobby = { blue: 3, red: 3, min: 1, max: 4, difficulty: 'evolved', weapon: 'RIFLE' };
 const _nnBtn = document.getElementById('nnBtn');
 if (_nnBtn) {
   _nnBtn.onclick = () => {
@@ -932,13 +1012,20 @@ document.querySelectorAll('#nnLobby .diff-btn').forEach(btn => {
       b.classList.toggle('active', b === btn));
   };
 });
+document.querySelectorAll('#nnLobby .weap-btn').forEach(btn => {
+  btn.onclick = () => {
+    _lobby.weapon = btn.dataset.weapon;
+    document.querySelectorAll('#nnLobby .weap-btn').forEach(b =>
+      b.classList.toggle('active', b === btn));
+  };
+});
 document.getElementById('lobbyCancelBtn').onclick = () => {
   document.getElementById('nnLobby').classList.add('hidden');
   document.getElementById('start').classList.remove('hidden');
 };
 document.getElementById('lobbyStartBtn').onclick = () => {
   document.getElementById('nnLobby').classList.add('hidden');
-  startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty);
+  startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty, _lobby.weapon);
 };
 
 function startSkirmish() {
@@ -967,7 +1054,7 @@ function startSkirmish() {
   showMessage('对抗模式 · 自由射击', 150);
 }
 
-async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard') {
+async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', weaponId = 'RIFLE') {
   document.getElementById('start').classList.add('hidden');
   document.getElementById('nnLobby')?.classList.add('hidden');
   document.getElementById('end').classList.add('hidden');
@@ -994,9 +1081,11 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard') {
   game._nnEpochStart = 0;
   game._nnTeamKills = [0, 0];
 
+  // Apply selected weapon (mag size, reserve, weight) before HP reset
+  const w = WEAPONS[weaponId] || WEAPONS.RIFLE;
+  applyWeaponToPlayer(w);
   player.hp = player.maxHp;
-  player.ammo = player.maxAmmo; player.reserve = 120;
-  player.reloading = false; player.alive = true;
+  player.alive = true;
   player._respawnAt = null;
   drone.deployed = false; drone.battery = drone.maxBattery;
   fpv.active = false; fpv.available = fpv.max; fpv.trail = [];
@@ -2116,13 +2205,16 @@ function nnApplyAction(unit, action, friendlies, enemies) {
       const isAlly = isFriendlyTeam && unit !== player;
       const isPlayer = unit === player;
       const bulletList = isFriendlyTeam ? bullets : enemyBullets;
+      // NN units use a RIFLE-tier weapon, matched to player RIFLE 22dmg.
+      // (Original was 14 — strictly weaker than the player and made every
+      // match feel one-sided.)
       bulletList.push({
         x: unit.x + Math.cos(aim) * 16,
         y: unit.y + Math.sin(aim) * 16,
         vx: Math.cos(aim) * 14,
         vy: Math.sin(aim) * 14,
         life: 60,
-        damage: 14,
+        damage: 22,
         fromAlly: isAlly,
       });
       muzzleFlashes.push({ x: unit.x + Math.cos(aim)*22, y: unit.y + Math.sin(aim)*22, angle: aim, life: 5 });
@@ -3092,11 +3184,19 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       if (!player.alive && player._respawnAt != null && game.time >= player._respawnAt) {
         player.alive = true;
         player.hp = player.maxHp;
-        player.ammo = player.maxAmmo;
+        // Refill mag + restore reserve to the chosen weapon's start (so SMG
+        // doesn't get stuck at 5 ammo if you respawn mid-mag, etc.)
+        if (playerWeapon) {
+          player.ammo = playerWeapon.magSize;
+          player.reserve = playerWeapon.reserveStart;
+        } else {
+          player.ammo = player.maxAmmo;
+        }
         player.x = game._nnSpawnBlue.x;
         player.y = game._nnSpawnBlue.y + (Math.random() - 0.5) * 60;
         player._respawnAt = null;
         player.gunRecoil = 0;
+        player.reloading = false;
         playSfx('respawn');
       }
       for (const a of allies) {
@@ -3762,7 +3862,7 @@ function launchFPV() {
 function startReload() {
   if (player.reloading || player.ammo >= player.maxAmmo || player.reserve <= 0) return;
   player.reloading = true;
-  player.reloadTime = 80;
+  player.reloadTime = playerWeapon.reloadFrames || 80;
   playSfx('reload');
 }
 
@@ -4323,9 +4423,11 @@ function updatePlayer() {
   if (moving) {
     const len = Math.hypot(mx, my);
     mx /= len; my /= len;
-    player.x += mx * player.speed;
-    player.y += my * player.speed;
-    player.walkPhase += 0.22;
+    // Heavy weapons (LMG/SNIPER/SHOTGUN) slow the player; light (SMG) speeds up.
+    const speedMul = (playerWeapon && playerWeapon.speedMul) ? playerWeapon.speedMul : 1.0;
+    player.x += mx * player.speed * speedMul;
+    player.y += my * player.speed * speedMul;
+    player.walkPhase += 0.22 * speedMul;
   }
   pushOutOfBuildings(player, player.radius);
   // In NN mode, confine the player to the NN_ARENA box (the red border) so
@@ -4346,10 +4448,15 @@ function updatePlayer() {
   player.angle = Math.atan2(wp.y - player.y, wp.x - player.x);
 
   // Gun barrel: damped follow toward view, sway, recoil decay
-  tickShooter(player, player.angle, WEAPONS.AR7, !!moving);
+  tickShooter(player, player.angle, playerWeapon, !!moving);
 
   player.fireCooldown--;
-  if (mouse.down && player.fireCooldown <= 0 && player.ammo > 0 && !player.reloading) fire();
+  // Auto vs semi: full-auto fires while held; semi-auto (SNIPER, SHOTGUN)
+  // requires a fresh click each shot.
+  const triggerOK = playerWeapon.auto !== false
+                    ? mouse.down
+                    : (mouse.down && !mouse._wasDown);
+  if (triggerOK && player.fireCooldown <= 0 && player.ammo > 0 && !player.reloading) fire();
   // Empty trigger click: clicking when out of ammo + can't reload (no reserve)
   if (mouse.down && !mouse._wasDown && player.ammo === 0 && player.reserve === 0) {
     playSfx('empty_click');
@@ -4405,20 +4512,26 @@ function updateDroneControl() {
 }
 
 function fire() {
-  const w = WEAPONS.AR7;
+  const w = playerWeapon;
   player.fireCooldown = w.fireCd;
   player.ammo--;
-  const barrel = player.gunAngle + player.gunRecoil + (Math.random()-0.5) * w.spread;
-  bullets.push({
-    x: player.x + Math.cos(barrel)*18,
-    y: player.y + Math.sin(barrel)*18,
-    vx: Math.cos(barrel)*w.bulletSpeed, vy: Math.sin(barrel)*w.bulletSpeed,
-    life: w.bulletLife, damage: w.damage,
-    fromAlly: false,
-  });
-  muzzleFlashes.push({ x: player.x + Math.cos(barrel)*22, y: player.y + Math.sin(barrel)*22, angle: barrel, life: 5 });
+  const baseAngle = player.gunAngle + player.gunRecoil;
+  // Shotgun and similar: emit `pellets` bullets per shot with shared spread cone
+  const pellets = w.pellets || 1;
+  for (let i = 0; i < pellets; i++) {
+    const barrel = baseAngle + (Math.random()-0.5) * w.spread;
+    bullets.push({
+      x: player.x + Math.cos(barrel)*18,
+      y: player.y + Math.sin(barrel)*18,
+      vx: Math.cos(barrel)*w.bulletSpeed, vy: Math.sin(barrel)*w.bulletSpeed,
+      life: w.bulletLife, damage: w.damage,
+      fromAlly: false,
+    });
+  }
+  // One muzzle flash per shot (not per pellet) — spread looks like a cloud
+  muzzleFlashes.push({ x: player.x + Math.cos(baseAngle)*22, y: player.y + Math.sin(baseAngle)*22, angle: baseAngle, life: 5 });
   applyRecoil(player, w);
-  emitSound(player.x, player.y, w.soundIntensity, true, true);  // isPlayerSelf=true → no on-screen indicator
+  emitSound(player.x, player.y, w.soundIntensity, true, true);
 }
 
 function updateBullets() {
