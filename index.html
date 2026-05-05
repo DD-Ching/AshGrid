@@ -238,7 +238,16 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 .difficulty-label {
   font-size: 11px; letter-spacing: 5px; font-weight: 800; color: var(--black);
 }
-.difficulty-pick { display: flex; gap: 0; }
+.diff-groups {
+  display: flex; gap: 22px; align-items: flex-end;
+}
+.diff-group { display: flex; flex-direction: column; gap: 5px; }
+.diff-group-label {
+  font-size: 9px; letter-spacing: 3px; font-weight: 700;
+  color: var(--gray); padding-left: 2px;
+}
+.diff-group.spec .diff-group-label { color: var(--red); }
+.diff-pick-inner { display: flex; gap: 0; }
 .diff-btn {
   background: var(--cream-dark); border: 2px solid var(--black);
   color: var(--black); font-family: inherit;
@@ -247,7 +256,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   display: flex; flex-direction: column; align-items: center;
   border-right-width: 1px;
 }
-.diff-btn:last-child { border-right-width: 2px; }
+.diff-pick-inner .diff-btn:last-child { border-right-width: 2px; }
 .diff-btn span {
   font-size: 9px; letter-spacing: 2px; color: var(--gray);
   margin-top: 2px; font-weight: 600;
@@ -257,6 +266,9 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   background: var(--red); color: var(--cream); border-color: var(--red);
 }
 .diff-btn.active span { color: var(--cream); opacity: 0.85; }
+/* Specialist group: red top stripe marks "trained personality" tiers */
+.diff-group.spec .diff-btn { border-top: 3px solid var(--red); padding-top: 9px; }
+.diff-group.spec .diff-btn.active { border-top-color: var(--red); }
 .weapon-pick { display: flex; gap: 0; flex-wrap: nowrap; }
 .weap-btn {
   background: var(--cream-dark); border: 2px solid var(--black);
@@ -482,15 +494,30 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
     </div>
     <div class="difficulty-row">
       <label class="difficulty-label">难度 DIFFICULTY</label>
-      <div class="difficulty-pick">
-        <button data-diff="easy"    class="diff-btn">简单<span>6M步</span></button>
-        <button data-diff="medium"  class="diff-btn">中等<span>10M步</span></button>
-        <button data-diff="hard"    class="diff-btn">困难<span>18M步</span></button>
-        <button data-diff="evolved" class="diff-btn">进化<span>18M+续</span></button>
-        <button data-diff="elite"   class="diff-btn active">精英<span>再续训</span></button>
-        <button data-diff="defensive" class="diff-btn">怕死<span>无重生训</span></button>
-        <button data-diff="warrior" class="diff-btn">战士<span>3h續訓</span></button>
-        <button data-diff="sharpshooter" class="diff-btn">槍神<span>卡點型</span></button>
+      <div class="diff-groups">
+        <div class="diff-group">
+          <div class="diff-group-label">基础 BASIC</div>
+          <div class="diff-pick-inner">
+            <button data-diff="easy"   class="diff-btn">简单<span>6M</span></button>
+            <button data-diff="medium" class="diff-btn">中等<span>10M</span></button>
+            <button data-diff="hard"   class="diff-btn">困难<span>18M</span></button>
+          </div>
+        </div>
+        <div class="diff-group">
+          <div class="diff-group-label">进化 EVOLVED</div>
+          <div class="diff-pick-inner">
+            <button data-diff="evolved" class="diff-btn">进化<span>续训</span></button>
+            <button data-diff="elite"   class="diff-btn active">精英<span>续训v2</span></button>
+          </div>
+        </div>
+        <div class="diff-group spec">
+          <div class="diff-group-label">特化 SPECIALIST</div>
+          <div class="diff-pick-inner">
+            <button data-diff="defensive"    class="diff-btn">怕死<span>求生型</span></button>
+            <button data-diff="warrior"      class="diff-btn">战士<span>进攻型</span></button>
+            <button data-diff="sharpshooter" class="diff-btn">槍神<span>守备型</span></button>
+          </div>
+        </div>
       </div>
     </div>
     <div class="difficulty-row">
