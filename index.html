@@ -1135,6 +1135,11 @@ window.addEventListener('keydown', e => {
     else if (k === 'tab') { e.preventDefault(); game.mode = (game.mode === 'command') ? 'tactical' : 'command'; }
     else if (k === 'r') startReload();
     else if (k === 'g') throwGrenade();
+    else if (k === 'v') {
+      player._aimAssist = !player._aimAssist;
+      try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (err) {}
+      showMessage(`AIM-ASSIST · ${player._aimAssist ? '开启' : '关闭'}`, 60);
+    }
     // Dev: jump straight to mission N (1-6). Useful while iterating on a single mission.
     else if (e.key >= '1' && e.key <= '6') {
       const idx = parseInt(e.key);
@@ -1178,6 +1183,9 @@ window.addEventListener('mousedown', e => {
 
 // Restore collapsed state from previous session
 try { game._minimapCollapsed = localStorage.getItem('ag.minimapCollapsed') === '1'; }
+catch (e) {}
+// Restore aim-assist toggle (player can't out-aim NN otherwise — V toggles)
+try { player._aimAssist = localStorage.getItem('ag.aimAssist') === '1'; }
 catch (e) {}
 window.addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; });
 window.addEventListener('contextmenu', e => e.preventDefault());
@@ -2494,9 +2502,18 @@ async function nnLoadAll(difficulties) {
 }
 
 // NN-specific vision check: 720u range, 140° base cone (170° at point-blank
-// via effectiveArc), LoS via existing lineOfSight.
+// via effectiveArc), LoS via existing lineOfSight. Cross-team queries also
+// honor squad vision: a blue NN sees any red spotted by a teammate, and
+// vice versa, via the per-tick _spottedByBlue / _spottedByRed flags set
+// in updateTeamVision().
 function nnIsVisible(me, target) {
   if (!target.alive) return false;
+  // Squad vision: cross-team spotting through teammates (set per tick)
+  const meTeam = me.team || 0, tgtTeam = target.team || 0;
+  if (meTeam !== tgtTeam) {
+    if (meTeam === 0 && target._spottedByBlue) return true;
+    if (meTeam === 1 && target._spottedByRed)  return true;
+  }
   const dx = target.x - me.x, dy = target.y - me.y;
   const d2 = dx*dx + dy*dy;
   if (d2 > NN.VIEW_RANGE * NN.VIEW_RANGE) return false;
@@ -2505,7 +2522,6 @@ function nnIsVisible(me, target) {
   let diff = a - me.angle;
   while (diff >  Math.PI) diff -= Math.PI*2;
   while (diff < -Math.PI) diff += Math.PI*2;
-  // Distance-aware cone: 170° at point-blank, narrowing to base 140° by 300u
   if (Math.abs(diff) > effectiveArc(dist) / 2) return false;
   if (!lineOfSight(me.x, me.y, target.x, target.y)) return false;
   return true;
@@ -2799,10 +2815,39 @@ const NN_ACTION_MIRROR_X = [
   /* NW   */    4,  5,    // -> NE
 ];
 
+// Squad vision: any blue (player/ally/drone) seeing a red unit marks that
+// red as spotted-by-blue, and vice versa. NN units on the same team then
+// inherit each other's sightings via nnIsVisible's cross-team early-out.
+// Refreshed once per nnTick — cheap (≤4 reds × 5 blues = 20 cone+LoS checks).
+function updateTeamVision() {
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    e._spottedByBlue = isVisibleToFriendly(e.x, e.y);
+  }
+  const blueUnits = (player.alive ? [player] : []).concat(allies.filter(a => a.alive));
+  for (const t of blueUnits) t._spottedByRed = false;
+  for (const r of enemies) {
+    if (!r.alive) continue;
+    for (const t of blueUnits) {
+      if (t._spottedByRed) continue;
+      const dx = t.x - r.x, dy = t.y - r.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= NN.VIEW_RANGE * NN.VIEW_RANGE) continue;
+      const dist = Math.sqrt(d2);
+      if (!angleInCone(r.angle, effectiveArc(dist), r.x, r.y, t.x, t.y)) continue;
+      if (!lineOfSight(r.x, r.y, t.x, t.y)) continue;
+      t._spottedByRed = true;
+    }
+  }
+}
+
 let _nnInferring = false;
 async function nnTick() {
   if (!NN.loaded || _nnInferring) return;
   if (game.state !== 'playing' || !game._nnMode) return;
+
+  // Refresh team-shared spotting before any nnIsVisible call this tick
+  updateTeamVision();
 
   // Collect alive NN-controlled units, tagged with their personal difficulty.
   // (lineup editor lets each unit have its own brain.)
@@ -5046,6 +5091,33 @@ function updatePlayer() {
   // View angle (instant) — where the player LOOKS, drives vision cone & crosshair
   player.angle = Math.atan2(wp.y - player.y, wp.x - player.x);
 
+  // Aim-assist: player can't out-aim the NN, so when toggled (V) we magnetize
+  // the look direction toward the closest visible enemy in front. Trigger
+  // pull is still manual — this only adjusts angle, not firing.
+  if (player._aimAssist && player.alive) {
+    const RANGE = 700, ARC_HALF = Math.PI / 3;   // 60° front cone
+    let bestE = null, bestD = Infinity;
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const dx = e.x - player.x, dy = e.y - player.y;
+      const d = Math.hypot(dx, dy);
+      if (d > RANGE) continue;
+      let diff = Math.atan2(dy, dx) - player.angle;
+      while (diff >  Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      if (Math.abs(diff) > ARC_HALF) continue;
+      if (!lineOfSight(player.x, player.y, e.x, e.y)) continue;
+      if (d < bestD) { bestD = d; bestE = e; }
+    }
+    if (bestE) {
+      const tA = Math.atan2(bestE.y - player.y, bestE.x - player.x);
+      let diff = tA - player.angle;
+      while (diff >  Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      player.angle += diff * 0.6;   // 60% magnetism — strong pull, not full snap
+    }
+  }
+
   // Gun barrel: damped follow toward view, sway, recoil decay
   tickShooter(player, player.angle, playerWeapon, !!moving);
 
@@ -6829,6 +6901,12 @@ function renderHUD() {
   ctx.fillStyle = COLORS.gray;
   ctx.font = '9px sans-serif';
   ctx.fillText(`T+${Math.floor(game.time/60)}s`, 26, 102);
+  // Aim-assist indicator (V toggle)
+  if (player._aimAssist) {
+    ctx.fillStyle = COLORS.red;
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText('● AIM-ASSIST · V', 110, 102);
+  }
 
   // Top-right: score (smaller)
   ctx.textAlign = 'right';
