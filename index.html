@@ -5194,8 +5194,9 @@ function updatePlayer() {
   player.angle = Math.atan2(wp.y - player.y, wp.x - player.x);
 
   // Aim-assist: player can't out-aim the NN, so when toggled (V) we magnetize
-  // the look direction toward the closest visible enemy in front. Trigger
-  // pull is still manual — this only adjusts angle, not firing.
+  // the look direction toward the closest visible enemy in front. Same target
+  // leading the NN uses (predict where target will be when bullet arrives) so
+  // strafing enemies aren't immune. Trigger pull stays manual.
   if (player._aimAssist && player.alive) {
     const RANGE = 700, ARC_HALF = Math.PI / 3;   // 60° front cone
     let bestE = null, bestD = Infinity;
@@ -5212,7 +5213,11 @@ function updatePlayer() {
       if (d < bestD) { bestD = d; bestE = e; }
     }
     if (bestE) {
-      const tA = Math.atan2(bestE.y - player.y, bestE.x - player.x);
+      // Target leading: where will bestE be when our bullet arrives?
+      const flightTime = bestD / (playerWeapon.bulletSpeed || 14);
+      const leadX = bestE.x + (bestE._velX || 0) * flightTime;
+      const leadY = bestE.y + (bestE._velY || 0) * flightTime;
+      const tA = Math.atan2(leadY - player.y, leadX - player.x);
       let diff = tA - player.angle;
       while (diff >  Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
