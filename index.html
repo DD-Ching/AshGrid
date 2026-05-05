@@ -366,6 +366,36 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   margin-left: auto;
 }
 
+/* Mobile / narrow viewport — shrink padding, fonts, button minWidth so
+   the lobby fits ~375px wide phones in portrait without horizontal scroll. */
+@media (max-width: 720px) {
+  .lobby-card { padding: 18px 14px 16px; max-width: 100%; }
+  .lobby-card h2 { font-size: 20px; letter-spacing: 3px; padding-left: 8px; border-left-width: 4px; }
+  .lobby-card .lobby-sub { font-size: 9px; letter-spacing: 2px; margin: 4px 0 12px 6px; }
+  .lobby-tag { font-size: 9px; letter-spacing: 3px; }
+  .lobby-settings { gap: 16px; padding: 12px 0; }
+  .difficulty-row { gap: 10px; padding: 10px 0 6px; flex-wrap: wrap; }
+  .difficulty-label { font-size: 9px; letter-spacing: 2px; min-width: 56px; }
+  .diff-pick-inner { flex-wrap: wrap; }
+  .diff-btn { padding: 6px 10px; font-size: 11px; letter-spacing: 1px; }
+  .diff-btn span { font-size: 8px; letter-spacing: 0; }
+  .weap-btn { padding: 5px 8px; font-size: 10px; letter-spacing: 1px; min-width: 0; }
+  .weap-btn span { font-size: 7px; letter-spacing: 0; }
+  .lineup-toggle { padding: 6px 10px; font-size: 9px; letter-spacing: 2px; }
+  .counter button { width: 28px; height: 28px; }
+  .counter .val { min-width: 26px; font-size: 18px; }
+  .lobby-actions .start-btn { font-size: 14px; padding: 10px 18px; }
+  .lobby-actions .cancel-btn { font-size: 11px; }
+  .start-content { padding: 16px 12px; }
+  .start-content h1 { font-size: 36px; letter-spacing: 4px; }
+  .start-content .subtitle { font-size: 11px; }
+  .controls-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ctrl-item { font-size: 9px; letter-spacing: 1px; }
+  .missions-grid { grid-template-columns: 1fr; gap: 6px; }
+  .mission { font-size: 11px; padding: 8px; }
+  .start-btn#nnBtn { font-size: 16px !important; letter-spacing: 3px !important; padding: 14px 24px !important; }
+}
+
 .end-screen {
   background: var(--cream);
   display: flex; flex-direction: column;
