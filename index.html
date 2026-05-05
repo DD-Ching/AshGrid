@@ -642,8 +642,6 @@ function throwGrenade() {
 }
 
 function updateGrenades() {
-  const TRENCH_PULL = 0.20;        // accel per frame toward nearby trench center
-  const TRENCH_PULL_RANGE = 90;    // start pulling within this dist of any trench
   for (let i = grenades.length - 1; i >= 0; i--) {
     const g = grenades[i];
     g.x += g.vx; g.y += g.vy;
@@ -657,27 +655,6 @@ function updateGrenades() {
         g.vx = g.vy = 0;
         break;
       }
-    }
-    // Trench gravity — grenades roll toward and into nearby trenches.
-    // Find the nearest trench within pull range; nudge velocity toward its
-    // center. Once the grenade is INSIDE a trench it stays there (the
-    // surrounding ground is "higher").
-    let nearest = null, nearestD = Infinity;
-    for (const t of trenches) {
-      // Distance from grenade to trench rect (0 if inside)
-      const dx = Math.max(t.x - g.x, 0, g.x - (t.x + t.w));
-      const dy = Math.max(t.y - g.y, 0, g.y - (t.y + t.h));
-      const d = Math.hypot(dx, dy);
-      if (d < nearestD) { nearestD = d; nearest = t; }
-    }
-    if (nearest && nearestD < TRENCH_PULL_RANGE) {
-      const tcx = nearest.x + nearest.w / 2;
-      const tcy = nearest.y + nearest.h / 2;
-      const ang = Math.atan2(tcy - g.y, tcx - g.x);
-      // Stronger pull when closer (1 - d/range)^2 weighting
-      const k = TRENCH_PULL * Math.pow(1 - nearestD / TRENCH_PULL_RANGE, 0.7);
-      g.vx += Math.cos(ang) * k;
-      g.vy += Math.sin(ang) * k;
     }
     g.fuse--;
     if (g.fuse <= 0) { explodeGrenade(g); grenades.splice(i, 1); }
@@ -1106,9 +1083,6 @@ const explosions = [];
 const buildings = [];     // full obstacles — block movement + bullets
 const lowCovers = [];     // waist-high — block bullets, walk-through
 const overheads = [];     // catwalk / crane rails — block FPV; ground units pass under
-const undergrounds = [];  // tunnels / pits — concealment from soldiers + drone vision
-const highGrounds = [];   // 制高點: vision range +50%, sees over lowCovers
-const trenches = [];      // 壕溝: hides occupant from enemies > 200u away
 const routes = [];        // visualized tactical paths {x,y,w,h,angle,type,style}
 const landmarks = [];     // map's signature structures (drawn separately)
 const themeShapes = [];   // big themed geometry covering 70%+ of the map (drawn under buildings)
@@ -1414,26 +1388,38 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   NN.lastSound = null;
 
   generateWorld(NN_ARENA_MAP_INDEX);
-  // Randomize the wall layout from the same 6-variant pool the model trained
-  // on (open / pillars / cross / maze / corridor / random procedural)
+  // Randomize the wall layout from the same variant pool the model trained
+  // on (open / pillars / cross / maze / corridor / random procedural + indoors)
   const variant = buildNNArenaVariant();
   showMessage(`地图: ${variant.name}`, 120);
   playSfx('match_start');
 
-  // Team spawn anchors — store for respawn use
-  game._nnSpawnBlue = { x: NN_ARENA.x0 + 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
-  game._nnSpawnRed  = { x: NN_ARENA.x0 + NN_ARENA.w - 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
+  // Team spawn anchors — variants may override (e.g. indoor maps drop both
+  // teams inside the building so the whole match plays out indoors).
+  const sp = variant.spawn;
+  game._nnSpawnBlue = sp
+    ? { x: NN_ARENA.x0 + sp.blue.x, y: NN_ARENA.y0 + sp.blue.y }
+    : { x: NN_ARENA.x0 + 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
+  game._nnSpawnRed  = sp
+    ? { x: NN_ARENA.x0 + sp.red.x,  y: NN_ARENA.y0 + sp.red.y }
+    : { x: NN_ARENA.x0 + NN_ARENA.w - 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
 
   // Player counts as ONE blue (slot 0). Spawn (blueSize - 1) NN allies in slots 1..N.
+  // Indoor variants cluster around the anchor (rooms are small); outdoor uses
+  // the full arena-height vertical spread.
+  const tightSpawn = !!sp;
   const allySpacing = NN_ARENA.h / (blueSize + 1);
+  const allySpawnY = (i) => tightSpawn
+    ? game._nnSpawnBlue.y + (i - (blueSize - 1) / 2) * 50
+    : NN_ARENA.y0 + allySpacing * (i + 1);
   for (let i = 0; i < blueSize - 1; i++) {
     const slotIdx = i + 1;   // ally i fills slot i+1 (slot 0 = player)
     const wid = slotWpn('blue', slotIdx);
     allies.push({
       callsign: ['BRAVO', 'CHARLIE', 'DELTA', 'ECHO'][i] || ('A' + i),
       offsetX: -110, offsetY: 60,
-      x: NN_ARENA.x0 + 200,
-      y: NN_ARENA.y0 + allySpacing * (i + 1),
+      x: game._nnSpawnBlue.x,
+      y: allySpawnY(i + 1),
       angle: 0, gunAngle: 0, gunRecoil: 0, swayPhase: Math.random() * Math.PI*2,
       hp: 80, maxHp: 80,
       alive: true, radius: 13, walkPhase: Math.random() * Math.PI*2,
@@ -1452,11 +1438,14 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
 
   // Enemy team: redSize NN-driven enemies (slots 0..N-1 of red)
   const enemySpacing = NN_ARENA.h / (redSize + 1);
+  const enemySpawnY = (i) => tightSpawn
+    ? game._nnSpawnRed.y + (i - (redSize - 1) / 2) * 50
+    : NN_ARENA.y0 + enemySpacing * (i + 1);
   for (let i = 0; i < redSize; i++) {
     const wid = slotWpn('red', i);
     enemies.push({
-      x: NN_ARENA.x0 + NN_ARENA.w - 200,
-      y: NN_ARENA.y0 + enemySpacing * (i + 1),
+      x: game._nnSpawnRed.x,
+      y: enemySpawnY(i),
       hp: 50, maxHp: 50, angle: Math.PI,
       fireCd: 0, fireRate: 50, radius: 13,
       alive: true, walkPhase: Math.random() * Math.PI*2,
@@ -1476,8 +1465,8 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   const arenaMinY = NN_ARENA.y0 + SP_PAD, arenaMaxY = NN_ARENA.y0 + NN_ARENA.h - SP_PAD;
   const clampX = (cx) => Math.max(arenaMinX, Math.min(arenaMaxX, cx));
   const clampY = (cy) => Math.max(arenaMinY, Math.min(arenaMaxY, cy));
-  player.x = clampX(game._nnSpawnBlue.x - 50);
-  player.y = clampY(NN_ARENA.y0 + allySpacing * blueSize);
+  player.x = clampX(tightSpawn ? game._nnSpawnBlue.x : game._nnSpawnBlue.x - 50);
+  player.y = clampY(tightSpawn ? game._nnSpawnBlue.y - 60 : NN_ARENA.y0 + allySpacing * blueSize);
   player.team = 0;
   // Also clamp the initial ally + enemy positions placed above
   for (const a of allies) { a.x = clampX(a.x); a.y = clampY(a.y); }
@@ -1587,9 +1576,6 @@ function clearWorld() {
   buildings.length = 0;
   lowCovers.length = 0;
   overheads.length = 0;
-  undergrounds.length = 0;
-  highGrounds.length = 0;
-  trenches.length = 0;
   routes.length = 0;
   landmarks.length = 0;
   themeShapes.length = 0;
@@ -1607,66 +1593,6 @@ function addLowCover(x, y, w, h, color, opts={}) {
 function addOverhead(x, y, w, h, color, opts={}) {
   overheads.push({ x, y, w, h, color: color || COLORS.black, kind: opts.kind || 'catwalk' });
 }
-function addUnderground(x, y, w, h, opts={}) {
-  undergrounds.push({ x, y, w, h, kind: opts.kind || 'tunnel', label: opts.label || '' });
-}
-function addHighGround(x, y, w, h, opts={}) {
-  highGrounds.push({ x, y, w, h, label: opts.label || '高地' });
-}
-function addTrench(x, y, w, h, opts={}) {
-  trenches.push({ x, y, w, h, label: opts.label || '壕沟' });
-}
-// Returns the highGround/trench rect a unit (or world point) is currently in, else null
-function unitOnHighGround(u) {
-  for (const h of highGrounds) {
-    if (u.x >= h.x && u.x <= h.x + h.w && u.y >= h.y && u.y <= h.y + h.h) return h;
-  }
-  return null;
-}
-function unitInTrench(u) {
-  for (const t of trenches) {
-    if (u.x >= t.x && u.x <= t.x + t.w && u.y >= t.y && u.y <= t.y + t.h) return t;
-  }
-  return null;
-}
-// Vision range multiplier (bumped on high ground)
-function visionRangeMul(u) {
-  return unitOnHighGround(u) ? 1.5 : 1.0;
-}
-// Symmetric "can A see B" check that honors high ground + trench rules.
-// Used by both player-side and NN-side visibility paths so both teams play
-// by the same rules.
-//   - HighGround shooter sees OVER lowCovers (only buildings break LoS).
-//   - Target inside a trench is hidden from observers >200u away unless the
-//     observer is on high ground or also in the same trench.
-function symVisibleAB(ax, ay, bx, by, observer, target) {
-  const dist = Math.hypot(bx - ax, by - ay);
-  const obsHigh = observer && unitOnHighGround(observer);
-  const tgtTrench = target && unitInTrench(target);
-  if (tgtTrench && !obsHigh) {
-    const obsTrench = observer && unitInTrench(observer);
-    if (obsTrench !== tgtTrench && dist > 200) return false;
-  }
-  // LoS: walls always block; lowCovers block UNLESS observer is on high ground
-  return _losCustom(ax, ay, bx, by, !!obsHigh);
-}
-function _losCustom(x1, y1, x2, y2, ignoreLowCovers) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const steps = 12;
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    const px = x1 + dx * t, py = y1 + dy * t;
-    for (const b of buildings) {
-      if (px > b.x && px < b.x + b.w && py > b.y && py < b.y + b.h) return false;
-    }
-    if (!ignoreLowCovers) {
-      for (const lc of lowCovers) {
-        if (px > lc.x && px < lc.x + lc.w && py > lc.y && py < lc.y + lc.h) return false;
-      }
-    }
-  }
-  return true;
-}
 function addRoute(x, y, w, h, type, opts={}) {
   routes.push({ x, y, w, h, angle: opts.angle || 0, type, style: opts.style || 'solid', label: opts.label || '' });
 }
@@ -1680,11 +1606,6 @@ function addNode(x, y) { networkNodes.push({ x, y, pulse: Math.random()*Math.PI*
 function isInsideRect(x, y, r) {
   return x > r.x && x < r.x+r.w && y > r.y && y < r.y+r.h;
 }
-function isInUnderground(x, y) {
-  for (const u of undergrounds) if (isInsideRect(x, y, u)) return true;
-  return false;
-}
-
 // ============ MAP DEFINITIONS ============
 // Each map satisfies: theme >= 70%, 3+ spatial layers, 1+ landmark, 3+ route types, distinct combat rhythm.
 const MAPS = [];
@@ -1726,9 +1647,6 @@ MAPS.push({
     addTheme({ kind: 'trefoil', cx: WORLD.w*0.78, cy: WORLD.h*0.18, r: 220, color: COLORS.red, alpha: 0.55 });
 
     // === LAYERS ===
-    // Single coolant tunnel (was cross + 2 pits)
-    addUnderground(WORLD.w*0.10, WORLD.h*0.48, WORLD.w*0.80, 80, { label: 'COOLANT TUNNEL' });
-
     // GROUND — sparse containment ring (was 8 → 6) + 2 service halls (was 4)
     const ringR = 600;
     for (let i = 0; i < 6; i++) {
@@ -1814,9 +1732,6 @@ MAPS.push({
     // Big stamped foundry insignia (kept)
     addTheme({ kind: 'gear', cx: WORLD.w*0.12, cy: WORLD.h*0.88, r: 200, color: COLORS.black, alpha: 0.18 });
 
-    // UNDERGROUND — foundry pits inside slag pools
-    for (const s of slags) addUnderground(s.x+20, s.y+20, s.w-40, s.h-40, { kind: 'pit', label: 'FOUNDRY PIT' });
-
     // GROUND — 2 production halls (was 4) + 4 furnace columns (was 6) + drop side walls
     addBuilding(180, 200, 360, 280, COLORS.gray, { accent: true });
     addBuilding(WORLD.w-540, WORLD.h-460, 360, 280, COLORS.black);
@@ -1887,9 +1802,6 @@ MAPS.push({
     for (let i = 0; i < 2; i++) addTheme({ kind: 'line-v', x: WORLD.w*0.40 + i*WORLD.w*0.30, y: 120, w: 3, h: WORLD.h-240, color: COLORS.gray, alpha: 0.30 });
     // Port logo (kept — strong identity)
     addTheme({ kind: 'square', x: WORLD.w*0.78, y: 120, w: 320, h: 320, color: COLORS.red, alpha: 0.14 });
-
-    // UNDERGROUND
-    addUnderground(WORLD.w*0.18 + 20, WORLD.h*0.10, 60, WORLD.h*0.80, { kind: 'trench', label: 'DRAINAGE' });
 
     // GROUND — much sparser container grid: 3 rows × 5 cols (was 5×8 = ~36)
     const cw0 = 240, ch0 = 110;
@@ -1966,10 +1878,6 @@ MAPS.push({
     // Data flow cross
     addTheme({ kind: 'line-h', x: 0, y: WORLD.h*0.50 - 2, w: WORLD.w, h: 4, color: COLORS.red, alpha: 0.45 });
     addTheme({ kind: 'line-v', x: WORLD.w*0.50 - 2, y: 0, w: 4, h: WORLD.h, color: COLORS.red, alpha: 0.45 });
-
-    // UNDERGROUND — two cable trenches (was four)
-    addUnderground(120, WORLD.h*0.32, WORLD.w-240, 50, { kind: 'cable', label: 'CABLE TRENCH' });
-    addUnderground(120, WORLD.h*0.68, WORLD.w-240, 50, { kind: 'cable' });
 
     // GROUND — sparser server rack clusters in 4 quadrants instead of a 7×5 grid
     const clusters = [
@@ -2065,9 +1973,6 @@ MAPS.push({
     // Runway: simpler centerline (8 dashes instead of 16)
     addTheme({ kind: 'rect', x: WORLD.w*0.45, y: 0, w: WORLD.w*0.10, h: WORLD.h, color: COLORS.creamDark });
     for (let i = 0; i < 8; i++) addTheme({ kind: 'rect', x: WORLD.w*0.50 - 6, y: 200 + i*380, w: 12, h: 100, color: COLORS.black });
-
-    // UNDERGROUND — maintenance bunkers under pads
-    for (const p of pads) addUnderground(p.x - p.r*0.5, p.y - p.r*0.4, p.r, p.r*0.8, { kind: 'bunker', label: 'MAINT' });
 
     // GROUND — 2 control kiosks + 4 hive support pylons (was 4 + 6)
     addBuilding(180, 200, 240, 200, COLORS.gray, { accent: true });
@@ -2234,31 +2139,9 @@ const NN_ARENA_MAP_INDEX = MAPS.length - 1;
 // startNNSkirmish() picks one at random per match so the deployed model
 // sees the same map distribution it trained on.
 
-// Helper: build a zigzag trench — chain of overlapping rect segments offset
-// in Y by ±amp. Reads visually as a sinuous trench line. Each segment is its
-// own rect so unitInTrench / damage rules check naturally per-segment.
-function zigzagTrench(x0, y0, total, thickness, segments, amp, label, axis = 'h') {
-  const out = [];
-  const seg = total / segments;
-  for (let i = 0; i < segments; i++) {
-    const off = (i % 2) * amp;
-    if (axis === 'h') {
-      out.push({ x: x0 + i * seg * 0.86, y: y0 + off,
-                 w: seg, h: thickness,
-                 label: i === 0 ? label : undefined });
-    } else {
-      out.push({ x: x0 + off, y: y0 + i * seg * 0.86,
-                 w: thickness, h: seg,
-                 label: i === 0 ? label : undefined });
-    }
-  }
-  return out;
-}
-
 const NN_MAP_VARIANTS = [
   { id: 'open',     name: '开阔 OPEN',
     walls: () => [],
-    highGrounds: [{ x: 540, y: 540, w: 120, h: 120, label: '中心丘' }],
   },
   { id: 'pillars',  name: '四柱 PILLARS',
     walls: () => [
@@ -2267,16 +2150,11 @@ const NN_MAP_VARIANTS = [
       { x: 280, y: 840, w: 80, h: 80, kind: 'building' },
       { x: 840, y: 840, w: 80, h: 80, kind: 'building' },
     ],
-    highGrounds: [{ x: 540, y: 540, w: 120, h: 120, label: '中央高台' }],
   },
   { id: 'cross',    name: '十字 CROSS',
     walls: () => [
       { x: 400, y: 570, w: 400, h: 60, kind: 'building', color: '#1A1A1A' },
       { x: 570, y: 400, w: 60, h: 400, kind: 'building', color: '#1A1A1A' },
-    ],
-    trenches: [
-      ...zigzagTrench( 120,  120, 240, 50, 4, 24, 'NW 壕'),
-      ...zigzagTrench( 860, 1010, 240, 50, 4, 24, 'SE 壕'),
     ],
   },
   { id: 'maze',     name: '迷阵 MAZE',
@@ -2287,16 +2165,11 @@ const NN_MAP_VARIANTS = [
       { x: 600, y: 200, w: 220, h: 60, kind: 'cover' },
       { x: 500, y: 800, w: 60, h: 200, kind: 'building' },
     ],
-    trenches: zigzagTrench(280, 540, 320, 50, 4, 30, '迷宫沟'),
   },
   { id: 'corridor', name: '走廊 CORRIDOR',
     walls: () => [
       { x: 150, y: 380, w: 900, h: 60, kind: 'building' },
       { x: 150, y: 760, w: 900, h: 60, kind: 'building' },
-    ],
-    highGrounds: [
-      { x:  60, y: 540, w: 100, h: 100, label: '西哨位' },
-      { x: 1040, y: 540, w: 100, h: 100, label: '东哨位' },
     ],
   },
   { id: 'random',   name: '随机 RANDOM',
@@ -2314,39 +2187,7 @@ const NN_MAP_VARIANTS = [
       }
       return out;
     },
-    // 50/50 chance of a random high ground or trench
-    highGrounds: () => Math.random() < 0.5
-      ? [{ x: 200 + Math.floor(Math.random()*700), y: 200 + Math.floor(Math.random()*700),
-           w: 100 + Math.floor(Math.random()*100), h: 100 + Math.floor(Math.random()*100), label: '随机高地' }]
-      : [],
-    trenches: () => Math.random() < 0.5
-      ? [{ x: 200 + Math.floor(Math.random()*500), y: 200 + Math.floor(Math.random()*700),
-           w: 220 + Math.floor(Math.random()*200), h: 60, label: '随机壕沟' }]
-      : [],
   },
-  // === Dedicated terrain variants ===
-  { id: 'highground', name: '制高点 OVERWATCH',
-    walls: () => [
-      { x: 200, y: 200, w: 60, h: 200, kind: 'building' },
-      { x: 940, y: 600, w: 60, h: 200, kind: 'building' },
-      { x: 460, y: 510, w: 80, h: 80, kind: 'cover' },
-      { x: 660, y: 510, w: 80, h: 80, kind: 'cover' },
-    ],
-    highGrounds: [
-      { x: 480, y: 100, w: 240, h: 120, label: '北高地' },
-      { x: 480, y: 980, w: 240, h: 120, label: '南高地' },
-    ],
-  },
-  { id: 'trenches', name: '壕沟 TRENCHWAR',
-    walls: () => [
-      { x: 560, y: 460, w: 80, h: 280, kind: 'building' },
-    ],
-    trenches: [
-      ...zigzagTrench(100, 350, 400, 50, 5, 32, '北壕沟'),
-      ...zigzagTrench(740, 780, 400, 50, 5, 32, '南壕沟'),
-    ],
-  },
-  // === 4 new variants ===
   { id: 'fortress', name: '堡垒 FORTRESS',
     walls: () => [
       { x: 500, y: 500, w: 200, h: 200, kind: 'building', accent: true },
@@ -2355,10 +2196,6 @@ const NN_MAP_VARIANTS = [
       { x: 480, y: 660, w: 60,  h: 60,  kind: 'cover' },
       { x: 660, y: 660, w: 60,  h: 60,  kind: 'cover' },
     ],
-    trenches: [
-      ...zigzagTrench(100, 200, 380, 50, 5, 28, '围城北沟'),
-      ...zigzagTrench(780, 940, 380, 50, 5, 28, '围城南沟'),
-    ],
   },
   { id: 'crossfire', name: '交叉火力 CROSSFIRE',
     walls: () => [
@@ -2366,27 +2203,6 @@ const NN_MAP_VARIANTS = [
       { x: 540, y: 880, w: 120, h: 120, kind: 'cover' },
       { x: 200, y: 540, w: 120, h: 120, kind: 'cover' },
       { x: 880, y: 540, w: 120, h: 120, kind: 'cover' },
-    ],
-    highGrounds: [
-      { x: 100, y: 100, w: 140, h: 140, label: 'NW 哨' },
-      { x: 960, y: 100, w: 140, h: 140, label: 'NE 哨' },
-      { x: 100, y: 960, w: 140, h: 140, label: 'SW 哨' },
-      { x: 960, y: 960, w: 140, h: 140, label: 'SE 哨' },
-    ],
-  },
-  { id: 'tunnel', name: '隧道 TUNNEL',
-    walls: () => [
-      { x: 100, y: 320, w: 1000, h: 60, kind: 'building' },
-      { x: 100, y: 820, w: 1000, h: 60, kind: 'building' },
-      { x: 540, y: 380, w: 120, h: 80, kind: 'cover' },
-      { x: 540, y: 740, w: 120, h: 80, kind: 'cover' },
-    ],
-    highGrounds: [
-      { x:  60, y: 540, w: 100, h: 120, label: '西嘴' },
-      { x: 1040, y: 540, w: 100, h: 120, label: '东嘴' },
-    ],
-    trenches: [
-      ...zigzagTrench(300, 580, 620, 40, 6, 22, '中央壕'),
     ],
   },
   { id: 'arena', name: '竞技场 ARENA',
@@ -2402,9 +2218,7 @@ const NN_MAP_VARIANTS = [
       }
       return out;
     },
-    highGrounds: [{ x: 540, y: 540, w: 120, h: 120, label: '决斗台' }],
   },
-  // ========== Mixed-terrain variants (use everything) ==========
   { id: 'urban', name: '城区 URBAN',
     walls: () => [
       // L-shaped buildings + alleys
@@ -2417,13 +2231,6 @@ const NN_MAP_VARIANTS = [
       { x: 540, y: 540, w: 120, h: 120, kind: 'cover' },   // central crate
       { x: 380, y: 740, w: 60, h: 60, kind: 'cover' },
       { x: 760, y: 460, w: 60, h: 60, kind: 'cover' },
-    ],
-    highGrounds: [
-      { x: 480, y: 80, w: 240, h: 80, label: '北楼顶' },
-    ],
-    trenches: [
-      ...zigzagTrench(100, 540, 240, 50, 4, 20, '西巷'),
-      ...zigzagTrench(880, 540, 240, 50, 4, 20, '东巷'),
     ],
   },
   { id: 'bunker', name: '碉堡 BUNKER',
@@ -2441,33 +2248,6 @@ const NN_MAP_VARIANTS = [
       { x: 240, y: 880, w: 80, h: 80, kind: 'cover' },
       { x: 880, y: 880, w: 80, h: 80, kind: 'cover' },
     ],
-    highGrounds: [
-      { x: 540, y: 540, w: 120, h: 120, label: '碉堡顶' },   // ON TOP of bunker
-    ],
-    trenches: [
-      { x: 80, y: 580, w: 280, h: 50, label: '攻城西沟' },
-      { x: 840, y: 580, w: 280, h: 50, label: '攻城东沟' },
-    ],
-  },
-  { id: 'gulch', name: '沟壑 GULCH',
-    walls: () => [
-      // Sparse low covers between trenches
-      { x: 280, y: 460, w: 80, h: 80, kind: 'cover' },
-      { x: 540, y: 460, w: 80, h: 80, kind: 'cover' },
-      { x: 800, y: 460, w: 80, h: 80, kind: 'cover' },
-      { x: 280, y: 700, w: 80, h: 80, kind: 'cover' },
-      { x: 540, y: 700, w: 80, h: 80, kind: 'cover' },
-      { x: 800, y: 700, w: 80, h: 80, kind: 'cover' },
-    ],
-    highGrounds: [
-      { x: 540, y: 80,  w: 120, h: 100, label: '北哨' },
-      { x: 540, y: 1020, w: 120, h: 100, label: '南哨' },
-    ],
-    trenches: [
-      ...zigzagTrench(100, 320, 1000, 40, 8, 24, '北横沟'),
-      ...zigzagTrench(100, 580, 1000, 40, 8, 24, '中横沟'),
-      ...zigzagTrench(100, 840, 1000, 40, 8, 24, '南横沟'),
-    ],
   },
   { id: 'fortress2', name: '阵地战 SIEGE',
     walls: () => [
@@ -2482,129 +2262,112 @@ const NN_MAP_VARIANTS = [
       { x: 460, y: 540, w: 80, h: 120, kind: 'cover' },
       { x: 660, y: 540, w: 80, h: 120, kind: 'cover' },
     ],
-    highGrounds: [
-      { x: 80, y: 540, w: 80, h: 80, label: '西塔' },
-      { x: 1040, y: 540, w: 80, h: 80, label: '东塔' },
-    ],
-    trenches: [
-      ...zigzagTrench(320, 380, 240, 40, 4, 22, '北推进沟'),
-      ...zigzagTrench(680, 770, 240, 40, 4, 22, '南推进沟'),
-    ],
   },
-  // ========= Indoor variants (richer interior layouts) =========
+  // ========= Indoor variants — single-room interiors with cover =========
+  // Spawn anchors are placed INSIDE the perimeter so the whole match plays
+  // out indoors. Internal walls are kept short / wide-doored so the trained
+  // NN (which never saw indoor maps) can still navigate to engage.
   { id: 'office', name: '办公大楼 OFFICE',
     walls: () => {
-      // 4-room building (2x2 grid). Each room ~360u sq with doorway gaps in
-      // outer walls and the central cross. Crates inside each room.
+      // 800x800 outer perimeter w/ 4 entry doorways. Inside: cubicle rows
+      // built from low cover (walk-through, blocks bullets) so the NN can
+      // path around without hitting closed rooms.
       const out = [];
-      const T = 30, D = 80;
+      const T = 30, D = 200;
       const x1 = 200, x2 = 1000, y1 = 200, y2 = 1000;
-      const xc = 600, yc = 600;
-      // Outer walls — doorway in middle of each side
-      out.push({ x: x1, y: y1, w: (xc - D/2) - x1, h: T, kind: 'building' });
-      out.push({ x: xc + D/2, y: y1, w: x2 - (xc + D/2), h: T, kind: 'building' });
-      out.push({ x: x1, y: y2 - T, w: (xc - D/2) - x1, h: T, kind: 'building' });
-      out.push({ x: xc + D/2, y: y2 - T, w: x2 - (xc + D/2), h: T, kind: 'building' });
-      out.push({ x: x1, y: y1, w: T, h: (yc - D/2) - y1, kind: 'building' });
-      out.push({ x: x1, y: yc + D/2, w: T, h: y2 - (yc + D/2), kind: 'building' });
-      out.push({ x: x2 - T, y: y1, w: T, h: (yc - D/2) - y1, kind: 'building' });
-      out.push({ x: x2 - T, y: yc + D/2, w: T, h: y2 - (yc + D/2), kind: 'building' });
-      // Internal cross — vertical at xc
-      out.push({ x: xc, y: y1, w: T, h: (yc - D/2) - y1, kind: 'building' });
-      out.push({ x: xc, y: yc + D/2, w: T, h: y2 - (yc + D/2), kind: 'building' });
-      // horizontal at yc
-      out.push({ x: x1, y: yc, w: (xc - D/2) - x1, h: T, kind: 'building' });
-      out.push({ x: xc + D/2, y: yc, w: x2 - (xc + D/2), h: T, kind: 'building' });
-      // Crates in each room corner
-      out.push({ x: 320, y: 320, w: 60, h: 60, kind: 'cover' });
-      out.push({ x: 820, y: 320, w: 60, h: 60, kind: 'cover' });
-      out.push({ x: 320, y: 820, w: 60, h: 60, kind: 'cover' });
-      out.push({ x: 820, y: 820, w: 60, h: 60, kind: 'cover' });
+      const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+      // Outer walls (with center doorway on each side)
+      out.push({ x: x1, y: y1, w: (cx - D/2) - x1, h: T, kind: 'building' });
+      out.push({ x: cx + D/2, y: y1, w: x2 - (cx + D/2), h: T, kind: 'building' });
+      out.push({ x: x1, y: y2 - T, w: (cx - D/2) - x1, h: T, kind: 'building' });
+      out.push({ x: cx + D/2, y: y2 - T, w: x2 - (cx + D/2), h: T, kind: 'building' });
+      out.push({ x: x1, y: y1, w: T, h: (cy - D/2) - y1, kind: 'building' });
+      out.push({ x: x1, y: cy + D/2, w: T, h: y2 - (cy + D/2), kind: 'building' });
+      out.push({ x: x2 - T, y: y1, w: T, h: (cy - D/2) - y1, kind: 'building' });
+      out.push({ x: x2 - T, y: cy + D/2, w: T, h: y2 - (cy + D/2), kind: 'building' });
+      // Cubicle rows (low cover) — three short rows with gaps for movement
+      out.push({ x: 320, y: 360, w: 200, h: 30, kind: 'cover' });
+      out.push({ x: 680, y: 360, w: 200, h: 30, kind: 'cover' });
+      out.push({ x: 480, y: 540, w: 240, h: 30, kind: 'cover' });
+      out.push({ x: 320, y: 720, w: 200, h: 30, kind: 'cover' });
+      out.push({ x: 680, y: 720, w: 200, h: 30, kind: 'cover' });
+      // Reception desks (cover) flanking the spawn anchors
+      out.push({ x: 260, y: 580, w: 50, h: 80, kind: 'cover' });
+      out.push({ x: 890, y: 580, w: 50, h: 80, kind: 'cover' });
       return out;
     },
-    highGrounds: [{ x: 540, y: 540, w: 120, h: 120, label: '大堂' }],
+    spawn: { blue: { x: 280, y: 600 }, red: { x: 920, y: 600 } },
   },
   { id: 'parking', name: '停车场 PARKING',
     walls: () => {
-      // 5x5 grid of support columns + central elevator shaft + low
-      // car-blocks. Vision is heavily occluded — close-quarter chaos.
+      // 3x3 sparse columns + parked cars in lanes. Spawn lanes (rows 1+5) clear.
       const out = [];
-      for (let r = 0; r < 5; r++) {
-        for (let c = 0; c < 5; c++) {
-          out.push({ x: 200 + c * 200, y: 200 + r * 200, w: 50, h: 50, kind: 'building' });
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+          out.push({ x: 380 + c * 220, y: 380 + r * 220, w: 50, h: 50, kind: 'building', accent: (r + c) % 2 === 0 });
         }
       }
-      // Elevator shaft (central larger building)
-      out.push({ x: 540, y: 540, w: 120, h: 120, kind: 'building', accent: true });
-      // Parked cars (cover) in lanes between columns
-      out.push({ x: 280, y: 350, w: 110, h: 50, kind: 'cover' });
-      out.push({ x: 680, y: 350, w: 110, h: 50, kind: 'cover' });
-      out.push({ x: 280, y: 750, w: 110, h: 50, kind: 'cover' });
-      out.push({ x: 680, y: 750, w: 110, h: 50, kind: 'cover' });
+      // Parked cars (low cover) along the spawn lanes
+      out.push({ x: 380, y: 280, w: 110, h: 50, kind: 'cover' });
+      out.push({ x: 720, y: 280, w: 110, h: 50, kind: 'cover' });
+      out.push({ x: 380, y: 870, w: 110, h: 50, kind: 'cover' });
+      out.push({ x: 720, y: 870, w: 110, h: 50, kind: 'cover' });
+      // Side covers near spawns
+      out.push({ x: 250, y: 540, w: 60, h: 120, kind: 'cover' });
+      out.push({ x: 890, y: 540, w: 60, h: 120, kind: 'cover' });
       return out;
     },
-    trenches: [
-      { x: 80, y: 80, w: 110, h: 50, label: '坡道入口' },
-    ],
+    spawn: { blue: { x: 200, y: 600 }, red: { x: 1000, y: 600 } },
   },
   { id: 'school', name: '空学校 SCHOOL',
     walls: () => {
-      // Central east-west corridor at y=540..680 (140u wide).
-      // 4 classrooms above, 4 below — each ~250 wide × 340 tall.
+      // 800x800 perimeter w/ 1 wide doorway each side. Inside: desks (cover)
+      // and 2 short partial dividers — no closed classrooms, so NN can roam.
       const out = [];
-      const T = 30, D = 80;
-      // Corridor walls (top + bottom edges of corridor) with 4 doorways each
-      const doors = [280, 510, 740, 970];
-      let prev = 200;
-      for (const d of doors) {
-        out.push({ x: prev, y: 540, w: d - prev, h: T, kind: 'building' });
-        out.push({ x: prev, y: 660, w: d - prev, h: T, kind: 'building' });
-        prev = d + D;
+      const T = 30, D = 200;
+      const x1 = 200, x2 = 1000, y1 = 200, y2 = 1000;
+      const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+      // Perimeter (with doorway centered each side)
+      out.push({ x: x1, y: y1, w: (cx - D/2) - x1, h: T, kind: 'building' });
+      out.push({ x: cx + D/2, y: y1, w: x2 - (cx + D/2), h: T, kind: 'building' });
+      out.push({ x: x1, y: y2 - T, w: (cx - D/2) - x1, h: T, kind: 'building' });
+      out.push({ x: cx + D/2, y: y2 - T, w: x2 - (cx + D/2), h: T, kind: 'building' });
+      out.push({ x: x1, y: y1, w: T, h: (cy - D/2) - y1, kind: 'building' });
+      out.push({ x: x1, y: cy + D/2, w: T, h: y2 - (cy + D/2), kind: 'building' });
+      out.push({ x: x2 - T, y: y1, w: T, h: (cy - D/2) - y1, kind: 'building' });
+      out.push({ x: x2 - T, y: cy + D/2, w: T, h: y2 - (cy + D/2), kind: 'building' });
+      // Two short partial dividers (don't reach across — leaves wide gaps)
+      out.push({ x: 480, y: 280, w: T, h: 200, kind: 'building' });
+      out.push({ x: 720, y: 720, w: T, h: 200, kind: 'building' });
+      // Desks in 3 rows
+      for (const cxd of [320, 540, 760]) {
+        out.push({ x: cxd, y: 380, w: 60, h: 40, kind: 'cover' });
+        out.push({ x: cxd, y: 540, w: 60, h: 40, kind: 'cover' });
+        out.push({ x: cxd, y: 760, w: 60, h: 40, kind: 'cover' });
       }
-      out.push({ x: prev, y: 540, w: 1000 - prev, h: T, kind: 'building' });
-      out.push({ x: prev, y: 660, w: 1000 - prev, h: T, kind: 'building' });
-      // Vertical dividers between classrooms (top + bottom rows)
-      for (const x of [380, 620, 860]) {
-        out.push({ x, y: 200, w: T, h: 340, kind: 'building' });
-        out.push({ x, y: 690, w: T, h: 340, kind: 'building' });
-      }
-      // Outer walls (top, bottom, left, right)
-      out.push({ x: 200, y: 200, w: 800, h: T, kind: 'building' });
-      out.push({ x: 200, y: 1000, w: 800, h: T, kind: 'building' });
-      out.push({ x: 200, y: 200, w: T, h: 800, kind: 'building' });
-      out.push({ x: 1000 - T, y: 200, w: T, h: 800, kind: 'building' });
-      // Desks (cover) in each classroom — 1-2 per room
-      for (const x of [270, 510, 750]) {
-        out.push({ x, y: 360, w: 50, h: 70, kind: 'cover' });
-        out.push({ x, y: 800, w: 50, h: 70, kind: 'cover' });
-      }
-      out.push({ x: 880, y: 360, w: 50, h: 70, kind: 'cover' });
-      out.push({ x: 880, y: 800, w: 50, h: 70, kind: 'cover' });
       return out;
     },
+    spawn: { blue: { x: 280, y: 600 }, red: { x: 920, y: 600 } },
   },
   { id: 'basement', name: '地下室 BASEMENT',
     walls: () => [
-      // Outer rectangle
+      // Outer rectangle (tall room)
       { x: 200, y: 300, w: 800, h: 30, kind: 'building' },
       { x: 200, y: 870, w: 800, h: 30, kind: 'building' },
       { x: 200, y: 300, w: 30, h: 600, kind: 'building' },
       { x: 970, y: 300, w: 30, h: 600, kind: 'building' },
-      // Z-shaped internal partition walls
-      { x: 380, y: 300, w: 30, h: 380, kind: 'building' },
-      { x: 600, y: 530, w: 30, h: 370, kind: 'building' },
-      { x: 800, y: 300, w: 30, h: 380, kind: 'building' },
-      // Cover crates scattered through the maze
-      { x: 280, y: 750, w: 60, h: 60, kind: 'cover' },
-      { x: 480, y: 400, w: 60, h: 60, kind: 'cover' },
-      { x: 680, y: 750, w: 60, h: 60, kind: 'cover' },
-      { x: 880, y: 400, w: 60, h: 60, kind: 'cover' },
-      { x: 480, y: 770, w: 60, h: 60, kind: 'cover' },
+      // 2 short partial dividers — clearly leave a central corridor open
+      { x: 420, y: 300, w: 30, h: 240, kind: 'building' },
+      { x: 760, y: 660, w: 30, h: 240, kind: 'building' },
+      // Cover crates scattered through
+      { x: 320, y: 450, w: 60, h: 60, kind: 'cover' },
+      { x: 540, y: 540, w: 60, h: 60, kind: 'cover' },
+      { x: 680, y: 450, w: 60, h: 60, kind: 'cover' },
+      { x: 320, y: 750, w: 60, h: 60, kind: 'cover' },
+      { x: 540, y: 700, w: 60, h: 60, kind: 'cover' },
+      { x: 880, y: 750, w: 60, h: 60, kind: 'cover' },
     ],
-    trenches: [
-      { x: 100, y: 580, w: 110, h: 50, label: '通风口西' },
-      { x: 990, y: 580, w: 110, h: 50, label: '通风口东' },
-    ],
+    spawn: { blue: { x: 280, y: 600 }, red: { x: 920, y: 600 } },
   },
 ];
 
@@ -2622,16 +2385,6 @@ function buildNNArenaVariant(idx) {
     } else {
       addBuilding(x, y, w.w, w.h, w.color || COLORS.gray, { accent: !!w.accent });
     }
-  }
-  // Tactical terrain (制高点 / 壕沟). Some variants (e.g. random) define these
-  // as factories so they can roll fresh terrain per match.
-  const hgs = typeof v.highGrounds === 'function' ? v.highGrounds() : (v.highGrounds || []);
-  const trs = typeof v.trenches    === 'function' ? v.trenches()    : (v.trenches    || []);
-  for (const h of hgs) {
-    addHighGround(NN_ARENA.x0 + h.x, NN_ARENA.y0 + h.y, h.w, h.h, { label: h.label });
-  }
-  for (const t of trs) {
-    addTrench(NN_ARENA.x0 + t.x, NN_ARENA.y0 + t.y, t.w, t.h, { label: t.label });
   }
   buildCoverPoints();
   game._nnVariantId = v.id;
@@ -2729,14 +2482,12 @@ async function nnLoadAll(difficulties) {
 }
 
 // NN-specific vision check: 720u range, 140° base cone (170° at point-blank
-// via effectiveArc), LoS via existing lineOfSight + high-ground/trench rules.
+// via effectiveArc), LoS via existing lineOfSight.
 function nnIsVisible(me, target) {
   if (!target.alive) return false;
   const dx = target.x - me.x, dy = target.y - me.y;
   const d2 = dx*dx + dy*dy;
-  // High ground extends vision range
-  const range = NN.VIEW_RANGE * visionRangeMul(me);
-  if (d2 > range * range) return false;
+  if (d2 > NN.VIEW_RANGE * NN.VIEW_RANGE) return false;
   const dist = Math.sqrt(d2);
   const a = Math.atan2(dy, dx);
   let diff = a - me.angle;
@@ -2744,7 +2495,7 @@ function nnIsVisible(me, target) {
   while (diff < -Math.PI) diff += Math.PI*2;
   // Distance-aware cone: 170° at point-blank, narrowing to base 140° by 300u
   if (Math.abs(diff) > effectiveArc(dist) / 2) return false;
-  if (!symVisibleAB(me.x, me.y, target.x, target.y, me, target)) return false;
+  if (!lineOfSight(me.x, me.y, target.x, target.y)) return false;
   return true;
 }
 
@@ -2960,11 +2711,7 @@ function nnApplyAction(unit, action, friendlies, enemies) {
       const tvx = tgt._velX || 0, tvy = tgt._velY || 0;
       const leadX = tgt.x + tvx * flightTime;
       const leadY = tgt.y + tvy * flightTime;
-      // High ground = stable platform → tighter spread (1/3 normal). Trench
-      // = chaotic firing position → wider spread (1.5×).
-      let aimSpread = 0.05;
-      if (unitOnHighGround(unit)) aimSpread *= 0.35;
-      else if (unitInTrench(unit)) aimSpread *= 1.5;
+      const aimSpread = 0.05;
       const aim = Math.atan2(leadY - unit.y, leadX - unit.x) + (Math.random() - 0.5) * aimSpread;
       unit.angle = aim;
       // Use team to pick the right bullet pool. unit.team 0 = friendly, 1 = hostile.
@@ -4757,11 +4504,6 @@ function isVisibleToFriendly(x, y) {
 
 // ============ AI ============
 function lineOfSight(x1, y1, x2, y2) {
-  // Underground concealment: target hidden if it's in a tunnel and shooter isn't.
-  const targetUnder = isInUnderground(x2, y2);
-  const shooterUnder = isInUnderground(x1, y1);
-  if (targetUnder && !shooterUnder) return false;
-
   const steps = 28;
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
@@ -5049,7 +4791,7 @@ function updateEnemies() {
       tgt = d.attackTarget;
       bestD = Math.hypot(tgt.x - d.x, tgt.y - d.y);
     } else {
-      if (player.alive && !isInUnderground(player.x, player.y)) {
+      if (player.alive) {
         bestD = Math.hypot(player.x - d.x, player.y - d.y);
         tgt = player;
       }
@@ -5388,11 +5130,7 @@ function updateBullets() {
         // Spawn invuln: still consume the bullet so it doesn't pass through,
         // but don't apply damage. Visually the bullet vanishes on impact.
         if (e._invulnUntil != null && game.time < e._invulnUntil) { hit = true; break; }
-        // Trench cover: target in trench takes 50% damage if shooter isn't
-        // also in trench / on high ground (heads-down concealment).
-        let dmg = b.damage;
-        if (unitInTrench(e) && !unitOnHighGround(player) && !unitInTrench(player)) dmg *= 0.5;
-        e.hp -= dmg;
+        e.hp -= b.damage;
         e.recentDamage = 60;     // marks "I'm under fire" for FSM low-HP flee branch
         e.alerted = Math.max(e.alerted || 0, 240);
         e.alertX = b.x - b.vx*4; // alert toward where the shot came from
@@ -5429,12 +5167,7 @@ function updateBullets() {
       if (player._invulnUntil != null && game.time < player._invulnUntil) {
         // (consume bullet silently)
       } else {
-        // Trench cover: 50% damage if you're in trench and bullet's source
-        // wasn't an elevated/in-trench shooter. Bullet doesn't carry shooter
-        // info here, so we approximate by checking the player's own state.
-        let dmg = b.damage;
-        if (unitInTrench(player)) dmg *= 0.5;
-        player.hp -= dmg;
+        player.hp -= b.damage;
         game.hitFlash = 12;
         playSfx('hit');
         if (player.hp <= 0) {
@@ -5460,9 +5193,7 @@ function updateBullets() {
       if (!a.alive) continue;
       if (Math.hypot(b.x - a.x, b.y - a.y) < a.radius) {
         if (a._invulnUntil != null && game.time < a._invulnUntil) { hit = true; break; }
-        let dmg = b.damage;
-        if (unitInTrench(a)) dmg *= 0.5;
-        a.hp -= dmg;
+        a.hp -= b.damage;
         if (a.hp <= 0) {
           a.alive = false;
           createExplosion(a.x, a.y, 'small');
@@ -5663,7 +5394,6 @@ function renderWorld() {
 
   // === THEME-DRIVEN MAP DRESSING ===
   drawThemeShapes();
-  drawUndergrounds();
   drawRoutes();
   drawLandmarksUnder();
 
@@ -5737,77 +5467,6 @@ function renderWorld() {
 
   // Low covers (waist-high — between buildings & units in z-order)
   drawLowCovers();
-
-  // Trenches (壕沟) — drawn as topographic CONTOUR rings going INWARD (deeper
-  // toward the center). Reads as a recess: 3-4 stepped rings from rim to floor.
-  for (const t of trenches) {
-    const steps = 4;
-    for (let i = 0; i < steps; i++) {
-      const k = i / steps;
-      const inset = i * Math.min(t.w, t.h) * 0.06;
-      // Lerp from rim color (cream-dark) to floor (deep grey-blue)
-      const r = Math.round(196 + (40   - 196) * k);
-      const g = Math.round(190 + (45   - 190) * k);
-      const b = Math.round(170 + (60   - 170) * k);
-      ctx.fillStyle = `rgb(${r},${g},${b})`;
-      ctx.fillRect(t.x + inset, t.y + inset,
-                   t.w - inset*2, t.h - inset*2);
-    }
-    // Outer rim line (sharp boundary — this is the "edge of the trench")
-    ctx.strokeStyle = COLORS.black;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(t.x, t.y, t.w, t.h);
-    // Inner contour line (dashed) — emphasizes "lower elevation here"
-    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([5, 4]);
-    const i2 = Math.min(t.w, t.h) * 0.12;
-    ctx.strokeRect(t.x + i2, t.y + i2, t.w - i2*2, t.h - i2*2);
-    ctx.setLineDash([]);
-    // Label
-    ctx.fillStyle = COLORS.cream;
-    ctx.font = 'bold 9px sans-serif';
-    ctx.fillText(t.label || '壕沟', t.x + 6, t.y + 12);
-  }
-
-  // High ground (制高点) — drawn as topographic CONTOUR rings going OUTWARD
-  // (lighter / higher toward the center). Reads as a hill: stepped rings
-  // from base to peak with subtle drop-shadow under the lowest ring.
-  for (const h of highGrounds) {
-    // Soft drop-shadow under the base — sells "this thing sticks up"
-    ctx.fillStyle = 'rgba(20, 18, 24, 0.40)';
-    ctx.fillRect(h.x + 6, h.y + 6, h.w, h.h);
-    const steps = 4;
-    for (let i = 0; i < steps; i++) {
-      const k = i / steps;
-      const inset = i * Math.min(h.w, h.h) * 0.06;
-      // Base of hill: cream-dark; peak: brighter cream
-      const r = Math.round(196 + (240 - 196) * k);
-      const g = Math.round(190 + (230 - 190) * k);
-      const b = Math.round(170 + (210 - 170) * k);
-      ctx.fillStyle = `rgb(${r},${g},${b})`;
-      ctx.fillRect(h.x + inset, h.y + inset,
-                   h.w - inset*2, h.h - inset*2);
-    }
-    // Outer base line — defines the "skirt" of the hill
-    ctx.strokeStyle = COLORS.black;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(h.x, h.y, h.w, h.h);
-    // Mid contour (dashed) — second elevation step
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    const i2 = Math.min(h.w, h.h) * 0.12;
-    ctx.strokeRect(h.x + i2, h.y + i2, h.w - i2*2, h.h - i2*2);
-    ctx.setLineDash([]);
-    // Red corner accent so it pops
-    ctx.fillStyle = COLORS.red;
-    ctx.fillRect(h.x, h.y, 12, 12);
-    // Label
-    ctx.fillStyle = COLORS.black;
-    ctx.font = 'bold 9px sans-serif';
-    ctx.fillText(h.label || '高地', h.x + 6, h.y + h.h - 6);
-  }
 
   // Landmark mid layer (silhouette body that sits with buildings)
   drawLandmarksMid();
@@ -6331,39 +5990,6 @@ function drawThemeShapes() {
     ctx.restore();
   }
   ctx.globalAlpha = 1;
-}
-
-function drawUndergrounds() {
-  ctx.save();
-  for (const u of undergrounds) {
-    // Cutout fill
-    ctx.fillStyle = COLORS.creamDark;
-    ctx.fillRect(u.x, u.y, u.w, u.h);
-    // Diagonal hatch suggesting "below grade"
-    ctx.strokeStyle = COLORS.gray;
-    ctx.globalAlpha = 0.4;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let i = -u.h; i < u.w; i += 14) {
-      ctx.moveTo(u.x + i, u.y);
-      ctx.lineTo(u.x + i + u.h, u.y + u.h);
-    }
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    // Dashed border
-    ctx.strokeStyle = COLORS.black;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([10, 6]);
-    ctx.strokeRect(u.x, u.y, u.w, u.h);
-    ctx.setLineDash([]);
-    // Label
-    if (u.label) {
-      ctx.fillStyle = COLORS.gray;
-      ctx.font = 'bold 10px monospace';
-      ctx.fillText(u.label, u.x + 6, u.y + 14);
-    }
-  }
-  ctx.restore();
 }
 
 function drawRoutes() {
@@ -7183,15 +6809,9 @@ function renderHUD() {
   ctx.fillStyle = sqAlive > 0 ? COLORS.black : COLORS.gray;
   const sqList = allies.map(a => a.alive ? a.callsign[0] + a.hp : a.callsign[0] + '✕').join(' ');
   ctx.fillText(`小组 ${sqAlive}/${allies.length}  ${sqList}`, 26, 86);
-  if (isInUnderground(player.x, player.y)) {
-    ctx.fillStyle = COLORS.red;
-    ctx.font = 'bold 9px sans-serif';
-    ctx.fillText('● 地下层', 26, 102);
-  } else {
-    ctx.fillStyle = COLORS.gray;
-    ctx.font = '9px sans-serif';
-    ctx.fillText(`T+${Math.floor(game.time/60)}s`, 26, 102);
-  }
+  ctx.fillStyle = COLORS.gray;
+  ctx.font = '9px sans-serif';
+  ctx.fillText(`T+${Math.floor(game.time/60)}s`, 26, 102);
 
   // Top-right: score (smaller)
   ctx.textAlign = 'right';
@@ -7375,14 +6995,6 @@ function renderHUD() {
   // NN_ARENA at (0..1200) map across the full minimap, not just the upper-left.
   const wx = wx0 => mapX + (wx0 - srcOx) * sx;
   const wy = wy0 => mapY + (wy0 - srcOy) * sy;
-
-  // Underground tunnels (dashed)
-  ctx.strokeStyle = COLORS.gray;
-  ctx.setLineDash([3, 3]);
-  for (const u of undergrounds) {
-    ctx.strokeRect(wx(u.x), wy(u.y), Math.max(1, u.w*sx), Math.max(1, u.h*sy));
-  }
-  ctx.setLineDash([]);
 
   // Routes (color by type)
   for (const r of routes) {
