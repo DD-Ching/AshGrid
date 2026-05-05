@@ -4507,6 +4507,11 @@ function isVisibleToFriendly(x, y) {
         && angleInCone(a.angle, effectiveArc(Math.sqrt(d2)), a.x, a.y, x, y)
         && lineOfSight(a.x, a.y, x, y)) return true;
   }
+  // Recon drone — 360° circular vision, sees over walls (it's flying high).
+  if (drone.deployed) {
+    const dx = x - drone.x, dy = y - drone.y;
+    if (dx*dx + dy*dy < drone.visionRadius * drone.visionRadius) return true;
+  }
   return false;
 }
 
@@ -6949,10 +6954,11 @@ function renderHUD() {
 
   // Mini-map (bottom-right) — collapsible. Click the small toggle in the
   // top-right corner of its panel to fold it down to a 70×26 "MAP ▲" tab.
+  // NOTE: must NOT early-return from renderHUD — the crosshair, mode overlay
+  // and message banner all live AFTER this section.
   const mw = 180, mh = 180;
   const mx = W() - mw - 16, my = H() - mh - 16;
   if (game._minimapCollapsed) {
-    // Collapsed: just a small button — click to expand
     const tw = 70, th = 26;
     const tx = W() - tw - 16, ty = H() - th - 16;
     ctx.fillStyle = 'rgba(232, 228, 216, 0.92)';
@@ -6966,8 +6972,13 @@ function renderHUD() {
     ctx.fillText('MAP ▲', tx + tw/2, ty + 17);
     ctx.textAlign = 'left';
     game._minimapToggleRect = { x: tx, y: ty, w: tw, h: th };
-    return;
-  }
+  } else { drawMinimapPanel(mx, my, mw, mh); }
+  renderHUDOverlays();
+}
+
+// Full minimap panel — extracted so renderHUD can early-skip when collapsed
+// without bailing out of the whole HUD pass.
+function drawMinimapPanel(mx, my, mw, mh) {
   const mapLabel = currentMap ? `${currentMap.name} · MAP` : 'MAP';
   drawHUDPanel(mx, my, mw, mh, mapLabel);
   // Collapse toggle in the panel's top-right corner (small ▼)
@@ -7105,7 +7116,12 @@ function renderHUD() {
     ctx.fillStyle = COLORS.red;
     ctx.fillRect(wx(fpv.x) - 2, wy(fpv.y) - 2, 4, 4);
   }
+}
 
+// Continuation of renderHUD: mode overlays, crosshair, message banner, dead
+// overlay. Pulled out so the minimap-collapse path can short-circuit cleanly
+// without bailing on these.
+function renderHUDOverlays() {
   // Mode-specific overlays
   if (game.mode === 'fpv') renderFPVOverlay();
   if (game.mode === 'drone') renderDroneOverlay();
@@ -7113,19 +7129,18 @@ function renderHUD() {
   if (game.mode === 'thermal') renderThermalOverlay();
   if (game.mode === 'command') renderCommandOverlay();
 
-  // Crosshair
-  if (game.mode !== 'fpv') {
-    ctx.strokeStyle = COLORS.red;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(mouse.x - 14, mouse.y); ctx.lineTo(mouse.x - 5, mouse.y);
-    ctx.moveTo(mouse.x + 5, mouse.y); ctx.lineTo(mouse.x + 14, mouse.y);
-    ctx.moveTo(mouse.x, mouse.y - 14); ctx.lineTo(mouse.x, mouse.y - 5);
-    ctx.moveTo(mouse.x, mouse.y + 5); ctx.lineTo(mouse.x, mouse.y + 14);
-    ctx.stroke();
-    ctx.fillStyle = COLORS.red;
-    ctx.fillRect(mouse.x - 1, mouse.y - 1, 2, 2);
-  }
+  // Crosshair — shown in every mode including FPV (it's the steering reticle
+  // for the kamikaze drone, so the player can see where they're heading).
+  ctx.strokeStyle = (game.mode === 'fpv') ? COLORS.red : COLORS.red;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(mouse.x - 14, mouse.y); ctx.lineTo(mouse.x - 5, mouse.y);
+  ctx.moveTo(mouse.x + 5, mouse.y); ctx.lineTo(mouse.x + 14, mouse.y);
+  ctx.moveTo(mouse.x, mouse.y - 14); ctx.lineTo(mouse.x, mouse.y - 5);
+  ctx.moveTo(mouse.x, mouse.y + 5); ctx.lineTo(mouse.x, mouse.y + 14);
+  ctx.stroke();
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(mouse.x - 1, mouse.y - 1, 2, 2);
 
   // Center message — banner. If a mission is active and the message is fresh,
   // also include the mission objective so the player has a brief in their face.
