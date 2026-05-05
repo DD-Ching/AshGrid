@@ -816,6 +816,66 @@ let playerWeapon = WEAPONS.RIFLE;
 
 // Apply a weapon's mag size + starting reserve to the player. Call at game start
 // or when switching weapons mid-game.
+// ============ OPERATOR PAWN-SWAP ============
+// In NN mode the player is just one of the team-0 slots. Press 2/3/4 to hand
+// the operator (you) into a different friendly body — the body you leave
+// behind keeps fighting under NN control, and you take over the chosen ally.
+// Operator-level state (drone, FPV, grenades, stamina) stays with you; only
+// body-level state (position, weapon, HP, ammo, gun barrel) swaps.
+function swapPlayerToAlly(idx) {
+  if (!game._nnMode) return;
+  if (idx < 0 || idx >= allies.length) return;
+  const a = allies[idx];
+  if (!a || !a.alive) return;
+  // Snapshot player's body so we can hand it to NN intact
+  const oldBodyAtPlayerSpot = {
+    callsign: '前操作员',
+    offsetX: a.offsetX, offsetY: a.offsetY,
+    x: player.x, y: player.y,
+    angle: player.angle, gunAngle: player.gunAngle, gunRecoil: player.gunRecoil,
+    swayPhase: Math.random() * Math.PI * 2,
+    walkPhase: player.walkPhase || 0,
+    hp: player.hp, maxHp: player.maxHp,
+    alive: true, radius: 13,
+    speed: 2.5, fireCd: 0,
+    weaponId: 'M4',
+    _weapon: playerWeapon,
+    _nnDifficulty: a._nnDifficulty || NN.difficulty || 'evolved',
+    target: null, lookPhase: 0,
+    team: 0,
+    _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+    _respawnAt: null,
+    _invulnUntil: game.time + 60,
+  };
+  // Snapshot ally body before we trash a
+  const targetCallsign = a.callsign;
+  const targetWeapon = a._weapon || WEAPONS.RIFLE;
+  const targetX = a.x, targetY = a.y;
+  const targetAngle = a.angle, targetGun = a.gunAngle || a.angle;
+  const targetGunRecoil = a.gunRecoil || 0;
+  const targetHp = a.hp, targetMaxHp = a.maxHp;
+  // Replace the ally slot with the OLD player body (now NN-driven)
+  allies[idx] = oldBodyAtPlayerSpot;
+  // Move operator into target body
+  player.x = targetX; player.y = targetY;
+  player.angle = targetAngle;
+  player.gunAngle = targetGun;
+  player.gunRecoil = targetGunRecoil * 0.4;   // soften incoming recoil
+  player.hp = targetHp; player.maxHp = targetMaxHp;
+  player._invulnUntil = game.time + 60;
+  player._lastX = targetX; player._lastY = targetY;
+  player._velX = 0; player._velY = 0;
+  // Drop any held trigger so we don't autofire on the swap frame
+  mouse.down = false;
+  // Swap weapon — applyWeaponToPlayer also resets ammo (taking over a
+  // soldier hands you a fresh mag, treated as a tactical pickup).
+  applyWeaponToPlayer(targetWeapon);
+  // Operator carries personal stash through the swap
+  player.hp = targetHp;   // applyWeaponToPlayer doesn't touch HP, but be explicit
+  showMessage(`接管 ${targetCallsign}`, 120);
+  playSfx('countdown', { freq: 1320, vol: 0.45 });
+}
+
 function applyWeaponToPlayer(w) {
   playerWeapon = w;
   player.maxAmmo = w.magSize;
@@ -1226,12 +1286,18 @@ window.addEventListener('keydown', e => {
       try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (err) {}
       showMessage(`AIM-ASSIST · ${player._aimAssist ? '开启' : '关闭'}`, 60);
     }
-    // Dev: jump straight to mission N (1-6). Useful while iterating on a single mission.
+    // 1-4 in NN mode: pawn-swap to that team-0 slot (1 = self, 2-4 = allies).
+    // 1-6 in campaign: dev jump to mission N (only when not in NN mode).
     else if (e.key >= '1' && e.key <= '6') {
-      const idx = parseInt(e.key);
-      if (idx <= MISSIONS.length) {
-        game.wave = idx - 1; // startNextWave will increment to idx
-        startNextWave();
+      if (game._nnMode) {
+        const allyIdx = parseInt(e.key) - 2;   // '2' → ally[0], etc.
+        if (allyIdx >= 0 && allyIdx < allies.length) swapPlayerToAlly(allyIdx);
+      } else {
+        const idx = parseInt(e.key);
+        if (idx <= MISSIONS.length) {
+          game.wave = idx - 1; // startNextWave will increment to idx
+          startNextWave();
+        }
       }
     }
     // Dev: skip current mission (treat as success)
@@ -7061,11 +7127,17 @@ function renderHUD() {
   const remaining = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
   ctx.fillStyle = remaining > 0 ? COLORS.red : COLORS.gray;
   ctx.fillText(`敌方 ${remaining}`, 26, 70);
-  // Squad
+  // Squad — in NN mode the player can press 2/3/4 to take over a slot
   const sqAlive = allies.filter(a=>a.alive).length;
   ctx.fillStyle = sqAlive > 0 ? COLORS.black : COLORS.gray;
-  const sqList = allies.map(a => a.alive ? a.callsign[0] + a.hp : a.callsign[0] + '✕').join(' ');
-  ctx.fillText(`小组 ${sqAlive}/${allies.length}  ${sqList}`, 26, 86);
+  if (game._nnMode) {
+    let line = `[1·你] `;
+    line += allies.map((a, i) => `[${i+2}·${a.callsign[0]}` + (a.alive ? `${a.hp}` : '✕') + ']').join(' ');
+    ctx.fillText(line, 26, 86);
+  } else {
+    const sqList = allies.map(a => a.alive ? a.callsign[0] + a.hp : a.callsign[0] + '✕').join(' ');
+    ctx.fillText(`小组 ${sqAlive}/${allies.length}  ${sqList}`, 26, 86);
+  }
   ctx.fillStyle = COLORS.gray;
   ctx.font = '9px sans-serif';
   ctx.fillText(`T+${Math.floor(game.time/60)}s`, 26, 102);
@@ -7741,6 +7813,7 @@ function drawPauseOverlay() {
     ]],
     ['系统 SYSTEM', [
       ['P',     '暂停 / 继续'],
+      ['1-4',   'NN 模式接管队友'],
       ['Esc',   '返回主菜单'],
     ]],
   ];
