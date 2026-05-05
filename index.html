@@ -447,21 +447,17 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
     </div>
 
     <div class="missions">
-      <div class="missions-tag">作战序列 / 6-MISSION CAMPAIGN</div>
+      <div class="missions-tag">模式 / GAME MODES</div>
       <div class="missions-grid">
-        <div class="mission"><span class="mission-num">01</span><div class="mission-body"><div class="mission-name">坚守中继站 · HOLD THE RELAY</div><div class="mission-rhythm">核池 · 通讯崩溃前的最后节点 · 90s</div></div></div>
-        <div class="mission"><span class="mission-num">02</span><div class="mission-body"><div class="mission-name">回收黑盒 · RECOVER BLACK BOX</div><div class="mission-rhythm">高炉 · 找回坠毁单元的资料核心</div></div></div>
-        <div class="mission"><span class="mission-num">03</span><div class="mission-body"><div class="mission-name">护送补给车 · CONVOY ESCORT</div><div class="mission-rhythm">货柜港 · 保护 Cargo UGV 穿越码头</div></div></div>
-        <div class="mission"><span class="mission-num">04</span><div class="mission-body"><div class="mission-name">夺取讯号节点 · CAPTURE NODES</div><div class="mission-rhythm">资料核心 · 占领 A · B · C</div></div></div>
-        <div class="mission"><span class="mission-num">05</span><div class="mission-body"><div class="mission-name">重型机具进场 · HEAVY INSERTION</div><div class="mission-rhythm">资料核心 · 护送破障 UGV 完成破障</div></div></div>
-        <div class="mission"><span class="mission-num">06</span><div class="mission-body"><div class="mission-name">摧毁蜂巢 · DESTROY HIVE</div><div class="mission-rhythm">蜂巢 · 阻止 FPV 持续生成</div></div></div>
+        <div class="mission"><span class="mission-num">01</span><div class="mission-body"><div class="mission-name">对抗 · DEATHMATCH</div><div class="mission-rhythm">蓝队 vs 红队 · 自由配阵 · 全地图</div></div></div>
+        <div class="mission"><span class="mission-num">02</span><div class="mission-body"><div class="mission-name">生存 · SURVIVAL</div><div class="mission-rhythm">守住每一波 · 队友死了不复活 · 撑越久越强</div></div></div>
+        <div class="mission"><span class="mission-num">03</span><div class="mission-body"><div class="mission-name">单挑 · DUEL 1v1</div><div class="mission-rhythm">没队友 · 没无人机 · 纯走位 + 枪法</div></div></div>
+        <div class="mission"><span class="mission-num">04</span><div class="mission-body"><div class="mission-name">狙击 · SNIPER ONLY</div><div class="mission-rhythm">全员一击致命 · 长视野 · 卡角拉锯</div></div></div>
       </div>
     </div>
 
     <div style="display:flex; gap:16px; align-items:center;">
-      <button class="start-btn" id="startBtn">战役模式 ▶</button>
-      <button class="start-btn" id="skirmishBtn" style="background: var(--black);">对抗模式 ▶</button>
-      <button class="start-btn" id="nnBtn" style="background: var(--red-dim); font-size: 18px; letter-spacing: 4px;">神经网络 NN ▶</button>
+      <button class="start-btn" id="nnBtn" style="background: var(--red); font-size: 22px; letter-spacing: 6px; padding: 22px 56px;">进入对抗 ENTER COMBAT ▶</button>
     </div>
 
 
@@ -1403,12 +1399,15 @@ window.addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false
 window.addEventListener('contextmenu', e => e.preventDefault());
 
 // ============ GAME LIFECYCLE ============
-document.getElementById('startBtn').onclick = startGame;
-document.getElementById('restartBtn').onclick = startGame;
-document.getElementById('skirmishBtn').onclick = startSkirmish;
+// Old campaign + free-skirmish entries removed — NN lobby is the single
+// match start. The "restart" button on the end screen still exists; route
+// it to re-open the NN lobby instead of re-running the old campaign.
+document.getElementById('restartBtn').onclick = () => {
+  document.getElementById('end').classList.add('hidden');
+  document.getElementById('start').classList.remove('hidden');
+};
 
-
-// ---- NN Skirmish: button opens lobby for team-size + difficulty selection ----
+// ---- NN Skirmish: button opens lobby for mode + difficulty selection ----
 const _lobby = {
   blue: 3, red: 3, min: 1, max: 4,
   difficulty: 'elite', weapon: 'RIFLE',
