@@ -608,31 +608,6 @@ const player = {
   grenades: 3, maxGrenades: 3,
 };
 
-// Overhead "[E][shotgun]" tag showing which NN brain + weapon a unit has.
-// Helps verify per-unit difficulty dispatch is actually happening.
-const _NN_DIFF_LETTER = { easy: 'E', medium: 'M', hard: 'H', evolved: 'V' };
-const _NN_WPN_LETTER  = { SMG: 'SMG', RIFLE: 'AR', LMG: 'LMG', SNIPER: 'SNI', SHOTGUN: 'SG' };
-function drawNNTag(u, color) {
-  const d = u._nnDifficulty || NN.difficulty || 'evolved';
-  const w = u._weapon ? u._weapon.name : '';
-  const wid = w.startsWith('SMG') ? 'SMG' :
-              w.startsWith('AR')  ? 'AR'  :
-              w.startsWith('LMG') ? 'LMG' :
-              w.startsWith('DMR') ? 'SNI' :
-              w.startsWith('SG')  ? 'SG'  : '?';
-  const tag = `${_NN_DIFF_LETTER[d] || '?'}·${wid}`;
-  ctx.save();
-  ctx.font = 'bold 9px sans-serif';
-  ctx.textAlign = 'center';
-  // Cream background pill for legibility
-  const tw = ctx.measureText(tag).width + 8;
-  ctx.fillStyle = 'rgba(232, 228, 216, 0.85)';
-  ctx.fillRect(u.x - tw/2, u.y - 38, tw, 12);
-  ctx.fillStyle = color;
-  ctx.fillText(tag, u.x, u.y - 29);
-  ctx.textAlign = 'left';
-  ctx.restore();
-}
 
 // ============ GRENADES ============
 const grenades = [];
@@ -5561,45 +5536,71 @@ function renderWorld() {
   // Low covers (waist-high — between buildings & units in z-order)
   drawLowCovers();
 
-  // Trenches (壕沟) — recessed dark strips, drawn UNDER unit z-order so soldiers
-  // appear to stand inside them.
+  // Trenches (壕沟) — drawn as topographic CONTOUR rings going INWARD (deeper
+  // toward the center). Reads as a recess: 3-4 stepped rings from rim to floor.
   for (const t of trenches) {
-    ctx.fillStyle = '#3A3A42';
-    ctx.fillRect(t.x, t.y, t.w, t.h);
-    ctx.strokeStyle = COLORS.black;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(t.x, t.y, t.w, t.h);
-    // Diagonal hatching to read as "below ground"
-    ctx.strokeStyle = '#1A1A1A';
-    ctx.lineWidth = 1;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(t.x, t.y, t.w, t.h); ctx.clip();
-    for (let xx = t.x - t.h; xx < t.x + t.w; xx += 14) {
-      ctx.beginPath();
-      ctx.moveTo(xx, t.y); ctx.lineTo(xx + t.h, t.y + t.h);
-      ctx.stroke();
+    const steps = 4;
+    for (let i = 0; i < steps; i++) {
+      const k = i / steps;
+      const inset = i * Math.min(t.w, t.h) * 0.06;
+      // Lerp from rim color (cream-dark) to floor (deep grey-blue)
+      const r = Math.round(196 + (40   - 196) * k);
+      const g = Math.round(190 + (45   - 190) * k);
+      const b = Math.round(170 + (60   - 170) * k);
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(t.x + inset, t.y + inset,
+                   t.w - inset*2, t.h - inset*2);
     }
-    ctx.restore();
+    // Outer rim line (sharp boundary — this is the "edge of the trench")
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(t.x, t.y, t.w, t.h);
+    // Inner contour line (dashed) — emphasizes "lower elevation here"
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 4]);
+    const i2 = Math.min(t.w, t.h) * 0.12;
+    ctx.strokeRect(t.x + i2, t.y + i2, t.w - i2*2, t.h - i2*2);
+    ctx.setLineDash([]);
     // Label
     ctx.fillStyle = COLORS.cream;
     ctx.font = 'bold 9px sans-serif';
     ctx.fillText(t.label || '壕沟', t.x + 6, t.y + 12);
   }
 
-  // High ground (制高点) — raised platform with deep shadow underneath
+  // High ground (制高点) — drawn as topographic CONTOUR rings going OUTWARD
+  // (lighter / higher toward the center). Reads as a hill: stepped rings
+  // from base to peak with subtle drop-shadow under the lowest ring.
   for (const h of highGrounds) {
-    // Drop shadow (offset down/right) gives the "elevated" feel
-    ctx.fillStyle = 'rgba(20, 18, 24, 0.55)';
-    ctx.fillRect(h.x + 8, h.y + 8, h.w, h.h);
-    // Platform body — slightly darker than cream, with red accent corner
-    ctx.fillStyle = COLORS.creamDark;
-    ctx.fillRect(h.x, h.y, h.w, h.h);
+    // Soft drop-shadow under the base — sells "this thing sticks up"
+    ctx.fillStyle = 'rgba(20, 18, 24, 0.40)';
+    ctx.fillRect(h.x + 6, h.y + 6, h.w, h.h);
+    const steps = 4;
+    for (let i = 0; i < steps; i++) {
+      const k = i / steps;
+      const inset = i * Math.min(h.w, h.h) * 0.06;
+      // Base of hill: cream-dark; peak: brighter cream
+      const r = Math.round(196 + (240 - 196) * k);
+      const g = Math.round(190 + (230 - 190) * k);
+      const b = Math.round(170 + (210 - 170) * k);
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(h.x + inset, h.y + inset,
+                   h.w - inset*2, h.h - inset*2);
+    }
+    // Outer base line — defines the "skirt" of the hill
     ctx.strokeStyle = COLORS.black;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5;
     ctx.strokeRect(h.x, h.y, h.w, h.h);
+    // Mid contour (dashed) — second elevation step
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    const i2 = Math.min(h.w, h.h) * 0.12;
+    ctx.strokeRect(h.x + i2, h.y + i2, h.w - i2*2, h.h - i2*2);
+    ctx.setLineDash([]);
+    // Red corner accent so it pops
     ctx.fillStyle = COLORS.red;
-    ctx.fillRect(h.x, h.y, 18, 18);
+    ctx.fillRect(h.x, h.y, 12, 12);
     // Label
     ctx.fillStyle = COLORS.black;
     ctx.font = 'bold 9px sans-serif';
@@ -5732,8 +5733,6 @@ function renderWorld() {
       ctx.fillStyle = COLORS.red;
       ctx.fillRect(e.x-15, e.y-26, 30 * e.hp/e.maxHp, 3);
     }
-    // NN brain + weapon tag overhead so you can see difficulty per-unit
-    if (e._useNN && game._nnMode) drawNNTag(e, COLORS.red);
     ctx.globalAlpha = 1;
   }
 
@@ -5777,7 +5776,6 @@ function renderWorld() {
     if (aInvuln) ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
     drawHumanoid(a.x, a.y, a.angle, a.walkPhase, COLORS.creamDark, false);
     if (aInvuln) ctx.globalAlpha = 1;
-    if (a._useNN && game._nnMode) drawNNTag(a, COLORS.black);
     // Cream outline highlight to distinguish from enemies
     ctx.save();
     ctx.strokeStyle = COLORS.cream;
