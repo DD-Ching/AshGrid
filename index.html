@@ -581,19 +581,19 @@ const canvas = document.getElementById('game');
 // alpha:false skips per-pixel compositing — meaningful on full-screen HiDPI.
 const ctx = canvas.getContext('2d', { alpha: false });
 
-// Cap DPR at 1.5 — Retina at 2.0 paints ~8M pixels/frame on a 1080p window
-// (vs ~3.5M at 1.5), and the visual difference is barely noticeable for a
-// flat 2D top-down. Halves the rasterizer load on high-DPI displays.
-const MAX_DPR = 1.5;
+// Render at the device's native pixel density — capping it (we tried 1.5)
+// produced visible blur on Retina displays where backing-store pixels no
+// longer line up 1:1 with screen pixels and CSS upscales fractionally.
+// alpha:false on the context still skips per-pixel compositing, which
+// covers most of the perf savings without any blur cost.
 let DPR = 1;
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+  DPR = window.devicePixelRatio || 1;
   canvas.width = window.innerWidth * DPR;
   canvas.height = window.innerHeight * DPR;
   canvas.style.width = window.innerWidth + 'px';
   canvas.style.height = window.innerHeight + 'px';
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener('resize', resize);
 resize();
@@ -5193,10 +5193,10 @@ function updatePlayer() {
   // View angle (instant) — where the player LOOKS, drives vision cone & crosshair
   player.angle = Math.atan2(wp.y - player.y, wp.x - player.x);
 
-  // Aim-assist: player can't out-aim the NN, so when toggled (V) we magnetize
-  // the look direction toward the closest visible enemy in front. Same target
-  // leading the NN uses (predict where target will be when bullet arrives) so
-  // strafing enemies aren't immune. Trigger pull stays manual.
+  // Aim-assist: when V toggled and a target locks, hard-snap the look + gun
+  // to the lead position (so the bullet actually goes where the reticle is,
+  // not where the gun lag thinks it is). Trigger pull stays manual.
+  player._aimAssistLockedAt = null;
   if (player._aimAssist && player.alive) {
     const RANGE = 700, ARC_HALF = Math.PI / 3;   // 60° front cone
     let bestE = null, bestD = Infinity;
@@ -5218,15 +5218,24 @@ function updatePlayer() {
       const leadX = bestE.x + (bestE._velX || 0) * flightTime;
       const leadY = bestE.y + (bestE._velY || 0) * flightTime;
       const tA = Math.atan2(leadY - player.y, leadX - player.x);
-      let diff = tA - player.angle;
-      while (diff >  Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      player.angle += diff * 0.6;   // 60% magnetism — strong pull, not full snap
+      // Hard snap: look direction AND gun barrel both go to the lead angle.
+      // Recoil softened so the first shot post-lock isn't kicked off-target.
+      player.angle = tA;
+      player.gunAngle = tA;
+      player.gunRecoil *= 0.4;
+      player._aimAssistLockedAt = { x: leadX, y: leadY };
     }
   }
 
   // Gun barrel: damped follow toward view, sway, recoil decay
   tickShooter(player, player.angle, playerWeapon, !!moving);
+  // While aim-assist is locked, override tickShooter's sway/damping so the
+  // gun stays exactly on the lead angle. Otherwise the bullet drifts off
+  // even though the reticle visually points at the target.
+  if (player._aimAssistLockedAt) {
+    player.gunAngle = player.angle;
+    player.gunRecoil *= 0.5;
+  }
 
   player.fireCooldown--;
   // Auto vs semi: full-auto fires while held; semi-auto (SNIPER, SHOTGUN)
@@ -5294,10 +5303,14 @@ function fire() {
   player.fireCooldown = w.fireCd;
   player.ammo--;
   const baseAngle = player.gunAngle + player.gunRecoil;
+  // Aim-assist locked shots: cut random spread to 30% so the locked reticle
+  // really means "the bullet is going there" — not "go somewhere in a 2.3°
+  // cone around there". Pellet weapons (shotgun) keep their natural spread.
+  const spreadMul = (player._aimAssistLockedAt && (w.pellets || 1) === 1) ? 0.3 : 1.0;
   // Shotgun and similar: emit `pellets` bullets per shot with shared spread cone
   const pellets = w.pellets || 1;
   for (let i = 0; i < pellets; i++) {
-    const barrel = baseAngle + (Math.random()-0.5) * w.spread;
+    const barrel = baseAngle + (Math.random()-0.5) * w.spread * spreadMul;
     bullets.push({
       x: player.x + Math.cos(barrel)*18,
       y: player.y + Math.sin(barrel)*18,
@@ -7339,18 +7352,40 @@ function renderHUDOverlays() {
   if (game.mode === 'thermal') renderThermalOverlay();
   if (game.mode === 'command') renderCommandOverlay();
 
-  // Crosshair — shown in every mode including FPV (it's the steering reticle
-  // for the kamikaze drone, so the player can see where they're heading).
-  ctx.strokeStyle = (game.mode === 'fpv') ? COLORS.red : COLORS.red;
-  ctx.lineWidth = 1.5;
+  // Crosshair — shown in every mode including FPV. When aim-assist is locked
+  // the reticle DOES NOT follow the mouse — it sticks to the predicted lead
+  // position so the player sees exactly where the bullet is going (mouse is
+  // just an input cue at that point, not a misleading aim indicator).
+  let cxX = mouse.x, cxY = mouse.y, locked = false;
+  if (player._aimAssistLockedAt) {
+    const wp = player._aimAssistLockedAt;
+    const dx = wp.x - camera.x, dy = wp.y - camera.y;
+    const c = Math.cos(camera.rotation), s = Math.sin(camera.rotation);
+    cxX = (dx * c - dy * s) * camera.scale + W() / 2;
+    cxY = (dx * s + dy * c) * camera.scale + H() / 2;
+    locked = true;
+  }
+  ctx.strokeStyle = COLORS.red;
+  ctx.lineWidth = locked ? 2 : 1.5;
   ctx.beginPath();
-  ctx.moveTo(mouse.x - 14, mouse.y); ctx.lineTo(mouse.x - 5, mouse.y);
-  ctx.moveTo(mouse.x + 5, mouse.y); ctx.lineTo(mouse.x + 14, mouse.y);
-  ctx.moveTo(mouse.x, mouse.y - 14); ctx.lineTo(mouse.x, mouse.y - 5);
-  ctx.moveTo(mouse.x, mouse.y + 5); ctx.lineTo(mouse.x, mouse.y + 14);
+  ctx.moveTo(cxX - 14, cxY); ctx.lineTo(cxX - 5, cxY);
+  ctx.moveTo(cxX + 5, cxY); ctx.lineTo(cxX + 14, cxY);
+  ctx.moveTo(cxX, cxY - 14); ctx.lineTo(cxX, cxY - 5);
+  ctx.moveTo(cxX, cxY + 5); ctx.lineTo(cxX, cxY + 14);
   ctx.stroke();
   ctx.fillStyle = COLORS.red;
-  ctx.fillRect(mouse.x - 1, mouse.y - 1, 2, 2);
+  ctx.fillRect(cxX - 1, cxY - 1, 2, 2);
+  if (locked) {
+    // Lock corner brackets so the player can tell the reticle is "stuck"
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const r = 18;
+    ctx.moveTo(cxX - r, cxY - r + 6); ctx.lineTo(cxX - r, cxY - r); ctx.lineTo(cxX - r + 6, cxY - r);
+    ctx.moveTo(cxX + r, cxY - r + 6); ctx.lineTo(cxX + r, cxY - r); ctx.lineTo(cxX + r - 6, cxY - r);
+    ctx.moveTo(cxX - r, cxY + r - 6); ctx.lineTo(cxX - r, cxY + r); ctx.lineTo(cxX - r + 6, cxY + r);
+    ctx.moveTo(cxX + r, cxY + r - 6); ctx.lineTo(cxX + r, cxY + r); ctx.lineTo(cxX + r - 6, cxY + r);
+    ctx.stroke();
+  }
 
   // Center message — banner. If a mission is active and the message is fresh,
   // also include the mission objective so the player has a brief in their face.
