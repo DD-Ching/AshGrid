@@ -1402,6 +1402,122 @@ catch (e) {}
 // Restore aim-assist toggle (player can't out-aim NN otherwise — V toggles)
 try { player._aimAssist = localStorage.getItem('ag.aimAssist') === '1'; }
 catch (e) {}
+
+// ============ TOUCH INPUT (mobile) ============
+// Detect touch device once at load. Touch overlays (virtual sticks +
+// action buttons) only render when this is true, so desktop is unchanged.
+const touchInput = {
+  enabled: ('ontouchstart' in window) || (navigator.maxTouchPoints > 0),
+  moveTouch: null,    // { id, anchorX, anchorY, dx, dy } — left half drag
+  aimTouch: null,     // same shape — right half drag
+};
+const TOUCH_STICK_RADIUS = 60;
+const TOUCH_STICK_DEAD = 6;
+
+function _touchHitButton(x, y) {
+  if (!game._touchActionButtons) return null;
+  for (const b of game._touchActionButtons) {
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.id;
+  }
+  return null;
+}
+function _touchTriggerAction(id) {
+  if (game._paused) {
+    if (id === 'pause') togglePause();
+    return;
+  }
+  if (game.state !== 'playing') return;
+  switch (id) {
+    case 'q':     toggleDrone(); break;
+    case 'e':     launchFPV(); break;
+    case 'g':     throwGrenade(); break;
+    case 'r':     startReload(); break;
+    case 'v':
+      player._aimAssist = !player._aimAssist;
+      try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (err) {}
+      break;
+    case 'pause': togglePause(); break;
+  }
+}
+
+if (touchInput.enabled) {
+  // Touch users default to aim-assist ON (they have less precise aim than
+  // mouse) and to a sane minimap state.
+  if (localStorage.getItem('ag.aimAssist') == null) {
+    player._aimAssist = true;
+    try { localStorage.setItem('ag.aimAssist', '1'); } catch (e) {}
+  }
+  // Prevent the page from scrolling / pinch-zooming under our gestures.
+  document.body.style.touchAction = 'none';
+
+  const onStart = (e) => {
+    for (const t of e.changedTouches) {
+      // 1) Action buttons (top-right)
+      const btn = _touchHitButton(t.clientX, t.clientY);
+      if (btn) { _touchTriggerAction(btn); continue; }
+      // 2) Pause overlay buttons (when paused)
+      if (game._paused) {
+        if (_hitRect(game._pauseResumeRect, t.clientX, t.clientY)) togglePause();
+        else if (_hitRect(game._pauseExitRect, t.clientX, t.clientY)) exitMatchToMenu();
+        continue;
+      }
+      // 3) HUD pause button (top-left)
+      if (_hitRect(game._pauseBtnRect, t.clientX, t.clientY)) {
+        togglePause(); continue;
+      }
+      // 4) Squad chip swap
+      if (game._squadChipRects) {
+        let hit = false;
+        for (const c of game._squadChipRects) {
+          if (c.alive && _hitRect(c, t.clientX, t.clientY)) {
+            swapPlayerToAlly(c.allyIdx);
+            hit = true; break;
+          }
+        }
+        if (hit) continue;
+      }
+      // 5) Otherwise: stick assignment by screen half
+      if (t.clientX < window.innerWidth / 2) {
+        if (!touchInput.moveTouch) {
+          touchInput.moveTouch = { id: t.identifier, anchorX: t.clientX, anchorY: t.clientY, dx: 0, dy: 0 };
+        }
+      } else {
+        if (!touchInput.aimTouch) {
+          touchInput.aimTouch = { id: t.identifier, anchorX: t.clientX, anchorY: t.clientY, dx: 0, dy: 0 };
+        }
+      }
+    }
+    e.preventDefault();
+  };
+  const onMove = (e) => {
+    for (const t of e.changedTouches) {
+      if (touchInput.moveTouch && touchInput.moveTouch.id === t.identifier) {
+        touchInput.moveTouch.dx = t.clientX - touchInput.moveTouch.anchorX;
+        touchInput.moveTouch.dy = t.clientY - touchInput.moveTouch.anchorY;
+      }
+      if (touchInput.aimTouch && touchInput.aimTouch.id === t.identifier) {
+        touchInput.aimTouch.dx = t.clientX - touchInput.aimTouch.anchorX;
+        touchInput.aimTouch.dy = t.clientY - touchInput.aimTouch.anchorY;
+      }
+    }
+    e.preventDefault();
+  };
+  const onEnd = (e) => {
+    for (const t of e.changedTouches) {
+      if (touchInput.moveTouch && touchInput.moveTouch.id === t.identifier) {
+        touchInput.moveTouch = null;
+      }
+      if (touchInput.aimTouch && touchInput.aimTouch.id === t.identifier) {
+        touchInput.aimTouch = null;
+      }
+    }
+    e.preventDefault();
+  };
+  window.addEventListener('touchstart',  onStart, { passive: false });
+  window.addEventListener('touchmove',   onMove,  { passive: false });
+  window.addEventListener('touchend',    onEnd,   { passive: false });
+  window.addEventListener('touchcancel', onEnd,   { passive: false });
+}
 window.addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; });
 window.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -5617,6 +5733,16 @@ function updatePlayer() {
   if (keys['s']) my += 1;
   if (keys['a']) mx -= 1;
   if (keys['d']) mx += 1;
+  // Touch move stick contributes additively (analog magnitude → speed scale)
+  if (touchInput.moveTouch) {
+    const tdx = touchInput.moveTouch.dx, tdy = touchInput.moveTouch.dy;
+    const len = Math.hypot(tdx, tdy);
+    if (len > TOUCH_STICK_DEAD) {
+      const k = Math.min(1, len / TOUCH_STICK_RADIUS);
+      mx += (tdx / len) * k;
+      my += (tdy / len) * k;
+    }
+  }
   const moving = mx || my;
 
   // Sprint logic: hold Shift while moving + have stamina. If empty, must
@@ -5664,6 +5790,15 @@ function updatePlayer() {
   mouse.worldX = wp.x; mouse.worldY = wp.y;
   // View angle (instant) — where the player LOOKS, drives vision cone & crosshair
   player.angle = Math.atan2(wp.y - player.y, wp.x - player.x);
+  // Touch aim stick: override angle + force trigger held while stick moved
+  if (touchInput.aimTouch) {
+    const tdx = touchInput.aimTouch.dx, tdy = touchInput.aimTouch.dy;
+    const len = Math.hypot(tdx, tdy);
+    if (len > TOUCH_STICK_DEAD) {
+      player.angle = Math.atan2(tdy, tdx);
+      mouse.down = true;
+    }
+  }
 
   tickPlayerCombat(!!moving);
   // Empty trigger click: clicking when out of ammo + can't reload (no reserve)
@@ -5775,6 +5910,15 @@ function updateDroneControl() {
   if (keys['s']) my += 1;
   if (keys['a']) mx -= 1;
   if (keys['d']) mx += 1;
+  if (touchInput.moveTouch) {
+    const tdx = touchInput.moveTouch.dx, tdy = touchInput.moveTouch.dy;
+    const len = Math.hypot(tdx, tdy);
+    if (len > TOUCH_STICK_DEAD) {
+      const k = Math.min(1, len / TOUCH_STICK_RADIUS);
+      mx += (tdx / len) * k;
+      my += (tdy / len) * k;
+    }
+  }
   if (mx || my) {
     const len = Math.hypot(mx, my);
     drone.x += mx/len * drone.speed;
@@ -7728,6 +7872,64 @@ function renderHUDOverlays() {
     ctx.arc(mouse.x, mouse.y, 3, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
+  }
+
+  // ---- Touch overlay: virtual sticks + action buttons ----
+  if (touchInput.enabled && game.state === 'playing' && !game._paused) {
+    const drawStick = (s) => {
+      if (!s) return;
+      const len = Math.hypot(s.dx, s.dy);
+      const k = Math.min(1, len / TOUCH_STICK_RADIUS);
+      const tx = s.anchorX + (len > 0 ? (s.dx / len) * TOUCH_STICK_RADIUS * k : 0);
+      const ty = s.anchorY + (len > 0 ? (s.dy / len) * TOUCH_STICK_RADIUS * k : 0);
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      ctx.strokeStyle = COLORS.cream;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(s.anchorX, s.anchorY, TOUCH_STICK_RADIUS, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = COLORS.red;
+      ctx.beginPath();
+      ctx.arc(tx, ty, 22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
+    drawStick(touchInput.moveTouch);
+    drawStick(touchInput.aimTouch);
+
+    // Action buttons: top-right column. Buttons are big enough for thumbs.
+    const BTN_SIZE = 56, BTN_GAP = 10;
+    const buttons = [
+      { id: 'q', label: 'Q',   sub: 'UAV' },
+      { id: 'e', label: 'E',   sub: 'FPV' },
+      { id: 'g', label: 'G',   sub: '雷' },
+      { id: 'r', label: 'R',   sub: '弹' },
+      { id: 'v', label: 'V',   sub: '助', active: !!player._aimAssist },
+    ];
+    let bx = W() - BTN_SIZE - 16;
+    let by = 130;
+    game._touchActionButtons = [];
+    for (const b of buttons) {
+      ctx.save();
+      ctx.fillStyle = b.active ? COLORS.red : 'rgba(20, 18, 24, 0.65)';
+      ctx.fillRect(bx, by, BTN_SIZE, BTN_SIZE);
+      ctx.strokeStyle = b.active ? COLORS.red : COLORS.cream;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bx, by, BTN_SIZE, BTN_SIZE);
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(b.label, bx + BTN_SIZE / 2, by + 26);
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillText(b.sub, bx + BTN_SIZE / 2, by + 44);
+      ctx.textAlign = 'left';
+      ctx.restore();
+      game._touchActionButtons.push({ id: b.id, x: bx, y: by, w: BTN_SIZE, h: BTN_SIZE });
+      by += BTN_SIZE + BTN_GAP;
+    }
+  } else {
+    game._touchActionButtons = null;
   }
 
   // Center message — banner. If a mission is active and the message is fresh,
