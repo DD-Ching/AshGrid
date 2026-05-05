@@ -1468,10 +1468,19 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
     });
   }
 
-  // Player at the player slot
-  player.x = game._nnSpawnBlue.x - 50;
-  player.y = NN_ARENA.y0 + allySpacing * blueSize;   // last slot
+  // Player at the player slot. Clamp to arena interior so we never start
+  // outside the red border (in any team-size combination).
+  const SP_PAD = 30;
+  const arenaMinX = NN_ARENA.x0 + SP_PAD, arenaMaxX = NN_ARENA.x0 + NN_ARENA.w - SP_PAD;
+  const arenaMinY = NN_ARENA.y0 + SP_PAD, arenaMaxY = NN_ARENA.y0 + NN_ARENA.h - SP_PAD;
+  const clampX = (cx) => Math.max(arenaMinX, Math.min(arenaMaxX, cx));
+  const clampY = (cy) => Math.max(arenaMinY, Math.min(arenaMaxY, cy));
+  player.x = clampX(game._nnSpawnBlue.x - 50);
+  player.y = clampY(NN_ARENA.y0 + allySpacing * blueSize);
   player.team = 0;
+  // Also clamp the initial ally + enemy positions placed above
+  for (const a of allies) { a.x = clampX(a.x); a.y = clampY(a.y); }
+  for (const e of enemies) { e.x = clampX(e.x); e.y = clampY(e.y); }
 
   initMission({ type: 'nnDeathmatch', id: 'nn-deathmatch' }, currentMap);
   showMessage(`NN 对抗 · 蓝 ${blueSize} vs 红 ${redSize}`, 200);
@@ -3844,6 +3853,13 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       // Spawn protection: 1.5 seconds of damage immunity after respawn so
       // you don't get instantly killed by a sniper sitting on your spawn.
       const SPAWN_INVULN_TICKS = 90;
+      // Clamp respawn positions to the playable interior of the NN_ARENA box
+      // so a unit never spawns OUTSIDE the red border, regardless of jitter.
+      const SP_PAD = 30;
+      const _spX = (cx) => Math.max(NN_ARENA.x0 + SP_PAD,
+                                     Math.min(NN_ARENA.x0 + NN_ARENA.w - SP_PAD, cx));
+      const _spY = (cy) => Math.max(NN_ARENA.y0 + SP_PAD,
+                                     Math.min(NN_ARENA.y0 + NN_ARENA.h - SP_PAD, cy));
       // Process respawns
       if (!player.alive && player._respawnAt != null && game.time >= player._respawnAt) {
         player.alive = true;
@@ -3854,8 +3870,8 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         } else {
           player.ammo = player.maxAmmo;
         }
-        player.x = game._nnSpawnBlue.x;
-        player.y = game._nnSpawnBlue.y + (Math.random() - 0.5) * 60;
+        player.x = _spX(game._nnSpawnBlue.x);
+        player.y = _spY(game._nnSpawnBlue.y + (Math.random() - 0.5) * 60);
         player._respawnAt = null;
         player.gunRecoil = 0;
         player.reloading = false;
@@ -3866,8 +3882,8 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         if (!a.alive && a._respawnAt != null && game.time >= a._respawnAt) {
           a.alive = true;
           a.hp = a.maxHp;
-          a.x = game._nnSpawnBlue.x;
-          a.y = game._nnSpawnBlue.y + (Math.random() - 0.5) * 200;
+          a.x = _spX(game._nnSpawnBlue.x);
+          a.y = _spY(game._nnSpawnBlue.y + (Math.random() - 0.5) * 200);
           a._respawnAt = null;
           a._nnFireCd = 0; a._nnRecentDmg = 0;
           a._invulnUntil = game.time + SPAWN_INVULN_TICKS;
@@ -3878,8 +3894,8 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         if (!e.alive && e._respawnAt != null && game.time >= e._respawnAt) {
           e.alive = true;
           e.hp = e.maxHp;
-          e.x = game._nnSpawnRed.x;
-          e.y = game._nnSpawnRed.y + (Math.random() - 0.5) * 200;
+          e.x = _spX(game._nnSpawnRed.x);
+          e.y = _spY(game._nnSpawnRed.y + (Math.random() - 0.5) * 200);
           e._respawnAt = null;
           e._nnFireCd = 0; e._nnRecentDmg = 0;
           e._invulnUntil = game.time + SPAWN_INVULN_TICKS;
