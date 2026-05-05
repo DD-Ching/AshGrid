@@ -497,6 +497,15 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
         </div>
       </div>
     </div>
+    <div class="difficulty-row">
+      <label class="difficulty-label">模式 MODE</label>
+      <div class="diff-pick-inner">
+        <button data-mode="dm"       class="mode-btn diff-btn active">对抗<span>DEATHMATCH</span></button>
+        <button data-mode="survival" class="mode-btn diff-btn">生存<span>SURVIVAL</span></button>
+        <button data-mode="duel"     class="mode-btn diff-btn">单挑<span>DUEL 1v1</span></button>
+        <button data-mode="sniper"   class="mode-btn diff-btn">狙击<span>SNIPER ONLY</span></button>
+      </div>
+    </div>
     <div class="difficulty-row" id="globalDiffRow">
       <label class="difficulty-label">风格 STYLE</label>
       <div class="diff-pick-inner">
@@ -1403,6 +1412,7 @@ document.getElementById('skirmishBtn').onclick = startSkirmish;
 const _lobby = {
   blue: 3, red: 3, min: 1, max: 4,
   difficulty: 'elite', weapon: 'RIFLE',
+  mode: 'dm',                       // 'dm' | 'survival' | 'duel' | 'sniper'
   lineupOpen: false,
   // lineup[team][slotIdx] = { difficulty, weapon } — undefined entries fall
   // back to global picks at startNNSkirmish time
@@ -1427,13 +1437,21 @@ document.querySelectorAll('#nnLobby .counter button').forEach(btn => {
     if (_lobby.lineupOpen) rebuildLineupUI();   // re-render slots when team size changes
   };
 });
-document.querySelectorAll('#nnLobby .diff-btn').forEach(btn => {
+// Style buttons (.diff-btn but NOT .mode-btn) — pick global STYLE
+document.querySelectorAll('#nnLobby .diff-btn:not(.mode-btn)').forEach(btn => {
   btn.onclick = () => {
     _lobby.difficulty = btn.dataset.diff;
-    document.querySelectorAll('#nnLobby .diff-btn').forEach(b =>
+    document.querySelectorAll('#nnLobby .diff-btn:not(.mode-btn)').forEach(b =>
       b.classList.toggle('active', b === btn));
-    // Reflect new global in any open lineup slots (defaults follow global pick)
     if (_lobby.lineupOpen) rebuildLineupUI();
+  };
+});
+// Mode buttons — pick game mode (dm / survival / duel / sniper)
+document.querySelectorAll('#nnLobby .mode-btn').forEach(btn => {
+  btn.onclick = () => {
+    _lobby.mode = btn.dataset.mode;
+    document.querySelectorAll('#nnLobby .mode-btn').forEach(b =>
+      b.classList.toggle('active', b === btn));
   };
 });
 document.querySelectorAll('#nnLobby .weap-btn').forEach(btn => {
@@ -1529,9 +1547,8 @@ document.getElementById('lobbyCancelBtn').onclick = () => {
 };
 document.getElementById('lobbyStartBtn').onclick = () => {
   document.getElementById('nnLobby').classList.add('hidden');
-  // Pass lineup only if user enabled custom mode
   const lineup = _lobby.lineupOpen ? _lobby.lineup : null;
-  startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty, _lobby.weapon, lineup);
+  startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty, _lobby.weapon, lineup, _lobby.mode);
 };
 
 function startSkirmish() {
@@ -1560,10 +1577,18 @@ function startSkirmish() {
   showMessage('对抗模式 · 自由射击', 150);
 }
 
-async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', weaponId = 'RIFLE', lineup = null) {
+async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', weaponId = 'RIFLE', lineup = null, gameMode = 'dm') {
   document.getElementById('start').classList.add('hidden');
   document.getElementById('nnLobby')?.classList.add('hidden');
   document.getElementById('end').classList.add('hidden');
+
+  // Mode-specific overrides
+  if (gameMode === 'duel') { blueSize = 1; redSize = 1; }
+  // SURVIVAL spawns enemies per-wave; the initial redSize gets overridden
+  // by the first wave's spawn anyway. Treat it as 0-now-but-waves-will-fill.
+  if (gameMode === 'survival') { redSize = 3; }   // first wave size
+  if (gameMode === 'sniper')   { weaponId = 'SNIPER'; }
+  game._nnGameMode = gameMode;
 
   blueSize = Math.max(1, Math.min(4, blueSize));
   redSize  = Math.max(1, Math.min(4, redSize));
@@ -1575,7 +1600,11 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   const blueLineup = (lineup?.blue) || [];
   const redLineup  = (lineup?.red)  || [];
   const slotDiff = (team, idx) => (team === 'blue' ? blueLineup[idx] : redLineup[idx])?.difficulty || difficulty;
-  const slotWpn  = (team, idx) => (team === 'blue' ? blueLineup[idx] : redLineup[idx])?.weapon     || pickRandomNNWeaponId();
+  // Sniper mode: force every slot's weapon to SNIPER. Other modes: lineup or random.
+  const slotWpn  = (team, idx) => (gameMode === 'sniper'
+                                    ? 'SNIPER'
+                                    : ((team === 'blue' ? blueLineup[idx] : redLineup[idx])?.weapon
+                                       || pickRandomNNWeaponId()));
 
   // Pre-load every difficulty actually referenced (could be just 1 or up to 4)
   const allDiffs = new Set([difficulty]);
@@ -1700,8 +1729,18 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   for (const a of allies) { a.x = clampX(a.x); a.y = clampY(a.y); }
   for (const e of enemies) { e.x = clampX(e.x); e.y = clampY(e.y); }
 
-  initMission({ type: 'nnDeathmatch', id: 'nn-deathmatch' }, currentMap);
-  showMessage(`NN 对抗 · 蓝 ${blueSize} vs 红 ${redSize}`, 200);
+  // Pick mission type by gameMode. Duel + Sniper run over the standard
+  // deathmatch rules with their own spawn/weapon overrides. Survival uses
+  // a dedicated factory with wave logic + no auto-respawn for blue allies.
+  const missionType = gameMode === 'survival' ? 'nnSurvival' : 'nnDeathmatch';
+  initMission({ type: missionType, id: 'nn-' + gameMode }, currentMap);
+  const modeLabel = ({
+    dm:       `对抗 · 蓝 ${blueSize} vs 红 ${redSize}`,
+    survival: `生存模式 · 撑过每一波`,
+    duel:     `单挑 1v1`,
+    sniper:   `狙击巷战 · 一枪致命`,
+  })[gameMode] || gameMode;
+  showMessage(`NN ${modeLabel}`, 200);
 
   // Initial spawn protection — same 1.5s immunity as a respawn so the very
   // first frame of the match isn't decided by who's already aimed at you.
@@ -4109,6 +4148,161 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         `BLUE  ${teamKills[0]}    RED  ${teamKills[1]}    目标 ${KILL_GOAL}`,
         winner ? `${winner === 'draw' ? '平手' : winner.toUpperCase() + ' 获胜！'}`
                : `时间剩余 ${remaining}s`,
+      ]);
+    },
+  };
+};
+
+// ============ NN SURVIVAL ============
+// You + 3 allies vs procedurally-spawned waves of red NN. Allies do NOT
+// respawn between waves (or within a wave) — each death is permanent for
+// the round. Pawn-swap auto-jump still works while alive bodies remain;
+// when none are left, the round ends. Score = waves cleared + total kills.
+MISSION_FACTORIES.nnSurvival = function(mapDef) {
+  const startTick = game.time;
+  let wave = 0;             // 0 = pre-game (before first spawn)
+  let kills = 0;
+  let waveBreakUntil = startTick + 90;   // 1.5s breather before wave 1
+  let waveStarted = false;
+  let endStage = null;      // null | 'win' (impossible) | 'loss'
+  // NN tier mix per wave — index by min(wave-1, len-1)
+  const WAVE_TIERS = [
+    ['defensive'],                          // 1
+    ['defensive', 'elite'],                 // 2
+    ['elite'],                              // 3
+    ['elite', 'warrior'],                   // 4
+    ['warrior'],                            // 5
+    ['warrior', 'sharpshooter'],            // 6
+    ['sharpshooter'],                       // 7
+    ['warrior', 'sharpshooter'],            // 8+
+  ];
+  const waveSize = (n) => Math.min(4, 2 + Math.floor((n + 1) / 2));   // 3,3,4,4,4,...
+
+  function spawnWave(n) {
+    const tiers = WAVE_TIERS[Math.min(n - 1, WAVE_TIERS.length - 1)];
+    const size = waveSize(n);
+    enemies.length = 0;
+    const spacing = NN_ARENA.h / (size + 1);
+    for (let i = 0; i < size; i++) {
+      const tier = tiers[i % tiers.length];
+      enemies.push({
+        x: game._nnSpawnRed.x,
+        y: NN_ARENA.y0 + spacing * (i + 1),
+        hp: 50, maxHp: 50, angle: Math.PI,
+        fireCd: 0, fireRate: 50, radius: 13, alive: true,
+        walkPhase: Math.random() * Math.PI * 2,
+        speed: 1.0,
+        team: 1,
+        _weapon: WEAPONS[pickRandomNNWeaponId()],
+        _nnDifficulty: tier,
+        _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+        _respawnAt: null,
+        _invulnUntil: game.time + 90,
+      });
+    }
+    // Heal alive blue + restore mags between waves
+    if (player.alive) {
+      player.hp = player.maxHp;
+      if (playerWeapon) {
+        player.ammo = playerWeapon.magSize;
+        player.reserve = playerWeapon.reserveStart;
+      }
+      player._invulnUntil = game.time + 60;
+    }
+    for (const a of allies) {
+      if (a.alive) {
+        a.hp = a.maxHp;
+        a._invulnUntil = game.time + 60;
+      }
+    }
+    showMessage(`第 ${n} 波 · ${size} 名敌军 (${tiers.join('/')})`, 150);
+    playSfx('match_start', { vol: 0.45 });
+  }
+
+  return {
+    title: 'NN 生存',
+    titleEn: 'NN SURVIVAL',
+    objective: '存活 · 清除每一波',
+    _endAt: null,
+
+    update() {
+      const blueAlive = (player.alive ? 1 : 0) + allies.filter(a => a.alive).length;
+      const redAlive = enemies.filter(e => e.alive).length;
+
+      // Pawn-swap auto-jump on player death (never go to spawn-respawn —
+      // operator must hop to a teammate or the round ends).
+      if (!player.alive && player._respawnAt == null) {
+        let bestIdx = -1, bestD = Infinity;
+        for (let i = 0; i < allies.length; i++) {
+          const ax = allies[i];
+          if (!ax || !ax.alive) continue;
+          const d = Math.hypot(ax.x - player.x, ax.y - player.y);
+          if (d < bestD) { bestD = d; bestIdx = i; }
+        }
+        if (bestIdx >= 0) {
+          const a = allies[bestIdx];
+          player.alive = true;
+          player.x = a.x; player.y = a.y;
+          player.angle = a.angle;
+          player.gunAngle = a.gunAngle || a.angle;
+          player.gunRecoil = (a.gunRecoil || 0) * 0.4;
+          player.hp = a.hp; player.maxHp = a.maxHp;
+          player._invulnUntil = game.time + 60;
+          player._lastX = a.x; player._lastY = a.y;
+          player._velX = 0; player._velY = 0;
+          mouse.down = false;
+          applyWeaponToPlayer(a._weapon || WEAPONS.RIFLE);
+          // Old slot becomes a permanent corpse (no NN respawn in survival).
+          a.alive = false;
+          a.x = player._lastDeathX != null ? player._lastDeathX : a.x;
+          a.y = player._lastDeathY != null ? player._lastDeathY : a.y;
+          a.callsign = '前操作员';
+          a._respawnAt = null;   // never respawn
+          showMessage(`紧急接管`, 90);
+          playSfx('countdown', { freq: 1320, vol: 0.45 });
+        } else {
+          // No allies left — round ends.
+          endStage = 'loss';
+          if (this._endAt == null) this._endAt = game.time + 240;
+        }
+      }
+      // Allies don't respawn in survival; just clear any pending timer.
+      for (const a of allies) {
+        if (!a.alive) a._respawnAt = null;
+      }
+      // Reds: track kills for cleared wave; when wave is empty, schedule next.
+      if (waveStarted && redAlive === 0 && enemies.length > 0) {
+        kills += enemies.length;
+        enemies.length = 0;
+        waveStarted = false;
+        waveBreakUntil = game.time + 180;   // 3s breather
+        showMessage(`第 ${wave} 波清除 · 总击杀 ${kills}`, 150);
+        playSfx('match_win', { vol: 0.4 });
+      }
+      // Spawn next wave after breather
+      if (endStage == null && !waveStarted && game.time >= waveBreakUntil) {
+        wave++;
+        spawnWave(wave);
+        waveStarted = true;
+      }
+    },
+
+    isComplete() { return false; },     // Survival has no win, just escalating waves
+    isFailed() {
+      if (endStage === 'loss') {
+        if (this._endAt == null) this._endAt = game.time + 240;
+        return game.time >= this._endAt;
+      }
+      return false;
+    },
+
+    renderHUD() {
+      drawObjectivePanel([
+        `第 ${wave} 波 · 总击杀 ${kills}`,
+        endStage === 'loss'
+          ? `阵亡 · 撑过 ${Math.max(0, wave - 1)} 波`
+          : (waveStarted ? `敌方剩余 ${enemies.filter(e => e.alive).length}`
+                         : `准备下一波...`),
       ]);
     },
   };
