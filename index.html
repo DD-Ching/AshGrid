@@ -443,8 +443,6 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
       <div class="ctrl-item"><span class="ctrl-key">R</span><span>装填弹药</span></div>
       <div class="ctrl-item"><span class="ctrl-key">Q</span><span>无人机侦察 UAV</span></div>
       <div class="ctrl-item"><span class="ctrl-key">E</span><span>FPV 自杀无人机</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">F</span><span>雷达视角 RADAR</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">T</span><span>热成像 THERMAL</span></div>
       <div class="ctrl-item"><span class="ctrl-key">TAB</span><span>战术指挥 RTS</span></div>
     </div>
 
@@ -1214,10 +1212,6 @@ const fpv = {
   trail: [],
 };
 
-const radar = {
-  sweepAngle: 0,
-};
-
 const bullets = [];
 const enemyBullets = [];
 const enemies = [];
@@ -1261,23 +1255,18 @@ window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   keys[k] = true;
   if (e.key === 'Tab') e.preventDefault();
-  // P: pause toggle. Works whether or not the game is currently paused.
-  if (k === 'p' && game.state === 'playing') { togglePause(); return; }
-  // While paused, swallow all gameplay hotkeys except P/Esc
-  if (game._paused) {
-    if (e.key === 'Escape') {
-      game._paused = false;
-      game.state = 'menu';
-      game._skirmish = false;
-      document.getElementById('start').classList.remove('hidden');
-    }
+  // Esc / P: pause toggle. Works regardless of pause state — pressing Esc
+  // again from inside the pause overlay resumes; the overlay has a separate
+  // "退出主菜单 / EXIT TO MENU" button for actually leaving the match.
+  if ((e.key === 'Escape' || k === 'p') && game.state === 'playing') {
+    togglePause();
     return;
   }
+  // While paused, swallow all other hotkeys
+  if (game._paused) return;
   if (game.state === 'playing') {
     if (k === 'q') toggleDrone();
     else if (k === 'e') launchFPV();
-    else if (k === 'f') game.mode = (game.mode === 'radar') ? 'tactical' : 'radar';
-    else if (k === 't') game.mode = (game.mode === 'thermal') ? 'tactical' : 'thermal';
     else if (k === 'tab') { e.preventDefault(); game.mode = (game.mode === 'command') ? 'tactical' : 'command'; }
     else if (k === 'r') startReload();
     else if (k === 'g') throwGrenade();
@@ -1307,14 +1296,16 @@ window.addEventListener('keydown', e => {
         onMissionSuccess();
       }
     }
-    // ESC returns to main menu (works in skirmish too)
-    else if (e.key === 'Escape') {
-      game.state = 'menu';
-      game._skirmish = false;
-      document.getElementById('start').classList.remove('hidden');
-    }
   }
 });
+
+// Helper for the pause overlay's "exit" button.
+function exitMatchToMenu() {
+  game._paused = false;
+  game.state = 'menu';
+  game._skirmish = false;
+  document.getElementById('start').classList.remove('hidden');
+}
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
 function _hitRect(r, x, y) {
@@ -1322,10 +1313,10 @@ function _hitRect(r, x, y) {
 }
 window.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
-  // While paused: click anywhere inside the resume bar resumes; clicks
-  // outside it are swallowed so they don't fire weapons.
+  // While paused: click resume bar = unpause; click exit bar = back to menu.
   if (game._paused) {
     if (_hitRect(game._pauseResumeRect, e.clientX, e.clientY)) togglePause();
+    else if (_hitRect(game._pauseExitRect, e.clientX, e.clientY)) exitMatchToMenu();
     e.preventDefault();
     return;
   }
@@ -5357,8 +5348,7 @@ function updatePlayerAux() {
 function tickPlayerCombat(isMoving) {
   if (!player.alive) return;
   const w = playerWeapon;
-  const tactical = (game.mode === 'tactical' || game.mode === 'radar' ||
-                    game.mode === 'thermal' || game.mode === 'command');
+  const tactical = (game.mode === 'tactical' || game.mode === 'command');
   const ARC_HALF = tactical ? Math.PI / 3 : Math.PI;   // 60° vs 360°
 
   player._aimAssistLockedAt = null;
@@ -5662,11 +5652,6 @@ function updateFPV() {
   }
 }
 
-function updateRadar() {
-  radar.sweepAngle += 0.03;
-  if (radar.sweepAngle > Math.PI*2) radar.sweepAngle -= Math.PI*2;
-}
-
 // ============ CAMERA ============
 const camera = { x: 0, y: 0, scale: 1, targetScale: 1, rotation: 0, targetRotation: 0 };
 
@@ -5683,10 +5668,6 @@ function updateCamera() {
   } else if (game.mode === 'command') {
     target = player;
     camera.targetScale = 0.42;
-    camera.targetRotation = 0;
-  } else if (game.mode === 'radar' || game.mode === 'thermal') {
-    target = player;
-    camera.targetScale = 0.75;
     camera.targetRotation = 0;
   } else {
     target = player;
@@ -5715,8 +5696,7 @@ function screenToWorld(sx, sy) {
 
 // ============ RENDER ============
 function render() {
-  const bgColor = (game.mode === 'thermal' || game.mode === 'radar') ? COLORS.black : COLORS.cream;
-  ctx.fillStyle = bgColor;
+  ctx.fillStyle = COLORS.cream;
   ctx.fillRect(0, 0, W(), H());
 
   ctx.save();
@@ -5725,9 +5705,7 @@ function render() {
   ctx.rotate(camera.rotation);
   ctx.translate(-camera.x, -camera.y);
 
-  if (game.mode === 'radar') renderRadarWorld();
-  else if (game.mode === 'thermal') renderThermalWorld();
-  else renderWorld();
+  renderWorld();
 
   ctx.restore();
 
@@ -6939,212 +6917,6 @@ function drawDrone(x, y, color, phase) {
   ctx.restore();
 }
 
-function renderRadarWorld() {
-  const cx = player.x, cy = player.y;
-  const maxR = 700;
-
-  // Concentric circles
-  ctx.strokeStyle = COLORS.red;
-  ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.4;
-  for (let r = 100; r <= maxR; r += 100) {
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI*2);
-    ctx.stroke();
-  }
-
-  ctx.beginPath();
-  ctx.moveTo(cx - maxR, cy); ctx.lineTo(cx + maxR, cy);
-  ctx.moveTo(cx, cy - maxR); ctx.lineTo(cx, cy + maxR);
-  ctx.stroke();
-
-  // Sweep arc
-  ctx.fillStyle = COLORS.red;
-  ctx.globalAlpha = 0.18;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy);
-  ctx.arc(cx, cy, maxR, radar.sweepAngle - 0.4, radar.sweepAngle);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = COLORS.redBright;
-  ctx.globalAlpha = 0.85;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy);
-  ctx.lineTo(cx + Math.cos(radar.sweepAngle)*maxR, cy + Math.sin(radar.sweepAngle)*maxR);
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-
-  // Building + cover outlines (faint)
-  ctx.strokeStyle = COLORS.gray;
-  ctx.globalAlpha = 0.25;
-  ctx.lineWidth = 1;
-  for (const b of buildings) {
-    if (Math.hypot(b.x+b.w/2-cx, b.y+b.h/2-cy) > maxR+100) continue;
-    ctx.strokeRect(b.x, b.y, b.w, b.h);
-  }
-  for (const lc of lowCovers) {
-    if (Math.hypot(lc.x+lc.w/2-cx, lc.y+lc.h/2-cy) > maxR+100) continue;
-    ctx.strokeRect(lc.x, lc.y, lc.w, lc.h);
-  }
-  // Landmark silhouette in radar
-  ctx.globalAlpha = 0.6;
-  ctx.strokeStyle = COLORS.red;
-  ctx.lineWidth = 2;
-  for (const lm of landmarks) {
-    if (lm.r) {
-      ctx.beginPath();
-      ctx.arc(lm.x, lm.y, lm.r, 0, Math.PI*2);
-      ctx.stroke();
-    } else if (lm.w) {
-      ctx.strokeRect(lm.x - lm.w/2, lm.y - lm.h/2, lm.w, lm.h);
-    }
-  }
-  ctx.globalAlpha = 0.25;
-
-  // Pings
-  ctx.fillStyle = COLORS.redBright;
-  for (const e of enemies) {
-    if (!e.alive) continue;
-    const dist = Math.hypot(e.x-cx, e.y-cy);
-    if (dist > maxR) continue;
-    const ang = Math.atan2(e.y-cy, e.x-cx);
-    let diff = ang - radar.sweepAngle;
-    while (diff > Math.PI) diff -= Math.PI*2;
-    while (diff < -Math.PI) diff += Math.PI*2;
-    const fade = Math.max(0.1, Math.min(1, 1 + diff*0.7));
-    ctx.globalAlpha = fade;
-    ctx.save();
-    ctx.translate(e.x, e.y);
-    ctx.rotate(e.angle);
-    ctx.beginPath();
-    ctx.moveTo(8, 0);
-    ctx.lineTo(-5, 6);
-    ctx.lineTo(-5, -6);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-  for (const d of enemyDrones) {
-    if (!d.alive) continue;
-    const dist = Math.hypot(d.x-cx, d.y-cy);
-    if (dist > maxR) continue;
-    const ang = Math.atan2(d.y-cy, d.x-cx);
-    let diff = ang - radar.sweepAngle;
-    while (diff > Math.PI) diff -= Math.PI*2;
-    while (diff < -Math.PI) diff += Math.PI*2;
-    const fade = Math.max(0.1, Math.min(1, 1 + diff*0.7));
-    ctx.globalAlpha = fade;
-    ctx.beginPath();
-    ctx.arc(d.x, d.y, 4, 0, Math.PI*2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-
-  // Player center
-  ctx.fillStyle = COLORS.cream;
-  ctx.beginPath();
-  ctx.arc(cx, cy, 6, 0, Math.PI*2);
-  ctx.fill();
-  ctx.strokeStyle = COLORS.red;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(cx, cy, 12, 0, Math.PI*2);
-  ctx.stroke();
-
-  // Drone if deployed
-  if (drone.deployed) {
-    ctx.fillStyle = COLORS.cream;
-    ctx.fillRect(drone.x-4, drone.y-4, 8, 8);
-  }
-}
-
-function renderThermalWorld() {
-  // Cool building outlines
-  ctx.strokeStyle = '#3A3A3A';
-  ctx.lineWidth = 1;
-  for (const b of buildings) {
-    ctx.strokeRect(b.x, b.y, b.w, b.h);
-    ctx.fillStyle = '#2A2A2A';
-    ctx.fillRect(b.x, b.y, b.w, b.h);
-  }
-  // Cool low covers
-  ctx.fillStyle = '#222';
-  for (const lc of lowCovers) ctx.fillRect(lc.x, lc.y, lc.w, lc.h);
-  // Hot landmarks (reactor / furnace / hive emit heat)
-  for (const lm of landmarks) {
-    if (lm.kind === 'reactorPool' || lm.kind === 'blastFurnace' || lm.kind === 'droneHive' || lm.kind === 'dataCore') {
-      const r = lm.r || Math.max(lm.w, lm.h)/2;
-      const grad = ctx.createRadialGradient(lm.x, lm.y, 0, lm.x, lm.y, r*1.4);
-      grad.addColorStop(0, COLORS.cream);
-      grad.addColorStop(0.4, COLORS.redBright);
-      grad.addColorStop(1, 'rgba(200,38,28,0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(lm.x - r*1.4, lm.y - r*1.4, r*2.8, r*2.8);
-    }
-  }
-
-  // Hot units
-  for (const e of enemies) {
-    if (!e.alive) continue;
-    const grad = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, 24);
-    grad.addColorStop(0, COLORS.cream);
-    grad.addColorStop(0.5, COLORS.redBright);
-    grad.addColorStop(1, 'rgba(200,38,28,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(e.x-30, e.y-30, 60, 60);
-  }
-  for (const d of enemyDrones) {
-    if (!d.alive) continue;
-    const grad = ctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, 18);
-    grad.addColorStop(0, COLORS.cream);
-    grad.addColorStop(0.5, COLORS.redBright);
-    grad.addColorStop(1, 'rgba(200,38,28,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(d.x-22, d.y-22, 44, 44);
-  }
-  if (player.alive) {
-    const grad = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, 28);
-    grad.addColorStop(0, COLORS.cream);
-    grad.addColorStop(0.4, '#FFE890');
-    grad.addColorStop(1, 'rgba(255,232,144,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(player.x-34, player.y-34, 68, 68);
-  }
-
-  // Bullets
-  ctx.strokeStyle = COLORS.cream;
-  ctx.lineWidth = 1;
-  for (const b of [...bullets, ...enemyBullets]) {
-    ctx.beginPath();
-    ctx.moveTo(b.x, b.y);
-    ctx.lineTo(b.x - b.vx*3, b.y - b.vy*3);
-    ctx.stroke();
-  }
-
-  // Explosions hot
-  ctx.fillStyle = COLORS.cream;
-  for (const e of explosions) {
-    const t = e.life / e.maxLife;
-    ctx.globalAlpha = t;
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, e.radius*(1-t)*1.3, 0, Math.PI*2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-
-  // Scan lines
-  ctx.strokeStyle = COLORS.red;
-  ctx.globalAlpha = 0.06;
-  ctx.lineWidth = 1;
-  for (let y = 0; y < WORLD.h; y += 4) {
-    ctx.beginPath();
-    ctx.moveTo(0, y); ctx.lineTo(WORLD.w, y);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-}
 
 // ============ HUD ============
 function renderHUD() {
@@ -7519,8 +7291,6 @@ function renderHUDOverlays() {
   // Mode-specific overlays
   if (game.mode === 'fpv') renderFPVOverlay();
   if (game.mode === 'drone') renderDroneOverlay();
-  if (game.mode === 'radar') renderRadarOverlay();
-  if (game.mode === 'thermal') renderThermalOverlay();
   if (game.mode === 'command') renderCommandOverlay();
 
   // Crosshair — shown in every mode including FPV. When aim-assist is locked
@@ -7626,8 +7396,6 @@ function getModeLabel() {
     case 'tactical': return '俯视战术 TOP-DOWN';
     case 'drone': return '无人机 UAV-RECON';
     case 'fpv': return 'FPV 自杀无人机 KAMIKAZE';
-    case 'radar': return '雷达扫描 RADAR';
-    case 'thermal': return '热成像 THERMAL';
     case 'command': return '指挥俯瞰 COMMAND';
   }
   return '';
@@ -7768,44 +7536,6 @@ function renderDroneOverlay() {
   ctx.fillText('REC', fx + 26, fy + 20);
 }
 
-function renderRadarOverlay() {
-  ctx.fillStyle = 'rgba(26, 26, 26, 0.9)';
-  ctx.fillRect(20, H()/2 - 60, 220, 120);
-  ctx.strokeStyle = COLORS.red;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(20, H()/2 - 60, 220, 120);
-  ctx.fillStyle = COLORS.cream;
-  ctx.font = 'bold 11px monospace';
-  ctx.fillText('RADAR / 雷达扫描', 32, H()/2 - 40);
-  ctx.font = 'bold 12px monospace';
-  ctx.fillText(`SWEEP   ${(radar.sweepAngle*180/Math.PI).toFixed(0)}°`, 32, H()/2 - 16);
-  ctx.fillText(`RANGE   700m`, 32, H()/2 + 4);
-  const detected = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
-  ctx.fillStyle = COLORS.redBright;
-  ctx.fillText(`THREATS  ${detected}`, 32, H()/2 + 24);
-  ctx.fillStyle = COLORS.cream;
-  ctx.font = '9px monospace';
-  ctx.fillText('F · 关闭雷达', 32, H()/2 + 44);
-}
-
-function renderThermalOverlay() {
-  ctx.fillStyle = 'rgba(26, 26, 26, 0.85)';
-  ctx.fillRect(20, H()/2 - 50, 200, 100);
-  ctx.strokeStyle = COLORS.cream;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(20, H()/2 - 50, 200, 100);
-  ctx.fillStyle = COLORS.cream;
-  ctx.font = 'bold 11px monospace';
-  ctx.fillText('THERMAL / 热成像', 32, H()/2 - 30);
-  ctx.font = 'bold 12px monospace';
-  ctx.fillStyle = COLORS.cream;
-  ctx.fillText('WHT  HUMAN', 32, H()/2 - 10);
-  ctx.fillStyle = COLORS.gray;
-  ctx.fillText('GRY  COLD', 32, H()/2 + 8);
-  ctx.fillStyle = COLORS.red;
-  ctx.fillText('RED  HOT', 32, H()/2 + 26);
-}
-
 function renderCommandOverlay() {
   // Strategic overlay
   ctx.fillStyle = 'rgba(232, 228, 216, 0.94)';
@@ -7879,14 +7609,12 @@ function drawPauseOverlay() {
       ['E',     'FPV 自杀无人机'],
     ]],
     ['视角 VIEW', [
-      ['F',     '雷达 RADAR'],
-      ['T',     '热成像 THERMAL'],
-      ['Tab',   '战术指挥'],
+      ['Tab',   '战术指挥 COMMAND'],
     ]],
     ['系统 SYSTEM', [
-      ['P',     '暂停 / 继续'],
+      ['Esc/P', '暂停 / 继续'],
       ['1-4',   'NN 模式接管队友'],
-      ['Esc',   '返回主菜单'],
+      ['退出',  '从下方按钮回主菜单'],
     ]],
   ];
   let colX = x + 24, colY = y + 116;
@@ -7911,16 +7639,32 @@ function drawPauseOverlay() {
       cyy += 18;
     }
   }
-  // Resume hint at bottom
-  const resumeY = y + ch - 38;
+  // Bottom action bar: [ Resume (red) ] [ Exit (cream w/ red border) ]
+  const barY = y + ch - 38;
+  const gap = 12;
+  const resumeW = Math.floor((cw - 48 - gap) * 0.65);
+  const exitW   = (cw - 48 - gap) - resumeW;
+  const resumeX = x + 24;
+  const exitX   = resumeX + resumeW + gap;
+
   ctx.fillStyle = COLORS.red;
-  ctx.fillRect(x + 24, resumeY, cw - 48, 28);
+  ctx.fillRect(resumeX, barY, resumeW, 28);
   ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 12px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('按 P 或点击此处继续 · PRESS P TO RESUME', cx, resumeY + 18);
+  ctx.fillText('按 Esc 继续 · RESUME', resumeX + resumeW / 2, barY + 18);
+
+  ctx.fillStyle = COLORS.cream;
+  ctx.fillRect(exitX, barY, exitW, 28);
+  ctx.strokeStyle = COLORS.red;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(exitX, barY, exitW, 28);
+  ctx.fillStyle = COLORS.red;
+  ctx.fillText('退出 · EXIT', exitX + exitW / 2, barY + 18);
   ctx.textAlign = 'left';
-  game._pauseResumeRect = { x: x + 24, y: resumeY, w: cw - 48, h: 28 };
+
+  game._pauseResumeRect = { x: resumeX, y: barY, w: resumeW, h: 28 };
+  game._pauseExitRect   = { x: exitX,   y: barY, w: exitW,   h: 28 };
 }
 
 // ============ MAIN LOOP ============
