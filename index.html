@@ -1142,7 +1142,25 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-window.addEventListener('mousedown', e => { if (e.button === 0) mouse.down = true; });
+window.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  // Click on the minimap collapse/expand toggle? Swallow the click so we
+  // don't also fire a weapon.
+  const tg = game._minimapToggleRect;
+  if (tg && e.clientX >= tg.x && e.clientX <= tg.x + tg.w
+        && e.clientY >= tg.y && e.clientY <= tg.y + tg.h) {
+    game._minimapCollapsed = !game._minimapCollapsed;
+    try { localStorage.setItem('ag.minimapCollapsed', game._minimapCollapsed ? '1' : '0'); }
+    catch (err) {}
+    e.preventDefault();
+    return;
+  }
+  mouse.down = true;
+});
+
+// Restore collapsed state from previous session
+try { game._minimapCollapsed = localStorage.getItem('ag.minimapCollapsed') === '1'; }
+catch (e) {}
 window.addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; });
 window.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -6953,11 +6971,40 @@ function renderHUD() {
     ctx.fillRect(barX + 396 + i*18, barY + 30, 14, 10);
   }
 
-  // Mini-map (bottom-right) — shrunk to leave more screen for action
+  // Mini-map (bottom-right) — collapsible. Click the small toggle in the
+  // top-right corner of its panel to fold it down to a 70×26 "MAP ▲" tab.
   const mw = 180, mh = 180;
   const mx = W() - mw - 16, my = H() - mh - 16;
+  if (game._minimapCollapsed) {
+    // Collapsed: just a small button — click to expand
+    const tw = 70, th = 26;
+    const tx = W() - tw - 16, ty = H() - th - 16;
+    ctx.fillStyle = 'rgba(232, 228, 216, 0.92)';
+    ctx.fillRect(tx, ty, tw, th);
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(tx, ty, tw, th);
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('MAP ▲', tx + tw/2, ty + 17);
+    ctx.textAlign = 'left';
+    game._minimapToggleRect = { x: tx, y: ty, w: tw, h: th };
+    return;
+  }
   const mapLabel = currentMap ? `${currentMap.name} · MAP` : 'MAP';
   drawHUDPanel(mx, my, mw, mh, mapLabel);
+  // Collapse toggle in the panel's top-right corner (small ▼)
+  const tgX = mx + mw - 22, tgY = my + 4, tgW = 18, tgH = 18;
+  ctx.fillStyle = 'rgba(200, 38, 28, 0.85)';
+  ctx.fillRect(tgX, tgY, tgW, tgH);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('▼', tgX + tgW/2, tgY + 13);
+  ctx.textAlign = 'left';
+  game._minimapToggleRect = { x: tgX, y: tgY, w: tgW, h: tgH };
+
   const mapPad = 12;
   const mapX = mx + mapPad, mapY = my + 30;
   const mapW = mw - mapPad*2, mapH = mh - 40;
@@ -7052,13 +7099,15 @@ function renderHUD() {
   ctx.moveTo(wx(player.x), wy(player.y));
   ctx.lineTo(wx(player.x) + Math.cos(player.angle)*10, wy(player.y) + Math.sin(player.angle)*10);
   ctx.stroke();
-  // Enemies — only show those visible OR seen recently (memory window).
-  // In NN mode show all enemies (they're already in the small arena, no fog).
+  // Enemies — only show those CURRENTLY visible to the friendly team (full
+  // alpha) OR seen recently (faded memory). Minimap must NOT leak enemy
+  // positions ahead of the friendly team's actual line of sight, even in
+  // NN mode where the arena is small.
   ctx.fillStyle = COLORS.red;
   for (const e of enemies) {
     if (!e.alive) continue;
-    if (!useArena && (e._lastSeen == null || game.time - e._lastSeen > 180)) continue;
-    ctx.globalAlpha = (useArena || e._lastSeen === game.time) ? 1 : 0.4;
+    if (e._lastSeen == null || game.time - e._lastSeen > 180) continue;
+    ctx.globalAlpha = e._lastSeen === game.time ? 1 : 0.4;
     ctx.fillRect(wx(e.x) - 2, wy(e.y) - 2, 4, 4);
   }
   ctx.globalAlpha = 1;
