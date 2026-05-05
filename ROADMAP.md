@@ -9,11 +9,13 @@
 
 ## 階段 1:手機可玩(我先做)
 - [x] 觸控操作(雙搖桿 + 自動射擊預設 ON)— 45822da
-- [ ] HUD 縮放適配 portrait + landscape
+- [x] HUD 縮放適配 portrait + landscape — 下一個 commit
 - [x] Lobby 響應式(小螢幕單欄)— 2fbc9fa
 - [x] PWA manifest(可加桌面)+ Service Worker 離線 — 13916ae
-- [x] 首次教學(教 swap + aim-assist)— 下一個 commit
+- [x] 首次教學(教 swap + aim-assist)— c96a93f
 - [x] 本地 Survival 排行榜(localStorage)— c969132
+
+**階段 1 完成 ✅**
 
 ## 階段 2:內容 / 樂趣
 - [ ] 直升機撤離任務(Helo Extract)

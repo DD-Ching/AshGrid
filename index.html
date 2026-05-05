@@ -7582,11 +7582,15 @@ function renderHUD() {
     ctx.fillRect(0, 0, W(), H());
   }
 
-  // Top-left: compact status panel
-  drawHUDPanel(16, 16, 220, 100, null);
+  // Top-left: compact status panel — shrinks on narrow viewports (≤500px)
+  // so it doesn't overlap the mode banner or score on portrait phones.
+  const _narrow = W() < 500;
+  const _panelW = _narrow ? 160 : 220;
+  const _panelH = _narrow ? 80  : 100;
+  drawHUDPanel(16, 16, _panelW, _panelH, null);
   // Pause button (top-right of the status panel) — clickable + matches the
   // canvas-drawn minimap toggle pattern. Stored rect is hit-tested in mousedown.
-  const _pbX = 16 + 220 - 24, _pbY = 22, _pbW = 18, _pbH = 18;
+  const _pbX = 16 + _panelW - 24, _pbY = 22, _pbW = 18, _pbH = 18;
   ctx.fillStyle = 'rgba(200, 38, 28, 0.85)';
   ctx.fillRect(_pbX, _pbY, _pbW, _pbH);
   ctx.fillStyle = COLORS.cream;
@@ -7596,56 +7600,56 @@ function renderHUD() {
   ctx.textAlign = 'left';
   game._pauseBtnRect = { x: _pbX, y: _pbY, w: _pbW, h: _pbH };
   ctx.fillStyle = COLORS.red;
-  ctx.font = 'bold 12px sans-serif';
+  ctx.font = _narrow ? 'bold 10px sans-serif' : 'bold 12px sans-serif';
   ctx.fillText(`关卡 ${game.wave}/${MISSIONS.length}  ${currentMap ? currentMap.name : ''}`, 26, 36);
   ctx.fillStyle = COLORS.black;
   ctx.font = 'bold 10px sans-serif';
-  ctx.fillText(`视角 ${getModeLabel()}`, 26, 54);
+  if (!_narrow) ctx.fillText(`视角 ${getModeLabel()}`, 26, 54);
   const remaining = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
   ctx.fillStyle = remaining > 0 ? COLORS.red : COLORS.gray;
-  ctx.fillText(`敌方 ${remaining}`, 26, 70);
+  ctx.fillText(`敌方 ${remaining}`, 26, _narrow ? 54 : 70);
   // Squad — in NN mode each chip is clickable to swap operator into that slot
   const sqAlive = allies.filter(a=>a.alive).length;
   ctx.fillStyle = sqAlive > 0 ? COLORS.black : COLORS.gray;
+  const _chipBaseY = _narrow ? 60 : 76;
+  const _chipTextY = _narrow ? 70 : 86;
   if (game._nnMode) {
     game._squadChipRects = [];
-    const chipY = 76, chipH = 14;
+    const chipH = 14;
     let cursorX = 26;
-    // Self chip — non-clickable, just shows you're "1"
     const selfTxt = `[1·你${player.alive ? '' : '✕'}]`;
-    ctx.fillText(selfTxt, cursorX, 86);
+    ctx.fillText(selfTxt, cursorX, _chipTextY);
     cursorX += ctx.measureText(selfTxt).width + 4;
-    // Ally chips — record rects + draw
     ctx.font = 'bold 10px sans-serif';
     for (let i = 0; i < allies.length; i++) {
       const a = allies[i];
       const text = `[${i+2}·${a.callsign[0]}${a.alive ? a.hp : '✕'}]`;
       const w = ctx.measureText(text).width + 6;
-      // background highlight on hover-eligible (alive) chips
       if (a.alive) {
         ctx.fillStyle = 'rgba(200, 38, 28, 0.12)';
-        ctx.fillRect(cursorX - 2, chipY, w, chipH);
+        ctx.fillRect(cursorX - 2, _chipBaseY, w, chipH);
         ctx.fillStyle = COLORS.black;
       } else {
         ctx.fillStyle = COLORS.gray;
       }
-      ctx.fillText(text, cursorX, 86);
-      game._squadChipRects.push({ x: cursorX - 2, y: chipY, w, h: chipH, allyIdx: i, alive: a.alive });
+      ctx.fillText(text, cursorX, _chipTextY);
+      game._squadChipRects.push({ x: cursorX - 2, y: _chipBaseY, w, h: chipH, allyIdx: i, alive: a.alive });
       cursorX += w + 2;
     }
   } else {
     game._squadChipRects = null;
     const sqList = allies.map(a => a.alive ? a.callsign[0] + a.hp : a.callsign[0] + '✕').join(' ');
-    ctx.fillText(`小组 ${sqAlive}/${allies.length}  ${sqList}`, 26, 86);
+    ctx.fillText(`小组 ${sqAlive}/${allies.length}  ${sqList}`, 26, _chipTextY);
   }
-  ctx.fillStyle = COLORS.gray;
-  ctx.font = '9px sans-serif';
-  ctx.fillText(`T+${Math.floor(game.time/60)}s`, 26, 102);
-  // Aim-assist indicator (V toggle)
-  if (player._aimAssist) {
-    ctx.fillStyle = COLORS.red;
-    ctx.font = 'bold 9px sans-serif';
-    ctx.fillText('● AIM-ASSIST · V', 110, 102);
+  if (!_narrow) {
+    ctx.fillStyle = COLORS.gray;
+    ctx.font = '9px sans-serif';
+    ctx.fillText(`T+${Math.floor(game.time/60)}s`, 26, 102);
+    if (player._aimAssist) {
+      ctx.fillStyle = COLORS.red;
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillText('● AIM-ASSIST · V', 110, 102);
+    }
   }
 
   // Top-right: score (smaller)
@@ -7658,19 +7662,22 @@ function renderHUD() {
   ctx.fillText(`SCORE  ·  击杀 ${game.killCount}`, W() - 20, 62);
   ctx.textAlign = 'left';
 
-  // View mode banner (top-center) — slimmer
-  ctx.fillStyle = COLORS.red;
-  ctx.fillRect(W()/2 - 90, 16, 180, 3);
-  ctx.fillStyle = 'rgba(232, 228, 216, 0.92)';
-  ctx.fillRect(W()/2 - 90, 19, 180, 26);
-  ctx.strokeStyle = COLORS.black;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(W()/2 - 90, 19, 180, 26);
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 11px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(getModeLabel(), W()/2, 36);
-  ctx.textAlign = 'left';
+  // View mode banner (top-center) — slimmer. Hidden on narrow viewports so
+  // it doesn't crash into the status panel + score row on a 375px portrait.
+  if (!_narrow) {
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(W()/2 - 90, 16, 180, 3);
+    ctx.fillStyle = 'rgba(232, 228, 216, 0.92)';
+    ctx.fillRect(W()/2 - 90, 19, 180, 26);
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(W()/2 - 90, 19, 180, 26);
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(getModeLabel(), W()/2, 36);
+    ctx.textAlign = 'left';
+  }
 
   // Respawn countdown overlay — when player is dead in NN mode and waiting
   // for the 5-second respawn timer to elapse. Big "重生中 N" text + ring.
@@ -7778,7 +7785,8 @@ function renderHUD() {
   // top-right corner of its panel to fold it down to a 70×26 "MAP ▲" tab.
   // NOTE: must NOT early-return from renderHUD — the crosshair, mode overlay
   // and message banner all live AFTER this section.
-  const mw = 180, mh = 180;
+  const _narrowMM = W() < 500;
+  const mw = _narrowMM ? 130 : 180, mh = _narrowMM ? 130 : 180;
   const mx = W() - mw - 16, my = H() - mh - 16;
   if (game._minimapCollapsed) {
     const tw = 70, th = 26;
