@@ -488,6 +488,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
         <button data-diff="hard"    class="diff-btn">困难<span>18M步</span></button>
         <button data-diff="evolved" class="diff-btn">进化<span>18M+续</span></button>
         <button data-diff="elite"   class="diff-btn active">精英<span>再续训</span></button>
+        <button data-diff="defensive" class="diff-btn">怕死<span>无重生训</span></button>
       </div>
     </div>
     <div class="difficulty-row">
@@ -1229,7 +1230,7 @@ document.querySelectorAll('#nnLobby .weap-btn').forEach(btn => {
 });
 
 // === Lineup editor (per-unit difficulty/weapon picker) ===
-const DIFF_LABELS = { easy: '简单', medium: '中等', hard: '困难', evolved: '进化', elite: '精英' };
+const DIFF_LABELS = { easy: '简单', medium: '中等', hard: '困难', evolved: '进化', elite: '精英', defensive: '怕死' };
 const WPN_LABELS  = { SMG:'冲锋', RIFLE:'步枪', LMG:'机枪', SNIPER:'狙击', SHOTGUN:'霰弹' };
 function rebuildLineupUI() {
   const blueSlots = document.getElementById('blueSlots');
@@ -1263,7 +1264,7 @@ function makeSlotCard(team, idx, tag, isPlayer) {
   // Difficulty dropdown
   const diff = document.createElement('select');
   diff.className = 'lineup-select';
-  for (const d of ['easy','medium','hard','evolved','elite']) {
+  for (const d of ['easy','medium','hard','evolved','elite','defensive']) {
     const opt = document.createElement('option');
     opt.value = d; opt.textContent = DIFF_LABELS[d];
     diff.appendChild(opt);
@@ -1359,7 +1360,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   const allDiffs = new Set([difficulty]);
   for (let i = 1; i < blueSize; i++) allDiffs.add(slotDiff('blue', i));
   for (let i = 0; i < redSize;  i++) allDiffs.add(slotDiff('red',  i));
-  const tierLabel = { easy: '简单', medium: '中等', hard: '困难', evolved: '进化', elite: '精英' }[difficulty] || '精英';
+  const tierLabel = { easy: '简单', medium: '中等', hard: '困难', evolved: '进化', elite: '精英', defensive: '怕死' }[difficulty] || '精英';
   showMessage(`载入神经网络 · ${[...allDiffs].length === 1 ? tierLabel : '多脑混合'}...`, 60);
   const ok = await nnLoadAll([...allDiffs]);
   if (!ok) {
@@ -2408,13 +2409,14 @@ const NN = {
   loading: false,
   loaded: false,
   error: null,
-  difficulty: null,        // 'easy' | 'medium' | 'hard' | 'evolved' | 'elite' | null
+  difficulty: null,        // 'easy' | 'medium' | 'hard' | 'evolved' | 'elite' | 'defensive' | null
   modelPaths: {
-    easy:    'ai_arena/onnx/model_easy.onnx',
-    medium:  'ai_arena/onnx/model_medium.onnx',
-    hard:    'ai_arena/onnx/model_hard.onnx',
-    evolved: 'ai_arena/onnx/model_evolved.onnx',
-    elite:   'ai_arena/onnx/model_elite.onnx',
+    easy:      'ai_arena/onnx/model_easy.onnx',
+    medium:    'ai_arena/onnx/model_medium.onnx',
+    hard:      'ai_arena/onnx/model_hard.onnx',
+    evolved:   'ai_arena/onnx/model_evolved.onnx',
+    elite:     'ai_arena/onnx/model_elite.onnx',
+    defensive: 'ai_arena/onnx/model_norespawn.onnx',
   },
   modelPath: 'ai_arena/onnx/model.onnx',  // legacy fallback
   // Constants must match the Python combat_env exactly
