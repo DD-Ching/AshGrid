@@ -4412,6 +4412,26 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
 // respawn between waves (or within a wave) — each death is permanent for
 // the round. Pawn-swap auto-jump still works while alive bodies remain;
 // when none are left, the round ends. Score = waves cleared + total kills.
+// Local survival leaderboard (localStorage). Top 10 runs sorted by waves
+// then kills. Cloud upload (Firebase) is a Phase-3 swap-in: the API stays
+// the same, getSurvivalScores() / recordSurvivalRun() just point elsewhere.
+const SURVIVAL_KEY = 'ag.survivalScores';
+const SURVIVAL_MAX = 10;
+function getSurvivalScores() {
+  try { return JSON.parse(localStorage.getItem(SURVIVAL_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function recordSurvivalRun({ wave, kills, style }) {
+  try {
+    const list = getSurvivalScores();
+    list.push({ wave, kills, style: style || 'elite', ts: Date.now() });
+    list.sort((a, b) => (b.wave - a.wave) || (b.kills - a.kills));
+    list.length = Math.min(list.length, SURVIVAL_MAX);
+    localStorage.setItem(SURVIVAL_KEY, JSON.stringify(list));
+    return list;
+  } catch (e) { return []; }
+}
+
 MISSION_FACTORIES.nnSurvival = function(mapDef) {
   const startTick = game.time;
   let wave = 0;             // 0 = pre-game (before first spawn)
@@ -4515,8 +4535,11 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
           showSwapToast(`紧急接管`);
           playSfx('countdown', { freq: 1320, vol: 0.45 });
         } else {
-          // No allies left — round ends.
-          endStage = 'loss';
+          // No allies left — round ends. Record the run on first transition.
+          if (endStage !== 'loss') {
+            endStage = 'loss';
+            recordSurvivalRun({ wave: Math.max(0, wave - 0), kills, style: _lobby.difficulty });
+          }
           if (this._endAt == null) this._endAt = game.time + 240;
         }
       }
@@ -4551,13 +4574,53 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
     },
 
     renderHUD() {
+      const best = getSurvivalScores()[0];
+      const bestStr = best ? `· 最佳 W${best.wave}/K${best.kills}` : '';
       drawObjectivePanel([
-        `第 ${wave} 波 · 总击杀 ${kills}`,
+        `第 ${wave} 波 · 总击杀 ${kills} ${bestStr}`,
         endStage === 'loss'
           ? `阵亡 · 撑过 ${Math.max(0, wave - 1)} 波`
           : (waveStarted ? `敌方剩余 ${enemies.filter(e => e.alive).length}`
                          : `准备下一波...`),
       ]);
+      // On loss: show leaderboard top 5 in a centered card
+      if (endStage === 'loss') {
+        const scores = getSurvivalScores().slice(0, 5);
+        const cw = 320, rowH = 22, ch = 60 + scores.length * rowH;
+        const cx = W() / 2, cy = H() / 2;
+        const x = cx - cw / 2, y = cy - ch / 2;
+        ctx.save();
+        ctx.fillStyle = COLORS.cream;
+        ctx.fillRect(x, y, cw, ch);
+        ctx.strokeStyle = COLORS.red;
+        ctx.lineWidth = 4;
+        ctx.strokeRect(x, y, cw, ch);
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(x + cw - 60, y - 4, 60, 8);
+        ctx.fillStyle = COLORS.red;
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('排行榜 / LEADERBOARD', x + 16, y + 22);
+        ctx.fillStyle = COLORS.black;
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText('#  WAVE  KILLS  STYLE', x + 16, y + 42);
+        let yy = y + 56;
+        for (let i = 0; i < scores.length; i++) {
+          const s = scores[i];
+          const isThis = (i === scores.findIndex(r => r.wave === Math.max(0, wave - 0) && r.kills === kills));
+          ctx.fillStyle = isThis ? COLORS.red : COLORS.black;
+          ctx.font = isThis ? 'bold 11px monospace' : '11px monospace';
+          const styleLabel = (DIFF_LABELS && DIFF_LABELS[s.style]) || s.style || '?';
+          ctx.fillText(
+            String(i + 1).padStart(2, ' ') + '   ' +
+            String(s.wave).padStart(3, ' ') + '   ' +
+            String(s.kills).padStart(4, ' ') + '   ' +
+            styleLabel,
+            x + 16, yy
+          );
+          yy += rowH;
+        }
+        ctx.restore();
+      }
     },
   };
 };

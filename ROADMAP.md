@@ -11,9 +11,9 @@
 - [x] 觸控操作(雙搖桿 + 自動射擊預設 ON)— 45822da
 - [ ] HUD 縮放適配 portrait + landscape
 - [ ] Lobby 響應式(小螢幕單欄)
-- [x] PWA manifest(可加桌面)+ Service Worker 離線 — 下一個 commit
+- [x] PWA manifest(可加桌面)+ Service Worker 離線 — 13916ae
 - [ ] 首次教學(教 swap + aim-assist)
-- [ ] 本地 Survival 排行榜(localStorage)
+- [x] 本地 Survival 排行榜(localStorage)— 下一個 commit
 
 ## 階段 2:內容 / 樂趣
 - [ ] 直升機撤離任務(Helo Extract)
