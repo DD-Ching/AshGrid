@@ -734,35 +734,43 @@ const WEAPONS = {
             recoilPerShot: 0.07, recoilDecay: 0.88, spread: 0.10,
             fireCd: 4,  damage: 14, bulletSpeed: 13, bulletLife: 42, soundIntensity: 1200,
             magSize: 30, reserveStart: 180, speedMul: 1.10, auto: true,  reloadFrames: 60,
+            soundProfile: { peakFreq: 950, decay: 16, bassFreq: 0,   bassDur: 0,    volMul: 0.80 },
             blurb: '高射速·近战' },
   RIFLE:  { name: 'AR / 步枪',  follow: 0.18, swayAmp: 0.024, swayFreq: 0.06, movePenalty: 0.018,
             recoilPerShot: 0.10, recoilDecay: 0.86, spread: 0.04,
             fireCd: 8,  damage: 22, bulletSpeed: 14, bulletLife: 60, soundIntensity: 1500,
             magSize: 30, reserveStart: 120, speedMul: 1.00, auto: true,  reloadFrames: 80,
+            soundProfile: { peakFreq: 620, decay: 10, bassFreq: 110, bassDur: 0.06, volMul: 1.00 },
             blurb: '平衡·全能' },
   LMG:    { name: 'LMG / 机枪',  follow: 0.10, swayAmp: 0.034, swayFreq: 0.05, movePenalty: 0.026,
             recoilPerShot: 0.13, recoilDecay: 0.84, spread: 0.07,
             fireCd: 6,  damage: 20, bulletSpeed: 14, bulletLife: 70, soundIntensity: 1600,
             magSize: 75, reserveStart: 150, speedMul: 0.85, auto: true,  reloadFrames: 140,
+            soundProfile: { peakFreq: 510, decay: 8,  bassFreq: 95,  bassDur: 0.08, volMul: 1.15 },
             blurb: '持续压制·重' },
   SNIPER: { name: 'DMR / 狙击', follow: 0.30, swayAmp: 0.018, swayFreq: 0.04, movePenalty: 0.014,
             recoilPerShot: 0.30, recoilDecay: 0.78, spread: 0.005,
             fireCd: 50, damage: 100, bulletSpeed: 22, bulletLife: 100, soundIntensity: 1800,
             magSize: 5,  reserveStart: 30,  speedMul: 0.90, auto: false, reloadFrames: 100,
+            soundProfile: { peakFreq: 320, decay: 4,  bassFreq: 70,  bassDur: 0.20, volMul: 1.40 },
             blurb: '一枪秒·单发' },
   SHOTGUN:{ name: 'SG / 霰弹', follow: 0.16, swayAmp: 0.028, swayFreq: 0.07, movePenalty: 0.022,
             recoilPerShot: 0.40, recoilDecay: 0.78, spread: 0.30,
             fireCd: 30, damage: 18, bulletSpeed: 16, bulletLife: 24, soundIntensity: 1600,
             magSize: 6,  reserveStart: 30,  speedMul: 0.95, auto: false, reloadFrames: 110,
-            pellets: 7, blurb: '近战毁灭·散布' },
+            pellets: 7,
+            soundProfile: { peakFreq: 410, decay: 7,  bassFreq: 80,  bassDur: 0.11, volMul: 1.30 },
+            blurb: '近战毁灭·散布' },
 
   // Allies (campaign) — kept separate so balancing AI doesn't bleed into player picks
   M4:  { follow: 0.14, swayAmp: 0.030, swayFreq: 0.07, movePenalty: 0.022,
          recoilPerShot: 0.09, recoilDecay: 0.87, spread: 0.06,
-         fireCd: 14, damage: 16, bulletSpeed: 13, bulletLife: 60, soundIntensity: 1400 },
+         fireCd: 14, damage: 16, bulletSpeed: 13, bulletLife: 60, soundIntensity: 1400,
+         soundProfile: { peakFreq: 660, decay: 11, bassFreq: 105, bassDur: 0.05, volMul: 0.92 } },
   AK:  { follow: 0.10, swayAmp: 0.034, swayFreq: 0.05, movePenalty: 0.026,
          recoilPerShot: 0.12, recoilDecay: 0.85, spread: 0.09,
-         fireCd: 16, damage: 14, bulletSpeed: 11, bulletLife: 70, soundIntensity: 1300 },
+         fireCd: 16, damage: 14, bulletSpeed: 11, bulletLife: 70, soundIntensity: 1300,
+         soundProfile: { peakFreq: 480, decay: 9,  bassFreq: 90,  bassDur: 0.07, volMul: 1.00 } },
 
   // Backward-compat alias — old code paths reference WEAPONS.AR7.
   // Points at RIFLE so AR7 references stay valid until everything migrates.
@@ -874,8 +882,10 @@ document.addEventListener('pointerdown', audioUnlock, { once: true });
 document.addEventListener('keydown',     audioUnlock, { once: true });
 
 // Play a short synthetic gunshot at world (sx, sy) heard from the player's position.
-// `kind`: 'shot' (sharp crack), 'buzz' (drone), 'self' (your own weapon — full vol, center pan)
-function playPositionalSound(sx, sy, intensity, kind = 'shot', isSelf = false) {
+// `kind`: 'shot' (gunfire), 'buzz' (drone), 'self' (your own weapon — full vol, center pan)
+// `profile` (optional): per-weapon { peakFreq, decay, bassFreq, bassDur, volMul }
+//   that gives each gun a distinct timbre (SMG = bright pop, sniper = deep thump).
+function playPositionalSound(sx, sy, intensity, kind = 'shot', isSelf = false, profile = null) {
   if (!AUDIO.enabled || !AUDIO.unlocked) return;
   audioInit();
   if (!AUDIO.ctx) return;
@@ -885,56 +895,81 @@ function playPositionalSound(sx, sy, intensity, kind = 'shot', isSelf = false) {
   const dx = sx - player.x, dy = sy - player.y;
   const dist = Math.hypot(dx, dy);
   const maxDist = intensity || 1500;
+  const volMul = (profile && profile.volMul) || 1;
   let vol;
   if (isSelf) {
-    vol = 0.7;     // your own gunshot — full, slightly less than master
+    vol = 0.7 * volMul;
   } else {
     if (dist > maxDist) return;
-    vol = Math.max(0, 1 - dist / maxDist) ** 1.4;   // mild non-linear falloff
+    vol = (Math.max(0, 1 - dist / maxDist) ** 1.4) * volMul;
     if (vol < 0.005) return;
   }
 
   // Stereo pan: rotate offset into player's local frame, map left/right to [-1, 1].
-  // viewAngle is the player's look direction; we treat that as "forward".
   const va = (player.viewAngle != null) ? player.viewAngle : (player.angle || 0);
-  const localX = dx * Math.cos(-va) - dy * Math.sin(-va);   // +x = right of view
+  const localX = dx * Math.cos(-va) - dy * Math.sin(-va);
   const pan = isSelf ? 0 : Math.max(-1, Math.min(1, localX / 350));
+  const closeness = isSelf ? 1 : Math.max(0, 1 - dist / maxDist);
 
-  // Synthesis: noise burst → bandpass for "crack" → pan → master
+  // === Crack (noise burst) — bandpass center varies per weapon ===
+  const peakFreq = (profile && profile.peakFreq) ||
+                   (kind === 'buzz' ? 1200 : (kind === 'self' ? 480 : 600));
+  const decay = (profile && profile.decay) ||
+                (kind === 'buzz' ? 18 : 11);
   const dur = (kind === 'buzz') ? 0.08 : 0.18;
+
   const buf = ctx.createBuffer(1, Math.max(64, Math.floor(ctx.sampleRate * dur)), ctx.sampleRate);
   const data = buf.getChannelData(0);
-  const decay = (kind === 'buzz') ? 18 : 11;
   for (let i = 0; i < data.length; i++) {
     const t = i / data.length;
-    const env = Math.exp(-t * decay);
-    data[i] = (Math.random() * 2 - 1) * env;
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-t * decay);
   }
-
   const src = ctx.createBufferSource();
   src.buffer = buf;
-
   const bp = ctx.createBiquadFilter();
   bp.type = 'bandpass';
-  bp.frequency.value = (kind === 'buzz') ? 1200 : (kind === 'self' ? 480 : 600);
+  bp.frequency.value = peakFreq;
   bp.Q.value = (kind === 'buzz') ? 2.0 : 0.7;
-
-  // Distant sounds lose high frequencies — simulate with a lowpass that opens up close
   const lp = ctx.createBiquadFilter();
   lp.type = 'lowpass';
-  const closeness = isSelf ? 1 : Math.max(0, 1 - dist / maxDist);
   lp.frequency.value = 600 + closeness * 5000;
-
-  const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-  if (panner) panner.pan.value = pan;
-
+  const crackPanner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+  if (crackPanner) crackPanner.pan.value = pan;
   const gain = ctx.createGain();
   gain.gain.value = vol;
-
   let chain = src.connect(bp).connect(lp);
-  if (panner) chain = chain.connect(panner);
+  if (crackPanner) chain = chain.connect(crackPanner);
   chain.connect(gain).connect(AUDIO.master);
   src.start();
+
+  // === Bass thump (sine pulse) — only for big guns; survives distance better ===
+  if (profile && profile.bassFreq > 0 && profile.bassDur > 0) {
+    const bassDur = profile.bassDur;
+    const bassVol = isSelf
+      ? 0.55 * volMul
+      : 0.55 * Math.max(0, 1 - dist / (maxDist * 1.4)) * volMul;
+    if (bassVol >= 0.003) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(profile.bassFreq, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(
+        Math.max(20, profile.bassFreq * 0.45),
+        ctx.currentTime + bassDur
+      );
+      const bassGain = ctx.createGain();
+      bassGain.gain.setValueAtTime(bassVol, ctx.currentTime);
+      bassGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + bassDur);
+      let bassChain = osc.connect(bassGain);
+      if (ctx.createStereoPanner) {
+        const bp2 = ctx.createStereoPanner();
+        bp2.pan.value = pan;
+        bassChain = bassChain.connect(bp2);
+      }
+      bassChain.connect(AUDIO.master);
+      osc.start();
+      osc.stop(ctx.currentTime + bassDur + 0.02);
+    }
+  }
 }
 
 // Generic synthesized SFX (hit/death/respawn/reload/whiz/countdown).
@@ -950,6 +985,10 @@ function playSfx(name, opts = {}) {
     respawn:      { freq:  440, dur: 0.25, decay:  9, type: 'bandpass', vol: 0.40, sweepTo: 1320, q: 4 },
     reload:       { freq: 2400, dur: 0.06, decay: 30, type: 'bandpass', vol: 0.30, q: 6 },
     whiz:         { freq: 4500, dur: 0.06, decay: 35, type: 'bandpass', vol: 0.32, q: 12 },
+    // Supersonic crack — sharp transient layered on top of whiz when a fast
+    // round (sniper / rifle) passes very close. Gives the "snap" you hear
+    // when a round breaks the sound barrier near your head.
+    crack:        { freq: 5800, dur: 0.04, decay: 50, type: 'bandpass', vol: 0.34, q: 18 },
     countdown:    { freq:  660, dur: 0.10, decay: 22, type: 'bandpass', vol: 0.30, q: 8 },
     // New presets
     kill_confirm: { freq:  880, dur: 0.18, decay:  8, type: 'bandpass', vol: 0.45, sweepTo: 1760, q: 5 },  // bright up-chirp
@@ -963,6 +1002,7 @@ function playSfx(name, opts = {}) {
   if (!p) return;
   const vol = (opts.vol != null ? opts.vol : p.vol);
   const pan = opts.pan || 0;
+  const freq = (opts.freq != null ? opts.freq : p.freq);
 
   const dur = p.dur;
   const buf = ctx.createBuffer(1, Math.max(64, Math.floor(ctx.sampleRate * dur)), ctx.sampleRate);
@@ -976,7 +1016,7 @@ function playSfx(name, opts = {}) {
   src.buffer = buf;
   const filt = ctx.createBiquadFilter();
   filt.type = p.type;
-  filt.frequency.value = p.freq;
+  filt.frequency.value = freq;
   if (p.q) filt.Q.value = p.q;
   if (p.sweepTo) {
     filt.frequency.linearRampToValueAtTime(p.sweepTo, ctx.currentTime + dur * 0.9);
@@ -997,12 +1037,12 @@ function playSfx(name, opts = {}) {
 // positional audio. Gunshots are LOUD (1300-1500u) so most of the map is
 // within earshot.
 const soundEvents = [];
-function emitSound(x, y, intensity, fromPlayer, isPlayerSelf = false) {
+function emitSound(x, y, intensity, fromPlayer, isPlayerSelf = false, profile = null) {
   soundEvents.push({ x, y, intensity, fromPlayer, isPlayerSelf, life: 80, maxLife: 80 });
   // Audio: actually play it. Drone buzz (intensity ~700-850) is emitted every
   // frame so we throttle it. Gunshots (>=1000) play every event.
   if (intensity >= 1000) {
-    playPositionalSound(x, y, intensity, 'shot', isPlayerSelf);
+    playPositionalSound(x, y, intensity, 'shot', isPlayerSelf, profile);
   } else {
     // Throttled drone buzz — at most once per 12 frames per drone (rate limit globally)
     if ((emitSound._buzzCt = (emitSound._buzzCt || 0) + 1) % 12 === 0) {
@@ -2775,7 +2815,7 @@ function nnApplyAction(unit, action, friendlies, enemies) {
       unit._nnLastSeenY = tgt.y;
       unit._nnLastSeenTick = game.time;
       NN.lastSound = { x: unit.x, y: unit.y, tick: game.time, team: unit.team || 0 };
-      emitSound(unit.x, unit.y, w.soundIntensity || 1300, isPlayer || isAlly);
+      emitSound(unit.x, unit.y, w.soundIntensity || 1300, isPlayer || isAlly, false, w.soundProfile);
     }
   }
 }
@@ -4431,7 +4471,7 @@ function updateAllies() {
       muzzleFlashes.push({ x: a.x + Math.cos(ang)*22, y: a.y + Math.sin(ang)*22, angle: ang, life: 5 });
       applyRecoil(a, w);
       a.fireCd = w.fireCd + Math.floor(Math.random()*8);
-      emitSound(a.x, a.y, w.soundIntensity, true);
+      emitSound(a.x, a.y, w.soundIntensity, true, false, w.soundProfile);
     }
   }
 }
@@ -4834,7 +4874,7 @@ function updateEnemies() {
       });
       applyRecoil(e, w);
       e.fireCd = w.fireCd + Math.floor(Math.random()*8);
-      emitSound(e.x, e.y, w.soundIntensity, false);
+      emitSound(e.x, e.y, w.soundIntensity, false, false, w.soundProfile);
     }
   }
 
@@ -5202,7 +5242,7 @@ function fire() {
   // One muzzle flash per shot (not per pellet) — spread looks like a cloud
   muzzleFlashes.push({ x: player.x + Math.cos(baseAngle)*22, y: player.y + Math.sin(baseAngle)*22, angle: baseAngle, life: 5 });
   applyRecoil(player, w);
-  emitSound(player.x, player.y, w.soundIntensity, true, true);
+  emitSound(player.x, player.y, w.soundIntensity, true, true, w.soundProfile);
 }
 
 function updateBullets() {
@@ -5267,15 +5307,25 @@ function updateBullets() {
         }
       }
     }
-    // Bullet whiz: enemy bullet passing very close to player without hitting
+    // Bullet whiz: enemy bullet passing close — pitch + supersonic crack scale
+    // with bullet speed, pan with lateral offset relative to player view.
     if (!hit && player.alive) {
       const d = Math.hypot(b.x - player.x, b.y - player.y);
-      if (d < 50 && d >= player.radius && !b._whizzed) {
+      const WHIZ_RANGE = 80;
+      if (d < WHIZ_RANGE && d >= player.radius && !b._whizzed) {
         b._whizzed = true;
-        // Pan based on bullet's angle relative to player view
         const va = (player.viewAngle != null) ? player.viewAngle : (player.angle || 0);
         const lx = (b.x - player.x) * Math.cos(-va) - (b.y - player.y) * Math.sin(-va);
-        playSfx('whiz', { pan: Math.max(-1, Math.min(1, lx / 50)), vol: 0.32 * (1 - d/50) });
+        const pan = Math.max(-1, Math.min(1, lx / WHIZ_RANGE));
+        const proximity = 1 - d / WHIZ_RANGE;          // 0 at edge, 1 at center
+        const speed = Math.hypot(b.vx, b.vy);
+        // Faster bullet → higher whiz pitch (3500–6000 Hz)
+        const whizFreq = 3500 + Math.min(2500, speed * 110);
+        playSfx('whiz', { pan, vol: 0.36 * proximity, freq: whizFreq });
+        // Supersonic snap for sniper-class rounds within point-blank range
+        if (speed > 18 && proximity > 0.5) {
+          playSfx('crack', { pan, vol: 0.42 * proximity });
+        }
       }
     }
     if (!hit) for (const a of allies) {
