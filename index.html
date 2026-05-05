@@ -657,23 +657,27 @@ function updateGrenades() {
         break;
       }
     }
-    // Trench gravity — grenades roll toward and into nearby trenches.
-    // Find the nearest trench within pull range; nudge velocity toward its
-    // center. Once the grenade is INSIDE a trench it stays there (the
-    // surrounding ground is "higher").
-    let nearest = null, nearestD = Infinity;
+    // Trench gravity — grenades roll toward the centerline of the nearest
+    // trench polyline. Once inside the channel, gravity keeps pulling them
+    // along the line to the deepest point of the local segment.
+    let nearestX = 0, nearestY = 0, nearestD = Infinity;
     for (const t of trenches) {
-      // Distance from grenade to trench rect (0 if inside)
-      const dx = Math.max(t.x - g.x, 0, g.x - (t.x + t.w));
-      const dy = Math.max(t.y - g.y, 0, g.y - (t.y + t.h));
-      const d = Math.hypot(dx, dy);
-      if (d < nearestD) { nearestD = d; nearest = t; }
+      const pts = t.points;
+      if (!pts || pts.length < 2) continue;
+      for (let pi = 0; pi < pts.length - 1; pi++) {
+        const p1 = pts[pi], p2 = pts[pi+1];
+        // Find closest point on this segment
+        const sdx = p2.x - p1.x, sdy = p2.y - p1.y;
+        const lenSq = sdx*sdx + sdy*sdy;
+        let tt = lenSq > 0.001 ? ((g.x - p1.x) * sdx + (g.y - p1.y) * sdy) / lenSq : 0;
+        tt = Math.max(0, Math.min(1, tt));
+        const cx = p1.x + sdx * tt, cy = p1.y + sdy * tt;
+        const d = Math.hypot(g.x - cx, g.y - cy);
+        if (d < nearestD) { nearestD = d; nearestX = cx; nearestY = cy; }
+      }
     }
-    if (nearest && nearestD < TRENCH_PULL_RANGE) {
-      const tcx = nearest.x + nearest.w / 2;
-      const tcy = nearest.y + nearest.h / 2;
-      const ang = Math.atan2(tcy - g.y, tcx - g.x);
-      // Stronger pull when closer (1 - d/range)^2 weighting
+    if (nearestD < TRENCH_PULL_RANGE) {
+      const ang = Math.atan2(nearestY - g.y, nearestX - g.x);
       const k = TRENCH_PULL * Math.pow(1 - nearestD / TRENCH_PULL_RANGE, 0.7);
       g.vx += Math.cos(ang) * k;
       g.vy += Math.sin(ang) * k;
@@ -1594,21 +1598,60 @@ function addUnderground(x, y, w, h, opts={}) {
 function addHighGround(x, y, w, h, opts={}) {
   highGrounds.push({ x, y, w, h, label: opts.label || '高地' });
 }
-function addTrench(x, y, w, h, opts={}) {
-  trenches.push({ x, y, w, h, label: opts.label || '壕沟' });
+// Trenches are POLYLINES (sinuous channels), not rects. Each trench is
+//   { points: [{x,y}, ...], thickness, label }
+// Hit-detection: distance from a point to the nearest segment of the polyline
+// must be < thickness/2.
+function addTrench(arg, opts={}) {
+  // Convenience: legacy rect form (4 numbers) → convert to polyline rectangle
+  if (typeof arg === 'number') {
+    const [x, y, w, h] = arguments;
+    const isHorizontal = w >= h;
+    const thick = Math.min(w, h);
+    const points = isHorizontal
+      ? [{ x, y: y + h/2 }, { x: x + w, y: y + h/2 }]
+      : [{ x: x + w/2, y }, { x: x + w/2, y: y + h }];
+    trenches.push({ points, thickness: thick, label: opts.label || '壕沟' });
+    return;
+  }
+  // Modern form: object {points, thickness, label}
+  trenches.push({
+    points: arg.points,
+    thickness: arg.thickness || 50,
+    label: arg.label || '壕沟',
+  });
 }
-// Returns the highGround/trench rect a unit (or world point) is currently in, else null
+// Returns the highGround a unit is on, else null
 function unitOnHighGround(u) {
   for (const h of highGrounds) {
     if (u.x >= h.x && u.x <= h.x + h.w && u.y >= h.y && u.y <= h.y + h.h) return h;
   }
   return null;
 }
+// Returns the trench polyline a unit is inside, else null. Inside =
+// distance to nearest segment < thickness/2.
 function unitInTrench(u) {
   for (const t of trenches) {
-    if (u.x >= t.x && u.x <= t.x + t.w && u.y >= t.y && u.y <= t.y + t.h) return t;
+    const half = (t.thickness || 50) / 2;
+    const pts = t.points;
+    if (!pts || pts.length < 2) continue;
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (distPointSegment(u.x, u.y, pts[i].x, pts[i].y, pts[i+1].x, pts[i+1].y) < half) {
+        return t;
+      }
+    }
   }
   return null;
+}
+// Shortest distance from point (px, py) to segment (ax,ay)→(bx,by)
+function distPointSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx*dx + dy*dy;
+  if (lenSq < 0.0001) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const cx = ax + dx * t, cy = ay + dy * t;
+  return Math.hypot(px - cx, py - cy);
 }
 // Vision range multiplier (bumped on high ground)
 function visionRangeMul(u) {
@@ -2285,22 +2328,23 @@ const NN_ARENA_MAP_INDEX = MAPS.length - 1;
 // Helper: build a zigzag trench — chain of overlapping rect segments offset
 // in Y by ±amp. Reads visually as a sinuous trench line. Each segment is its
 // own rect so unitInTrench / damage rules check naturally per-segment.
+// Build a sinuous trench: a single polyline that zigzags between two extreme
+// y (or x) positions. Returns ONE trench object wrapped in an array so call
+// sites can spread it: `trenches: [...zigzagTrench(...)]`.
 function zigzagTrench(x0, y0, total, thickness, segments, amp, label, axis = 'h') {
-  const out = [];
-  const seg = total / segments;
-  for (let i = 0; i < segments; i++) {
-    const off = (i % 2) * amp;
+  const points = [];
+  const step = total / segments;
+  // Slight per-vertex jitter so it looks hand-drawn, not mechanical
+  const jit = () => (Math.random() - 0.5) * thickness * 0.25;
+  for (let i = 0; i <= segments; i++) {
+    const off = (i % 2 === 0 ? -amp : amp) * 0.5;
     if (axis === 'h') {
-      out.push({ x: x0 + i * seg * 0.86, y: y0 + off,
-                 w: seg, h: thickness,
-                 label: i === 0 ? label : undefined });
+      points.push({ x: x0 + i * step + jit(), y: y0 + off + jit() });
     } else {
-      out.push({ x: x0 + off, y: y0 + i * seg * 0.86,
-                 w: thickness, h: seg,
-                 label: i === 0 ? label : undefined });
+      points.push({ x: x0 + off + jit(), y: y0 + i * step + jit() });
     }
   }
-  return out;
+  return [{ points, thickness, label }];
 }
 
 const NN_MAP_VARIANTS = [
@@ -2564,7 +2608,14 @@ function buildNNArenaVariant(idx) {
     addHighGround(NN_ARENA.x0 + h.x, NN_ARENA.y0 + h.y, h.w, h.h, { label: h.label });
   }
   for (const t of trs) {
-    addTrench(NN_ARENA.x0 + t.x, NN_ARENA.y0 + t.y, t.w, t.h, { label: t.label });
+    if (t.points) {
+      // Polyline form — translate every vertex by the arena offset
+      const points = t.points.map(p => ({ x: NN_ARENA.x0 + p.x, y: NN_ARENA.y0 + p.y }));
+      addTrench({ points, thickness: t.thickness || 50, label: t.label });
+    } else {
+      // Legacy rect form (numeric args)
+      addTrench(NN_ARENA.x0 + t.x, NN_ARENA.y0 + t.y, t.w, t.h, { label: t.label });
+    }
   }
   buildCoverPoints();
   game._nnVariantId = v.id;
@@ -5660,36 +5711,42 @@ function renderWorld() {
   // Low covers (waist-high — between buildings & units in z-order)
   drawLowCovers();
 
-  // Trenches (壕沟) — drawn as topographic CONTOUR rings going INWARD (deeper
-  // toward the center). Reads as a recess: 3-4 stepped rings from rim to floor.
+  // Trenches (壕沟) — sinuous polyline channels stroked with thick lines.
+  // Outer rim (slightly thicker, rim color) + inner channel (dark floor) +
+  // a centerline shadow accent. Reads as a real trench cut into the ground.
   for (const t of trenches) {
-    const steps = 4;
-    for (let i = 0; i < steps; i++) {
-      const k = i / steps;
-      const inset = i * Math.min(t.w, t.h) * 0.06;
-      // Lerp from rim color (cream-dark) to floor (deep grey-blue)
-      const r = Math.round(196 + (40   - 196) * k);
-      const g = Math.round(190 + (45   - 190) * k);
-      const b = Math.round(170 + (60   - 170) * k);
-      ctx.fillStyle = `rgb(${r},${g},${b})`;
-      ctx.fillRect(t.x + inset, t.y + inset,
-                   t.w - inset*2, t.h - inset*2);
-    }
-    // Outer rim line (sharp boundary — this is the "edge of the trench")
+    const pts = t.points;
+    if (!pts || pts.length < 2) continue;
+    const thick = t.thickness || 50;
+    const drawPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    };
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // Outer rim (lip / "edge of the trench")
     ctx.strokeStyle = COLORS.black;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(t.x, t.y, t.w, t.h);
-    // Inner contour line (dashed) — emphasizes "lower elevation here"
-    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([5, 4]);
-    const i2 = Math.min(t.w, t.h) * 0.12;
-    ctx.strokeRect(t.x + i2, t.y + i2, t.w - i2*2, t.h - i2*2);
+    ctx.lineWidth = thick + 4;
+    drawPath(); ctx.stroke();
+    // Channel body (cool dark — lower elevation)
+    ctx.strokeStyle = '#3A3A42';
+    ctx.lineWidth = thick;
+    drawPath(); ctx.stroke();
+    // Centerline highlight (subtle dashed, "deepest part")
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = thick * 0.35;
+    ctx.setLineDash([6, 6]);
+    drawPath(); ctx.stroke();
     ctx.setLineDash([]);
-    // Label
-    ctx.fillStyle = COLORS.cream;
-    ctx.font = 'bold 9px sans-serif';
-    ctx.fillText(t.label || '壕沟', t.x + 6, t.y + 12);
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+    // Label at first vertex
+    if (t.label) {
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillText(t.label, pts[0].x + 6, pts[0].y - 10);
+    }
   }
 
   // High ground (制高点) — drawn as topographic CONTOUR rings going OUTWARD
