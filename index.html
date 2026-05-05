@@ -512,6 +512,41 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   </div>
 </div>
 
+<!-- First-time tutorial — shown once on first lobby entry -->
+<div class="overlay nn-lobby hidden" id="tutorial">
+  <div class="lobby-card" style="max-width: 540px;">
+    <div class="lobby-tag">首次提示 · QUICK BRIEFING</div>
+    <h2 style="font-size: 26px; letter-spacing: 4px;">操作 · CORE</h2>
+    <div class="lobby-sub">三件事先記住,剩下打就懂。</div>
+    <div style="display:flex; flex-direction:column; gap:14px; padding: 14px 0; border-top: 2px solid var(--black); border-bottom: 1px solid var(--black);">
+      <div style="display:flex; gap:14px; align-items:flex-start;">
+        <div style="background:var(--red); color:var(--cream); padding:6px 12px; min-width:84px; text-align:center; font-weight:800; letter-spacing:3px; font-size:14px;">V</div>
+        <div style="font-size:12px; line-height:1.6;">
+          <div style="font-weight:800; color:var(--black);">自動瞄準 AIM-ASSIST</div>
+          <div style="color:var(--gray);">按 V 切換。鎖定後子彈自動射擊、射擊預判、無視抖動。手機默認開啟,右上 V 按鈕。</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:14px; align-items:flex-start;">
+        <div style="background:var(--black); color:var(--cream); padding:6px 12px; min-width:84px; text-align:center; font-weight:800; letter-spacing:3px; font-size:14px;">1-4</div>
+        <div style="font-size:12px; line-height:1.6;">
+          <div style="font-weight:800; color:var(--black);">接管隊友 PAWN-SWAP</div>
+          <div style="color:var(--gray);">數字鍵 / 點 HUD 上的 [2·B80] 直接切到那個隊友身上 — 你死了會自動跳到最近的隊友,不用等 respawn。</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:14px; align-items:flex-start;">
+        <div style="background:var(--cream-dark); color:var(--black); padding:6px 12px; min-width:84px; text-align:center; font-weight:800; letter-spacing:3px; font-size:14px;">Q E G</div>
+        <div style="font-size:12px; line-height:1.6;">
+          <div style="font-weight:800; color:var(--black);">無人機 / FPV / 手雷</div>
+          <div style="color:var(--gray);">Q 部署偵察 UAV(共享視野)、E 發射 FPV 自殺機、G 投手雷。手機右側按鈕。</div>
+        </div>
+      </div>
+    </div>
+    <div class="lobby-actions" style="margin-top: 16px;">
+      <button class="start-btn" id="tutorialDoneBtn">我懂了 GOT IT ▶</button>
+    </div>
+  </div>
+</div>
+
 <!-- NN Skirmish team-size lobby -->
 <div class="overlay nn-lobby hidden" id="nnLobby">
   <div class="lobby-card">
@@ -1587,10 +1622,25 @@ const _nnBtn = document.getElementById('nnBtn');
 if (_nnBtn) {
   _nnBtn.onclick = () => {
     document.getElementById('start').classList.add('hidden');
-    document.getElementById('nnLobby').classList.remove('hidden');
+    // First-time tutorial — once dismissed, never shown again until localStorage clears.
+    let seenTutorial = false;
+    try { seenTutorial = localStorage.getItem('ag.tutorialSeen') === '1'; } catch (e) {}
+    if (!seenTutorial) {
+      document.getElementById('tutorial').classList.remove('hidden');
+    } else {
+      document.getElementById('nnLobby').classList.remove('hidden');
+    }
     document.getElementById('blueSizeLabel').textContent = _lobby.blue;
     document.getElementById('redSizeLabel').textContent  = _lobby.red;
     if (_lobby.lineupOpen) rebuildLineupUI();
+  };
+}
+const _tutorialDoneBtn = document.getElementById('tutorialDoneBtn');
+if (_tutorialDoneBtn) {
+  _tutorialDoneBtn.onclick = () => {
+    try { localStorage.setItem('ag.tutorialSeen', '1'); } catch (e) {}
+    document.getElementById('tutorial').classList.add('hidden');
+    document.getElementById('nnLobby').classList.remove('hidden');
   };
 }
 document.querySelectorAll('#nnLobby .counter button').forEach(btn => {
