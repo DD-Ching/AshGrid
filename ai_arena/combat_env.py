@@ -127,6 +127,12 @@ class Curriculum:
     coef_team_lead:  float = 0.001
     coef_episode_win: float = 50.0
 
+    # "Fear-death" mode: dead units STAY dead and the episode terminates as
+    # soon as one team is fully wiped. Combined with high coef_death this
+    # teaches the agent that dying genuinely costs the team — no more
+    # rush-and-respawn behavior.
+    disable_respawn: bool = False
+
 
 def curriculum_for_step(step: int, total_steps: int) -> Curriculum:
     """Map a global step counter onto a Curriculum snapshot.
@@ -341,6 +347,12 @@ class Unit:
     killed_this_tick: bool = False
     died_this_tick: bool = False
     runner_dir: int = 1     # for runner_opponent state
+    # Per-frame velocity tracking — for target leading. Set every step from
+    # the position delta vs the prior frame.
+    last_x: float = 0.0
+    last_y: float = 0.0
+    vel_x: float = 0.0
+    vel_y: float = 0.0
 
 
 @dataclass
@@ -441,6 +453,14 @@ class CombatEnv:
             raise RuntimeError("Episode is done. Call reset().")
         opp_team = 1 - agent_team
 
+        # Per-frame velocity snapshot — used by target leading in the fire
+        # path. Captures the prior tick's actual displacement.
+        for u in self.units:
+            u.vel_x = u.x - u.last_x
+            u.vel_y = u.y - u.last_y
+            u.last_x = u.x
+            u.last_y = u.y
+
         for u in self.units:
             u.damage_dealt_this_tick = 0
             u.damage_taken_this_tick = 0
@@ -450,7 +470,7 @@ class CombatEnv:
                 u.recent_damage_ticks -= 1
             if u.fire_cd > 0:
                 u.fire_cd -= 1
-            if not u.alive:
+            if not u.alive and not self.cur.disable_respawn:
                 u.respawn_cd -= 1
                 if u.respawn_cd <= 0:
                     u.alive = True
@@ -487,6 +507,13 @@ class CombatEnv:
 
         self.tick += 1
         self.done = self.tick >= self.match_ticks
+        # No-respawn early-out: terminate as soon as a team is wiped so the
+        # winning agent doesn't burn rollout time on dead air.
+        if self.cur.disable_respawn and not self.done:
+            team_a_alive = any(u.alive for u in self.units[:self.squad_size])
+            team_b_alive = any(u.alive for u in self.units[self.squad_size:])
+            if not (team_a_alive and team_b_alive):
+                self.done = True
 
         rewards = [self._reward_for(self.units[agent_offset + i]) for i in range(self.squad_size)]
         obs = self._observe_team(team=agent_team)
@@ -651,7 +678,18 @@ class CombatEnv:
             target = self._nearest_visible_enemy(unit)
             if target is not None and not line_blocked(
                     unit.x, unit.y, target.x, target.y, self.walls):
-                aim = math.atan2(target.y - unit.y, target.x - unit.x)
+                # Target leading: predict where the target will be when the
+                # bullet arrives. Same heuristic as the JS deployment so the
+                # model trains under the same auto-aim accuracy it'll see at
+                # game time. Without this the agent learns "chase, fire,
+                # miss" loops; with it, fire vs strafing target hits.
+                dx0 = target.x - unit.x
+                dy0 = target.y - unit.y
+                dist0 = math.hypot(dx0, dy0)
+                flight_time = dist0 / BULLET_SPEED
+                lead_x = target.x + target.vel_x * flight_time
+                lead_y = target.y + target.vel_y * flight_time
+                aim = math.atan2(lead_y - unit.y, lead_x - unit.x)
                 aim += (random.random() - 0.5) * 0.05
                 unit.angle = aim
                 self.bullets.append(Bullet(
