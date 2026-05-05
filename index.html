@@ -5199,79 +5199,7 @@ function updatePlayer() {
   // View angle (instant) — where the player LOOKS, drives vision cone & crosshair
   player.angle = Math.atan2(wp.y - player.y, wp.x - player.x);
 
-  // Aim-assist: when V toggled and a target locks, hard-snap the look + gun
-  // to the lead position (so the bullet actually goes where the reticle is,
-  // not where the gun lag thinks it is). Trigger pull stays manual.
-  player._aimAssistLockedAt = null;
-  if (player._aimAssist && player.alive) {
-    const RANGE = 700, ARC_HALF = Math.PI / 3;   // 60° front cone
-    let bestE = null, bestD = Infinity;
-    for (const e of enemies) {
-      if (!e.alive) continue;
-      const dx = e.x - player.x, dy = e.y - player.y;
-      const d = Math.hypot(dx, dy);
-      if (d > RANGE) continue;
-      let diff = Math.atan2(dy, dx) - player.angle;
-      while (diff >  Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      if (Math.abs(diff) > ARC_HALF) continue;
-      if (!lineOfSight(player.x, player.y, e.x, e.y)) continue;
-      if (d < bestD) { bestD = d; bestE = e; }
-    }
-    if (bestE) {
-      // Target leading uses SMOOTHED velocity (raw _velX/_velY jitters every
-      // time the enemy gets pushed by physics). The bullet still aims ahead
-      // of the enemy — the reticle, however, sticks to the enemy itself
-      // (below) so the player sees "I'm locked on him", not a confusing
-      // floater in space.
-      const flightTime = bestD / (playerWeapon.bulletSpeed || 14);
-      const leadX = bestE.x + (bestE._smoothVelX || 0) * flightTime;
-      const leadY = bestE.y + (bestE._smoothVelY || 0) * flightTime;
-      const tA = Math.atan2(leadY - player.y, leadX - player.x);
-      player.angle = tA;
-      player.gunAngle = tA;
-      player.gunRecoil *= 0.4;
-      // Reticle position is the ENEMY (visual "lock on him"), not the lead
-      // offset (which would visually float in front of the enemy). Bullets
-      // still go to lead via gunAngle above.
-      player._aimAssistLockedAt = { x: bestE.x, y: bestE.y };
-      // Feedback: visual + audio tick on first frame of a new lock (= target
-      // identity changed). Don't fire it every frame the same enemy stays
-      // locked — only when we acquire a fresh one.
-      if (player._aimAssistLockedTarget !== bestE) {
-        player._aimAssistLockedTarget = bestE;
-        player._aimAssistLockPulse = 14;
-        playSfx('countdown', { vol: 0.18, freq: 1100 });
-      }
-    } else {
-      player._aimAssistLockedTarget = null;
-    }
-  } else {
-    player._aimAssistLockedTarget = null;
-  }
-  if (player._aimAssistLockPulse > 0) player._aimAssistLockPulse--;
-
-  // Gun barrel: damped follow toward view, sway, recoil decay
-  tickShooter(player, player.angle, playerWeapon, !!moving);
-  // While aim-assist is locked, override tickShooter's sway/damping so the
-  // gun stays exactly on the lead angle. Otherwise the bullet drifts off
-  // even though the reticle visually points at the target.
-  if (player._aimAssistLockedAt) {
-    player.gunAngle = player.angle;
-    player.gunRecoil *= 0.5;
-  }
-
-  player.fireCooldown--;
-  // Auto vs semi: full-auto fires while held; semi-auto (SNIPER, SHOTGUN)
-  // requires a fresh click each shot. Aim-assist lock auto-fires on cooldown
-  // regardless of mouse state — that's the point of the assist.
-  const autoFireFromLock = !!player._aimAssistLockedAt;
-  const triggerOK = autoFireFromLock
-                    ? true
-                    : (playerWeapon.auto !== false
-                        ? mouse.down
-                        : (mouse.down && !mouse._wasDown));
-  if (triggerOK && player.fireCooldown <= 0 && player.ammo > 0 && !player.reloading) fire();
+  tickPlayerCombat(!!moving);
   // Empty trigger click: clicking when out of ammo + can't reload (no reserve)
   if (mouse.down && !mouse._wasDown && player.ammo === 0 && player.reserve === 0) {
     playSfx('empty_click');
@@ -5303,6 +5231,77 @@ function updatePlayerAux() {
       player.reloading = false;
     }
   }
+  // Aim-assist + auto-fire keep working even while the player drives the UAV
+  // or rides an FPV drone — they don't have to "land" to keep shooting back.
+  tickPlayerCombat(false);
+}
+
+// Aim-assist scan + lock + tickShooter override + auto-fire. Called from both
+// updatePlayer (tactical mode — uses a 60° front cone tied to where the mouse
+// points) and updatePlayerAux (drone / FPV — full 360° autonomous scan, since
+// the player isn't actively aiming with the mouse anyway).
+function tickPlayerCombat(isMoving) {
+  if (!player.alive) return;
+  const w = playerWeapon;
+  const tactical = (game.mode === 'tactical' || game.mode === 'radar' ||
+                    game.mode === 'thermal' || game.mode === 'command');
+  const ARC_HALF = tactical ? Math.PI / 3 : Math.PI;   // 60° vs 360°
+
+  player._aimAssistLockedAt = null;
+  if (player._aimAssist) {
+    const RANGE = 700;
+    let bestE = null, bestD = Infinity;
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const dx = e.x - player.x, dy = e.y - player.y;
+      const d = Math.hypot(dx, dy);
+      if (d > RANGE) continue;
+      if (tactical) {
+        let diff = Math.atan2(dy, dx) - player.angle;
+        while (diff >  Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        if (Math.abs(diff) > ARC_HALF) continue;
+      }
+      if (!lineOfSight(player.x, player.y, e.x, e.y)) continue;
+      if (d < bestD) { bestD = d; bestE = e; }
+    }
+    if (bestE) {
+      const flightTime = bestD / (w.bulletSpeed || 14);
+      const leadX = bestE.x + (bestE._smoothVelX || bestE._velX || 0) * flightTime;
+      const leadY = bestE.y + (bestE._smoothVelY || bestE._velY || 0) * flightTime;
+      const tA = Math.atan2(leadY - player.y, leadX - player.x);
+      player.angle = tA;
+      player.gunAngle = tA;
+      player.gunRecoil *= 0.4;
+      player._aimAssistLockedAt = { x: bestE.x, y: bestE.y };
+      if (player._aimAssistLockedTarget !== bestE) {
+        player._aimAssistLockedTarget = bestE;
+        player._aimAssistLockPulse = 14;
+        playSfx('countdown', { vol: 0.18, freq: 1100 });
+      }
+    } else {
+      player._aimAssistLockedTarget = null;
+    }
+  } else {
+    player._aimAssistLockedTarget = null;
+  }
+  if (player._aimAssistLockPulse > 0) player._aimAssistLockPulse--;
+
+  // Gun barrel: damped follow toward view, sway, recoil decay
+  tickShooter(player, player.angle, w, !!isMoving);
+  if (player._aimAssistLockedAt) {
+    player.gunAngle = player.angle;
+    player.gunRecoil *= 0.5;
+  }
+
+  player.fireCooldown--;
+  const autoFireFromLock = !!player._aimAssistLockedAt;
+  const triggerOK = autoFireFromLock
+                    ? true
+                    : (w.auto !== false
+                        ? mouse.down
+                        : (mouse.down && !mouse._wasDown));
+  if (triggerOK && player.fireCooldown <= 0 && player.ammo > 0 && !player.reloading) fire();
 }
 
 function updateDroneControl() {
