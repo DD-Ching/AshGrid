@@ -544,16 +544,22 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 <script>
 // ============ SETUP ============
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+// alpha:false skips per-pixel compositing — meaningful on full-screen HiDPI.
+const ctx = canvas.getContext('2d', { alpha: false });
 
+// Cap DPR at 1.5 — Retina at 2.0 paints ~8M pixels/frame on a 1080p window
+// (vs ~3.5M at 1.5), and the visual difference is barely noticeable for a
+// flat 2D top-down. Halves the rasterizer load on high-DPI displays.
+const MAX_DPR = 1.5;
 let DPR = 1;
 function resize() {
-  DPR = window.devicePixelRatio || 1;
+  DPR = Math.min(window.devicePixelRatio || 1, MAX_DPR);
   canvas.width = window.innerWidth * DPR;
   canvas.height = window.innerHeight * DPR;
   canvas.style.width = window.innerWidth + 'px';
   canvas.style.height = window.innerHeight + 'px';
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener('resize', resize);
 resize();
