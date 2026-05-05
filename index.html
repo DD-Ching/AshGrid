@@ -7702,6 +7702,26 @@ function drawPauseOverlay() {
 
   game._pauseResumeRect = { x: resumeX, y: barY, w: resumeW, h: 28 };
   game._pauseExitRect   = { x: exitX,   y: barY, w: exitW,   h: 28 };
+
+  // Custom cursor on top of the overlay — body has cursor:none so without
+  // this the user couldn't see what they're aiming at to click resume / exit.
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = COLORS.red;
+  ctx.fillStyle = COLORS.cream;
+  ctx.beginPath();
+  ctx.arc(mouse.x, mouse.y, 9, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(mouse.x, mouse.y, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(mouse.x - 14, mouse.y); ctx.lineTo(mouse.x - 6, mouse.y);
+  ctx.moveTo(mouse.x + 6, mouse.y); ctx.lineTo(mouse.x + 14, mouse.y);
+  ctx.moveTo(mouse.x, mouse.y - 14); ctx.lineTo(mouse.x, mouse.y - 6);
+  ctx.moveTo(mouse.x, mouse.y + 6); ctx.lineTo(mouse.x, mouse.y + 14);
+  ctx.stroke();
+  ctx.restore();
 }
 
 // ============ MAIN LOOP ============
