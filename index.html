@@ -4666,7 +4666,6 @@ function updateAllies() {
 // ============ DRONE / FPV CONTROL ============
 function toggleDrone() {
   if (!drone.deployed) {
-    if (drone.battery < 15) { showMessage('电池电量不足', 60); return; }
     drone.deployed = true;
     drone.x = player.x;
     drone.y = player.y - 40;
@@ -5246,13 +5245,7 @@ function update() {
   }
 
   updateFPV();
-  if (drone.deployed && game.mode !== 'drone') {
-    drone.battery -= 0.025;
-    if (drone.battery <= 0) {
-      drone.deployed = false;
-      showMessage('UAV 失联', 60);
-    }
-  }
+  // UAV runs without battery drain — keep deployed indefinitely.
 
   updateSquadIntel();
   // NN AI inference (async, fires every other frame so it doesn't dominate the loop)
@@ -5449,12 +5442,7 @@ function updateDroneControl() {
   }
   drone.x = Math.max(20, Math.min(WORLD.w-20, drone.x));
   drone.y = Math.max(20, Math.min(WORLD.h-20, drone.y));
-  drone.battery -= 0.07;
-  if (drone.battery <= 0) {
-    drone.deployed = false;
-    game.mode = 'tactical';
-    showMessage('UAV 电池耗尽', 90);
-  }
+  // No battery drain — UAV stays up as long as the player keeps it out.
 }
 
 function fire() {
