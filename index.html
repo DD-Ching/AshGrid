@@ -5224,8 +5224,21 @@ function updatePlayer() {
       player.gunAngle = tA;
       player.gunRecoil *= 0.4;
       player._aimAssistLockedAt = { x: leadX, y: leadY };
+      // Feedback: visual + audio tick on first frame of a new lock (= target
+      // identity changed). Don't fire it every frame the same enemy stays
+      // locked — only when we acquire a fresh one.
+      if (player._aimAssistLockedTarget !== bestE) {
+        player._aimAssistLockedTarget = bestE;
+        player._aimAssistLockPulse = 14;
+        playSfx('countdown', { vol: 0.18, freq: 1100 });
+      }
+    } else {
+      player._aimAssistLockedTarget = null;
     }
+  } else {
+    player._aimAssistLockedTarget = null;
   }
+  if (player._aimAssistLockPulse > 0) player._aimAssistLockPulse--;
 
   // Gun barrel: damped follow toward view, sway, recoil decay
   tickShooter(player, player.angle, playerWeapon, !!moving);
@@ -5239,10 +5252,14 @@ function updatePlayer() {
 
   player.fireCooldown--;
   // Auto vs semi: full-auto fires while held; semi-auto (SNIPER, SHOTGUN)
-  // requires a fresh click each shot.
-  const triggerOK = playerWeapon.auto !== false
-                    ? mouse.down
-                    : (mouse.down && !mouse._wasDown);
+  // requires a fresh click each shot. Aim-assist lock auto-fires on cooldown
+  // regardless of mouse state — that's the point of the assist.
+  const autoFireFromLock = !!player._aimAssistLockedAt;
+  const triggerOK = autoFireFromLock
+                    ? true
+                    : (playerWeapon.auto !== false
+                        ? mouse.down
+                        : (mouse.down && !mouse._wasDown));
   if (triggerOK && player.fireCooldown <= 0 && player.ammo > 0 && !player.reloading) fire();
   // Empty trigger click: clicking when out of ammo + can't reload (no reserve)
   if (mouse.down && !mouse._wasDown && player.ammo === 0 && player.reserve === 0) {
@@ -7385,6 +7402,27 @@ function renderHUDOverlays() {
     ctx.moveTo(cxX - r, cxY + r - 6); ctx.lineTo(cxX - r, cxY + r); ctx.lineTo(cxX - r + 6, cxY + r);
     ctx.moveTo(cxX + r, cxY + r - 6); ctx.lineTo(cxX + r, cxY + r); ctx.lineTo(cxX + r - 6, cxY + r);
     ctx.stroke();
+    // Acquisition pulse: ring snaps in from outside on first lock frame
+    const pulse = player._aimAssistLockPulse || 0;
+    if (pulse > 0) {
+      const t = pulse / 14;        // 1 → 0
+      ctx.save();
+      ctx.globalAlpha = t;
+      ctx.lineWidth = 2 + t * 2;
+      ctx.beginPath();
+      ctx.arc(cxX, cxY, 24 + (1 - t) * 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // "LOCK" tag + tiny screen-space cursor dot (so player still sees mouse)
+    ctx.fillStyle = COLORS.red;
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('LOCK', cxX + 22, cxY - 14);
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.arc(mouse.x, mouse.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
   }
 
   // Center message — banner. If a mission is active and the message is fresh,
