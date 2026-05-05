@@ -912,8 +912,15 @@ function swapPlayerToAlly(idx) {
   applyWeaponToPlayer(targetWeapon);
   player.hp = targetHp;   // applyWeaponToPlayer doesn't touch HP — be explicit
 
-  showMessage(`${wasResurrected ? '紧急接管' : '接管'} ${targetCallsign}`, 120);
+  showSwapToast(`${wasResurrected ? '紧急接管' : '接管'} ${targetCallsign}`);
   playSfx('countdown', { freq: 1320, vol: 0.45 });
+}
+
+// Small top-center toast for pawn-swap feedback — replaces the full-width
+// "接管 BRAVO" center banner that used to block view of the action while
+// the player was rapid-switching between bodies.
+function showSwapToast(text) {
+  game._swapToast = { text, ttl: 75 };   // 1.25s
 }
 
 function applyWeaponToPlayer(w) {
@@ -4153,7 +4160,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           a._respawnAt = game.time + RESPAWN_TICKS;
           a._useNN = true;
           a._nnDifficulty = a._nnDifficulty || NN.difficulty || 'evolved';
-          showMessage(`接管 ${a.callsign === '前操作员' ? '隊友' : a.callsign}`, 90);
+          showSwapToast(`接管 ${a.callsign === '前操作员' ? '隊友' : a.callsign}`);
           playSfx('countdown', { freq: 1320, vol: 0.45 });
         } else {
           player._respawnAt = game.time + RESPAWN_TICKS;
@@ -4376,7 +4383,7 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
           a.y = player._lastDeathY != null ? player._lastDeathY : a.y;
           a.callsign = '前操作员';
           a._respawnAt = null;   // never respawn
-          showMessage(`紧急接管`, 90);
+          showSwapToast(`紧急接管`);
           playSfx('countdown', { freq: 1320, vol: 0.45 });
         } else {
           // No allies left — round ends.
@@ -7637,6 +7644,31 @@ function drawMinimapPanel(mx, my, mw, mh) {
 // overlay. Pulled out so the minimap-collapse path can short-circuit cleanly
 // without bailing on these.
 function renderHUDOverlays() {
+  // Pawn-swap toast — small top-center chip, fades the last 30% of its life.
+  // Replaces the giant center-screen "接管 BRAVO" banner that used to block
+  // view while rapid-switching.
+  if (game._swapToast && game._swapToast.ttl > 0) {
+    const tot = 75;
+    const t = game._swapToast.ttl / tot;
+    const alpha = t < 0.3 ? (t / 0.3) : 1;     // fade out at end
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const tw = 220, th = 26;
+    const tx = W() / 2 - tw / 2, ty = 88;
+    ctx.fillStyle = 'rgba(20, 18, 24, 0.85)';
+    ctx.fillRect(tx, ty, tw, th);
+    ctx.strokeStyle = COLORS.red;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(tx, ty, tw, th);
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(game._swapToast.text, W() / 2, ty + 17);
+    ctx.textAlign = 'left';
+    ctx.restore();
+    game._swapToast.ttl--;
+  }
+
   // Mode-specific overlays
   if (game.mode === 'fpv') renderFPVOverlay();
   if (game.mode === 'drone') renderDroneOverlay();
