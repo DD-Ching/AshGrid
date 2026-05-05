@@ -496,7 +496,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
         </div>
       </div>
     </div>
-    <div class="difficulty-row">
+    <div class="difficulty-row" id="globalDiffRow">
       <label class="difficulty-label">难度 DIFFICULTY</label>
       <div class="diff-groups">
         <div class="diff-group">
@@ -1404,6 +1404,10 @@ if (_lineupToggle) {
   _lineupToggle.onclick = () => {
     _lobby.lineupOpen = !_lobby.lineupOpen;
     document.getElementById('lineupPanel').classList.toggle('hidden', !_lobby.lineupOpen);
+    // Custom lineup overrides the global difficulty per-slot, so the global
+    // difficulty row becomes meaningless — hide it to avoid confusion.
+    document.getElementById('globalDiffRow').style.display =
+      _lobby.lineupOpen ? 'none' : '';
     _lineupToggle.classList.toggle('active', _lobby.lineupOpen);
     _lineupToggle.textContent = _lobby.lineupOpen ? '自定义阵容 ▲' : '默认（全队同设置） ▼';
     if (_lobby.lineupOpen) rebuildLineupUI();
