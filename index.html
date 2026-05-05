@@ -668,13 +668,34 @@ function updateGrenades() {
     const g = grenades[i];
     g.x += g.vx; g.y += g.vy;
     g.vx *= GRENADE_FRICTION; g.vy *= GRENADE_FRICTION;
-    // Stop if it hits a wall (push out, lose all velocity)
+    // Stop if it hits a wall (push out along the face it actually entered
+    // through — using the previous position to disambiguate corner hits, so
+    // a grenade nicking the bottom-left corner doesn't teleport to the
+    // far side of the building).
     for (const b of buildings) {
       if (g.x > b.x && g.x < b.x + b.w && g.y > b.y && g.y < b.y + b.h) {
-        const cx = b.x + b.w/2, cy = b.y + b.h/2;
-        if (Math.abs(g.x - cx) > Math.abs(g.y - cy)) g.x = (g.x > cx) ? b.x + b.w + 1 : b.x - 1;
-        else g.y = (g.y > cy) ? b.y + b.h + 1 : b.y - 1;
-        g.vx = g.vy = 0;
+        const px = g.x - g.vx, py = g.y - g.vy;
+        const wasL = px <= b.x;
+        const wasR = px >= b.x + b.w;
+        const wasT = py <= b.y;
+        const wasB = py >= b.y + b.h;
+        let bestDist = Infinity, sx = g.x, sy = g.y;
+        const tryFace = (cond, dist, nx, ny) => {
+          if (cond && dist < bestDist) { bestDist = dist; sx = nx; sy = ny; }
+        };
+        tryFace(wasL, g.x - b.x,           b.x - 0.5, g.y);
+        tryFace(wasR, (b.x + b.w) - g.x,   b.x + b.w + 0.5, g.y);
+        tryFace(wasT, g.y - b.y,           g.x, b.y - 0.5);
+        tryFace(wasB, (b.y + b.h) - g.y,   g.x, b.y + b.h + 0.5);
+        // Fallback: started inside (rare) — pick shallowest penetration overall.
+        if (bestDist === Infinity) {
+          tryFace(true, g.x - b.x,         b.x - 0.5, g.y);
+          tryFace(true, (b.x + b.w) - g.x, b.x + b.w + 0.5, g.y);
+          tryFace(true, g.y - b.y,         g.x, b.y - 0.5);
+          tryFace(true, (b.y + b.h) - g.y, g.x, b.y + b.h + 0.5);
+        }
+        g.x = sx; g.y = sy;
+        g.vx = 0; g.vy = 0;
         break;
       }
     }
