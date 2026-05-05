@@ -4749,6 +4749,9 @@ function angleInCone(srcAngle, arc, ox, oy, tx, ty) {
 // Vision = inside their cone + within range + clear line-of-sight.
 // Used to CULL enemy/drone/enemy-bullet rendering: outside any friendly cone,
 // the player has no perceptual evidence of where enemies are.
+const FPV_VIEW_RANGE = 600;
+const FPV_VIEW_RANGE_SQ = FPV_VIEW_RANGE * FPV_VIEW_RANGE;
+const FPV_VIEW_ARC = Math.PI * (150 / 180);   // 150° front cone
 function isVisibleToFriendly(x, y) {
   if (player.alive) {
     const dx = x - player.x, dy = y - player.y;
@@ -4769,6 +4772,14 @@ function isVisibleToFriendly(x, y) {
   if (drone.deployed) {
     const dx = x - drone.x, dy = y - drone.y;
     if (dx*dx + dy*dy < drone.visionRadius * drone.visionRadius) return true;
+  }
+  // FPV kamikaze drone — narrow 150° forward cone (it's a fast strike asset,
+  // not a recon platform) at 600u range. Sees over walls like the UAV does.
+  if (fpv.active) {
+    const dx = x - fpv.x, dy = y - fpv.y;
+    const d2 = dx*dx + dy*dy;
+    if (d2 < FPV_VIEW_RANGE_SQ
+        && angleInCone(fpv.angle, FPV_VIEW_ARC, fpv.x, fpv.y, x, y)) return true;
   }
   return false;
 }
@@ -5235,7 +5246,6 @@ function update() {
   updateBullets();
   updateGrenades();
   updateExplosions();
-  updateRadar();
   updateSoundEvents();
 
   // Mission completion drives wave advancement.
