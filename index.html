@@ -667,6 +667,8 @@ function explodeGrenade(g) {
   const targets = [player, ...allies, ...enemies];
   for (const u of targets) {
     if (!u.alive) continue;
+    // Spawn invuln also blocks grenade damage
+    if (u._invulnUntil != null && game.time < u._invulnUntil) continue;
     const d = Math.hypot(u.x - g.x, u.y - g.y);
     if (d > GRENADE_RADIUS) continue;
     // Optional: walls between explosion and target absorb damage (use lineOfSight as proxy)
@@ -1368,6 +1370,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   player.hp = player.maxHp;
   player.alive = true;
   player._respawnAt = null;
+  player._invulnUntil = 0;   // grant on first frame after match start (handled below)
   drone.deployed = false; drone.battery = drone.maxBattery;
   fpv.active = false; fpv.available = fpv.max; fpv.trail = [];
   bullets.length = 0; enemyBullets.length = 0;
@@ -1440,6 +1443,13 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
 
   initMission({ type: 'nnDeathmatch', id: 'nn-deathmatch' }, currentMap);
   showMessage(`NN 对抗 · 蓝 ${blueSize} vs 红 ${redSize}`, 200);
+
+  // Initial spawn protection — same 1.5s immunity as a respawn so the very
+  // first frame of the match isn't decided by who's already aimed at you.
+  const initialInvuln = game.time + 90;
+  player._invulnUntil = initialInvuln;
+  for (const a of allies)  a._invulnUntil = initialInvuln;
+  for (const e of enemies) e._invulnUntil = initialInvuln;
 }
 
 function startGame() {
@@ -3772,12 +3782,13 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         }
       } else { player._lastBeepSec = -1; }
 
+      // Spawn protection: 1.5 seconds of damage immunity after respawn so
+      // you don't get instantly killed by a sniper sitting on your spawn.
+      const SPAWN_INVULN_TICKS = 90;
       // Process respawns
       if (!player.alive && player._respawnAt != null && game.time >= player._respawnAt) {
         player.alive = true;
         player.hp = player.maxHp;
-        // Refill mag + restore reserve to the chosen weapon's start (so SMG
-        // doesn't get stuck at 5 ammo if you respawn mid-mag, etc.)
         if (playerWeapon) {
           player.ammo = playerWeapon.magSize;
           player.reserve = playerWeapon.reserveStart;
@@ -3789,6 +3800,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         player._respawnAt = null;
         player.gunRecoil = 0;
         player.reloading = false;
+        player._invulnUntil = game.time + SPAWN_INVULN_TICKS;
         playSfx('respawn');
       }
       for (const a of allies) {
@@ -3799,7 +3811,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           a.y = game._nnSpawnBlue.y + (Math.random() - 0.5) * 200;
           a._respawnAt = null;
           a._nnFireCd = 0; a._nnRecentDmg = 0;
-          // Keep the lineup-assigned weapon + difficulty (don't re-roll if explicitly set)
+          a._invulnUntil = game.time + SPAWN_INVULN_TICKS;
           if (!a._nnDifficulty) a._weapon = WEAPONS[pickRandomNNWeaponId()];
         }
       }
@@ -3811,6 +3823,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           e.y = game._nnSpawnRed.y + (Math.random() - 0.5) * 200;
           e._respawnAt = null;
           e._nnFireCd = 0; e._nnRecentDmg = 0;
+          e._invulnUntil = game.time + SPAWN_INVULN_TICKS;
           if (!e._nnDifficulty) e._weapon = WEAPONS[pickRandomNNWeaponId()];
         }
       }
@@ -5178,6 +5191,9 @@ function updateBullets() {
     if (!hit) for (const e of enemies) {
       if (!e.alive) continue;
       if (Math.hypot(b.x-e.x, b.y-e.y) < e.radius) {
+        // Spawn invuln: still consume the bullet so it doesn't pass through,
+        // but don't apply damage. Visually the bullet vanishes on impact.
+        if (e._invulnUntil != null && game.time < e._invulnUntil) { hit = true; break; }
         e.hp -= b.damage;
         e.recentDamage = 60;     // marks "I'm under fire" for FSM low-HP flee branch
         e.alerted = Math.max(e.alerted || 0, 240);
@@ -5211,16 +5227,20 @@ function updateBullets() {
     // Mission-specific damage hook (UGV / heavy / relay take damage from enemy fire)
     if (mission && mission.onEnemyBulletHit && mission.onEnemyBulletHit(b)) hit = true;
     if (!hit && player.alive && Math.hypot(b.x-player.x, b.y-player.y) < player.radius) {
-      player.hp -= b.damage;
-      game.hitFlash = 12;
       hit = true;
-      playSfx('hit');
-      if (player.hp <= 0) {
-        player.hp = 0;
-        player.alive = false;
-        createExplosion(player.x, player.y, 'big');
-        playSfx('death');
-        // Player death — onMissionFailed handles retry/campaign-end
+      // Spawn invuln — bullet absorbed but no damage
+      if (player._invulnUntil != null && game.time < player._invulnUntil) {
+        // (consume bullet silently)
+      } else {
+        player.hp -= b.damage;
+        game.hitFlash = 12;
+        playSfx('hit');
+        if (player.hp <= 0) {
+          player.hp = 0;
+          player.alive = false;
+          createExplosion(player.x, player.y, 'big');
+          playSfx('death');
+        }
       }
     }
     // Bullet whiz: enemy bullet passing very close to player without hitting
@@ -5237,6 +5257,8 @@ function updateBullets() {
     if (!hit) for (const a of allies) {
       if (!a.alive) continue;
       if (Math.hypot(b.x - a.x, b.y - a.y) < a.radius) {
+        // Spawn invuln — bullet absorbed but no damage
+        if (a._invulnUntil != null && game.time < a._invulnUntil) { hit = true; break; }
         a.hp -= b.damage;
         if (a.hp <= 0) {
           a.alive = false;
@@ -5673,6 +5695,9 @@ function renderWorld() {
       alpha = Math.max(0.25, 1 - (game.time - e._lastSeen) / 180);
     }
     if (alpha === 0) continue;
+    // Spawn-invuln pulse: alpha oscillates between 0.4 and 1.0 while active
+    const eInvuln = e._invulnUntil != null && game.time < e._invulnUntil;
+    if (eInvuln) alpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
     ctx.globalAlpha = alpha;
     drawHumanoid(e.x, e.y, e.angle, e.walkPhase, COLORS.red, true);
     if (e.hp < e.maxHp) {
@@ -5720,7 +5745,10 @@ function renderWorld() {
   // Allies (squad)
   for (const a of allies) {
     if (!a.alive) continue;
+    const aInvuln = a._invulnUntil != null && game.time < a._invulnUntil;
+    if (aInvuln) ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
     drawHumanoid(a.x, a.y, a.angle, a.walkPhase, COLORS.creamDark, false);
+    if (aInvuln) ctx.globalAlpha = 1;
     // Cream outline highlight to distinguish from enemies
     ctx.save();
     ctx.strokeStyle = COLORS.cream;
@@ -5748,7 +5776,12 @@ function renderWorld() {
   // (The render is a separate loop above — visibility check happens there.)
 
   // Player
-  if (player.alive) drawHumanoid(player.x, player.y, player.angle, player.walkPhase, COLORS.black, false);
+  if (player.alive) {
+    const pInvuln = player._invulnUntil != null && game.time < player._invulnUntil;
+    if (pInvuln) ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
+    drawHumanoid(player.x, player.y, player.angle, player.walkPhase, COLORS.black, false);
+    if (pInvuln) ctx.globalAlpha = 1;
+  }
 
   // Player drone
   if (drone.deployed) drawDrone(drone.x, drone.y, COLORS.black, game.time * 0.25);
