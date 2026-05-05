@@ -1335,6 +1335,16 @@ window.addEventListener('mousedown', e => {
     e.preventDefault();
     return;
   }
+  // Squad chip click → pawn-swap to that ally
+  if (game._squadChipRects) {
+    for (const chip of game._squadChipRects) {
+      if (chip.alive && _hitRect(chip, e.clientX, e.clientY)) {
+        swapPlayerToAlly(chip.allyIdx);
+        e.preventDefault();
+        return;
+      }
+    }
+  }
   // Minimap collapse/expand toggle — swallow so we don't also fire
   if (_hitRect(game._minimapToggleRect, e.clientX, e.clientY)) {
     game._minimapCollapsed = !game._minimapCollapsed;
@@ -3921,9 +3931,46 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       lastBlueAlive = blueAlive;
       lastRedAlive  = redAlive;
 
-      // Set respawn timers for newly-dead units
+      // Set respawn timers for newly-dead units. In NN mode, instead of
+      // sending the operator to spawn for 5 seconds, auto-jump into the
+      // CLOSEST alive ally (the operator never sits out — that's the whole
+      // point of pawn-swap). If no alive allies, fall back to normal respawn.
       if (!player.alive && player._respawnAt == null) {
-        player._respawnAt = game.time + RESPAWN_TICKS;
+        let bestIdx = -1, bestD = Infinity;
+        for (let i = 0; i < allies.length; i++) {
+          const ax = allies[i];
+          if (!ax || !ax.alive) continue;
+          const d = Math.hypot(ax.x - player.x, ax.y - player.y);
+          if (d < bestD) { bestD = d; bestIdx = i; }
+        }
+        if (bestIdx >= 0) {
+          const a = allies[bestIdx];
+          // Operator inherits the ally's body in-place
+          player.alive = true;
+          player.x = a.x; player.y = a.y;
+          player.angle = a.angle;
+          player.gunAngle = a.gunAngle || a.angle;
+          player.gunRecoil = (a.gunRecoil || 0) * 0.4;
+          player.hp = a.hp; player.maxHp = a.maxHp;
+          player._invulnUntil = game.time + 60;
+          player._lastX = a.x; player._lastY = a.y;
+          player._velX = 0; player._velY = 0;
+          mouse.down = false;
+          applyWeaponToPlayer(a._weapon || WEAPONS.RIFLE);
+          // The slot we took over becomes the player's OLD (dead) body — it
+          // will respawn normally under NN control after the standard timer.
+          a.alive = false;
+          a.x = player._lastDeathX != null ? player._lastDeathX : a.x;
+          a.y = player._lastDeathY != null ? player._lastDeathY : a.y;
+          a.callsign = '前操作员';
+          a._respawnAt = game.time + RESPAWN_TICKS;
+          a._useNN = true;
+          a._nnDifficulty = a._nnDifficulty || NN.difficulty || 'evolved';
+          showMessage(`接管 ${a.callsign === '前操作员' ? '隊友' : a.callsign}`, 90);
+          playSfx('countdown', { freq: 1320, vol: 0.45 });
+        } else {
+          player._respawnAt = game.time + RESPAWN_TICKS;
+        }
       }
       for (const a of allies) {
         if (!a.alive && a._respawnAt == null) a._respawnAt = game.time + RESPAWN_TICKS;
@@ -5100,6 +5147,7 @@ function kamikazeExplode(d) {
       if (player.hp <= 0) {
         player.hp = 0;
         player.alive = false;
+        player._lastDeathX = player.x; player._lastDeathY = player.y;
         createExplosion(player.x, player.y, 'big');
         // Player death — onMissionFailed handles retry/campaign-end
       }
@@ -5475,6 +5523,7 @@ function updateBullets() {
         if (player.hp <= 0) {
           player.hp = 0;
           player.alive = false;
+          player._lastDeathX = player.x; player._lastDeathY = player.y;
           createExplosion(player.x, player.y, 'big');
           playSfx('death');
         }
@@ -7127,14 +7176,37 @@ function renderHUD() {
   const remaining = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
   ctx.fillStyle = remaining > 0 ? COLORS.red : COLORS.gray;
   ctx.fillText(`敌方 ${remaining}`, 26, 70);
-  // Squad — in NN mode the player can press 2/3/4 to take over a slot
+  // Squad — in NN mode each chip is clickable to swap operator into that slot
   const sqAlive = allies.filter(a=>a.alive).length;
   ctx.fillStyle = sqAlive > 0 ? COLORS.black : COLORS.gray;
   if (game._nnMode) {
-    let line = `[1·你] `;
-    line += allies.map((a, i) => `[${i+2}·${a.callsign[0]}` + (a.alive ? `${a.hp}` : '✕') + ']').join(' ');
-    ctx.fillText(line, 26, 86);
+    game._squadChipRects = [];
+    const chipY = 76, chipH = 14;
+    let cursorX = 26;
+    // Self chip — non-clickable, just shows you're "1"
+    const selfTxt = `[1·你${player.alive ? '' : '✕'}]`;
+    ctx.fillText(selfTxt, cursorX, 86);
+    cursorX += ctx.measureText(selfTxt).width + 4;
+    // Ally chips — record rects + draw
+    ctx.font = 'bold 10px sans-serif';
+    for (let i = 0; i < allies.length; i++) {
+      const a = allies[i];
+      const text = `[${i+2}·${a.callsign[0]}${a.alive ? a.hp : '✕'}]`;
+      const w = ctx.measureText(text).width + 6;
+      // background highlight on hover-eligible (alive) chips
+      if (a.alive) {
+        ctx.fillStyle = 'rgba(200, 38, 28, 0.12)';
+        ctx.fillRect(cursorX - 2, chipY, w, chipH);
+        ctx.fillStyle = COLORS.black;
+      } else {
+        ctx.fillStyle = COLORS.gray;
+      }
+      ctx.fillText(text, cursorX, 86);
+      game._squadChipRects.push({ x: cursorX - 2, y: chipY, w, h: chipH, allyIdx: i, alive: a.alive });
+      cursorX += w + 2;
+    }
   } else {
+    game._squadChipRects = null;
     const sqList = allies.map(a => a.alive ? a.callsign[0] + a.hp : a.callsign[0] + '✕').join(' ');
     ctx.fillText(`小组 ${sqAlive}/${allies.length}  ${sqList}`, 26, 86);
   }
