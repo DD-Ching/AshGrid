@@ -1620,16 +1620,64 @@ function visionRangeMul(u) {
 //   - HighGround shooter sees OVER lowCovers (only buildings break LoS).
 //   - Target inside a trench is hidden from observers >200u away unless the
 //     observer is on high ground or also in the same trench.
-function symVisibleAB(ax, ay, bx, by, observer, target) {
-  const dist = Math.hypot(bx - ax, by - ay);
-  const obsHigh = observer && unitOnHighGround(observer);
-  const tgtTrench = target && unitInTrench(target);
-  if (tgtTrench && !obsHigh) {
-    const obsTrench = observer && unitInTrench(observer);
-    if (obsTrench !== tgtTrench && dist > 200) return false;
+// Liang–Barsky-style segment-vs-AABB test. Returns true if the segment
+// (x1,y1)→(x2,y2) intersects rect r ({x,y,w,h}).
+function segmentIntersectsRect(x1, y1, x2, y2, r) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const minX = r.x, maxX = r.x + r.w;
+  const minY = r.y, maxY = r.y + r.h;
+  let tmin = 0, tmax = 1;
+  const tests = [
+    [-dx, x1 - minX],
+    [ dx, maxX - x1],
+    [-dy, y1 - minY],
+    [ dy, maxY - y1],
+  ];
+  for (const [p, q] of tests) {
+    if (p === 0) {
+      if (q < 0) return false;     // parallel + outside
+    } else {
+      const t = q / p;
+      if (p < 0) { if (t > tmax) return false; if (t > tmin) tmin = t; }
+      else       { if (t < tmin) return false; if (t < tmax) tmax = t; }
+    }
   }
-  // LoS: walls always block; lowCovers block UNLESS observer is on high ground
-  return _losCustom(ax, ay, bx, by, !!obsHigh);
+  return true;
+}
+
+// Strict contour-line LoS:
+//   trench  → -1 elevation (below ground)
+//   ground  →  0
+//   hill    → +1 (on high ground)
+// Pair rules:
+//   - same trench:                     OK
+//   - different trench OR trench↔any:  BLOCKED  (trench rim blocks both ways)
+//   - ground↔ground:                   OK
+//   - ground↔hill:                     OK (hill exposed to ground both ways)
+//   - hill↔hill:                       OK
+//   - line crosses a hill that NEITHER end is on: BLOCKED (hill body blocks)
+// Walls always block; lowCovers block unless an end is on high ground.
+function symVisibleAB(ax, ay, bx, by, observer, target) {
+  const obsTrench = observer ? unitInTrench(observer) : null;
+  const tgtTrench = target   ? unitInTrench(target)   : null;
+  const obsHigh   = observer ? unitOnHighGround(observer) : null;
+  const tgtHigh   = target   ? unitOnHighGround(target)   : null;
+
+  // Trench rim rule: any line touching a trench end is blocked unless BOTH
+  // ends are in the SAME trench segment.
+  if (obsTrench || tgtTrench) {
+    if (obsTrench !== tgtTrench) return false;
+    // Same trench → fall through to wall check
+  }
+
+  // Hill-body rule: line passes through a hill that neither end is on
+  for (const h of highGrounds) {
+    if (obsHigh === h || tgtHigh === h) continue;
+    if (segmentIntersectsRect(ax, ay, bx, by, h)) return false;
+  }
+
+  // Wall + lowCover step-march. lowCovers ignored if either end is elevated.
+  return _losCustom(ax, ay, bx, by, !!(obsHigh || tgtHigh));
 }
 function _losCustom(x1, y1, x2, y2, ignoreLowCovers) {
   const dx = x2 - x1, dy = y2 - y1;
@@ -1645,6 +1693,25 @@ function _losCustom(x1, y1, x2, y2, ignoreLowCovers) {
         if (px > lc.x && px < lc.x + lc.w && py > lc.y && py < lc.y + lc.h) return false;
       }
     }
+  }
+  return true;
+}
+
+// Same elevation rules, but for BULLETS — use the bullet's tagged source
+// elevation (set at fire time). Returns true if damage CAN be applied.
+function bulletDamageOK(bullet, target) {
+  const sTrench = bullet._sourceTrench || null;
+  const sHigh   = bullet._sourceHigh   || null;
+  const tTrench = target ? unitInTrench(target) : null;
+  const tHigh   = target ? unitOnHighGround(target) : null;
+  // Trench rim blocks bullets in/out unless same trench
+  if (sTrench || tTrench) {
+    if (sTrench !== tTrench) return false;
+  }
+  // Hill body blocks lines crossing a hill that neither end is on
+  for (const h of highGrounds) {
+    if (sHigh === h || tHigh === h) continue;
+    if (segmentIntersectsRect(bullet.x, bullet.y, target.x, target.y, h)) return false;
   }
   return true;
 }
@@ -2855,6 +2922,8 @@ function nnApplyAction(unit, action, friendlies, enemies) {
           life: w.bulletLife,
           damage: w.damage,
           fromAlly: isAlly,
+          _sourceTrench: unitInTrench(unit),
+          _sourceHigh:   unitOnHighGround(unit),
         });
       }
       muzzleFlashes.push({ x: unit.x + Math.cos(aim)*22, y: unit.y + Math.sin(aim)*22, angle: aim, life: 5 });
@@ -4593,18 +4662,21 @@ function angleInCone(srcAngle, arc, ox, oy, tx, ty) {
 // Used to CULL enemy/drone/enemy-bullet rendering: outside any friendly cone,
 // the player has no perceptual evidence of where enemies are.
 function isVisibleToFriendly(x, y) {
+  // Synthetic target so symVisibleAB can apply elevation rules using the
+  // (x, y) point's terrain state.
+  const tgt = { x, y };
   if (player.alive) {
     const dx = x - player.x, dy = y - player.y;
     if (dx*dx + dy*dy < VIEW.range * VIEW.range
         && angleInCone(player.angle, VIEW.arc, player.x, player.y, x, y)
-        && lineOfSight(player.x, player.y, x, y)) return true;
+        && symVisibleAB(player.x, player.y, x, y, player, tgt)) return true;
   }
   for (const a of allies) {
     if (!a.alive) continue;
     const dx = x - a.x, dy = y - a.y;
     if (dx*dx + dy*dy < VIEW.range * VIEW.range
         && angleInCone(a.angle, VIEW.arc, a.x, a.y, x, y)
-        && lineOfSight(a.x, a.y, x, y)) return true;
+        && symVisibleAB(a.x, a.y, x, y, a, tgt)) return true;
   }
   return false;
 }
@@ -5220,6 +5292,8 @@ function fire() {
       vx: Math.cos(barrel)*w.bulletSpeed, vy: Math.sin(barrel)*w.bulletSpeed,
       life: w.bulletLife, damage: w.damage,
       fromAlly: false,
+      _sourceTrench: unitInTrench(player),
+      _sourceHigh:   unitOnHighGround(player),
     });
   }
   // One muzzle flash per shot (not per pellet) — spread looks like a cloud
@@ -5239,14 +5313,11 @@ function updateBullets() {
     if (!hit) for (const e of enemies) {
       if (!e.alive) continue;
       if (Math.hypot(b.x-e.x, b.y-e.y) < e.radius) {
-        // Spawn invuln: still consume the bullet so it doesn't pass through,
-        // but don't apply damage. Visually the bullet vanishes on impact.
         if (e._invulnUntil != null && game.time < e._invulnUntil) { hit = true; break; }
-        // Trench cover: target in trench takes 50% damage if shooter isn't
-        // also in trench / on high ground (heads-down concealment).
-        let dmg = b.damage;
-        if (unitInTrench(e) && !unitOnHighGround(player) && !unitInTrench(player)) dmg *= 0.5;
-        e.hp -= dmg;
+        // Strict elevation: trench rim blocks bullets from non-same-trench
+        // shooters; hills block lines through their body.
+        if (!bulletDamageOK(b, e)) { hit = true; break; }
+        e.hp -= b.damage;
         e.recentDamage = 60;     // marks "I'm under fire" for FSM low-HP flee branch
         e.alerted = Math.max(e.alerted || 0, 240);
         e.alertX = b.x - b.vx*4; // alert toward where the shot came from
@@ -5282,12 +5353,10 @@ function updateBullets() {
       hit = true;
       if (player._invulnUntil != null && game.time < player._invulnUntil) {
         // (consume bullet silently)
+      } else if (!bulletDamageOK(b, player)) {
+        // Elevation blocks the hit (trench rim or hill body)
       } else {
-        // Trench cover: 50% damage if you're in trench and bullet's source
-        // wasn't an elevated/in-trench shooter. Bullet doesn't carry shooter
-        // info here, so we approximate by checking the player's own state.
         let dmg = b.damage;
-        if (unitInTrench(player)) dmg *= 0.5;
         player.hp -= dmg;
         game.hitFlash = 12;
         playSfx('hit');
@@ -5314,9 +5383,8 @@ function updateBullets() {
       if (!a.alive) continue;
       if (Math.hypot(b.x - a.x, b.y - a.y) < a.radius) {
         if (a._invulnUntil != null && game.time < a._invulnUntil) { hit = true; break; }
-        let dmg = b.damage;
-        if (unitInTrench(a)) dmg *= 0.5;
-        a.hp -= dmg;
+        if (!bulletDamageOK(b, a)) { hit = true; break; }
+        a.hp -= b.damage;
         if (a.hp <= 0) {
           a.alive = false;
           createExplosion(a.x, a.y, 'small');
