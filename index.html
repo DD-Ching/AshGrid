@@ -825,52 +825,87 @@ function swapPlayerToAlly(idx) {
   if (idx < 0 || idx >= allies.length) return;
   const a = allies[idx];
   if (!a || !a.alive) return;
-  // Snapshot player's body so we can hand it to NN intact
-  const oldBodyAtPlayerSpot = {
-    callsign: '前操作员',
-    offsetX: a.offsetX, offsetY: a.offsetY,
-    x: player.x, y: player.y,
-    angle: player.angle, gunAngle: player.gunAngle, gunRecoil: player.gunRecoil,
-    swayPhase: Math.random() * Math.PI * 2,
-    walkPhase: player.walkPhase || 0,
-    hp: player.hp, maxHp: player.maxHp,
-    alive: true, radius: 13,
-    speed: 2.5, fireCd: 0,
-    weaponId: 'M4',
-    _weapon: playerWeapon,
-    _nnDifficulty: a._nnDifficulty || NN.difficulty || 'evolved',
-    target: null, lookPhase: 0,
-    team: 0,
-    _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
-    _respawnAt: null,
-    _invulnUntil: game.time + 60,
-  };
-  // Snapshot ally body before we trash a
-  const targetCallsign = a.callsign;
-  const targetWeapon = a._weapon || WEAPONS.RIFLE;
-  const targetX = a.x, targetY = a.y;
-  const targetAngle = a.angle, targetGun = a.gunAngle || a.angle;
+
+  // Snapshot ally body before we overwrite the slot
+  const targetCallsign  = a.callsign;
+  const targetWeapon    = a._weapon || WEAPONS.RIFLE;
+  const targetX         = a.x, targetY = a.y;
+  const targetAngle     = a.angle;
+  const targetGun       = a.gunAngle || a.angle;
   const targetGunRecoil = a.gunRecoil || 0;
-  const targetHp = a.hp, targetMaxHp = a.maxHp;
-  // Replace the ally slot with the OLD player body (now NN-driven)
-  allies[idx] = oldBodyAtPlayerSpot;
-  // Move operator into target body
+  const targetHp        = a.hp, targetMaxHp = a.maxHp;
+
+  // What to put in the ally slot we just left behind:
+  //   - If the operator was ALIVE, hand the live body to NN intact (full hp,
+  //     same weapon, NN takes over driving it).
+  //   - If the operator was MID-RESPAWN-COUNTDOWN, the old body already
+  //     exploded; the slot becomes a dead corpse at the death spot that
+  //     respawns under NN control after the standard timer.
+  if (player.alive) {
+    allies[idx] = {
+      callsign: '前操作员',
+      offsetX: a.offsetX, offsetY: a.offsetY,
+      x: player.x, y: player.y,
+      angle: player.angle, gunAngle: player.gunAngle, gunRecoil: player.gunRecoil,
+      swayPhase: Math.random() * Math.PI * 2,
+      walkPhase: player.walkPhase || 0,
+      hp: player.hp, maxHp: player.maxHp,
+      alive: true, radius: 13,
+      speed: 2.5, fireCd: 0,
+      weaponId: 'M4',
+      _weapon: playerWeapon,
+      _nnDifficulty: a._nnDifficulty || NN.difficulty || 'evolved',
+      target: null, lookPhase: 0,
+      team: 0,
+      _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+      _respawnAt: null,
+      _invulnUntil: game.time + 60,
+    };
+  } else {
+    // Dead body — already an "explosion" was drawn. Slot becomes corpse +
+    // pending respawn so the slot doesn't permanently disappear.
+    const corpseX = player._lastDeathX != null ? player._lastDeathX : player.x;
+    const corpseY = player._lastDeathY != null ? player._lastDeathY : player.y;
+    allies[idx] = {
+      callsign: '前操作员',
+      offsetX: a.offsetX, offsetY: a.offsetY,
+      x: corpseX, y: corpseY,
+      angle: 0, gunAngle: 0, gunRecoil: 0,
+      swayPhase: Math.random() * Math.PI * 2, walkPhase: 0,
+      hp: 0, maxHp: 100,
+      alive: false, radius: 13,
+      speed: 2.5, fireCd: 0,
+      weaponId: 'M4',
+      _weapon: playerWeapon,
+      _nnDifficulty: a._nnDifficulty || NN.difficulty || 'evolved',
+      target: null, lookPhase: 0,
+      team: 0,
+      _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+      _respawnAt: game.time + 5 * 60,   // RESPAWN_TICKS — same constant inline
+      _invulnUntil: 0,
+    };
+  }
+
+  // Move operator into target body — and ALWAYS clear any pending respawn.
+  // This is the rule: a successful takeover cancels the respawn countdown.
+  const wasResurrected = !player.alive;
+  player.alive = true;
+  player._respawnAt = null;
+  player._lastBeepSec = -1;
   player.x = targetX; player.y = targetY;
   player.angle = targetAngle;
   player.gunAngle = targetGun;
-  player.gunRecoil = targetGunRecoil * 0.4;   // soften incoming recoil
+  player.gunRecoil = targetGunRecoil * 0.4;
   player.hp = targetHp; player.maxHp = targetMaxHp;
   player._invulnUntil = game.time + 60;
   player._lastX = targetX; player._lastY = targetY;
   player._velX = 0; player._velY = 0;
-  // Drop any held trigger so we don't autofire on the swap frame
+  player._lastDeathX = null; player._lastDeathY = null;
   mouse.down = false;
-  // Swap weapon — applyWeaponToPlayer also resets ammo (taking over a
-  // soldier hands you a fresh mag, treated as a tactical pickup).
   applyWeaponToPlayer(targetWeapon);
-  // Operator carries personal stash through the swap
-  player.hp = targetHp;   // applyWeaponToPlayer doesn't touch HP, but be explicit
-  showMessage(`接管 ${targetCallsign}`, 120);
+  player.hp = targetHp;   // applyWeaponToPlayer doesn't touch HP — be explicit
+
+  showMessage(`${wasResurrected ? '紧急接管' : '接管'} ${targetCallsign}`, 120);
   playSfx('countdown', { freq: 1320, vol: 0.45 });
 }
 
