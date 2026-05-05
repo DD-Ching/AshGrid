@@ -2600,23 +2600,22 @@ function buildNNArenaVariant(idx) {
       addBuilding(x, y, w.w, w.h, w.color || COLORS.gray, { accent: !!w.accent });
     }
   }
-  // Tactical terrain (制高点 / 壕沟). Some variants (e.g. random) define these
-  // as factories so they can roll fresh terrain per match.
-  const hgs = typeof v.highGrounds === 'function' ? v.highGrounds() : (v.highGrounds || []);
-  const trs = typeof v.trenches    === 'function' ? v.trenches()    : (v.trenches    || []);
-  for (const h of hgs) {
-    addHighGround(NN_ARENA.x0 + h.x, NN_ARENA.y0 + h.y, h.w, h.h, { label: h.label });
-  }
-  for (const t of trs) {
-    if (t.points) {
-      // Polyline form — translate every vertex by the arena offset
-      const points = t.points.map(p => ({ x: NN_ARENA.x0 + p.x, y: NN_ARENA.y0 + p.y }));
-      addTrench({ points, thickness: t.thickness || 50, label: t.label });
-    } else {
-      // Legacy rect form (numeric args)
-      addTrench(NN_ARENA.x0 + t.x, NN_ARENA.y0 + t.y, t.w, t.h, { label: t.label });
-    }
-  }
+  // Tactical terrain (制高点 / 壕沟) — TEMPORARILY DISABLED.
+  // Variant data still defines highGrounds/trenches but we skip applying
+  // them to the live arrays. Render loops + elevation rules become no-ops
+  // automatically (empty arrays). Re-enable by un-commenting below.
+  //
+  // const hgs = typeof v.highGrounds === 'function' ? v.highGrounds() : (v.highGrounds || []);
+  // const trs = typeof v.trenches    === 'function' ? v.trenches()    : (v.trenches    || []);
+  // for (const h of hgs) addHighGround(NN_ARENA.x0 + h.x, NN_ARENA.y0 + h.y, h.w, h.h, { label: h.label });
+  // for (const t of trs) {
+  //   if (t.points) {
+  //     const points = t.points.map(p => ({ x: NN_ARENA.x0 + p.x, y: NN_ARENA.y0 + p.y }));
+  //     addTrench({ points, thickness: t.thickness || 50, label: t.label });
+  //   } else {
+  //     addTrench(NN_ARENA.x0 + t.x, NN_ARENA.y0 + t.y, t.w, t.h, { label: t.label });
+  //   }
+  // }
   buildCoverPoints();
   game._nnVariantId = v.id;
   return v;
