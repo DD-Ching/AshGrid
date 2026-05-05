@@ -5061,10 +5061,10 @@ function update() {
   if (game.state !== 'playing') return;
   game.time++;
 
-  // Per-unit velocity tracking — needed so NN auto-aim can lead a strafing
-  // target. Without this, NN bullets always aim at where you ARE, not where
-  // you'll BE when the bullet arrives → circling the enemy = invincible.
-  // Save current position; the diff vs last frame becomes _velX/_velY.
+  // Per-unit velocity tracking — used for lead aim. Per-frame deltas are
+  // noisy (jitter from collision pushes, brief stops), so we also keep an
+  // exponentially-smoothed copy that the aim-assist reads instead. Halves
+  // the reticle dance when the enemy briefly changes direction.
   const _trackVel = (u) => {
     if (u._lastX != null) {
       u._velX = u.x - u._lastX;
@@ -5072,6 +5072,9 @@ function update() {
     } else {
       u._velX = 0; u._velY = 0;
     }
+    if (u._smoothVelX == null) { u._smoothVelX = u._velX; u._smoothVelY = u._velY; }
+    u._smoothVelX += (u._velX - u._smoothVelX) * 0.15;
+    u._smoothVelY += (u._velY - u._smoothVelY) * 0.15;
     u._lastX = u.x; u._lastY = u.y;
   };
   _trackVel(player);
@@ -5213,17 +5216,22 @@ function updatePlayer() {
       if (d < bestD) { bestD = d; bestE = e; }
     }
     if (bestE) {
-      // Target leading: where will bestE be when our bullet arrives?
+      // Target leading uses SMOOTHED velocity (raw _velX/_velY jitters every
+      // time the enemy gets pushed by physics). The bullet still aims ahead
+      // of the enemy — the reticle, however, sticks to the enemy itself
+      // (below) so the player sees "I'm locked on him", not a confusing
+      // floater in space.
       const flightTime = bestD / (playerWeapon.bulletSpeed || 14);
-      const leadX = bestE.x + (bestE._velX || 0) * flightTime;
-      const leadY = bestE.y + (bestE._velY || 0) * flightTime;
+      const leadX = bestE.x + (bestE._smoothVelX || 0) * flightTime;
+      const leadY = bestE.y + (bestE._smoothVelY || 0) * flightTime;
       const tA = Math.atan2(leadY - player.y, leadX - player.x);
-      // Hard snap: look direction AND gun barrel both go to the lead angle.
-      // Recoil softened so the first shot post-lock isn't kicked off-target.
       player.angle = tA;
       player.gunAngle = tA;
       player.gunRecoil *= 0.4;
-      player._aimAssistLockedAt = { x: leadX, y: leadY };
+      // Reticle position is the ENEMY (visual "lock on him"), not the lead
+      // offset (which would visually float in front of the enemy). Bullets
+      // still go to lead via gunAngle above.
+      player._aimAssistLockedAt = { x: bestE.x, y: bestE.y };
       // Feedback: visual + audio tick on first frame of a new lock (= target
       // identity changed). Don't fire it every frame the same enemy stays
       // locked — only when we acquire a fresh one.
