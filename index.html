@@ -176,8 +176,12 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 /* NN Skirmish lobby */
 .nn-lobby {
   background: rgba(20, 18, 24, 0.92);
-  display: flex; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center;
+  overflow-y: auto; padding: 24px;
+  /* margin:auto on the card vertical-centers when there's spare room and
+     falls back to top-align when content overflows the viewport. */
 }
+.nn-lobby .lobby-card { margin: auto 0; }
 .lobby-card {
   background: var(--cream);
   padding: 36px 56px 28px;
@@ -1194,6 +1198,18 @@ window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   keys[k] = true;
   if (e.key === 'Tab') e.preventDefault();
+  // P: pause toggle. Works whether or not the game is currently paused.
+  if (k === 'p' && game.state === 'playing') { togglePause(); return; }
+  // While paused, swallow all gameplay hotkeys except P/Esc
+  if (game._paused) {
+    if (e.key === 'Escape') {
+      game._paused = false;
+      game.state = 'menu';
+      game._skirmish = false;
+      document.getElementById('start').classList.remove('hidden');
+    }
+    return;
+  }
   if (game.state === 'playing') {
     if (k === 'q') toggleDrone();
     else if (k === 'e') launchFPV();
@@ -1232,13 +1248,26 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+function _hitRect(r, x, y) {
+  return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+}
 window.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
-  // Click on the minimap collapse/expand toggle? Swallow the click so we
-  // don't also fire a weapon.
-  const tg = game._minimapToggleRect;
-  if (tg && e.clientX >= tg.x && e.clientX <= tg.x + tg.w
-        && e.clientY >= tg.y && e.clientY <= tg.y + tg.h) {
+  // While paused: click anywhere inside the resume bar resumes; clicks
+  // outside it are swallowed so they don't fire weapons.
+  if (game._paused) {
+    if (_hitRect(game._pauseResumeRect, e.clientX, e.clientY)) togglePause();
+    e.preventDefault();
+    return;
+  }
+  // Pause button (top-left)
+  if (_hitRect(game._pauseBtnRect, e.clientX, e.clientY)) {
+    togglePause();
+    e.preventDefault();
+    return;
+  }
+  // Minimap collapse/expand toggle — swallow so we don't also fire
+  if (_hitRect(game._minimapToggleRect, e.clientX, e.clientY)) {
     game._minimapCollapsed = !game._minimapCollapsed;
     try { localStorage.setItem('ag.minimapCollapsed', game._minimapCollapsed ? '1' : '0'); }
     catch (err) {}
@@ -1296,6 +1325,8 @@ document.querySelectorAll('#nnLobby .diff-btn').forEach(btn => {
     _lobby.difficulty = btn.dataset.diff;
     document.querySelectorAll('#nnLobby .diff-btn').forEach(b =>
       b.classList.toggle('active', b === btn));
+    // Reflect new global in any open lineup slots (defaults follow global pick)
+    if (_lobby.lineupOpen) rebuildLineupUI();
   };
 });
 document.querySelectorAll('#nnLobby .weap-btn').forEach(btn => {
@@ -6961,6 +6992,17 @@ function renderHUD() {
 
   // Top-left: compact status panel
   drawHUDPanel(16, 16, 220, 100, null);
+  // Pause button (top-right of the status panel) — clickable + matches the
+  // canvas-drawn minimap toggle pattern. Stored rect is hit-tested in mousedown.
+  const _pbX = 16 + 220 - 24, _pbY = 22, _pbW = 18, _pbH = 18;
+  ctx.fillStyle = 'rgba(200, 38, 28, 0.85)';
+  ctx.fillRect(_pbX, _pbY, _pbW, _pbH);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('II', _pbX + _pbW / 2, _pbY + 13);
+  ctx.textAlign = 'left';
+  game._pauseBtnRect = { x: _pbX, y: _pbY, w: _pbW, h: _pbH };
   ctx.fillStyle = COLORS.red;
   ctx.font = 'bold 12px sans-serif';
   ctx.fillText(`关卡 ${game.wave}/${MISSIONS.length}  ${currentMap ? currentMap.name : ''}`, 26, 36);
@@ -7552,11 +7594,104 @@ function renderCommandOverlay() {
   ctx.fillText('TAB · 返回战术视角', 32, H()/2 + 44);
 }
 
+// ============ PAUSE ============
+function togglePause() {
+  if (game.state !== 'playing') return;
+  game._paused = !game._paused;
+  // Drop any held mouse so we don't keep firing on resume
+  if (game._paused) mouse.down = false;
+}
+function drawPauseOverlay() {
+  // Dim backdrop
+  ctx.fillStyle = 'rgba(20, 18, 24, 0.78)';
+  ctx.fillRect(0, 0, W(), H());
+  // Card
+  const cw = 520, ch = 480;
+  const cx = W() / 2, cy = H() / 2;
+  const x = cx - cw / 2, y = cy - ch / 2;
+  ctx.fillStyle = COLORS.cream;
+  ctx.fillRect(x, y, cw, ch);
+  ctx.strokeStyle = COLORS.red;
+  ctx.lineWidth = 4;
+  ctx.strokeRect(x, y, cw, ch);
+  // Red corner tab
+  ctx.fillStyle = COLORS.black;
+  ctx.fillRect(x + cw - 80, y - 4, 80, 8);
+  // Title
+  ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText('单 元 0451 · 暂 停 / PAUSED', x + 24, y + 26);
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 36px sans-serif';
+  ctx.fillText('暂停', x + 24, y + 70);
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillStyle = COLORS.gray;
+  ctx.fillText('快捷键 / KEY MAP', x + 24, y + 92);
+  // Two-column shortcut list
+  const cats = [
+    ['移动 MOVE', [
+      ['WASD',  '移动 / 飞行'],
+      ['Shift', '冲刺 SPRINT'],
+      ['鼠标',  '瞄准'],
+      ['左键',  '射击'],
+      ['V',     '自动瞄准 AIM-ASSIST'],
+    ]],
+    ['装备 GEAR', [
+      ['R',     '装填弹药'],
+      ['G',     '投掷手雷'],
+      ['Q',     'UAV 无人机'],
+      ['E',     'FPV 自杀无人机'],
+    ]],
+    ['视角 VIEW', [
+      ['F',     '雷达 RADAR'],
+      ['T',     '热成像 THERMAL'],
+      ['Tab',   '战术指挥'],
+    ]],
+    ['系统 SYSTEM', [
+      ['P',     '暂停 / 继续'],
+      ['Esc',   '返回主菜单'],
+    ]],
+  ];
+  let colX = x + 24, colY = y + 116;
+  const COL_W = (cw - 48) / 2;
+  for (let ci = 0; ci < cats.length; ci++) {
+    const [title, items] = cats[ci];
+    const isRight = ci % 2 === 1;
+    const cxx = isRight ? x + 24 + COL_W : x + 24;
+    let cyy = colY + Math.floor(ci / 2) * 168;
+    ctx.fillStyle = COLORS.red;
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText(title, cxx, cyy);
+    ctx.font = '12px sans-serif';
+    cyy += 14;
+    for (const [k, label] of items) {
+      ctx.fillStyle = COLORS.black;
+      ctx.font = 'bold 12px monospace';
+      ctx.fillText(k, cxx, cyy + 12);
+      ctx.fillStyle = COLORS.gray;
+      ctx.font = '11px sans-serif';
+      ctx.fillText(label, cxx + 56, cyy + 12);
+      cyy += 18;
+    }
+  }
+  // Resume hint at bottom
+  const resumeY = y + ch - 38;
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(x + 24, resumeY, cw - 48, 28);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('按 P 或点击此处继续 · PRESS P TO RESUME', cx, resumeY + 18);
+  ctx.textAlign = 'left';
+  game._pauseResumeRect = { x: x + 24, y: resumeY, w: cw - 48, h: 28 };
+}
+
 // ============ MAIN LOOP ============
 function loop() {
-  update();
+  if (!game._paused) update();
   updateCamera();
   render();
+  if (game._paused) drawPauseOverlay();
   requestAnimationFrame(loop);
 }
 loop();
