@@ -2490,6 +2490,121 @@ const NN_MAP_VARIANTS = [
       ...zigzagTrench(680, 770, 240, 40, 4, 22, '南推进沟'),
     ],
   },
+  // ========= Indoor variants (richer interior layouts) =========
+  { id: 'office', name: '办公大楼 OFFICE',
+    walls: () => {
+      // 4-room building (2x2 grid). Each room ~360u sq with doorway gaps in
+      // outer walls and the central cross. Crates inside each room.
+      const out = [];
+      const T = 30, D = 80;
+      const x1 = 200, x2 = 1000, y1 = 200, y2 = 1000;
+      const xc = 600, yc = 600;
+      // Outer walls — doorway in middle of each side
+      out.push({ x: x1, y: y1, w: (xc - D/2) - x1, h: T, kind: 'building' });
+      out.push({ x: xc + D/2, y: y1, w: x2 - (xc + D/2), h: T, kind: 'building' });
+      out.push({ x: x1, y: y2 - T, w: (xc - D/2) - x1, h: T, kind: 'building' });
+      out.push({ x: xc + D/2, y: y2 - T, w: x2 - (xc + D/2), h: T, kind: 'building' });
+      out.push({ x: x1, y: y1, w: T, h: (yc - D/2) - y1, kind: 'building' });
+      out.push({ x: x1, y: yc + D/2, w: T, h: y2 - (yc + D/2), kind: 'building' });
+      out.push({ x: x2 - T, y: y1, w: T, h: (yc - D/2) - y1, kind: 'building' });
+      out.push({ x: x2 - T, y: yc + D/2, w: T, h: y2 - (yc + D/2), kind: 'building' });
+      // Internal cross — vertical at xc
+      out.push({ x: xc, y: y1, w: T, h: (yc - D/2) - y1, kind: 'building' });
+      out.push({ x: xc, y: yc + D/2, w: T, h: y2 - (yc + D/2), kind: 'building' });
+      // horizontal at yc
+      out.push({ x: x1, y: yc, w: (xc - D/2) - x1, h: T, kind: 'building' });
+      out.push({ x: xc + D/2, y: yc, w: x2 - (xc + D/2), h: T, kind: 'building' });
+      // Crates in each room corner
+      out.push({ x: 320, y: 320, w: 60, h: 60, kind: 'cover' });
+      out.push({ x: 820, y: 320, w: 60, h: 60, kind: 'cover' });
+      out.push({ x: 320, y: 820, w: 60, h: 60, kind: 'cover' });
+      out.push({ x: 820, y: 820, w: 60, h: 60, kind: 'cover' });
+      return out;
+    },
+    highGrounds: [{ x: 540, y: 540, w: 120, h: 120, label: '大堂' }],
+  },
+  { id: 'parking', name: '停车场 PARKING',
+    walls: () => {
+      // 5x5 grid of support columns + central elevator shaft + low
+      // car-blocks. Vision is heavily occluded — close-quarter chaos.
+      const out = [];
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          out.push({ x: 200 + c * 200, y: 200 + r * 200, w: 50, h: 50, kind: 'building' });
+        }
+      }
+      // Elevator shaft (central larger building)
+      out.push({ x: 540, y: 540, w: 120, h: 120, kind: 'building', accent: true });
+      // Parked cars (cover) in lanes between columns
+      out.push({ x: 280, y: 350, w: 110, h: 50, kind: 'cover' });
+      out.push({ x: 680, y: 350, w: 110, h: 50, kind: 'cover' });
+      out.push({ x: 280, y: 750, w: 110, h: 50, kind: 'cover' });
+      out.push({ x: 680, y: 750, w: 110, h: 50, kind: 'cover' });
+      return out;
+    },
+    trenches: [
+      { x: 80, y: 80, w: 110, h: 50, label: '坡道入口' },
+    ],
+  },
+  { id: 'school', name: '空学校 SCHOOL',
+    walls: () => {
+      // Central east-west corridor at y=540..680 (140u wide).
+      // 4 classrooms above, 4 below — each ~250 wide × 340 tall.
+      const out = [];
+      const T = 30, D = 80;
+      // Corridor walls (top + bottom edges of corridor) with 4 doorways each
+      const doors = [280, 510, 740, 970];
+      let prev = 200;
+      for (const d of doors) {
+        out.push({ x: prev, y: 540, w: d - prev, h: T, kind: 'building' });
+        out.push({ x: prev, y: 660, w: d - prev, h: T, kind: 'building' });
+        prev = d + D;
+      }
+      out.push({ x: prev, y: 540, w: 1000 - prev, h: T, kind: 'building' });
+      out.push({ x: prev, y: 660, w: 1000 - prev, h: T, kind: 'building' });
+      // Vertical dividers between classrooms (top + bottom rows)
+      for (const x of [380, 620, 860]) {
+        out.push({ x, y: 200, w: T, h: 340, kind: 'building' });
+        out.push({ x, y: 690, w: T, h: 340, kind: 'building' });
+      }
+      // Outer walls (top, bottom, left, right)
+      out.push({ x: 200, y: 200, w: 800, h: T, kind: 'building' });
+      out.push({ x: 200, y: 1000, w: 800, h: T, kind: 'building' });
+      out.push({ x: 200, y: 200, w: T, h: 800, kind: 'building' });
+      out.push({ x: 1000 - T, y: 200, w: T, h: 800, kind: 'building' });
+      // Desks (cover) in each classroom — 1-2 per room
+      for (const x of [270, 510, 750]) {
+        out.push({ x, y: 360, w: 50, h: 70, kind: 'cover' });
+        out.push({ x, y: 800, w: 50, h: 70, kind: 'cover' });
+      }
+      out.push({ x: 880, y: 360, w: 50, h: 70, kind: 'cover' });
+      out.push({ x: 880, y: 800, w: 50, h: 70, kind: 'cover' });
+      return out;
+    },
+  },
+  { id: 'basement', name: '地下室 BASEMENT',
+    walls: () => [
+      // Outer rectangle
+      { x: 200, y: 300, w: 800, h: 30, kind: 'building' },
+      { x: 200, y: 870, w: 800, h: 30, kind: 'building' },
+      { x: 200, y: 300, w: 30, h: 600, kind: 'building' },
+      { x: 970, y: 300, w: 30, h: 600, kind: 'building' },
+      // Z-shaped internal partition walls
+      { x: 380, y: 300, w: 30, h: 380, kind: 'building' },
+      { x: 600, y: 530, w: 30, h: 370, kind: 'building' },
+      { x: 800, y: 300, w: 30, h: 380, kind: 'building' },
+      // Cover crates scattered through the maze
+      { x: 280, y: 750, w: 60, h: 60, kind: 'cover' },
+      { x: 480, y: 400, w: 60, h: 60, kind: 'cover' },
+      { x: 680, y: 750, w: 60, h: 60, kind: 'cover' },
+      { x: 880, y: 400, w: 60, h: 60, kind: 'cover' },
+      { x: 480, y: 770, w: 60, h: 60, kind: 'cover' },
+    ],
+    trenches: [
+      { x: 100, y: 580, w: 110, h: 50, label: '通风口西' },
+      { x: 990, y: 580, w: 110, h: 50, label: '通风口东' },
+    ],
+  },
 ];
 
 // Apply one of the variants to the current arena (after generateWorld). Pass
