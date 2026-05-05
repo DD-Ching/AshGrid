@@ -835,9 +835,18 @@ function applyRecoil(s, w) {
 // Vision system
 const VIEW = {
   range: 960,         // player vision distance (bumped from 720 — wider battlefield read)
-  arc: Math.PI * 0.78,// 140° fan — matches NN.VIEW_ARC so both teams play
-                       // by the same angular awareness rule
+  arc: Math.PI * 0.78,// 140° base fan — matches NN.VIEW_ARC for symmetry
+  arcClose: Math.PI * 0.944, // 170° peripheral awareness when target is point-blank
+  arcCloseRange: 300, // distance (units) over which arc tapers arcClose → arc
 };
+
+// Distance-aware vision arc: wide at point-blank (peripheral awareness),
+// tightens to the base arc as targets move further out. Used by both player
+// and NN visibility checks so both teams gain the same close-range bonus.
+function effectiveArc(dist) {
+  const t = Math.min(1, Math.max(0, dist / VIEW.arcCloseRange));
+  return VIEW.arcClose * (1 - t) + VIEW.arc * t;
+}
 const ENEMY_VIEW = {
   range: 620,            // bumped — they can spot from further
   arc: Math.PI * 0.78,   // ~140° — soldiers are alert, not blinkered
@@ -2593,7 +2602,8 @@ async function nnLoadAll(difficulties) {
   return results.every(Boolean);
 }
 
-// NN-specific vision check: 720u range, 140° cone, LoS via existing lineOfSight
+// NN-specific vision check: 720u range, 140° base cone (170° at point-blank
+// via effectiveArc), LoS via existing lineOfSight + high-ground/trench rules.
 function nnIsVisible(me, target) {
   if (!target.alive) return false;
   const dx = target.x - me.x, dy = target.y - me.y;
@@ -2601,12 +2611,13 @@ function nnIsVisible(me, target) {
   // High ground extends vision range
   const range = NN.VIEW_RANGE * visionRangeMul(me);
   if (d2 > range * range) return false;
+  const dist = Math.sqrt(d2);
   const a = Math.atan2(dy, dx);
   let diff = a - me.angle;
   while (diff >  Math.PI) diff -= Math.PI*2;
   while (diff < -Math.PI) diff += Math.PI*2;
-  if (Math.abs(diff) > NN.VIEW_ARC / 2) return false;
-  // Symmetric LoS + high-ground/trench rules — same for both teams
+  // Distance-aware cone: 170° at point-blank, narrowing to base 140° by 300u
+  if (Math.abs(diff) > effectiveArc(dist) / 2) return false;
   if (!symVisibleAB(me.x, me.y, target.x, target.y, me, target)) return false;
   return true;
 }
@@ -4272,7 +4283,7 @@ function nearestVisibleEnemy(ax, ay, fromAngle, range) {
     if (!e.alive) continue;
     const dx = e.x - ax, dy = e.y - ay;
     const d = Math.hypot(dx, dy);
-    if (d < range && angleInCone(fromAngle, VIEW.arc, ax, ay, e.x, e.y) && lineOfSight(ax, ay, e.x, e.y)) {
+    if (d < range && angleInCone(fromAngle, effectiveArc(d), ax, ay, e.x, e.y) && lineOfSight(ax, ay, e.x, e.y)) {
       if (d < bestD) { best = e; bestD = d; }
     }
   }
@@ -4282,7 +4293,7 @@ function nearestVisibleEnemy(ax, ay, fromAngle, range) {
     const d = Math.hypot(dx, dy);
     // Drones are priority targets — they'll explode on you
     const priority = d * 0.6;
-    if (d < range && angleInCone(fromAngle, VIEW.arc, ax, ay, dr.x, dr.y) && lineOfSight(ax, ay, dr.x, dr.y)) {
+    if (d < range && angleInCone(fromAngle, effectiveArc(d), ax, ay, dr.x, dr.y) && lineOfSight(ax, ay, dr.x, dr.y)) {
       if (priority < bestD) { best = dr; bestD = priority; }
     }
   }
@@ -4595,15 +4606,17 @@ function angleInCone(srcAngle, arc, ox, oy, tx, ty) {
 function isVisibleToFriendly(x, y) {
   if (player.alive) {
     const dx = x - player.x, dy = y - player.y;
-    if (dx*dx + dy*dy < VIEW.range * VIEW.range
-        && angleInCone(player.angle, VIEW.arc, player.x, player.y, x, y)
+    const d2 = dx*dx + dy*dy;
+    if (d2 < VIEW.range * VIEW.range
+        && angleInCone(player.angle, effectiveArc(Math.sqrt(d2)), player.x, player.y, x, y)
         && lineOfSight(player.x, player.y, x, y)) return true;
   }
   for (const a of allies) {
     if (!a.alive) continue;
     const dx = x - a.x, dy = y - a.y;
-    if (dx*dx + dy*dy < VIEW.range * VIEW.range
-        && angleInCone(a.angle, VIEW.arc, a.x, a.y, x, y)
+    const d2 = dx*dx + dy*dy;
+    if (d2 < VIEW.range * VIEW.range
+        && angleInCone(a.angle, effectiveArc(Math.sqrt(d2)), a.x, a.y, x, y)
         && lineOfSight(a.x, a.y, x, y)) return true;
   }
   return false;
