@@ -1324,6 +1324,9 @@ function toggleBuildMode() {
     return;
   }
   buildMode.active = !buildMode.active;
+  // Drop any in-flight wall drag so it doesn't leak into the next session.
+  buildMode._dragStart = null;
+  buildMode._dragEnd   = null;
 }
 
 // ============ GRENADES ============
@@ -2097,6 +2100,9 @@ window.addEventListener('keydown', e => {
     else if (buildMode.active && ((e.key >= '1' && e.key <= '9') || e.key === '0')) {
       const idx = e.key === '0' ? 9 : (parseInt(e.key) - 1);
       if (STRUCTURE_ORDER[idx]) buildMode.kind = STRUCTURE_ORDER[idx];
+      // Cancel any in-flight wall line if the user picks a different module
+      buildMode._dragStart = null;
+      buildMode._dragEnd   = null;
       e.preventDefault();
       return;
     }
@@ -2516,6 +2522,16 @@ if (_editorBtn) _editorBtn.onclick = openEditor;
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 window.addEventListener('mousemove', e => {
   mouse.x = e.clientX; mouse.y = e.clientY;
+  // Defense-mode wall drag: while the LMB is held with a wall anchor, track
+  // the snapped end cell so renderBuildPreview can ghost the full line.
+  if (buildMode.active && buildMode.kind === 'wall' && buildMode._dragStart
+      && game.state === 'playing' && !game._paused) {
+    const wp = screenToWorld(e.clientX, e.clientY);
+    const SNAP = 60;
+    const gx = Math.round(wp.x / SNAP) * SNAP;
+    const gy = Math.round(wp.y / SNAP) * SNAP;
+    buildMode._dragEnd = { gx, gy };
+  }
   // Map editor drag preview — track the current cell while the button is held
   if (game.state === 'editor' && editor._dragStart) {
     const c = _editorCellAtScreen(e.clientX, e.clientY);
@@ -2624,14 +2640,25 @@ window.addEventListener('mousedown', e => {
     return;
   }
   // Build mode (Defense): left-click places the selected structure at the
-  // snapped 60u cell under the cursor. Shift-click on terminal drops an
-  // airstrike instead. Right-click (handled in contextmenu listener) cancels.
+  // snapped 60u cell under the cursor. For wall, mousedown only records the
+  // anchor + places the first cell; mouseup walks the line. For non-wall
+  // structures the legacy single-tap-place path runs.
   if (buildMode.active && game.state === 'playing' && !game._paused) {
     const wp = screenToWorld(e.clientX, e.clientY);
     const SNAP = 60;
     const gx = Math.round(wp.x / SNAP) * SNAP;
     const gy = Math.round(wp.y / SNAP) * SNAP;
-    placeStructure(buildMode.kind, gx, gy);
+    if (buildMode.kind === 'wall') {
+      // Drag-to-line wall placement (mirrors the editor). mouseup commits
+      // every cell along Bresenham(start, end). Single-click still places
+      // one wall because mouseup runs with start === end → no-op + the
+      // initial cell already went down here.
+      buildMode._dragStart = { gx, gy };
+      buildMode._dragEnd   = { gx, gy };
+      placeStructure('wall', gx, gy);
+    } else {
+      placeStructure(buildMode.kind, gx, gy);
+    }
     e.preventDefault();
     return;
   }
@@ -2834,6 +2861,31 @@ window.addEventListener('mouseup', e => {
     }
     editor._dragStart = null;
     editor._dragEnd   = null;
+  }
+  // Defense-mode wall drag-release: same Bresenham walk, but place each
+  // cell as a structure (which deducts energy). Stops mid-line if energy
+  // runs out — last placed cell sits as the line tail.
+  if (buildMode.active && buildMode.kind === 'wall' && buildMode._dragStart && buildMode._dragEnd) {
+    const a = buildMode._dragStart, b = buildMode._dragEnd;
+    if (a.gx !== b.gx || a.gy !== b.gy) {
+      const cells = _editorLineCells(a.gx, a.gy, b.gx, b.gy);
+      // Skip the first cell — already placed on mousedown.
+      for (let i = 1; i < cells.length; i++) {
+        const c = cells[i];
+        // Skip cells that already host a wall (drag back over the line)
+        const occupied = (game._structures || []).some(s =>
+          s.kind === 'wall' && s.hp > 0 && s.x === c.cx && s.y === c.cy
+        );
+        if (occupied) continue;
+        if (!canAffordStructure('wall')) {
+          showSwapToast(T('能源不足', 'Out of energy'));
+          break;
+        }
+        placeStructure('wall', c.cx, c.cy);
+      }
+    }
+    buildMode._dragStart = null;
+    buildMode._dragEnd   = null;
   }
 });
 window.addEventListener('contextmenu', e => e.preventDefault());
@@ -9109,6 +9161,45 @@ function renderBuildPreview() {
   if (!def) return;
   const r = def.size / 2;
   const ok = canAffordStructure(buildMode.kind);
+
+  // Wall + active drag → ghost the entire line, colour-code which cells fit
+  // in the current energy budget vs which would run out mid-line.
+  if (buildMode.kind === 'wall' && buildMode._dragStart && buildMode._dragEnd
+      && (buildMode._dragStart.gx !== buildMode._dragEnd.gx
+          || buildMode._dragStart.gy !== buildMode._dragEnd.gy)) {
+    const a = buildMode._dragStart, b = buildMode._dragEnd;
+    const cells = _editorLineCells(a.gx, a.gy, b.gx, b.gy);
+    const cost = def.cost;
+    const energy = game._energy || 0;
+    // First cell is already paid (placed on mousedown); count budget for the rest
+    const affordable = 1 + Math.max(0, Math.floor(energy / cost));
+    ctx.save();
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      const willPlace = i < affordable;
+      ctx.globalAlpha = willPlace ? 0.55 : 0.30;
+      ctx.fillStyle = willPlace ? '#3FE63F' : COLORS.red;
+      ctx.fillRect(c.cx - r, c.cy - r, def.size, def.size);
+    }
+    // Center stroke from start to end
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = COLORS.red;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(a.gx, a.gy);
+    ctx.lineTo(b.gx, b.gy);
+    ctx.stroke();
+    // Cost label near cursor
+    const totalCost = (cells.length - 1) * cost;   // first cell already spent
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(`${cells.length}× ${T('牆', 'WALL')}  ${totalCost}⚡`,
+                 b.gx + 12, b.gy - 12);
+    ctx.restore();
+    return;
+  }
+
   ctx.save();
   ctx.globalAlpha = 0.55;
   ctx.fillStyle = ok ? '#3FE63F' : COLORS.red;
