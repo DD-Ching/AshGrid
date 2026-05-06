@@ -3036,6 +3036,7 @@ function _touchTriggerAction(id) {
       player._aimAssist = !player._aimAssist;
       try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (err) {}
       break;
+    case 'b':     toggleBuildMode(); break;
     case 'pause': togglePause(); break;
   }
 }
@@ -12221,13 +12222,16 @@ function renderHUDOverlays() {
     ctx.textAlign = 'left';
     ctx.restore();
     game._touchActionButtons = [{ id: 'g', x: gx, y: gy, w: gSize, h: gSize }];
-    // Right-side column: Q / E / V / R. Vertically centered around mid-screen.
+    // Right-side column: Q / E / V / R + B (defense only).
     const buttons = [
       { id: 'q', label: 'Q',   sub: 'UAV' },
       { id: 'e', label: 'E',   sub: 'FPV' },
       { id: 'v', label: 'V',   sub: '助', active: !!player._aimAssist },
       { id: 'r', label: 'R',   sub: '弹' },
     ];
+    if (game._nnGameMode === 'defense') {
+      buttons.push({ id: 'b', label: 'B', sub: T('建', 'BUILD'), active: buildMode.active });
+    }
     const colH = buttons.length * BTN_SIZE + (buttons.length - 1) * BTN_GAP;
     let bx = W() - BTN_SIZE - 12;
     let by = Math.round(H() / 2 - colH / 2);
