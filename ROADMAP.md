@@ -30,7 +30,8 @@
 ## 階段 2b:國際化 / 賣相
 - [x] 設定列中/EN 切換 + 持久化 — 93f8aa5(預設 EN,可切回中)
 - [x] Canvas HUD 全 i18n(暫停 / 結算 / 排行榜 / 補給 / 任務)— c7107c5
-- [x] 起始畫面 EN 預設 + cover image EN — 下一個 commit
+- [x] 起始畫面 EN 預設 + cover image EN — c7107c5
+- [x] SHARE RUN 按鈕(navigator.share / 剪貼板)— 0e7a8f5
 
 ## 階段 3:Stub 接點(我寫好,你補帳號)
 - [x] AdMob rewarded-ad interface — 746ed8d(stub `requestRewardedAd(id, cb)`)
