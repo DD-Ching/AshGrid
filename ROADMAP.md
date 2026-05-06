@@ -18,8 +18,8 @@
 **階段 1 完成 ✅**
 
 ## 階段 2:內容 / 樂趣
-- [x] 直升機撤離任務(Helo Extract)— 下一個 commit
-- [ ] 物資護送任務(UGV Convoy)
+- [x] 直升機撤離任務(Helo Extract)— 1302179
+- [x] 物資護送任務(UGV Convoy)— 下一個 commit
 - [x] 多方向 spawn(survival 進階波)— a147e9c
 - [x] 森林地圖(UAV 看不穿樹冠)— 911a254
 - [ ] 背景音樂(ambient loop × 2-3)

@@ -577,6 +577,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
         <button data-mode="dm"       class="mode-btn diff-btn active">对抗<span>DEATHMATCH</span></button>
         <button data-mode="survival" class="mode-btn diff-btn">生存<span>SURVIVAL</span></button>
         <button data-mode="helo"     class="mode-btn diff-btn">撤离<span>HELO EXTRACT</span></button>
+        <button data-mode="convoy"   class="mode-btn diff-btn">护送<span>CONVOY</span></button>
         <button data-mode="duel"     class="mode-btn diff-btn">单挑<span>DUEL 1v1</span></button>
         <button data-mode="sniper"   class="mode-btn diff-btn">狙击<span>SNIPER ONLY</span></button>
       </div>
@@ -1804,6 +1805,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   // by the mission factory anyway. Just set a sane initial squad size.
   if (gameMode === 'survival') { redSize = 3; }
   if (gameMode === 'helo')     { redSize = 0; blueSize = Math.max(blueSize, 3); }
+  if (gameMode === 'convoy')   { redSize = 0; blueSize = Math.max(blueSize, 3); }
   if (gameMode === 'sniper')   { weaponId = 'SNIPER'; }
   game._nnGameMode = gameMode;
 
@@ -1949,12 +1951,14 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   // Pick mission type by gameMode.
   const missionType = gameMode === 'survival' ? 'nnSurvival'
                     : gameMode === 'helo'     ? 'nnHelo'
+                    : gameMode === 'convoy'   ? 'nnConvoy'
                     : 'nnDeathmatch';
   initMission({ type: missionType, id: 'nn-' + gameMode }, currentMap);
   const modeLabel = ({
     dm:       `对抗 · 蓝 ${blueSize} vs 红 ${redSize}`,
     survival: `生存模式 · 撑过每一波`,
     helo:     `直升机撤离 · 守 LZ 60s`,
+    convoy:   `护送 UGV · 一路向东`,
     duel:     `单挑 1v1`,
     sniper:   `狙击巷战 · 一枪致命`,
   })[gameMode] || gameMode;
@@ -2955,6 +2959,28 @@ const NN_MAP_VARIANTS = [
     ],
     spawn: { blue: { x: 250, y: 600 }, red: { x: 950, y: 600 } },
     modes: ['sniper'],
+  },
+
+  // Convoy 物资护送: clear horizontal lane down the middle for the UGV to
+  // traverse, with side cover berms + ambush buildings flanking.
+  { id: 'convoy_road', name: '补给路线 CONVOY ROAD',
+    walls: () => {
+      const out = [];
+      for (let i = 0; i < 8; i++) {
+        const x = 200 + i * 110;
+        out.push({ x: x, y: 460, w: 60, h: 30, kind: 'cover' });
+        out.push({ x: x, y: 720, w: 60, h: 30, kind: 'cover' });
+      }
+      out.push({ x: 280, y: 250, w: 100, h: 100, kind: 'building' });
+      out.push({ x: 600, y: 200, w: 100, h: 80,  kind: 'building' });
+      out.push({ x: 880, y: 270, w: 100, h: 100, kind: 'building' });
+      out.push({ x: 280, y: 870, w: 100, h: 100, kind: 'building' });
+      out.push({ x: 600, y: 920, w: 100, h: 80,  kind: 'building' });
+      out.push({ x: 880, y: 870, w: 100, h: 100, kind: 'building' });
+      return out;
+    },
+    spawn: { blue: { x: 200, y: 600 }, red: { x: 1000, y: 200 } },
+    modes: ['convoy'],
   },
 
   // Forest 森林: dense low-cover tree clumps. The UAV is a sensor in every
@@ -4985,6 +5011,197 @@ MISSION_FACTORIES.nnHelo = function(mapDef) {
       drawObjectivePanel([
         `波 ${waveNum} · 击杀 ${kills}`,
         line2,
+      ]);
+    },
+  };
+};
+
+// ============ NN CONVOY ESCORT ============
+// A friendly UGV crawls W → E along the lane. Reds spawn from N + S
+// alternating. Blue must keep the UGV alive until it reaches the east edge.
+// UGV speed slows when reds are within striking distance (forces engagement).
+MISSION_FACTORIES.nnConvoy = function(mapDef) {
+  const ugv = {
+    x: NN_ARENA.x0 + 150, y: NN_ARENA.y0 + NN_ARENA.h / 2,
+    hp: 200, maxHp: 200,
+    radius: 26,
+    targetX: NN_ARENA.x0 + NN_ARENA.w - 100,
+    speed: 0.7,
+  };
+  const SIDES = ['N', 'S'];
+  let nextWaveAt = game.time + 90;
+  let waveNum = 0;
+  let kills = 0;
+  let endStage = null;
+  const startTick = game.time;
+
+  function spawnConvoyWave(n) {
+    const tier = (['defensive', 'elite', 'warrior', 'sharpshooter'])
+                 [Math.min(Math.floor(n/2), 3)];
+    const size = Math.min(4, 2 + Math.floor(n/3));
+    const edge = SIDES[(n - 1) % SIDES.length];
+    const ax = NN_ARENA.x0, ay = NN_ARENA.y0;
+    const aw = NN_ARENA.w,  ah = NN_ARENA.h;
+    const m = 80;
+    for (let i = 0; i < size; i++) {
+      // Spawn at edge near UGV's current X so reds are always relevant.
+      const baseX = Math.max(ax + 100, Math.min(ax + aw - 100, ugv.x + (Math.random() - 0.5) * 400));
+      const y = edge === 'N' ? ay + m : ay + ah - m;
+      const facing = Math.atan2(ugv.y - y, ugv.x - baseX);
+      enemies.push({
+        x: baseX + (i - (size-1)/2) * 60, y,
+        hp: 50, maxHp: 50, angle: facing,
+        fireCd: 0, fireRate: 50, radius: 13, alive: true,
+        walkPhase: Math.random() * Math.PI * 2,
+        speed: 1.0, team: 1,
+        _weapon: WEAPONS[pickRandomNNWeaponId()],
+        _nnDifficulty: tier,
+        _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+        _respawnAt: null, _invulnUntil: game.time + 90,
+      });
+    }
+  }
+
+  return {
+    title: 'NN 护送',
+    titleEn: 'CONVOY ESCORT',
+    objective: '护送 UGV 到东边 · 不让它被打爆',
+    _endAt: null,
+
+    update() {
+      // Same auto-jump logic as helo
+      if (!player.alive && player._respawnAt == null) {
+        let bestIdx = -1, bestD = Infinity;
+        for (let i = 0; i < allies.length; i++) {
+          const ax = allies[i];
+          if (!ax || !ax.alive) continue;
+          const d = Math.hypot(ax.x - player.x, ax.y - player.y);
+          if (d < bestD) { bestD = d; bestIdx = i; }
+        }
+        if (bestIdx >= 0) {
+          const a = allies[bestIdx];
+          player.alive = true;
+          player.x = a.x; player.y = a.y;
+          player.angle = a.angle; player.gunAngle = a.gunAngle || a.angle;
+          player.gunRecoil = (a.gunRecoil || 0) * 0.4;
+          player.hp = a.hp; player.maxHp = a.maxHp;
+          player._invulnUntil = game.time + 60;
+          player._lastX = a.x; player._lastY = a.y;
+          player._velX = 0; player._velY = 0;
+          mouse.down = false;
+          applyWeaponToPlayer(a._weapon || WEAPONS.RIFLE);
+          a.alive = false; a._respawnAt = null; a.callsign = '前操作员';
+          showSwapToast('紧急接管');
+        } else if (endStage == null) {
+          endStage = 'loss';
+          if (this._endAt == null) this._endAt = game.time + 240;
+        }
+      }
+      for (const a of allies) { if (!a.alive) a._respawnAt = null; }
+
+      // UGV movement — slows if reds are close (within 220u)
+      let nearRed = false;
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        if (Math.hypot(e.x - ugv.x, e.y - ugv.y) < 220) { nearRed = true; break; }
+      }
+      const sp = nearRed ? ugv.speed * 0.35 : ugv.speed;
+      ugv.x += sp;
+
+      // UGV takes damage from red bullets near it
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const b = enemyBullets[i];
+        if (Math.hypot(b.x - ugv.x, b.y - ugv.y) < ugv.radius) {
+          ugv.hp -= b.damage;
+          enemyBullets.splice(i, 1);
+        }
+      }
+      if (ugv.hp <= 0 && endStage == null) {
+        endStage = 'loss';
+        if (this._endAt == null) this._endAt = game.time + 240;
+        createExplosion(ugv.x, ugv.y, 'big');
+      }
+      // Win — UGV reached destination
+      if (ugv.x >= ugv.targetX && endStage == null) {
+        endStage = 'win';
+        if (this._endAt == null) this._endAt = game.time + 240;
+      }
+
+      // Wave spawning
+      if (endStage == null && game.time >= nextWaveAt) {
+        waveNum++;
+        spawnConvoyWave(waveNum);
+        nextWaveAt = game.time + 7 * 60;   // every 7s
+      }
+      // Track kills
+      for (const e of enemies) {
+        if (e._wasAlive && !e.alive) kills++;
+        e._wasAlive = e.alive;
+      }
+    },
+
+    isComplete() {
+      if (endStage === 'win') {
+        if (this._endAt == null) this._endAt = game.time + 240;
+        return game.time >= this._endAt;
+      }
+      return false;
+    },
+    isFailed() {
+      if (endStage === 'loss') {
+        if (this._endAt == null) this._endAt = game.time + 240;
+        return game.time >= this._endAt;
+      }
+      return false;
+    },
+
+    renderWorld() {
+      // UGV — dark hatched rectangle with HP bar above
+      ctx.save();
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fillRect(ugv.x - 26, ugv.y - 18, 52, 36);
+      ctx.strokeStyle = COLORS.red;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(ugv.x - 26, ugv.y - 18, 52, 36);
+      // Diagonal hatch
+      ctx.strokeStyle = 'rgba(232, 228, 216, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = -36; i < 52; i += 8) {
+        ctx.moveTo(ugv.x - 26 + i, ugv.y - 18);
+        ctx.lineTo(ugv.x - 26 + i + 36, ugv.y + 18);
+      }
+      ctx.stroke();
+      // HP bar
+      const hpFrac = Math.max(0, ugv.hp / ugv.maxHp);
+      ctx.fillStyle = COLORS.creamDark;
+      ctx.fillRect(ugv.x - 30, ugv.y - 32, 60, 6);
+      ctx.fillStyle = hpFrac > 0.4 ? COLORS.red : COLORS.redBright;
+      ctx.fillRect(ugv.x - 30, ugv.y - 32, 60 * hpFrac, 6);
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(ugv.x - 30, ugv.y - 32, 60, 6);
+      // Destination marker (east edge arrow)
+      const dx = ugv.targetX, dy = ugv.y;
+      ctx.fillStyle = COLORS.red;
+      ctx.beginPath();
+      ctx.moveTo(dx - 16, dy - 12);
+      ctx.lineTo(dx + 8, dy);
+      ctx.lineTo(dx - 16, dy + 12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    },
+
+    renderHUD() {
+      const total = (NN_ARENA.x0 + NN_ARENA.w - 100) - (NN_ARENA.x0 + 150);
+      const traveled = ugv.x - (NN_ARENA.x0 + 150);
+      const pct = Math.max(0, Math.min(100, Math.round(100 * traveled / total)));
+      drawObjectivePanel([
+        `UGV ${ugv.hp}/${ugv.maxHp} · 击杀 ${kills}`,
+        endStage === 'win' ? `撤离成功 / DELIVERED`
+        : endStage === 'loss' ? `任务失败 / FAILED`
+        : `进度 ${pct}% · 波 ${waveNum}`,
       ]);
     },
   };
