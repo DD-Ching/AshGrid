@@ -2084,6 +2084,14 @@ window.addEventListener('mousedown', e => {
     e.preventDefault();
     return;
   }
+  // Build-phase skip-wave button — watch ad to skip the next wave + refill.
+  // Checked BEFORE the cover-extend ad so it can sit below it without being
+  // shadowed when both rects overlap (they shouldn't, but defensive).
+  if (_hitRect(game._skipWaveAdRect, e.clientX, e.clientY)) {
+    if (mission && typeof mission.trySkipWave === 'function') mission.trySkipWave();
+    e.preventDefault();
+    return;
+  }
   // Build-phase ad-extend button — click to watch ad for +2 placements + 5s
   if (_hitRect(game._buildPhaseAdRect, e.clientX, e.clientY)) {
     if (game._buildPhase && !game._buildPhase._adExtended) {
@@ -2092,7 +2100,7 @@ window.addEventListener('mousedown', e => {
         if (!ok) { game._buildPhase._adExtended = false; return; }
         if (game._buildPhase) {
           game._buildPhase.left += 2;
-          showSwapToast(`+2 掩体 · 时间延长 5s`);
+          showSwapToast(T(`+2 掩体 · 时间延长 5s`, `+2 covers · +5s timer`));
         }
         // Extend breather timer too (search the active mission)
         if (mission && typeof mission._extendBreather === 'function') {
@@ -2217,6 +2225,11 @@ if (touchInput.enabled) {
         if (mission && typeof mission.tryRevive === 'function') mission.tryRevive();
         continue;
       }
+      // 4c2) Build-phase skip-wave button
+      if (_hitRect(game._skipWaveAdRect, t.clientX, t.clientY)) {
+        if (mission && typeof mission.trySkipWave === 'function') mission.trySkipWave();
+        continue;
+      }
       // 4c) Build-phase ad-extend button
       if (_hitRect(game._buildPhaseAdRect, t.clientX, t.clientY)) {
         if (game._buildPhase && !game._buildPhase._adExtended) {
@@ -2225,7 +2238,7 @@ if (touchInput.enabled) {
             if (!ok) { game._buildPhase._adExtended = false; return; }
             if (game._buildPhase) {
               game._buildPhase.left += 2;
-              showSwapToast(`+2 掩体 · 时间延长 5s`);
+              showSwapToast(T(`+2 掩体 · 时间延长 5s`, `+2 covers · +5s timer`));
             }
             if (mission && typeof mission._extendBreather === 'function') {
               mission._extendBreather(300);
@@ -5071,7 +5084,7 @@ MISSION_FACTORIES.skirmish = function(mapDef) {
   return {
     title: '对抗模式',
     titleEn: 'SKIRMISH',
-    objective: '清除所有敌方单位 · 测试 AI 与小组协同',
+    objective: T('清除所有敌方单位 · 测试 AI 与小组协同', 'Clear all hostiles · test AI / squad coop'),
     update() {
       const enemiesAlive = enemies.filter(e=>e.alive).length;
       if (enemiesAlive === 0) {
@@ -5439,6 +5452,7 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
   let waveStarted = false;
   let endStage = null;      // null | 'win' (impossible) | 'loss'
   let reviveUsed = false;   // one rewarded-ad revive per round
+  let skipUsed   = false;   // one rewarded-ad wave-skip per round
   // NN tier mix per wave — index by min(wave-1, len-1)
   const WAVE_TIERS = [
     ['defensive'],                          // 1
@@ -5531,7 +5545,7 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
   return {
     title: 'NN 生存',
     titleEn: 'NN SURVIVAL',
-    objective: '存活 · 清除每一波',
+    objective: T('存活 · 清除每一波', 'Survive · clear every wave'),
     _endAt: null,
 
     update() {
@@ -5687,6 +5701,39 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
     // Called by the build-phase ad button to push the next-wave timer back
     _extendBreather(frames) { waveBreakUntil += frames; },
 
+    // Hooked from the build-phase "watch ad to skip next wave" button.
+    // Triggers the rewarded-ad stub. On success: advance wave counter +1
+    // (so the player sees the "skip" reflected on leaderboard), refill the
+    // operator's HP/ammo, and re-arm the breather so a fresh build phase
+    // wraps the now-bumped wave. The wave's would-be kills are NOT credited
+    // — preserves leaderboard integrity (skipping ≠ clearing).
+    trySkipWave() {
+      if (skipUsed) return;
+      if (endStage !== null) return;
+      if (waveStarted) return;            // only valid during build phase
+      if (!game._buildPhase || !game._buildPhase.active) return;
+      skipUsed = true;
+      requestRewardedAd('survival_skip_wave', (ok) => {
+        if (!ok) { skipUsed = false; return; }
+        wave++;                           // jump past the wave we'd be facing
+        // Refresh operator (panic-button feel)
+        player.hp = player.maxHp;
+        const w = WEAPONS[player.weapon] || WEAPONS.RIFLE;
+        if (w) { player.ammo = w.magSize; player.reserve = w.reserveStart; }
+        // Push the breather so a new build-phase wraps the bumped wave
+        waveBreakUntil = game.time + 6 * 60;
+        game._buildPhase = { active: true, left: 2 };
+        showSwapToast(T(`跳过 W${wave - 1} · 补给 +HP +弹`, `Skipped W${wave - 1} · supplies refilled`));
+        playSfx('reload', { vol: 0.6 });
+      });
+    },
+
+    // Returns true if the skip-wave button should currently be shown
+    canSkipWave() {
+      return !skipUsed && !waveStarted && endStage == null
+        && game._buildPhase && game._buildPhase.active;
+    },
+
     renderHUD() {
       const best = getSurvivalScores()[0];
       const bestStr = best ? `· ${T('最佳', 'BEST')} W${best.wave}/K${best.kills}` : '';
@@ -5828,7 +5875,7 @@ MISSION_FACTORIES.nnHelo = function(mapDef) {
   return {
     title: 'NN 撤离',
     titleEn: 'HELO EXTRACT',
-    objective: '守住 LZ · 直升机降落 · 全员撤离',
+    objective: T('守住 LZ · 直升机降落 · 全员撤离', 'Hold LZ · helo descends · all extract'),
     _endAt: null,
 
     update() {
@@ -6037,7 +6084,7 @@ MISSION_FACTORIES.nnConvoy = function(mapDef) {
   return {
     title: 'NN 护送',
     titleEn: 'CONVOY ESCORT',
-    objective: '护送 UGV 到东边 · 不让它被打爆',
+    objective: T('护送 UGV 到东边 · 不让它被打爆', 'Escort UGV east · keep it alive'),
     _endAt: null,
 
     update() {
@@ -9794,8 +9841,31 @@ function renderHUDOverlays() {
     } else {
       game._buildPhaseAdRect = null;
     }
+    // Skip-wave button — only shown when mission says it's currently allowed.
+    // Stacks below the +2-cover ad button. One use per round, decoupled from
+    // the cover-extend ad so the player can use both in the same build phase.
+    if (mission && typeof mission.canSkipWave === 'function' && mission.canSkipWave()) {
+      ctx.save();
+      const adH2 = 22;
+      const adY2 = by + bh + 4 + (game._buildPhase._adExtended ? 0 : (22 + 4));
+      ctx.fillStyle = 'rgba(20, 18, 24, 0.85)';
+      ctx.fillRect(bx, adY2, bw, adH2);
+      ctx.strokeStyle = COLORS.red;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(bx, adY2, bw, adH2);
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(T('看广告 跳过下一波 · +补给 ▶', 'WATCH AD · SKIP NEXT WAVE ▶'), W() / 2, adY2 + 15);
+      ctx.textAlign = 'left';
+      ctx.restore();
+      game._skipWaveAdRect = { x: bx, y: adY2, w: bw, h: adH2 };
+    } else {
+      game._skipWaveAdRect = null;
+    }
   } else {
     game._buildPhaseAdRect = null;
+    game._skipWaveAdRect = null;
   }
 
   // ---- Touch overlay: virtual sticks + action buttons ----

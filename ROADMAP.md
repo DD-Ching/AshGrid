@@ -27,6 +27,11 @@
 
 **階段 2 完成 ✅**
 
+## 階段 2b:國際化 / 賣相
+- [x] 設定列中/EN 切換 + 持久化 — 93f8aa5(預設 EN,可切回中)
+- [x] Canvas HUD 全 i18n(暫停 / 結算 / 排行榜 / 補給 / 任務)— c7107c5
+- [x] 起始畫面 EN 預設 + cover image EN — 下一個 commit
+
 ## 階段 3:Stub 接點(我寫好,你補帳號)
 - [x] AdMob rewarded-ad interface — 746ed8d(stub `requestRewardedAd(id, cb)`)
 - [x] Firebase 排行榜接口 — 746ed8d(stub `uploadSurvivalRun(run)`)
@@ -39,8 +44,8 @@
 - [x] survival_revive — 844d42e(死亡看廣告續命)
 - [x] editor_extra_slots — d9d419e(地圖編輯器槽位 +2)
 - [x] build_phase_extend — 8425560(蓋碉堡 +2 cover +5s)
+- [x] survival_skip_wave — 下一個 commit(跳過下一波 + 補給)
 - [ ] cosmetic_skin(待設計外觀系統)
-- [ ] survival_skip_wave(備用,跳過下一波)
 
 每個 trigger 都用 `requestRewardedAd('reward_id', cb)`。當你給我 AdMob ad unit ID,只要把 stub 換成真 SDK,所有 trigger 立刻生效。
 
