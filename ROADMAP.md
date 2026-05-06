@@ -28,9 +28,11 @@
 **階段 2 完成 ✅**
 
 ## 階段 3:Stub 接點(我寫好,你補帳號)
-- [x] AdMob rewarded-ad interface — 下一個 commit(stub 已就位 — `requestRewardedAd(id, cb)`)
-- [x] Firebase 排行榜接口 — 下一個 commit(stub `uploadSurvivalRun(run)` 在 recordSurvivalRun 內呼叫)
-- [ ] 地圖編輯器(JSON export → 之後可雲端分享)— 數據層已就位(custom variant 讀 localStorage),UI 是下一個
+- [x] AdMob rewarded-ad interface — 746ed8d(stub `requestRewardedAd(id, cb)`)
+- [x] Firebase 排行榜接口 — 746ed8d(stub `uploadSurvivalRun(run)`)
+- [x] 地圖編輯器 — 下一個 commit(主選單 EDITOR 按鈕 + 60u 格網工具)
+
+**階段 3 完成 ✅**
 
 ## 階段 4:🔑 你動作清單
 

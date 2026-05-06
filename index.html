@@ -396,6 +396,34 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   .start-btn#nnBtn { font-size: 16px !important; letter-spacing: 3px !important; padding: 14px 24px !important; }
 }
 
+/* Map editor — thin toolbar at top, canvas underneath remains visible
+   for placement clicks. pointer-events: none on the overlay so clicks
+   pass through except on the toolbar's own buttons. */
+.editor-overlay {
+  pointer-events: none;
+  background: transparent;
+}
+.editor-toolbar {
+  position: fixed; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; background: rgba(20, 18, 24, 0.92);
+  border-bottom: 2px solid var(--red);
+  pointer-events: auto;
+  z-index: 200;
+}
+.editor-title { color: var(--red); font-weight: 800; letter-spacing: 4px;
+                font-size: 13px; margin-right: 12px; }
+.ed-tool, .ed-action {
+  background: var(--cream-dark); border: 2px solid var(--black);
+  color: var(--black); font-family: inherit;
+  font-size: 12px; font-weight: 800; letter-spacing: 2px;
+  padding: 6px 14px; cursor: pointer;
+}
+.ed-tool:hover, .ed-action:hover { background: var(--cream); }
+.ed-tool.active  { background: var(--red); color: var(--cream); border-color: var(--red); }
+.ed-action.active { background: var(--red); color: var(--cream); border-color: var(--red); }
+.ed-spacer { flex: 1; }
+
 .end-screen {
   background: var(--cream);
   display: flex; flex-direction: column;
@@ -499,8 +527,9 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
       </div>
     </div>
 
-    <div style="display:flex; gap:16px; align-items:center;">
+    <div style="display:flex; gap:12px; align-items:center; flex-wrap: wrap;">
       <button class="start-btn" id="nnBtn" style="background: var(--red); font-size: 22px; letter-spacing: 6px; padding: 22px 56px;">进入对抗 ENTER COMBAT ▶</button>
+      <button class="start-btn" id="editorBtn" style="background: var(--black); font-size: 14px; letter-spacing: 4px; padding: 14px 24px;">地图编辑器 EDITOR</button>
     </div>
 
 
@@ -621,6 +650,22 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
       <button class="lobby-cancel" id="lobbyCancelBtn">返回</button>
       <span class="lobby-hint">每方 1-4 人 · 不对称也可以 (1v3、3v1)</span>
     </div>
+  </div>
+</div>
+
+<!-- Map editor: thin toolbar at top, canvas remains visible below -->
+<div class="overlay editor-overlay hidden" id="editor">
+  <div class="editor-toolbar">
+    <span class="editor-title">編輯器 / EDITOR</span>
+    <button data-tool="wall"  class="ed-tool">墙</button>
+    <button data-tool="cover" class="ed-tool active">掩</button>
+    <button data-tool="tree"  class="ed-tool">树</button>
+    <button data-tool="erase" class="ed-tool">删</button>
+    <span class="ed-spacer"></span>
+    <button id="edClearBtn" class="ed-action">清空</button>
+    <button id="edSaveBtn"  class="ed-action">存档</button>
+    <button id="edTestBtn"  class="ed-action active">测试</button>
+    <button id="edExitBtn"  class="ed-action">退出</button>
   </div>
 </div>
 
@@ -1504,6 +1549,120 @@ function exitMatchToMenu() {
   game._skirmish = false;
   document.getElementById('start').classList.remove('hidden');
 }
+
+// ============ MAP EDITOR ============
+const editor = { tool: 'cover' };
+const EDITOR_BLOCK = 60;     // all placements snap to 60u grid
+
+function openEditor() {
+  game.state = 'editor';
+  document.getElementById('start').classList.add('hidden');
+  document.getElementById('editor').classList.remove('hidden');
+  // Build a fresh NN_ARENA with no walls
+  generateWorld(NN_ARENA_MAP_INDEX);
+  // Park camera at arena center; player.x/y drives camera follow.
+  player.x = NN_ARENA.x0 + NN_ARENA.w / 2;
+  player.y = NN_ARENA.y0 + NN_ARENA.h / 2;
+  player.alive = false;          // hide soldier sprite
+  game.mode = 'tactical';
+  game._nnMode = false;
+  enemies.length = 0;
+  allies.length = 0;
+  bullets.length = 0;
+  enemyBullets.length = 0;
+  // Restore the saved custom map (if any) into buildings/lowCovers
+  try {
+    const saved = JSON.parse(localStorage.getItem('ag.customMap') || 'null');
+    if (saved && Array.isArray(saved.walls)) {
+      for (const w of saved.walls) {
+        const x = NN_ARENA.x0 + w.x, y = NN_ARENA.y0 + w.y;
+        if (w.kind === 'cover') {
+          addLowCover(x, y, w.w, w.h, w.canopy ? '#3F4A3A' : COLORS.creamDark, { kind: w.canopy ? 'tree' : 'crate', canopy: !!w.canopy });
+        } else {
+          addBuilding(x, y, w.w, w.h, COLORS.gray);
+        }
+      }
+    }
+  } catch (e) {}
+}
+function closeEditor() {
+  game.state = 'menu';
+  document.getElementById('editor').classList.add('hidden');
+  document.getElementById('start').classList.remove('hidden');
+}
+function editorPlaceAt(screenX, screenY) {
+  const wp = screenToWorld(screenX, screenY);
+  // Snap to EDITOR_BLOCK grid (in NN_ARENA local coords)
+  const localX = wp.x - NN_ARENA.x0, localY = wp.y - NN_ARENA.y0;
+  const gx = Math.floor(localX / EDITOR_BLOCK) * EDITOR_BLOCK;
+  const gy = Math.floor(localY / EDITOR_BLOCK) * EDITOR_BLOCK;
+  if (gx < 0 || gy < 0 || gx + EDITOR_BLOCK > NN_ARENA.w || gy + EDITOR_BLOCK > NN_ARENA.h) return;
+  const wx = NN_ARENA.x0 + gx, wy = NN_ARENA.y0 + gy;
+  if (editor.tool === 'erase') {
+    let i = lowCovers.findIndex(lc => lc.x === wx && lc.y === wy);
+    if (i >= 0) { lowCovers.splice(i, 1); return; }
+    i = buildings.findIndex(b => b.x === wx && b.y === wy);
+    if (i >= 0) { buildings.splice(i, 1); return; }
+  } else {
+    // Replace any existing block in this cell
+    const lci = lowCovers.findIndex(lc => lc.x === wx && lc.y === wy);
+    if (lci >= 0) lowCovers.splice(lci, 1);
+    const bi = buildings.findIndex(b => b.x === wx && b.y === wy);
+    if (bi >= 0) buildings.splice(bi, 1);
+    if (editor.tool === 'wall') {
+      addBuilding(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, COLORS.gray);
+    } else if (editor.tool === 'cover') {
+      addLowCover(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, COLORS.creamDark, { kind: 'crate' });
+    } else if (editor.tool === 'tree') {
+      addLowCover(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, '#3F4A3A', { kind: 'tree', canopy: true });
+    }
+  }
+}
+function editorSerialize() {
+  const walls = [];
+  for (const b of buildings) {
+    walls.push({ x: b.x - NN_ARENA.x0, y: b.y - NN_ARENA.y0,
+                 w: b.w, h: b.h, kind: 'building' });
+  }
+  for (const lc of lowCovers) {
+    walls.push({ x: lc.x - NN_ARENA.x0, y: lc.y - NN_ARENA.y0,
+                 w: lc.w, h: lc.h, kind: 'cover', canopy: !!lc.canopy });
+  }
+  return { walls };
+}
+function editorSave() {
+  const data = editorSerialize();
+  try { localStorage.setItem('ag.customMap', JSON.stringify(data)); } catch (e) {}
+  showSwapToast(`已保存 ${data.walls.length} 块`);
+}
+function editorClear() {
+  buildings.length = 0;
+  lowCovers.length = 0;
+}
+function editorTest() {
+  editorSave();
+  document.getElementById('editor').classList.add('hidden');
+  // Force the custom variant in the map pool by setting Math.random briefly.
+  const idx = NN_MAP_VARIANTS.findIndex(v => v.id === 'custom');
+  const _orig = Math.random;
+  if (idx >= 0) Math.random = () => idx / NN_MAP_VARIANTS.length + 0.0001;
+  startNNSkirmish(3, 3, 'elite', 'RIFLE', null, 'dm');
+  setTimeout(() => { Math.random = _orig; }, 500);
+}
+// Wire toolbar
+document.querySelectorAll('#editor .ed-tool').forEach(btn => {
+  btn.onclick = () => {
+    editor.tool = btn.dataset.tool;
+    document.querySelectorAll('#editor .ed-tool').forEach(b => b.classList.toggle('active', b === btn));
+  };
+});
+const _eb = (id, fn) => { const b = document.getElementById(id); if (b) b.onclick = fn; };
+_eb('edSaveBtn',  editorSave);
+_eb('edTestBtn',  editorTest);
+_eb('edExitBtn',  closeEditor);
+_eb('edClearBtn', editorClear);
+const _editorBtn = document.getElementById('editorBtn');
+if (_editorBtn) _editorBtn.onclick = openEditor;
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
 function _hitRect(r, x, y) {
@@ -1546,6 +1705,12 @@ window.addEventListener('mousedown', e => {
   // at the world coord (clamped to arena interior) — 3 placements per phase.
   if (game._buildPhase && game._buildPhase.active && game._buildPhase.left > 0) {
     placeBuildBlock(e.clientX, e.clientY);
+    e.preventDefault();
+    return;
+  }
+  // Map editor click — only registers when state is 'editor'.
+  if (game.state === 'editor') {
+    editorPlaceAt(e.clientX, e.clientY);
     e.preventDefault();
     return;
   }
@@ -6978,7 +7143,12 @@ const camera = { x: 0, y: 0, scale: 1, targetScale: 1, rotation: 0, targetRotati
 
 function updateCamera() {
   let target;
-  if (game.mode === 'drone' && drone.deployed) {
+  if (game.state === 'editor') {
+    // Center on arena, zoomed out so the whole arena + a margin is visible
+    target = { x: NN_ARENA.x0 + NN_ARENA.w / 2, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
+    camera.targetScale = Math.min(W() / (NN_ARENA.w + 200), H() / (NN_ARENA.h + 200));
+    camera.targetRotation = 0;
+  } else if (game.mode === 'drone' && drone.deployed) {
     target = drone;
     camera.targetScale = 0.85;
     camera.targetRotation = 0;
@@ -7027,10 +7197,58 @@ function render() {
   ctx.translate(-camera.x, -camera.y);
 
   renderWorld();
+  if (game.state === 'editor') renderEditorOverlay();
 
   ctx.restore();
 
-  renderHUD();
+  if (game.state !== 'editor') renderHUD();
+}
+
+// Editor-only world overlay: arena grid + cursor preview block
+function renderEditorOverlay() {
+  // Grid (60u cells matching the placement snap)
+  ctx.save();
+  ctx.strokeStyle = 'rgba(232, 228, 216, 0.18)';
+  ctx.lineWidth = 1;
+  for (let gx = 0; gx <= NN_ARENA.w; gx += EDITOR_BLOCK) {
+    ctx.beginPath();
+    ctx.moveTo(NN_ARENA.x0 + gx, NN_ARENA.y0);
+    ctx.lineTo(NN_ARENA.x0 + gx, NN_ARENA.y0 + NN_ARENA.h);
+    ctx.stroke();
+  }
+  for (let gy = 0; gy <= NN_ARENA.h; gy += EDITOR_BLOCK) {
+    ctx.beginPath();
+    ctx.moveTo(NN_ARENA.x0,                  NN_ARENA.y0 + gy);
+    ctx.lineTo(NN_ARENA.x0 + NN_ARENA.w,     NN_ARENA.y0 + gy);
+    ctx.stroke();
+  }
+  // Cursor preview block at the snapped grid cell under the mouse
+  const wp = screenToWorld(mouse.x, mouse.y);
+  const localX = wp.x - NN_ARENA.x0, localY = wp.y - NN_ARENA.y0;
+  const gx = Math.floor(localX / EDITOR_BLOCK) * EDITOR_BLOCK;
+  const gy = Math.floor(localY / EDITOR_BLOCK) * EDITOR_BLOCK;
+  if (gx >= 0 && gy >= 0 && gx + EDITOR_BLOCK <= NN_ARENA.w && gy + EDITOR_BLOCK <= NN_ARENA.h) {
+    const wx = NN_ARENA.x0 + gx, wy = NN_ARENA.y0 + gy;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 3;
+    if (editor.tool === 'erase') {
+      ctx.strokeStyle = COLORS.red;
+      ctx.strokeRect(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK);
+      ctx.beginPath();
+      ctx.moveTo(wx, wy); ctx.lineTo(wx + EDITOR_BLOCK, wy + EDITOR_BLOCK);
+      ctx.moveTo(wx + EDITOR_BLOCK, wy); ctx.lineTo(wx, wy + EDITOR_BLOCK);
+      ctx.stroke();
+    } else {
+      const fill = editor.tool === 'wall' ? COLORS.gray
+                 : editor.tool === 'tree' ? '#3F4A3A'
+                                          : COLORS.creamDark;
+      ctx.fillStyle = fill;
+      ctx.fillRect(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK);
+      ctx.strokeStyle = COLORS.red;
+      ctx.strokeRect(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK);
+    }
+  }
+  ctx.restore();
 }
 
 function renderWorld() {
