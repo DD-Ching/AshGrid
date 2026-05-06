@@ -657,10 +657,12 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 <div class="overlay editor-overlay hidden" id="editor">
   <div class="editor-toolbar">
     <span class="editor-title">編輯器 / EDITOR</span>
-    <button data-tool="wall"  class="ed-tool">墙</button>
-    <button data-tool="cover" class="ed-tool active">掩</button>
-    <button data-tool="tree"  class="ed-tool">树</button>
-    <button data-tool="erase" class="ed-tool">删</button>
+    <button data-tool="wall"      class="ed-tool">墙</button>
+    <button data-tool="cover"     class="ed-tool active">掩</button>
+    <button data-tool="tree"      class="ed-tool">树</button>
+    <button data-tool="blueSpawn" class="ed-tool">蓝出</button>
+    <button data-tool="redSpawn"  class="ed-tool">红出</button>
+    <button data-tool="erase"     class="ed-tool">删</button>
     <span class="ed-spacer"></span>
     <button id="edClearBtn" class="ed-action">清空</button>
     <button id="edSaveBtn"  class="ed-action">存档</button>
@@ -1551,26 +1553,24 @@ function exitMatchToMenu() {
 }
 
 // ============ MAP EDITOR ============
-const editor = { tool: 'cover' };
+const editor = { tool: 'cover', spawn: { blue: null, red: null } };
 const EDITOR_BLOCK = 60;     // all placements snap to 60u grid
 
 function openEditor() {
   game.state = 'editor';
   document.getElementById('start').classList.add('hidden');
   document.getElementById('editor').classList.remove('hidden');
-  // Build a fresh NN_ARENA with no walls
   generateWorld(NN_ARENA_MAP_INDEX);
-  // Park camera at arena center; player.x/y drives camera follow.
   player.x = NN_ARENA.x0 + NN_ARENA.w / 2;
   player.y = NN_ARENA.y0 + NN_ARENA.h / 2;
-  player.alive = false;          // hide soldier sprite
+  player.alive = false;
   game.mode = 'tactical';
   game._nnMode = false;
   enemies.length = 0;
   allies.length = 0;
   bullets.length = 0;
   enemyBullets.length = 0;
-  // Restore the saved custom map (if any) into buildings/lowCovers
+  editor.spawn = { blue: null, red: null };
   try {
     const saved = JSON.parse(localStorage.getItem('ag.customMap') || 'null');
     if (saved && Array.isArray(saved.walls)) {
@@ -1583,6 +1583,10 @@ function openEditor() {
         }
       }
     }
+    if (saved && saved.spawn) {
+      editor.spawn.blue = saved.spawn.blue || null;
+      editor.spawn.red  = saved.spawn.red  || null;
+    }
   } catch (e) {}
 }
 function closeEditor() {
@@ -1592,30 +1596,43 @@ function closeEditor() {
 }
 function editorPlaceAt(screenX, screenY) {
   const wp = screenToWorld(screenX, screenY);
-  // Snap to EDITOR_BLOCK grid (in NN_ARENA local coords)
   const localX = wp.x - NN_ARENA.x0, localY = wp.y - NN_ARENA.y0;
   const gx = Math.floor(localX / EDITOR_BLOCK) * EDITOR_BLOCK;
   const gy = Math.floor(localY / EDITOR_BLOCK) * EDITOR_BLOCK;
   if (gx < 0 || gy < 0 || gx + EDITOR_BLOCK > NN_ARENA.w || gy + EDITOR_BLOCK > NN_ARENA.h) return;
   const wx = NN_ARENA.x0 + gx, wy = NN_ARENA.y0 + gy;
+  // Spawn anchors store the cell CENTER, in arena-local coords (matching the
+  // shape used by built-in indoor variants' `spawn` field).
+  if (editor.tool === 'blueSpawn') {
+    editor.spawn.blue = { x: gx + EDITOR_BLOCK / 2, y: gy + EDITOR_BLOCK / 2 };
+    return;
+  }
+  if (editor.tool === 'redSpawn') {
+    editor.spawn.red = { x: gx + EDITOR_BLOCK / 2, y: gy + EDITOR_BLOCK / 2 };
+    return;
+  }
   if (editor.tool === 'erase') {
+    // Erase blocks first; if the click is on an existing spawn cell, clear it
     let i = lowCovers.findIndex(lc => lc.x === wx && lc.y === wy);
     if (i >= 0) { lowCovers.splice(i, 1); return; }
     i = buildings.findIndex(b => b.x === wx && b.y === wy);
     if (i >= 0) { buildings.splice(i, 1); return; }
-  } else {
-    // Replace any existing block in this cell
-    const lci = lowCovers.findIndex(lc => lc.x === wx && lc.y === wy);
-    if (lci >= 0) lowCovers.splice(lci, 1);
-    const bi = buildings.findIndex(b => b.x === wx && b.y === wy);
-    if (bi >= 0) buildings.splice(bi, 1);
-    if (editor.tool === 'wall') {
-      addBuilding(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, COLORS.gray);
-    } else if (editor.tool === 'cover') {
-      addLowCover(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, COLORS.creamDark, { kind: 'crate' });
-    } else if (editor.tool === 'tree') {
-      addLowCover(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, '#3F4A3A', { kind: 'tree', canopy: true });
-    }
+    const localCx = gx + EDITOR_BLOCK / 2, localCy = gy + EDITOR_BLOCK / 2;
+    if (editor.spawn.blue && editor.spawn.blue.x === localCx && editor.spawn.blue.y === localCy) editor.spawn.blue = null;
+    if (editor.spawn.red  && editor.spawn.red.x  === localCx && editor.spawn.red.y  === localCy) editor.spawn.red  = null;
+    return;
+  }
+  // Wall / cover / tree: replace whatever's in the cell
+  const lci = lowCovers.findIndex(lc => lc.x === wx && lc.y === wy);
+  if (lci >= 0) lowCovers.splice(lci, 1);
+  const bi = buildings.findIndex(b => b.x === wx && b.y === wy);
+  if (bi >= 0) buildings.splice(bi, 1);
+  if (editor.tool === 'wall') {
+    addBuilding(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, COLORS.gray);
+  } else if (editor.tool === 'cover') {
+    addLowCover(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, COLORS.creamDark, { kind: 'crate' });
+  } else if (editor.tool === 'tree') {
+    addLowCover(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, '#3F4A3A', { kind: 'tree', canopy: true });
   }
 }
 function editorSerialize() {
@@ -1628,16 +1645,24 @@ function editorSerialize() {
     walls.push({ x: lc.x - NN_ARENA.x0, y: lc.y - NN_ARENA.y0,
                  w: lc.w, h: lc.h, kind: 'cover', canopy: !!lc.canopy });
   }
-  return { walls };
+  const out = { walls };
+  if (editor.spawn.blue || editor.spawn.red) {
+    out.spawn = {};
+    if (editor.spawn.blue) out.spawn.blue = editor.spawn.blue;
+    if (editor.spawn.red)  out.spawn.red  = editor.spawn.red;
+  }
+  return out;
 }
 function editorSave() {
   const data = editorSerialize();
   try { localStorage.setItem('ag.customMap', JSON.stringify(data)); } catch (e) {}
-  showSwapToast(`已保存 ${data.walls.length} 块`);
+  const sp = (data.spawn?.blue ? 1 : 0) + (data.spawn?.red ? 1 : 0);
+  showSwapToast(`已保存 ${data.walls.length} 块 · ${sp} 出生点`);
 }
 function editorClear() {
   buildings.length = 0;
   lowCovers.length = 0;
+  editor.spawn = { blue: null, red: null };
 }
 function editorTest() {
   editorSave();
@@ -2128,13 +2153,13 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   showMessage(`地图: ${variant.name}`, 120);
   playSfx('match_start');
 
-  // Team spawn anchors — variants may override (e.g. indoor maps drop both
-  // teams inside the building so the whole match plays out indoors).
+  // Team spawn anchors — variants may override per-team (custom user maps
+  // can specify only one side; the missing side falls back to default).
   const sp = variant.spawn;
-  game._nnSpawnBlue = sp
+  game._nnSpawnBlue = (sp && sp.blue)
     ? { x: NN_ARENA.x0 + sp.blue.x, y: NN_ARENA.y0 + sp.blue.y }
     : { x: NN_ARENA.x0 + 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
-  game._nnSpawnRed  = sp
+  game._nnSpawnRed  = (sp && sp.red)
     ? { x: NN_ARENA.x0 + sp.red.x,  y: NN_ARENA.y0 + sp.red.y }
     : { x: NN_ARENA.x0 + NN_ARENA.w - 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
 
@@ -3272,8 +3297,8 @@ const NN_MAP_VARIANTS = [
   },
 ];
 
-// User-built map slot — populated by the editor (Phase 3b). Reads
-// 'ag.customMap' at variant-build time so changes are picked up live.
+// User-built map slot — populated by the editor. Reads 'ag.customMap' at
+// variant-build time so saved changes are picked up live (no rebuild).
 NN_MAP_VARIANTS.push({
   id: 'custom', name: '玩家自制 CUSTOM',
   walls: () => {
@@ -3282,10 +3307,17 @@ NN_MAP_VARIANTS.push({
       return saved && Array.isArray(saved.walls) ? saved.walls : [];
     } catch (e) { return []; }
   },
-  // Tag DM only for now — once editor lands, the user can re-tag from UI.
+  // Spawn anchors: the variant exposes a getter so startNNSkirmish picks up
+  // whatever was saved last. If the user saved blue+red, both are honored;
+  // missing slots fall back to startNNSkirmish defaults (200,h/2 / w-200,h/2).
+  get spawn() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('ag.customMap') || 'null');
+      if (saved && saved.spawn && (saved.spawn.blue || saved.spawn.red)) return saved.spawn;
+    } catch (e) {}
+    return undefined;
+  },
   modes: ['dm'],
-  // Available only when the user has actually saved a custom map.
-  // pickMapForMode filters this out when localStorage slot is empty.
   _gateOnSavedMap: true,
 });
 
@@ -7222,6 +7254,28 @@ function renderEditorOverlay() {
     ctx.lineTo(NN_ARENA.x0 + NN_ARENA.w,     NN_ARENA.y0 + gy);
     ctx.stroke();
   }
+  // Existing spawn markers — drawn underneath the cursor preview
+  const drawSpawnMarker = (sp, color, label) => {
+    if (!sp) return;
+    const wx = NN_ARENA.x0 + sp.x, wy = NN_ARENA.y0 + sp.y;
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(wx, wy, 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = COLORS.cream;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, wx, wy + 6);
+    ctx.textAlign = 'left';
+    ctx.globalAlpha = 1;
+  };
+  drawSpawnMarker(editor.spawn.blue, '#1A1A1A', '蓝');
+  drawSpawnMarker(editor.spawn.red,  COLORS.red, '红');
+
   // Cursor preview block at the snapped grid cell under the mouse
   const wp = screenToWorld(mouse.x, mouse.y);
   const localX = wp.x - NN_ARENA.x0, localY = wp.y - NN_ARENA.y0;
@@ -7238,6 +7292,15 @@ function renderEditorOverlay() {
       ctx.moveTo(wx, wy); ctx.lineTo(wx + EDITOR_BLOCK, wy + EDITOR_BLOCK);
       ctx.moveTo(wx + EDITOR_BLOCK, wy); ctx.lineTo(wx, wy + EDITOR_BLOCK);
       ctx.stroke();
+    } else if (editor.tool === 'blueSpawn' || editor.tool === 'redSpawn') {
+      // Show a faint disc at cell center so the user sees where the spawn lands
+      const cx = wx + EDITOR_BLOCK / 2, cy = wy + EDITOR_BLOCK / 2;
+      ctx.fillStyle = editor.tool === 'blueSpawn' ? '#1A1A1A' : COLORS.red;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = COLORS.red;
+      ctx.strokeRect(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK);
     } else {
       const fill = editor.tool === 'wall' ? COLORS.gray
                  : editor.tool === 'tree' ? '#3F4A3A'
