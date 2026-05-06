@@ -1542,8 +1542,27 @@ window.addEventListener('mousedown', e => {
     e.preventDefault();
     return;
   }
+  // BUILD PHASE: between waves in survival, click → place a 60×60 cover
+  // at the world coord (clamped to arena interior) — 3 placements per phase.
+  if (game._buildPhase && game._buildPhase.active && game._buildPhase.left > 0) {
+    placeBuildBlock(e.clientX, e.clientY);
+    e.preventDefault();
+    return;
+  }
   mouse.down = true;
 });
+
+function placeBuildBlock(screenX, screenY) {
+  if (!game._buildPhase || game._buildPhase.left <= 0) return;
+  const wp = screenToWorld(screenX, screenY);
+  const SIZE = 60, PAD = 30;
+  const cx = Math.max(NN_ARENA.x0 + PAD, Math.min(NN_ARENA.x0 + NN_ARENA.w - SIZE - PAD, wp.x - SIZE / 2));
+  const cy = Math.max(NN_ARENA.y0 + PAD, Math.min(NN_ARENA.y0 + NN_ARENA.h - SIZE - PAD, wp.y - SIZE / 2));
+  addLowCover(cx, cy, SIZE, SIZE, COLORS.creamDark, { kind: 'crate' });
+  game._buildPhase.left--;
+  playSfx('reload', { vol: 0.5 });
+  showSwapToast(`放置掩体 · 剩余 ${game._buildPhase.left}`);
+}
 
 // Restore collapsed state from previous session
 try { game._minimapCollapsed = localStorage.getItem('ag.minimapCollapsed') === '1'; }
@@ -1625,7 +1644,12 @@ if (touchInput.enabled) {
         }
         if (hit) continue;
       }
-      // 5) Otherwise: stick assignment by screen half
+      // 5a) BUILD PHASE: between-wave cover placement takes precedence
+      if (game._buildPhase && game._buildPhase.active && game._buildPhase.left > 0) {
+        placeBuildBlock(t.clientX, t.clientY);
+        continue;
+      }
+      // 5b) Otherwise: stick assignment by screen half
       if (t.clientX < window.innerWidth / 2) {
         if (!touchInput.moveTouch) {
           touchInput.moveTouch = { id: t.identifier, anchorX: t.clientX, anchorY: t.clientY, dx: 0, dy: 0 };
@@ -4789,17 +4813,21 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
       for (const a of allies) {
         if (!a.alive) a._respawnAt = null;
       }
-      // Reds: track kills for cleared wave; when wave is empty, schedule next.
+      // Reds: track kills for cleared wave; when wave is empty, schedule
+      // next wave + open the BUILD PHASE for 8s with 3 placements.
       if (waveStarted && redAlive === 0 && enemies.length > 0) {
         kills += enemies.length;
         enemies.length = 0;
         waveStarted = false;
-        waveBreakUntil = game.time + 180;   // 3s breather
-        showMessage(`第 ${wave} 波清除 · 总击杀 ${kills}`, 150);
+        waveBreakUntil = game.time + 8 * 60;
+        game._buildPhase = { active: true, left: 3 };
+        showMessage(`第 ${wave} 波清除 · 击杀 ${kills} · 点击放置掩体 (3)`, 150);
         playSfx('match_win', { vol: 0.4 });
       }
-      // Spawn next wave after breather
-      if (endStage == null && !waveStarted && game.time >= waveBreakUntil) {
+      // Spawn next wave after breather (or once player placed all 3 covers)
+      if (endStage == null && !waveStarted &&
+          (game.time >= waveBreakUntil || (game._buildPhase && game._buildPhase.left === 0))) {
+        game._buildPhase = null;
         wave++;
         spawnWave(wave);
         waveStarted = true;
@@ -8633,6 +8661,46 @@ function renderHUDOverlays() {
     ctx.arc(mouse.x, mouse.y, 3, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
+  }
+
+  // ---- Build-phase ghost preview (between waves in survival) ----
+  if (game._buildPhase && game._buildPhase.active && game._buildPhase.left > 0 && player.alive) {
+    // Project mouse to world, project back to screen for ghost rect
+    const wp = screenToWorld(mouse.x, mouse.y);
+    const SIZE = 60;
+    const cx = Math.max(NN_ARENA.x0, Math.min(NN_ARENA.x0 + NN_ARENA.w - SIZE, wp.x - SIZE / 2));
+    const cy = Math.max(NN_ARENA.y0, Math.min(NN_ARENA.y0 + NN_ARENA.h - SIZE, wp.y - SIZE / 2));
+    // Inverse of screenToWorld for the rect corners
+    const dx0 = cx - camera.x, dy0 = cy - camera.y;
+    const dx1 = (cx + SIZE) - camera.x, dy1 = (cy + SIZE) - camera.y;
+    const c = Math.cos(camera.rotation), s = Math.sin(camera.rotation);
+    const proj = (rx, ry) => ({
+      x: (rx * c - ry * s) * camera.scale + W() / 2,
+      y: (rx * s + ry * c) * camera.scale + H() / 2,
+    });
+    const p00 = proj(dx0, dy0), p11 = proj(dx1, dy1);
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = COLORS.red;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(p00.x, p00.y, p11.x - p00.x, p11.y - p00.y);
+    ctx.fillStyle = 'rgba(232, 228, 216, 0.25)';
+    ctx.fillRect(p00.x, p00.y, p11.x - p00.x, p11.y - p00.y);
+    ctx.setLineDash([]);
+    ctx.restore();
+    // HUD banner top-center
+    ctx.save();
+    const bw = 240, bh = 28;
+    const bx = W() / 2 - bw / 2, by = 60;
+    ctx.fillStyle = 'rgba(200, 38, 28, 0.9)';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`建造阶段 · 剩 ${game._buildPhase.left} 块`, W() / 2, by + 18);
+    ctx.textAlign = 'left';
+    ctx.restore();
   }
 
   // ---- Touch overlay: virtual sticks + action buttons ----

@@ -22,8 +22,10 @@
 - [x] 物資護送任務(UGV Convoy)— 3a901e5
 - [x] 多方向 spawn(survival 進階波)— a147e9c
 - [x] 森林地圖(UAV 看不穿樹冠)— 911a254
-- [x] 背景音樂(ambient loop × 2-3)— 下一個 commit
-- [ ] 玩家蓋碉堡 phase(survival 波間)
+- [x] 背景音樂(ambient loop × 2-3)— 6b3db0a
+- [x] 玩家蓋碉堡 phase(survival 波間)— 下一個 commit
+
+**階段 2 完成 ✅**
 
 ## 階段 3:Stub 接點(我寫好,你補帳號)
 - [ ] AdMob rewarded-ad interface(觸發點:陣亡續命 / 解鎖外觀 / 解鎖隱藏 NN)
