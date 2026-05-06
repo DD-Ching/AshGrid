@@ -20,7 +20,7 @@
 ## 階段 2:內容 / 樂趣
 - [ ] 直升機撤離任務(Helo Extract)
 - [ ] 物資護送任務(UGV Convoy)
-- [ ] 多方向 spawn(survival 進階波)
+- [x] 多方向 spawn(survival 進階波)— 下一個 commit
 - [ ] 森林地圖(UAV 看不穿樹冠)
 - [ ] 背景音樂(ambient loop × 2-3)
 - [ ] 玩家蓋碉堡 phase(survival 波間)

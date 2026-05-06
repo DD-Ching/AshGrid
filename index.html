@@ -4532,17 +4532,47 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
   ];
   const waveSize = (n) => Math.min(4, 2 + Math.floor((n + 1) / 2));   // 3,3,4,4,4,...
 
+  // Per-wave spawn direction. survival_fort has its bunker on the west, so
+  // we skip W there (would put reds inside the player's stronghold). Other
+  // maps rotate through all 4 sides for varied angles of attack.
+  function pickSpawnEdge(n) {
+    const sides = (game._nnVariantId === 'survival_fort')
+      ? ['E', 'N', 'S']
+      : ['E', 'N', 'S', 'W'];
+    return sides[(n - 1) % sides.length];   // deterministic rotation per wave
+  }
   function spawnWave(n) {
     const tiers = WAVE_TIERS[Math.min(n - 1, WAVE_TIERS.length - 1)];
     const size = waveSize(n);
     enemies.length = 0;
-    const spacing = NN_ARENA.h / (size + 1);
+    const edge = pickSpawnEdge(n);
+    const margin = 100;
+    const ax = NN_ARENA.x0, ay = NN_ARENA.y0;
+    const aw = NN_ARENA.w,  ah = NN_ARENA.h;
+    // Pick anchor + spread axis per edge
+    let getXY;
+    if (edge === 'E') {
+      const sp = ah / (size + 1);
+      getXY = (i) => ({ x: ax + aw - margin, y: ay + sp * (i + 1) });
+    } else if (edge === 'W') {
+      const sp = ah / (size + 1);
+      getXY = (i) => ({ x: ax + margin,       y: ay + sp * (i + 1) });
+    } else if (edge === 'N') {
+      const sp = aw / (size + 1);
+      getXY = (i) => ({ x: ax + sp * (i + 1), y: ay + margin });
+    } else { // S
+      const sp = aw / (size + 1);
+      getXY = (i) => ({ x: ax + sp * (i + 1), y: ay + ah - margin });
+    }
     for (let i = 0; i < size; i++) {
       const tier = tiers[i % tiers.length];
+      const pos = getXY(i);
+      // Face roughly toward the arena center
+      const cx = ax + aw / 2, cy = ay + ah / 2;
+      const facing = Math.atan2(cy - pos.y, cx - pos.x);
       enemies.push({
-        x: game._nnSpawnRed.x,
-        y: NN_ARENA.y0 + spacing * (i + 1),
-        hp: 50, maxHp: 50, angle: Math.PI,
+        x: pos.x, y: pos.y,
+        hp: 50, maxHp: 50, angle: facing,
         fireCd: 0, fireRate: 50, radius: 13, alive: true,
         walkPhase: Math.random() * Math.PI * 2,
         speed: 1.0,
@@ -4554,6 +4584,7 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
         _invulnUntil: game.time + 90,
       });
     }
+    game._survivalEdge = edge;   // for HUD callout
     // Heal alive blue + restore mags between waves
     if (player.alive) {
       player.hp = player.maxHp;
@@ -4569,7 +4600,8 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
         a._invulnUntil = game.time + 60;
       }
     }
-    showMessage(`第 ${n} 波 · ${size} 名敌军 (${tiers.join('/')})`, 150);
+    const edgeLabel = ({ N: '北', S: '南', E: '东', W: '西' })[edge] || '?';
+    showMessage(`第 ${n} 波 · ${size} 敌 来自${edgeLabel}方 (${tiers.join('/')})`, 150);
     playSfx('match_start', { vol: 0.45 });
   }
 
