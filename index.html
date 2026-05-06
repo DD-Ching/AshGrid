@@ -641,6 +641,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <div class="diff-pick-inner">
         <button data-mode="dm"       class="mode-btn diff-btn active">对抗<span>DEATHMATCH</span></button>
         <button data-mode="survival" class="mode-btn diff-btn">生存<span>SURVIVAL</span></button>
+        <button data-mode="defense"  class="mode-btn diff-btn">防御<span>DEFENSE</span></button>
         <button data-mode="helo"     class="mode-btn diff-btn">撤离<span>HELO EXTRACT</span></button>
         <button data-mode="convoy"   class="mode-btn diff-btn">护送<span>CONVOY</span></button>
         <button data-mode="duel"     class="mode-btn diff-btn">单挑<span>DUEL 1v1</span></button>
@@ -684,7 +685,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     <div class="lobby-actions">
       <button class="start-btn" id="lobbyStartBtn">开始战斗 ▶</button>
       <button class="lobby-cancel" id="lobbyCancelBtn">返回</button>
-      <span class="lobby-hint">每方 1-4 人 · 不对称也可以 (1v3、3v1)</span>
+      <span class="lobby-hint">每方 1-8 人 · 不对称也可以 (1v6、5v2)</span>
     </div>
   </div>
 </div>
@@ -799,6 +800,7 @@ const I18N = {
   '#nnLobby .difficulty-row:has([data-mode]) .difficulty-label': { zh: '模式 MODE', en: 'MODE' },
   '#nnLobby [data-mode="dm"]':       { zh: '对抗<span>DEATHMATCH</span>',     en: 'DM<span>deathmatch</span>' },
   '#nnLobby [data-mode="survival"]': { zh: '生存<span>SURVIVAL</span>',       en: 'SURV<span>hold waves</span>' },
+  '#nnLobby [data-mode="defense"]':  { zh: '防御<span>DEFENSE</span>',         en: 'DEFENSE<span>build + hold</span>' },
   '#nnLobby [data-mode="helo"]':     { zh: '撤离<span>HELO EXTRACT</span>',   en: 'HELO<span>LZ extract</span>' },
   '#nnLobby [data-mode="convoy"]':   { zh: '护送<span>CONVOY</span>',         en: 'CONVOY<span>UGV escort</span>' },
   '#nnLobby [data-mode="duel"]':     { zh: '单挑<span>DUEL 1v1</span>',       en: 'DUEL<span>1 v 1</span>' },
@@ -820,7 +822,7 @@ const I18N = {
   '#nnLobby .lineup-team-label.red':  { zh: '敌军 RED',  en: 'RED TEAM' },
   '#lobbyStartBtn':         { zh: '开始战斗 ▶', en: 'START ▶' },
   '#lobbyCancelBtn':        { zh: '返回', en: 'BACK' },
-  '#nnLobby .lobby-hint':   { zh: '每方 1-4 人 · 不对称也可以 (1v3、3v1)', en: '1-4 per side · asymmetric OK (1v3, 3v1)' },
+  '#nnLobby .lobby-hint':   { zh: '每方 1-8 人 · 不对称也可以 (1v6、5v2)', en: '1-8 per side · asymmetric OK (1v6, 5v2)' },
 
   // ---- Map editor toolbar ----
   '#editor .editor-title':                    { zh: '編輯器 / EDITOR', en: 'EDITOR' },
@@ -996,6 +998,333 @@ const player = {
   grenades: 3, maxGrenades: 3,
 };
 
+
+// ============ STRUCTURES (Defense mode) ============
+// Player-built modules that fight, generate energy, extend vision, etc.
+// Each structure is { kind, x, y, hp, maxHp, ...kindFields } and lives in
+// game._structures. Bullets / grenades damage them via the same hit loop
+// as units; render adds them to the world pass; defense mission ticks
+// their behaviour. Costs deduct from game._energy at place time.
+const STRUCTURE_DEFS = {
+  wall: {
+    cost: 60, hp: 200, size: 60, blocks: true, blocksLOS: true,
+    label: () => T('牆', 'WALL'),
+  },
+  turret: {
+    cost: 100, hp: 80, size: 50, blocks: false, blocksLOS: false,
+    range: 380, fireCd: 60, dmg: 25,
+    label: () => T('自动炮塔', 'TURRET'),
+  },
+  generator: {
+    cost: 80, hp: 50, size: 50, blocks: false, blocksLOS: false,
+    energyPerSec: 1.0,
+    label: () => T('能源', 'GEN'),
+  },
+  camera: {
+    cost: 60, hp: 40, size: 40, blocks: false, blocksLOS: false,
+    visionR: 360,
+    label: () => T('监视器', 'CAM'),
+  },
+  bot: {
+    cost: 180, hp: 0, size: 0, blocks: false, blocksLOS: false,  // not a structure once placed
+    isUnitSpawner: true,
+    label: () => T('机器人', 'BOT'),
+  },
+  terminal: {
+    cost: 200, hp: 60, size: 50, blocks: false, blocksLOS: false,
+    airstrikeCd: 1800,    // 30s between airstrikes
+    label: () => T('终端', 'TERM'),
+  },
+  // Mine: invisible (to enemies; faint to player) — detonates when an enemy
+  // enters TRIGGER_R. Cheap one-shot AOE; great for choke points but loses
+  // value against scattered formations.
+  mine: {
+    cost: 40, hp: 1, size: 24, blocks: false, blocksLOS: false,
+    triggerR: 30, blastR: 110, dmg: 70,
+    label: () => T('地雷', 'MINE'),
+  },
+  // Trip-mine: places a hair-trigger that explodes when ANY enemy crosses
+  // within TRIGGER_R of a 60u-extended line in front of the structure. Higher
+  // cost than a single mine but covers a wider arc.
+  tripmine: {
+    cost: 70, hp: 1, size: 28, blocks: false, blocksLOS: false,
+    triggerR: 50, blastR: 130, dmg: 70,
+    label: () => T('诡雷', 'TRIPMINE'),
+  },
+  // Sensor: passive — pings enemies in radius onto the minimap (no damage).
+  // Cheap intel, easy to destroy. Useful behind walls to scout the next wave.
+  sensor: {
+    cost: 30, hp: 30, size: 30, blocks: false, blocksLOS: false,
+    pingR: 320,
+    label: () => T('感测器', 'SENSOR'),
+  },
+  // Smoke emitter: every 6s spawns a smoke cloud that blocks line-of-sight
+  // for 5s in 140u radius. Tactical — denies enemy NN aim through it.
+  smoke: {
+    cost: 70, hp: 50, size: 36, blocks: false, blocksLOS: false,
+    emitCd: 360, cloudLife: 300, cloudR: 140,
+    label: () => T('烟雾', 'SMOKE'),
+  },
+};
+const STRUCTURE_ORDER = ['wall', 'turret', 'generator', 'camera', 'bot', 'terminal',
+                         'mine', 'tripmine', 'sensor', 'smoke'];
+
+function getStructureCost(kind) { return STRUCTURE_DEFS[kind]?.cost || 0; }
+function canAffordStructure(kind) { return (game._energy || 0) >= getStructureCost(kind); }
+
+// Place a structure at world (wx, wy). For combat-bot it instead spawns an
+// NN ally directly (one-time use, no persistent module). Returns true on
+// success. Caller checks build-mode + line-of-sight as needed.
+function placeStructure(kind, wx, wy) {
+  const def = STRUCTURE_DEFS[kind]; if (!def) return false;
+  if (!canAffordStructure(kind)) {
+    showSwapToast(T(`能源不足 (需 ${def.cost})`, `Insufficient energy (need ${def.cost})`));
+    return false;
+  }
+  // Combat bot: spawn a fresh NN ally on the spot (joins blue team).
+  if (kind === 'bot') {
+    const callsignPool = ['BRAVO','CHARLIE','DELTA','ECHO','FOXTROT','GOLF','HOTEL','INDIA'];
+    const usedCs = new Set(allies.map(a => a.callsign));
+    const callsign = callsignPool.find(c => !usedCs.has(c)) || ('U' + (allies.length));
+    const w = WEAPONS[_lobby.weapon] || WEAPONS.RIFLE;
+    allies.push({
+      callsign, offsetX: 0, offsetY: 0,
+      x: wx, y: wy,
+      angle: 0, gunAngle: 0, gunRecoil: 0,
+      swayPhase: Math.random() * Math.PI * 2, walkPhase: 0,
+      hp: 80, maxHp: 80,
+      alive: true, radius: 13,
+      speed: 2.5, fireCd: 0,
+      weaponId: _lobby.weapon || 'RIFLE',
+      _weapon: w,
+      _nnDifficulty: _lobby.difficulty || 'elite',
+      target: null, lookPhase: 0, team: 0,
+      _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+      _respawnAt: null, _invulnUntil: game.time + 60,
+      _deployed: true,
+    });
+    game._energy -= def.cost;
+    showSwapToast(T(`部署 ${callsign}`, `Deployed ${callsign}`));
+    playSfx('reload', { vol: 0.6 });
+    return true;
+  }
+  // Normal structure
+  game._structures = game._structures || [];
+  const s = {
+    kind, x: wx, y: wy, hp: def.hp, maxHp: def.hp,
+    fireCd: 0, airstrikeCd: 0, _placedAt: game.time,
+  };
+  game._structures.push(s);
+  game._energy -= def.cost;
+  showSwapToast(T(`部署 ${def.label()}`, `Deployed ${def.label()}`));
+  playSfx('reload', { vol: 0.5 });
+  return true;
+}
+
+function updateStructures() {
+  if (!game._structures) return;
+  for (let i = game._structures.length - 1; i >= 0; i--) {
+    const s = game._structures[i];
+    const def = STRUCTURE_DEFS[s.kind];
+    if (!def) { game._structures.splice(i, 1); continue; }
+    if (s.hp <= 0) {
+      // Death FX + remove
+      createExplosion(s.x, s.y, 'small');
+      game._structures.splice(i, 1);
+      continue;
+    }
+    // Generator: tick energy
+    if (s.kind === 'generator') {
+      game._energy = Math.min(999, (game._energy || 0) + (def.energyPerSec / 60));
+    }
+    // Turret: scan + fire
+    if (s.kind === 'turret') {
+      if (s.fireCd > 0) s.fireCd--;
+      if (s.fireCd <= 0) {
+        let best = null, bestD = def.range;
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          const d = Math.hypot(e.x - s.x, e.y - s.y);
+          if (d < bestD && lineOfSight(s.x, s.y, e.x, e.y)) { best = e; bestD = d; }
+        }
+        if (best) {
+          const a = Math.atan2(best.y - s.y, best.x - s.x);
+          s.gunAngle = a;
+          // Spawn a bullet from the turret
+          bullets.push({
+            x: s.x + Math.cos(a) * 18, y: s.y + Math.sin(a) * 18,
+            vx: Math.cos(a) * 18, vy: Math.sin(a) * 18,
+            life: 36, dmg: def.dmg, team: 0,
+            fromTurret: true, fromUnit: null, weaponName: T('炮塔', 'turret'),
+          });
+          s.fireCd = def.fireCd;
+          playSfx('shoot', { vol: 0.3, src: { x: s.x, y: s.y } });
+        }
+      }
+    }
+    // Terminal: tick airstrike CD
+    if (s.kind === 'terminal') {
+      if (s.airstrikeCd > 0) s.airstrikeCd--;
+    }
+    // Mine: detonate when enemy enters trigger radius
+    if (s.kind === 'mine' || s.kind === 'tripmine') {
+      const tr = def.triggerR;
+      let triggered = false;
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        if (Math.hypot(e.x - s.x, e.y - s.y) < tr) { triggered = true; break; }
+      }
+      if (triggered) {
+        // AOE damage to all enemies in blast radius
+        createExplosion(s.x, s.y, 'big');
+        playSfx('death', { vol: 0.6 });
+        emitSound(s.x, s.y, 1200, false);
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          const d = Math.hypot(e.x - s.x, e.y - s.y);
+          if (d < def.blastR) {
+            const dmg = Math.round(def.dmg * (1 - d / def.blastR));
+            e.hp -= dmg;
+            if (e.hp <= 0) { e.alive = false; e.hp = 0; createExplosion(e.x, e.y, 'small'); }
+          }
+        }
+        s.hp = 0;     // mark for cleanup next tick
+      }
+    }
+    // Sensor: every 30 ticks, mark enemies in range as "pinged" so the
+    // minimap reveals them this round. Persistent until they leave radius.
+    if (s.kind === 'sensor') {
+      if ((game.time + i) % 30 === 0) {
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          if (Math.hypot(e.x - s.x, e.y - s.y) < def.pingR) {
+            e._sensorPingUntil = game.time + 60;
+          }
+        }
+      }
+    }
+    // Smoke emitter: every emitCd ticks, spawn a smoke cloud at this spot
+    if (s.kind === 'smoke') {
+      if (s.emitCd === undefined) s.emitCd = 60;
+      if (s.emitCd > 0) s.emitCd--;
+      if (s.emitCd <= 0) {
+        game._smokeClouds = game._smokeClouds || [];
+        game._smokeClouds.push({
+          x: s.x, y: s.y, r: def.cloudR, life: def.cloudLife, maxLife: def.cloudLife,
+        });
+        s.emitCd = def.emitCd;
+      }
+    }
+  }
+  // Tick smoke clouds + clean up
+  if (game._smokeClouds) {
+    for (let i = game._smokeClouds.length - 1; i >= 0; i--) {
+      const c = game._smokeClouds[i];
+      c.life--;
+      if (c.life <= 0) game._smokeClouds.splice(i, 1);
+    }
+  }
+  // Tick footprints
+  if (game._footprints) {
+    for (let i = game._footprints.length - 1; i >= 0; i--) {
+      game._footprints[i].life--;
+      if (game._footprints[i].life <= 0) game._footprints.splice(i, 1);
+    }
+  }
+}
+
+// Camera structures extend shared vision — used by line-of-sight checks for
+// auto-aim and minimap reveal. Returns true if any friendly camera (or
+// normal blue unit) can see (sx, sy).
+function cameraCanSee(sx, sy) {
+  if (!game._structures) return false;
+  for (const s of game._structures) {
+    if (s.kind !== 'camera' || s.hp <= 0) continue;
+    const def = STRUCTURE_DEFS.camera;
+    if (Math.hypot(sx - s.x, sy - s.y) <= def.visionR) {
+      if (lineOfSight(s.x, s.y, sx, sy)) return true;
+    }
+  }
+  return false;
+}
+
+// Damage closest structure on bullet hit. Called from updateBullets when
+// the bullet enters a structure's bbox. Returns true if hit was absorbed.
+function bulletHitStructure(b) {
+  if (!game._structures) return false;
+  for (let i = 0; i < game._structures.length; i++) {
+    const s = game._structures[i];
+    const def = STRUCTURE_DEFS[s.kind]; if (!def || s.hp <= 0) continue;
+    const r = def.size / 2;
+    if (Math.abs(b.x - s.x) <= r && Math.abs(b.y - s.y) <= r) {
+      // Friendly fire on own structures: skip (player + own turret bullets)
+      if (b.team === 0) continue;
+      s.hp -= b.dmg || 12;
+      spawnDamagePopup && spawnDamagePopup(b.x, b.y, b.dmg || 12, false);
+      return true;
+    }
+  }
+  return false;
+}
+
+// Trigger an airstrike at world (wx, wy) — costs 0 energy, but consumes a
+// terminal's cooldown. Drops 4 explosions in a 180u cluster after a 1.2s
+// telegraph so enemies can scatter.
+function callAirstrike(wx, wy) {
+  if (!game._structures) return false;
+  const term = game._structures.find(s => s.kind === 'terminal' && s.hp > 0 && s.airstrikeCd <= 0);
+  if (!term) {
+    showSwapToast(T('终端冷却中或已损毁', 'Terminal on cooldown / destroyed'));
+    return false;
+  }
+  term.airstrikeCd = STRUCTURE_DEFS.terminal.airstrikeCd;
+  showSwapToast(T('空中支援呼叫中…', 'Air support inbound…'));
+  // Telegraph: red ground markers for ~1.2s, then 4 explosions
+  game._airstrikes = game._airstrikes || [];
+  game._airstrikes.push({ x: wx, y: wy, t: 0, fired: false });
+  return true;
+}
+
+function updateAirstrikes() {
+  if (!game._airstrikes) return;
+  for (let i = game._airstrikes.length - 1; i >= 0; i--) {
+    const a = game._airstrikes[i];
+    a.t++;
+    if (a.t >= 72 && !a.fired) {
+      a.fired = true;
+      // 4 explosions in a cross pattern
+      const offsets = [[0,0],[100,80],[-100,80],[0,-110]];
+      for (const [ox, oy] of offsets) {
+        const ex = a.x + ox, ey = a.y + oy;
+        createExplosion(ex, ey, 'big');
+        emitSound(ex, ey, 1500, false);
+        // Damage all enemies in radius
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          const d = Math.hypot(e.x - ex, e.y - ey);
+          if (d < 130) {
+            e.hp -= Math.round(70 * (1 - d / 130));
+            if (e.hp <= 0) { e.alive = false; e.hp = 0; createExplosion(e.x, e.y, 'small'); }
+          }
+        }
+      }
+      playSfx('death', { vol: 0.7 });
+    }
+    if (a.t >= 90) game._airstrikes.splice(i, 1);
+  }
+}
+
+// Build mode toggle state. Picks one of STRUCTURE_ORDER and shows a
+// preview at cursor. While in build mode, mouse-click places; build
+// mode auto-disables on Esc / right-click.
+const buildMode = { active: false, kind: 'wall' };
+function toggleBuildMode() {
+  if (game._nnGameMode !== 'defense') {
+    showSwapToast(T('仅防御模式可建造', 'Build available in Defense mode only'));
+    return;
+  }
+  buildMode.active = !buildMode.active;
+}
 
 // ============ GRENADES ============
 const grenades = [];
@@ -1762,6 +2091,15 @@ window.addEventListener('keydown', e => {
     else if (k === 'tab') { e.preventDefault(); game.mode = (game.mode === 'command') ? 'tactical' : 'command'; }
     else if (k === 'r') startReload();
     else if (k === 'g') throwGrenade();
+    else if (k === 'b') toggleBuildMode();
+    // 1-9 + 0 cycle through structure types while in build mode (Defense).
+    // 0 maps to slot 10 (last). Pawn-swap fallback only runs OUTSIDE build mode.
+    else if (buildMode.active && ((e.key >= '1' && e.key <= '9') || e.key === '0')) {
+      const idx = e.key === '0' ? 9 : (parseInt(e.key) - 1);
+      if (STRUCTURE_ORDER[idx]) buildMode.kind = STRUCTURE_ORDER[idx];
+      e.preventDefault();
+      return;
+    }
     else if (k === 'v') {
       player._aimAssist = !player._aimAssist;
       try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (err) {}
@@ -2285,6 +2623,25 @@ window.addEventListener('mousedown', e => {
     e.preventDefault();
     return;
   }
+  // Build mode (Defense): left-click places the selected structure at the
+  // snapped 60u cell under the cursor. Shift-click on terminal drops an
+  // airstrike instead. Right-click (handled in contextmenu listener) cancels.
+  if (buildMode.active && game.state === 'playing' && !game._paused) {
+    const wp = screenToWorld(e.clientX, e.clientY);
+    const SNAP = 60;
+    const gx = Math.round(wp.x / SNAP) * SNAP;
+    const gy = Math.round(wp.y / SNAP) * SNAP;
+    placeStructure(buildMode.kind, gx, gy);
+    e.preventDefault();
+    return;
+  }
+  // Defense: shift+click anywhere = call airstrike (if terminal ready)
+  if (e.shiftKey && game._nnGameMode === 'defense') {
+    const wp = screenToWorld(e.clientX, e.clientY);
+    callAirstrike(wp.x, wp.y);
+    e.preventDefault();
+    return;
+  }
   mouse.down = true;
 });
 
@@ -2492,7 +2849,7 @@ document.getElementById('restartBtn').onclick = () => {
 
 // ---- NN Skirmish: button opens lobby for mode + difficulty selection ----
 const _lobby = {
-  blue: 3, red: 3, min: 1, max: 4,
+  blue: 3, red: 3, min: 1, max: 8,
   difficulty: 'elite', weapon: 'RIFLE',
   mode: 'dm',                       // 'dm' | 'survival' | 'duel' | 'sniper'
   lineupOpen: false,
@@ -2615,7 +2972,7 @@ function rebuildLineupUI() {
   // Blue slots — slot 0 is YOU (player), 1..N are NN allies
   for (let i = 0; i < _lobby.blue; i++) {
     const isPlayer = i === 0;
-    const tag = isPlayer ? T('YOU 你', 'YOU') : ['BRAVO','CHARLIE','DELTA','ECHO'][i-1];
+    const tag = isPlayer ? T('YOU 你', 'YOU') : ['BRAVO','CHARLIE','DELTA','ECHO','FOXTROT','GOLF','HOTEL','INDIA'][i-1];
     blueSlots.appendChild(makeSlotCard('blue', i, tag, isPlayer));
   }
   for (let i = 0; i < _lobby.red; i++) {
@@ -2734,8 +3091,8 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   if (gameMode === 'sniper')   { weaponId = 'SNIPER'; }
   game._nnGameMode = gameMode;
 
-  blueSize = Math.max(1, Math.min(4, blueSize));
-  redSize  = Math.max(1, Math.min(4, redSize));
+  blueSize = Math.max(1, Math.min(8, blueSize));
+  redSize  = Math.max(1, Math.min(8, redSize));
 
   // Resolve which difficulties + weapons each NN unit will use.
   // If `lineup` is provided (advanced editor), respect per-slot config.
@@ -2817,7 +3174,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
     const slotIdx = i + 1;   // ally i fills slot i+1 (slot 0 = player)
     const wid = slotWpn('blue', slotIdx);
     allies.push({
-      callsign: ['BRAVO', 'CHARLIE', 'DELTA', 'ECHO'][i] || ('A' + i),
+      callsign: ['BRAVO', 'CHARLIE', 'DELTA', 'ECHO', 'FOXTROT', 'GOLF', 'HOTEL', 'INDIA'][i] || ('U' + i),
       offsetX: -110, offsetY: 60,
       x: game._nnSpawnBlue.x,
       y: allySpawnY(i + 1),
@@ -2875,6 +3232,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
 
   // Pick mission type by gameMode.
   const missionType = gameMode === 'survival' ? 'nnSurvival'
+                    : gameMode === 'defense'  ? 'nnDefense'
                     : gameMode === 'helo'     ? 'nnHelo'
                     : gameMode === 'convoy'   ? 'nnConvoy'
                     : 'nnDeathmatch';
@@ -2882,6 +3240,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   const modeLabel = ({
     dm:       T(`对抗 · 蓝 ${blueSize} vs 红 ${redSize}`, `Skirmish · Blue ${blueSize} vs Red ${redSize}`),
     survival: T(`生存模式 · 撑过每一波`, `Survival · Hold every wave`),
+    defense:  T(`防御工事 · 边打边建`, `Defense · build while you fight`),
     helo:     T(`直升机撤离 · 守 LZ 60s`, `Helo Extract · hold LZ 60s`),
     convoy:   T(`护送 UGV · 一路向东`, `Convoy · escort UGV east`),
     duel:     T(`单挑 1v1`, `Duel 1v1`),
@@ -3001,10 +3360,14 @@ function clearWorld() {
 }
 
 function addBuilding(x, y, w, h, color, opts={}) {
-  buildings.push({ x, y, w, h, color: color || COLORS.gray, shadow: opts.shadow !== false, accent: !!opts.accent, kind: opts.kind || 'building' });
+  // hp/maxHp are populated so defense mode can damage the cover. Other modes
+  // keep them ignored (no bullet decrements them outside defense logic).
+  const hp = opts.hp != null ? opts.hp : 220;
+  buildings.push({ x, y, w, h, color: color || COLORS.gray, shadow: opts.shadow !== false, accent: !!opts.accent, kind: opts.kind || 'building', hp, maxHp: hp });
 }
 function addLowCover(x, y, w, h, color, opts={}) {
-  lowCovers.push({ x, y, w, h, color: color || COLORS.lightGray, kind: opts.kind || 'cover', canopy: !!opts.canopy });
+  const hp = opts.hp != null ? opts.hp : 100;
+  lowCovers.push({ x, y, w, h, color: color || COLORS.lightGray, kind: opts.kind || 'cover', canopy: !!opts.canopy, hp, maxHp: hp });
 }
 function addOverhead(x, y, w, h, color, opts={}) {
   overheads.push({ x, y, w, h, color: color || COLORS.black, kind: opts.kind || 'catwalk' });
@@ -6072,6 +6435,194 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
   };
 };
 
+// ============ NN DEFENSE ============
+// Build-while-defend mode. Energy ticks up; spend it on structures (wall /
+// turret / generator / camera / bot / terminal) while waves of red NN keep
+// coming. Loss = all blue dead. Win condition is open — round just keeps
+// escalating; leaderboard records waves cleared.
+MISSION_FACTORIES.nnDefense = function(mapDef) {
+  const startTick = game.time;
+  let wave = 0;
+  let kills = 0;
+  let waveBreakUntil = startTick + 240;     // 4s before wave 1 to build initial defense
+  let waveStarted = false;
+  let endStage = null;
+  // Init energy + structures globals (cleared at mission start)
+  game._energy = 100;
+  game._structures = [];
+  game._airstrikes = [];
+
+  const WAVE_TIERS = [
+    ['defensive'],
+    ['defensive', 'elite'],
+    ['elite'],
+    ['elite', 'warrior'],
+    ['warrior'],
+    ['warrior', 'sharpshooter'],
+    ['sharpshooter'],
+    ['warrior', 'sharpshooter'],
+  ];
+  const waveSize = (n) => Math.min(8, 3 + Math.floor(n / 2));   // 3,3,4,4,5,5,6,...
+
+  function spawnWave(n) {
+    const tiers = WAVE_TIERS[Math.min(n - 1, WAVE_TIERS.length - 1)];
+    const size = waveSize(n);
+    enemies.length = 0;
+    // Spawn from rotating edges + a sprinkle of multi-direction
+    const SIDES = ['E', 'N', 'S', 'W'];
+    const ax = NN_ARENA.x0, ay = NN_ARENA.y0;
+    const aw = NN_ARENA.w,  ah = NN_ARENA.h;
+    for (let i = 0; i < size; i++) {
+      const edge = SIDES[(n + i) % SIDES.length];
+      const sp = (edge === 'E' || edge === 'W') ? ah / (size + 1) : aw / (size + 1);
+      let x, y;
+      if (edge === 'E')      { x = ax + aw - 60; y = ay + sp * (i + 1); }
+      else if (edge === 'W') { x = ax + 60;       y = ay + sp * (i + 1); }
+      else if (edge === 'N') { x = ax + sp * (i + 1); y = ay + 60; }
+      else                   { x = ax + sp * (i + 1); y = ay + ah - 60; }
+      const tier = tiers[i % tiers.length];
+      const w = WEAPONS[_lobby.weapon] || WEAPONS.RIFLE;
+      enemies.push({
+        x, y, angle: 0, gunAngle: 0, gunRecoil: 0,
+        swayPhase: Math.random() * Math.PI * 2,
+        walkPhase: Math.random() * Math.PI * 2,
+        hp: 80, maxHp: 80, alive: true, radius: 13,
+        speed: 2.4, fireCd: 0,
+        weaponId: _lobby.weapon || 'RIFLE',
+        _weapon: w, _nnDifficulty: tier,
+        target: null, lookPhase: 0, team: 1,
+        _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+        callsign: 'R' + i,
+        _invulnUntil: game.time + 30,
+      });
+    }
+    showMessage(T(`第 ${n} 波 · ${size} 敌`, `Wave ${n} · ${size} hostiles`), 150);
+    playSfx('match_start', { vol: 0.4 });
+  }
+
+  return {
+    title: 'NN 防御',
+    titleEn: 'NN DEFENSE',
+    objective: T(`建造防御 · 撑过每一波`, `Build defenses · hold every wave`),
+
+    update() {
+      // Passive energy drip
+      game._energy = Math.min(999, (game._energy || 0) + 0.5 / 60);
+      // Tick structures + airstrikes
+      updateStructures();
+      updateAirstrikes();
+
+      const blueAlive = (player.alive ? 1 : 0) + allies.filter(a => a.alive).length;
+      if (blueAlive === 0) {
+        if (endStage !== 'loss') {
+          endStage = 'loss';
+          recordSurvivalRun({ wave: Math.max(0, wave), kills, style: _lobby.difficulty });
+          showMessage(T(`战败 · 撑过 ${wave} 波`, `Defeat · survived ${wave} waves`), 220);
+        }
+        return;
+      }
+      // Allies do NOT respawn in defense — clear pending timers
+      for (const a of allies) { if (!a.alive) a._respawnAt = null; }
+      // Wave clear → +energy reward + 6s breather
+      const redAlive = enemies.filter(e => e.alive).length;
+      if (waveStarted && redAlive === 0 && enemies.length > 0) {
+        kills += enemies.length;
+        enemies.length = 0;
+        waveStarted = false;
+        waveBreakUntil = game.time + 6 * 60;
+        const reward = 80 + wave * 10;
+        game._energy = Math.min(999, (game._energy || 0) + reward);
+        showMessage(T(`第 ${wave} 波清除 · +${reward}⚡ · 用 B 建造`,
+                      `Wave ${wave} clear · +${reward}⚡ · press B to build`), 180);
+        playSfx('match_win', { vol: 0.4 });
+      }
+      // Spawn next wave when breather expires
+      if (endStage == null && !waveStarted && game.time >= waveBreakUntil) {
+        wave++;
+        spawnWave(wave);
+        waveStarted = true;
+      }
+    },
+
+    isComplete() { return false; },
+    isFailed() { return endStage === 'loss' && game.time >= startTick + 60; },
+
+    onPlayerBulletHit(b) { return false; },
+    onEnemyBulletHit(b) { return false; },
+
+    renderHUD() {
+      const eng = Math.floor(game._energy || 0);
+      const lines = [
+        T(`第 ${wave} 波 · 击杀 ${kills}`, `Wave ${wave} · ${kills} kills`),
+        T(`能源 ${eng}⚡ · 结构 ${(game._structures||[]).length}`,
+          `Energy ${eng}⚡ · ${(game._structures||[]).length} modules`),
+      ];
+      if (waveStarted) lines.push(T(`敌方剩余 ${enemies.filter(e=>e.alive).length}`,
+                                     `Enemies ${enemies.filter(e=>e.alive).length} left`));
+      else if (endStage == null) {
+        const sec = Math.max(0, Math.ceil((waveBreakUntil - game.time) / 60));
+        lines.push(T(`${sec}s 后下一波 · B 建造`, `${sec}s to next wave · B to build`));
+      }
+      drawObjectivePanel(lines);
+      // Build shop strip across the bottom (only in defense mode)
+      drawDefenseShop();
+    },
+
+    getRunSummary() { return { wave: Math.max(0, wave), kills, style: _lobby.difficulty }; },
+  };
+};
+
+// Defense build shop — bottom-of-screen strip listing all 6 structures with
+// hotkey + cost. Highlights the active structure when buildMode is on.
+function drawDefenseShop() {
+  if (game._nnGameMode !== 'defense') return;
+  const cw = W();
+  const itemW = Math.min(96, Math.floor((cw - 80) / STRUCTURE_ORDER.length) - 6);
+  const itemH = 44, gap = 4;
+  const totalW = STRUCTURE_ORDER.length * itemW + (STRUCTURE_ORDER.length - 1) * gap;
+  const startX = cw / 2 - totalW / 2;
+  const y = H() - 84;
+  ctx.save();
+  for (let i = 0; i < STRUCTURE_ORDER.length; i++) {
+    const kind = STRUCTURE_ORDER[i];
+    const def = STRUCTURE_DEFS[kind];
+    const x = startX + i * (itemW + gap);
+    const isActive = buildMode.active && buildMode.kind === kind;
+    const can = canAffordStructure(kind);
+    ctx.fillStyle = isActive ? COLORS.red : 'rgba(20, 18, 24, 0.85)';
+    ctx.fillRect(x, y, itemW, itemH);
+    ctx.strokeStyle = can ? COLORS.cream : COLORS.gray;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x, y, itemW, itemH);
+    ctx.fillStyle = isActive ? COLORS.cream : (can ? COLORS.cream : COLORS.gray);
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    const slotKey = i < 9 ? (i + 1) : '0';
+    ctx.fillText(`[${slotKey}] ${def.label()}`, x + itemW / 2, y + 16);
+    ctx.font = '9px monospace';
+    ctx.fillStyle = isActive ? COLORS.cream : (can ? '#FFD24A' : COLORS.gray);
+    ctx.fillText(`${def.cost}⚡`, x + itemW / 2, y + 32);
+    ctx.textAlign = 'left';
+  }
+  // Build-mode hint top-right of strip
+  if (buildMode.active) {
+    ctx.fillStyle = COLORS.red;
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(T('建造中 · 左键放置 · B 取消',
+                   'BUILDING · L-click to place · B to cancel'), cw - 16, y - 6);
+    ctx.textAlign = 'left';
+  } else {
+    ctx.fillStyle = COLORS.gray;
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(T('B = 建造模式 · Shift+点击 = 空袭',
+                   'B = build mode · Shift+click = airstrike'), cw - 16, y - 6);
+    ctx.textAlign = 'left';
+  }
+  ctx.restore();
+}
+
 // ============ NN HELO EXTRACT ============
 // Hold the LZ for 60s while reds attack from rotating edges, then survive
 // 6s while the helo descends + 3s while it lifts off. Win = at least one
@@ -7214,8 +7765,44 @@ function lineOfSight(x1, y1, x2, y2) {
     for (const lc of lowCovers) {
       if (x > lc.x && x < lc.x+lc.w && y > lc.y && y < lc.y+lc.h) return false;
     }
+    // Player-built walls block sight too
+    if (game._structures) {
+      for (const s of game._structures) {
+        if (s.hp <= 0) continue;
+        const def = STRUCTURE_DEFS[s.kind];
+        if (!def || !def.blocksLOS) continue;
+        const r = def.size / 2;
+        if (x > s.x - r && x < s.x + r && y > s.y - r && y < s.y + r) return false;
+      }
+    }
+    // Smoke clouds block sight at near-full opacity in the middle, fading
+    // at the edges. Approximation: any sample point within 0.85×R blocks.
+    if (game._smokeClouds) {
+      for (const c of game._smokeClouds) {
+        const fade = c.life / c.maxLife;
+        if (fade < 0.15) continue;            // dissipating — let through
+        const blockR = c.r * 0.85;
+        if (Math.hypot(x - c.x, y - c.y) < blockR) return false;
+      }
+    }
   }
   return true;
+}
+
+// Footprint tracker — every N ticks while a unit is moving in defense mode,
+// drop a fading print at its position. Player can see ALL prints (incl.
+// enemies') for tactical recon. Enemies don't react to them — purely UX.
+function emitFootprint(unit) {
+  if (game._nnGameMode !== 'defense') return;
+  game._footprints = game._footprints || [];
+  game._footprints.push({
+    x: unit.x, y: unit.y,
+    angle: unit.angle || 0,
+    team: unit.team || 0,
+    life: 240, maxLife: 240,
+  });
+  // Cap to 200 to stop unbounded growth in long matches
+  if (game._footprints.length > 200) game._footprints.shift();
 }
 
 function pushOutOfBuildings(ent, radius) {
@@ -7719,6 +8306,8 @@ function updatePlayer() {
     player.x += mx * player.speed * speedMul;
     player.y += my * player.speed * speedMul;
     player.walkPhase += 0.22 * speedMul;
+    // Footprint trail (defense mode only) — every ~30 ticks while moving
+    if (game._nnGameMode === 'defense' && game.time % 30 === 0) emitFootprint(player);
   }
   pushOutOfBuildings(player, player.radius);
   // In NN mode, confine the player to the NN_ARENA box (the red border) so
@@ -7955,14 +8544,35 @@ function updateBullets() {
         hit = true; break;
       }
     }
-    if (!hit) for (const bd of buildings) {
-      if (b.x > bd.x && b.x < bd.x+bd.w && b.y > bd.y && b.y < bd.y+bd.h) { hit = true; break; }
+    if (!hit) for (let bi = 0; bi < buildings.length; bi++) {
+      const bd = buildings[bi];
+      if (b.x > bd.x && b.x < bd.x+bd.w && b.y > bd.y && b.y < bd.y+bd.h) {
+        if (game._nnGameMode === 'defense' && bd.hp != null) {
+          bd.hp -= b.damage || 12;
+          if (bd.hp <= 0) {
+            createExplosion(bd.x + bd.w/2, bd.y + bd.h/2, 'small');
+            buildings.splice(bi, 1);
+          }
+        }
+        hit = true; break;
+      }
     }
-    if (!hit) for (const lc of lowCovers) {
-      if (b.x > lc.x && b.x < lc.x+lc.w && b.y > lc.y && b.y < lc.y+lc.h) { hit = true; break; }
+    if (!hit) for (let li = 0; li < lowCovers.length; li++) {
+      const lc = lowCovers[li];
+      if (b.x > lc.x && b.x < lc.x+lc.w && b.y > lc.y && b.y < lc.y+lc.h) {
+        if (game._nnGameMode === 'defense' && lc.hp != null) {
+          lc.hp -= b.damage || 12;
+          if (lc.hp <= 0) {
+            createExplosion(lc.x + lc.w/2, lc.y + lc.h/2, 'small');
+            lowCovers.splice(li, 1);
+          }
+        }
+        hit = true; break;
+      }
     }
     if (hit || b.life <= 0) bullets.splice(i, 1);
   }
+  // Enemy-targeted bullet pass below — also damage player structures.
   for (let i = enemyBullets.length-1; i >= 0; i--) {
     const b = enemyBullets[i];
     b.x += b.vx; b.y += b.vy;
@@ -8035,11 +8645,44 @@ function updateBullets() {
         break;
       }
     }
-    if (!hit) for (const bd of buildings) {
-      if (b.x > bd.x && b.x < bd.x+bd.w && b.y > bd.y && b.y < bd.y+bd.h) { hit = true; break; }
+    if (!hit) for (let bi = 0; bi < buildings.length; bi++) {
+      const bd = buildings[bi];
+      if (b.x > bd.x && b.x < bd.x+bd.w && b.y > bd.y && b.y < bd.y+bd.h) {
+        if (game._nnGameMode === 'defense' && bd.hp != null) {
+          bd.hp -= b.damage || 12;
+          if (bd.hp <= 0) {
+            createExplosion(bd.x + bd.w/2, bd.y + bd.h/2, 'small');
+            buildings.splice(bi, 1);
+          }
+        }
+        hit = true; break;
+      }
     }
-    if (!hit) for (const lc of lowCovers) {
-      if (b.x > lc.x && b.x < lc.x+lc.w && b.y > lc.y && b.y < lc.y+lc.h) { hit = true; break; }
+    if (!hit) for (let li = 0; li < lowCovers.length; li++) {
+      const lc = lowCovers[li];
+      if (b.x > lc.x && b.x < lc.x+lc.w && b.y > lc.y && b.y < lc.y+lc.h) {
+        if (game._nnGameMode === 'defense' && lc.hp != null) {
+          lc.hp -= b.damage || 12;
+          if (lc.hp <= 0) {
+            createExplosion(lc.x + lc.w/2, lc.y + lc.h/2, 'small');
+            lowCovers.splice(li, 1);
+          }
+        }
+        hit = true; break;
+      }
+    }
+    // Player-built structures take damage from enemy bullets
+    if (!hit && game._structures) {
+      for (let si = 0; si < game._structures.length; si++) {
+        const s = game._structures[si];
+        const def = STRUCTURE_DEFS[s.kind]; if (!def || s.hp <= 0) continue;
+        const r = def.size / 2;
+        if (Math.abs(b.x - s.x) <= r && Math.abs(b.y - s.y) <= r) {
+          s.hp -= b.damage || 12;
+          spawnDamagePopup(b.x, b.y - 6, b.damage || 12, false);
+          hit = true; break;
+        }
+      }
     }
     if (hit || b.life <= 0) enemyBullets.splice(i, 1);
   }
@@ -8200,10 +8843,297 @@ function render() {
 
   renderWorld();
   if (game.state === 'editor') renderEditorOverlay();
+  // Player-built structures + airstrike telegraphs in defense mode
+  renderFootprints();
+  renderStructures();
+  renderSmokeClouds();
+  renderAirstrikes();
+  // Build-mode placement preview (only when active)
+  if (buildMode.active && game.state === 'playing' && !game._paused) renderBuildPreview();
 
   ctx.restore();
 
   if (game.state !== 'editor') renderHUD();
+}
+
+// World-space rendering of placed structures.
+function renderStructures() {
+  if (!game._structures || !game._structures.length) return;
+  ctx.save();
+  for (const s of game._structures) {
+    const def = STRUCTURE_DEFS[s.kind]; if (!def) continue;
+    const r = def.size / 2;
+    // Body
+    if (s.kind === 'wall') {
+      ctx.fillStyle = COLORS.gray;
+      ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
+    } else if (s.kind === 'turret') {
+      // Octagonal base
+      ctx.fillStyle = '#2A2A2A';
+      ctx.beginPath();
+      for (let k = 0; k < 8; k++) {
+        const a = k * Math.PI / 4;
+        const px = s.x + Math.cos(a) * r, py = s.y + Math.sin(a) * r;
+        if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = COLORS.red; ctx.lineWidth = 2; ctx.stroke();
+      // Barrel pointing at last fire angle
+      const ga = s.gunAngle || 0;
+      ctx.strokeStyle = COLORS.red; ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(s.x + Math.cos(ga) * (r + 14), s.y + Math.sin(ga) * (r + 14));
+      ctx.stroke();
+      // Range ring (faint, only when armed/recent)
+      if (s.fireCd < 30) {
+        ctx.strokeStyle = 'rgba(200, 38, 28, 0.10)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, def.range, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    } else if (s.kind === 'generator') {
+      ctx.fillStyle = COLORS.creamDark;
+      ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
+      ctx.strokeStyle = COLORS.black; ctx.lineWidth = 2;
+      ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
+      // Pulsing core
+      const pulse = 0.4 + 0.4 * Math.sin(game.time * 0.15);
+      ctx.fillStyle = `rgba(230, 200, 50, ${pulse})`;
+      ctx.fillRect(s.x - 8, s.y - 8, 16, 16);
+      ctx.fillStyle = COLORS.black;
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('⚡', s.x, s.y + 4);
+      ctx.textAlign = 'left';
+    } else if (s.kind === 'camera') {
+      ctx.fillStyle = '#1A1A1A';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = COLORS.cream; ctx.lineWidth = 2; ctx.stroke();
+      // Lens — sweeping
+      const sweep = (game.time * 0.04) % (Math.PI * 2);
+      ctx.fillStyle = 'rgba(200, 38, 28, 0.12)';
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.arc(s.x, s.y, def.visionR, sweep - 0.5, sweep + 0.5);
+      ctx.closePath();
+      ctx.fill();
+    } else if (s.kind === 'mine') {
+      // Small dome — barely visible (defense mode only player should know it)
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = COLORS.gray;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = COLORS.red; ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      // Tiny center dot
+      ctx.fillStyle = COLORS.red;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (s.kind === 'tripmine') {
+      // Cross pattern marking a trip volume (visible to player)
+      ctx.globalAlpha = 0.45;
+      ctx.strokeStyle = COLORS.red;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.moveTo(s.x - r, s.y); ctx.lineTo(s.x + r, s.y);
+      ctx.moveTo(s.x, s.y - r); ctx.lineTo(s.x, s.y + r);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    } else if (s.kind === 'sensor') {
+      ctx.fillStyle = '#1A1A1A';
+      ctx.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const a = k * Math.PI / 3 + Math.PI / 6;
+        const px = s.x + Math.cos(a) * r, py = s.y + Math.sin(a) * r;
+        if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+      // Pulsing antenna
+      const pulse = 0.4 + 0.4 * Math.sin(game.time * 0.18);
+      ctx.fillStyle = `rgba(74, 143, 230, ${pulse})`;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      // Faint range ring (only when something is in range)
+      const def = STRUCTURE_DEFS.sensor;
+      ctx.globalAlpha = 0.10;
+      ctx.strokeStyle = '#4A8FE6';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, def.pingR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    } else if (s.kind === 'smoke') {
+      // Drum-shaped emitter
+      ctx.fillStyle = '#3A3A3A';
+      ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
+      ctx.strokeStyle = COLORS.cream; ctx.lineWidth = 1;
+      ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
+      // Vapor wisps
+      const wisps = (game.time * 0.05) % (Math.PI * 2);
+      for (let k = 0; k < 3; k++) {
+        const a = wisps + k * 2;
+        const wx = s.x + Math.cos(a) * (r + 6 + (game.time + k*7) % 14);
+        const wy = s.y + Math.sin(a) * (r + 6 + (game.time + k*7) % 14);
+        ctx.fillStyle = `rgba(180, 180, 180, ${0.4 - k * 0.1})`;
+        ctx.beginPath();
+        ctx.arc(wx, wy, 6 - k * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (s.kind === 'terminal') {
+      ctx.fillStyle = '#0F1A2A';
+      ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
+      ctx.strokeStyle = '#4A8FE6'; ctx.lineWidth = 2;
+      ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
+      // Antenna
+      ctx.strokeStyle = '#4A8FE6';
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y - r);
+      ctx.lineTo(s.x, s.y - r - 14);
+      ctx.stroke();
+      ctx.fillStyle = '#4A8FE6';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y - r - 14, 3, 0, Math.PI * 2);
+      ctx.fill();
+      // Ready indicator
+      const ready = s.airstrikeCd <= 0;
+      ctx.fillStyle = ready ? '#3FE63F' : 'rgba(230, 51, 41, 0.7)';
+      ctx.fillRect(s.x - 4, s.y + r - 8, 8, 4);
+    }
+    // HP bar (top)
+    if (s.hp < s.maxHp) {
+      const bw = def.size, bh = 3;
+      const bx = s.x - bw / 2, by = s.y - r - 8;
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = s.hp / s.maxHp > 0.4 ? '#3FE63F' : COLORS.red;
+      ctx.fillRect(bx, by, bw * s.hp / s.maxHp, bh);
+    }
+  }
+  ctx.restore();
+}
+
+// Render fading smoke clouds. Each is a soft greyish disc whose alpha
+// scales with remaining life. Two passes (outer + inner) for a softer edge.
+function renderSmokeClouds() {
+  if (!game._smokeClouds || !game._smokeClouds.length) return;
+  ctx.save();
+  for (const c of game._smokeClouds) {
+    const fade = c.life / c.maxLife;
+    if (fade <= 0) continue;
+    // Outer soft disc
+    ctx.fillStyle = `rgba(170, 170, 170, ${0.30 * fade})`;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+    ctx.fill();
+    // Inner denser core
+    ctx.fillStyle = `rgba(140, 140, 140, ${0.45 * fade})`;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.r * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Render footprints — small fading dot trails. Blue tint for friendlies, red
+// for enemies. Helps the player track movement during quiet moments.
+function renderFootprints() {
+  if (!game._footprints || !game._footprints.length) return;
+  ctx.save();
+  for (const f of game._footprints) {
+    const a = f.life / f.maxLife;
+    ctx.fillStyle = f.team === 0
+      ? `rgba(40, 60, 100, ${0.25 * a})`
+      : `rgba(200, 38, 28, ${0.30 * a})`;
+    // Two dots per print (left/right foot offset perpendicular to angle)
+    const off = 4;
+    const sx = Math.cos(f.angle - Math.PI / 2) * off;
+    const sy = Math.sin(f.angle - Math.PI / 2) * off;
+    ctx.beginPath(); ctx.arc(f.x + sx, f.y + sy, 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(f.x - sx, f.y - sy, 2.4, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Telegraphed airstrike marker — red ground circle that flashes faster as it
+// nears detonation. Players (and friendly NN) should see + scatter.
+function renderAirstrikes() {
+  if (!game._airstrikes || !game._airstrikes.length) return;
+  ctx.save();
+  for (const a of game._airstrikes) {
+    const t = a.t / 72; // 0..1 telegraph
+    const flash = (game.time % 6) < 3 ? 0.8 : 0.3;
+    ctx.strokeStyle = `rgba(200, 38, 28, ${flash})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, 130, 0, Math.PI * 2);
+    ctx.stroke();
+    // Fill
+    ctx.fillStyle = `rgba(200, 38, 28, ${0.06 + t * 0.18})`;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, 130, 0, Math.PI * 2);
+    ctx.fill();
+    // Crosshair
+    ctx.strokeStyle = `rgba(200, 38, 28, ${flash})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(a.x - 16, a.y); ctx.lineTo(a.x + 16, a.y);
+    ctx.moveTo(a.x, a.y - 16); ctx.lineTo(a.x, a.y + 16);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Build-mode placement preview at the cursor world position. Ghosts the
+// structure shape + a green tint when affordable, red when not.
+function renderBuildPreview() {
+  const wp = screenToWorld(mouse.x, mouse.y);
+  // Snap to 60-unit grid (same as build_phase + editor)
+  const SNAP = 60;
+  const gx = Math.round(wp.x / SNAP) * SNAP;
+  const gy = Math.round(wp.y / SNAP) * SNAP;
+  const def = STRUCTURE_DEFS[buildMode.kind];
+  if (!def) return;
+  const r = def.size / 2;
+  const ok = canAffordStructure(buildMode.kind);
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = ok ? '#3FE63F' : COLORS.red;
+  ctx.fillRect(gx - r, gy - r, def.size, def.size);
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = ok ? '#3FE63F' : COLORS.red;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(gx - r, gy - r, def.size, def.size);
+  // For turret: show range
+  if (buildMode.kind === 'turret') {
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = '#3FE63F';
+    ctx.beginPath();
+    ctx.arc(gx, gy, def.range, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // For camera: show vision
+  if (buildMode.kind === 'camera') {
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = COLORS.red;
+    ctx.beginPath();
+    ctx.arc(gx, gy, def.visionR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 // Editor-only world overlay: arena grid + cursor preview block
