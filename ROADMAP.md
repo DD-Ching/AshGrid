@@ -19,10 +19,10 @@
 
 ## 階段 2:內容 / 樂趣
 - [x] 直升機撤離任務(Helo Extract)— 1302179
-- [x] 物資護送任務(UGV Convoy)— 下一個 commit
+- [x] 物資護送任務(UGV Convoy)— 3a901e5
 - [x] 多方向 spawn(survival 進階波)— a147e9c
 - [x] 森林地圖(UAV 看不穿樹冠)— 911a254
-- [ ] 背景音樂(ambient loop × 2-3)
+- [x] 背景音樂(ambient loop × 2-3)— 下一個 commit
 - [ ] 玩家蓋碉堡 phase(survival 波間)
 
 ## 階段 3:Stub 接點(我寫好,你補帳號)
