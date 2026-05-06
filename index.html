@@ -1131,9 +1131,25 @@ const STRUCTURE_DEFS = {
     range: 300, fireCd: 90, dmg: 30, chainR: 110, chainDmg: [22, 16, 10], chainMax: 3,
     label: () => T('特斯拉', 'TESLA'),
   },
+  // EMP pylon: every emitCd ticks, stuns all enemies in pulseR for stunTicks
+  // — they freeze in place + don't fire. No damage, pure crowd control.
+  // Pairs with rocket / tesla as the burst payoff.
+  emp: {
+    cost: 130, hp: 60, size: 36, blocks: false, blocksLOS: false,
+    emitCd: 240, pulseR: 220, stunTicks: 180,
+    label: () => T('EMP', 'EMP'),
+  },
+  // Med station: every healCd ticks heals each ally in radius healR for
+  // healAmt. Doesn't heal the player's own structures (they need rockets
+  // killing the things shooting at them, not patches). Cheap support.
+  medstation: {
+    cost: 100, hp: 50, size: 32, blocks: false, blocksLOS: false,
+    healCd: 60, healR: 200, healAmt: 4,
+    label: () => T('医疗站', 'MED'),
+  },
 };
 const STRUCTURE_ORDER = ['wall', 'turret', 'generator', 'camera', 'bot', 'terminal',
-                         'mine', 'tripmine', 'sensor', 'smoke', 'tesla'];
+                         'mine', 'tripmine', 'sensor', 'smoke', 'tesla', 'emp', 'medstation'];
 
 function getStructureCost(kind) { return STRUCTURE_DEFS[kind]?.cost || 0; }
 function canAffordStructure(kind) { return (game._energy || 0) >= getStructureCost(kind); }
@@ -1281,6 +1297,44 @@ function updateStructures() {
         s.emitCd = def.emitCd;
       }
     }
+    // EMP pylon: periodic stun pulse. Marks every enemy in pulseR with
+    // _stunUntil so the NN dispatcher skips them. Visual: spawn an
+    // expanding ring entry in game._empPulses; render fades it out.
+    if (s.kind === 'emp') {
+      if (s.emitCd === undefined) s.emitCd = 90;
+      if (s.emitCd > 0) s.emitCd--;
+      if (s.emitCd <= 0) {
+        let stunned = 0;
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          if (Math.hypot(e.x - s.x, e.y - s.y) < def.pulseR) {
+            e._stunUntil = game.time + def.stunTicks;
+            stunned++;
+          }
+        }
+        if (stunned > 0) {
+          game._empPulses = game._empPulses || [];
+          game._empPulses.push({ x: s.x, y: s.y, r: def.pulseR, life: 30, maxLife: 30 });
+          playSfx('reload', { vol: 0.4, src: { x: s.x, y: s.y } });
+        }
+        s.emitCd = def.emitCd;
+      }
+    }
+    // Med station: heals every ally (incl. player) inside healR each healCd.
+    if (s.kind === 'medstation') {
+      if (s.healCd === undefined) s.healCd = 30;
+      if (s.healCd > 0) s.healCd--;
+      if (s.healCd <= 0) {
+        const heal = (u) => {
+          if (!u.alive) return;
+          if (Math.hypot(u.x - s.x, u.y - s.y) > def.healR) return;
+          if (u.hp < u.maxHp) u.hp = Math.min(u.maxHp, u.hp + def.healAmt);
+        };
+        if (player) heal(player);
+        for (const a of allies) heal(a);
+        s.healCd = def.healCd;
+      }
+    }
     // Tesla coil: chain lightning. Find nearest enemy in range, zap it +
     // hop the bolt to up to chainMax more enemies within chainR of the
     // previous hit. Each chain visualises as one persistent lightning
@@ -1346,6 +1400,13 @@ function updateStructures() {
     for (let i = game._teslaBolts.length - 1; i >= 0; i--) {
       game._teslaBolts[i].life--;
       if (game._teslaBolts[i].life <= 0) game._teslaBolts.splice(i, 1);
+    }
+  }
+  // Tick EMP pulse rings (visual only)
+  if (game._empPulses) {
+    for (let i = game._empPulses.length - 1; i >= 0; i--) {
+      game._empPulses[i].life--;
+      if (game._empPulses[i].life <= 0) game._empPulses.splice(i, 1);
     }
   }
   // Tick footprints
@@ -5048,6 +5109,9 @@ async function nnTick() {
   }
   for (const e of enemies) {
     if (e._useNN && e.alive) {
+      // EMP-stunned NN skip the inference pass entirely so they freeze in
+      // place + don't fire. _stunUntil is set by the EMP pylon's pulse.
+      if (e._stunUntil != null && game.time < e._stunUntil) continue;
       nnUnits.push({u: e, friendly: enemies, hostile: [...allies, ...(player.alive ? [player] : [])], flipX: true,
                     diff: e._nnDifficulty || NN.difficulty || 'evolved'});
     }
@@ -9435,6 +9499,7 @@ function render() {
   renderStructures();
   renderSmokeClouds();
   renderTeslaBolts();
+  renderEMPPulses();
   renderAirstrikes();
   // Build-mode placement preview — only while in placing mode (not while
   // the radial picker is on top of the world).
@@ -9566,6 +9631,56 @@ function renderStructures() {
       ctx.arc(s.x, s.y, def.pingR, 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1;
+    } else if (s.kind === 'emp') {
+      // Drum + radar antenna
+      ctx.fillStyle = '#0F1A2A';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#7AC9FF';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Antenna spike
+      ctx.strokeStyle = '#7AC9FF';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y - r);
+      ctx.lineTo(s.x, s.y - r - 16);
+      ctx.stroke();
+      ctx.fillStyle = '#7AC9FF';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y - r - 16, 3, 0, Math.PI * 2);
+      ctx.fill();
+      // Charge ring (faint when on cooldown, full when ready)
+      const charge = 1 - (s.emitCd / def.emitCd);
+      ctx.globalAlpha = 0.3 + 0.5 * charge;
+      ctx.strokeStyle = '#7AC9FF';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * charge);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    } else if (s.kind === 'medstation') {
+      // White cross on red diamond
+      ctx.fillStyle = COLORS.cream;
+      ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
+      ctx.strokeStyle = COLORS.red;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
+      // Red cross
+      ctx.fillStyle = COLORS.red;
+      ctx.fillRect(s.x - 12, s.y - 4, 24, 8);
+      ctx.fillRect(s.x - 4, s.y - 12, 8, 24);
+      // Healing pulse — ring expansion when active (lower healCd = active)
+      if (s.healCd < 12) {
+        ctx.globalAlpha = 0.25;
+        ctx.strokeStyle = COLORS.red;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, def.healR * (1 - s.healCd / 12), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
     } else if (s.kind === 'tesla') {
       // Conical base + capacitor coil with humming arc
       ctx.fillStyle = '#1A1A1A';
@@ -9643,6 +9758,31 @@ function renderStructures() {
       ctx.fillRect(bx, by, bw * s.hp / s.maxHp, bh);
     }
   }
+  ctx.restore();
+}
+
+// Render EMP pulse rings — expanding circle that fades over its life.
+// Pure visual; the actual stun effect was applied when the pulse fired.
+function renderEMPPulses() {
+  if (!game._empPulses || !game._empPulses.length) return;
+  ctx.save();
+  for (const p of game._empPulses) {
+    const t = 1 - p.life / p.maxLife;       // 0..1 expansion
+    const a = p.life / p.maxLife;             // 1..0 alpha
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#7AC9FF';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * t, 0, Math.PI * 2);
+    ctx.stroke();
+    // Inner brighter ring
+    ctx.strokeStyle = '#E8F0FF';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * t * 0.9, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
