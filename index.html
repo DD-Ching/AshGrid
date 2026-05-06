@@ -1121,9 +1121,19 @@ const STRUCTURE_DEFS = {
     emitCd: 360, cloudLife: 300, cloudR: 140,
     label: () => T('烟雾', 'SMOKE'),
   },
+  // Tesla coil: every fireCd ticks finds the nearest enemy in range, blasts
+  // it for primary damage, then chains the bolt to up to 3 more enemies
+  // within `chainR` of the previous target. No LoS check on chain hops —
+  // electricity arcs around cover. Visually a stack of lightning lines that
+  // fade over ~10 ticks.
+  tesla: {
+    cost: 140, hp: 70, size: 38, blocks: false, blocksLOS: false,
+    range: 300, fireCd: 90, dmg: 30, chainR: 110, chainDmg: [22, 16, 10], chainMax: 3,
+    label: () => T('特斯拉', 'TESLA'),
+  },
 };
 const STRUCTURE_ORDER = ['wall', 'turret', 'generator', 'camera', 'bot', 'terminal',
-                         'mine', 'tripmine', 'sensor', 'smoke'];
+                         'mine', 'tripmine', 'sensor', 'smoke', 'tesla'];
 
 function getStructureCost(kind) { return STRUCTURE_DEFS[kind]?.cost || 0; }
 function canAffordStructure(kind) { return (game._energy || 0) >= getStructureCost(kind); }
@@ -1271,6 +1281,57 @@ function updateStructures() {
         s.emitCd = def.emitCd;
       }
     }
+    // Tesla coil: chain lightning. Find nearest enemy in range, zap it +
+    // hop the bolt to up to chainMax more enemies within chainR of the
+    // previous hit. Each chain visualises as one persistent lightning
+    // segment in game._teslaBolts (rendered + faded for ~12 ticks).
+    if (s.kind === 'tesla') {
+      if (s.fireCd > 0) s.fireCd--;
+      if (s.fireCd <= 0) {
+        let primary = null, primaryD = def.range;
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          if (e._invulnUntil != null && game.time < e._invulnUntil) continue;
+          const d = Math.hypot(e.x - s.x, e.y - s.y);
+          if (d < primaryD && lineOfSight(s.x, s.y, e.x, e.y)) { primary = e; primaryD = d; }
+        }
+        if (primary) {
+          game._teslaBolts = game._teslaBolts || [];
+          // Primary zap
+          primary.hp -= def.dmg;
+          spawnDamagePopup(primary.x, primary.y - 14, def.dmg, primary.hp <= 0);
+          if (primary.hp <= 0 && primary.alive) {
+            primary.alive = false; game.score += 100; game.killCount++;
+            createExplosion(primary.x, primary.y, 'small');
+          }
+          game._teslaBolts.push({ x1: s.x, y1: s.y, x2: primary.x, y2: primary.y, life: 14 });
+          // Chain hops
+          let prev = primary;
+          const hit = new Set([primary]);
+          for (let h = 0; h < def.chainMax; h++) {
+            let next = null, nextD = def.chainR;
+            for (const e of enemies) {
+              if (!e.alive || hit.has(e)) continue;
+              const d = Math.hypot(e.x - prev.x, e.y - prev.y);
+              if (d < nextD) { next = e; nextD = d; }
+            }
+            if (!next) break;
+            const dmg = def.chainDmg[h] || def.chainDmg[def.chainDmg.length - 1];
+            next.hp -= dmg;
+            spawnDamagePopup(next.x, next.y - 14, dmg, next.hp <= 0);
+            if (next.hp <= 0 && next.alive) {
+              next.alive = false; game.score += 100; game.killCount++;
+              createExplosion(next.x, next.y, 'small');
+            }
+            game._teslaBolts.push({ x1: prev.x, y1: prev.y, x2: next.x, y2: next.y, life: 14 });
+            hit.add(next);
+            prev = next;
+          }
+          s.fireCd = def.fireCd;
+          playSfx('shoot', { vol: 0.4, src: { x: s.x, y: s.y } });
+        }
+      }
+    }
   }
   // Tick smoke clouds + clean up
   if (game._smokeClouds) {
@@ -1278,6 +1339,13 @@ function updateStructures() {
       const c = game._smokeClouds[i];
       c.life--;
       if (c.life <= 0) game._smokeClouds.splice(i, 1);
+    }
+  }
+  // Tick tesla bolts (visual decay only — damage already applied at fire time)
+  if (game._teslaBolts) {
+    for (let i = game._teslaBolts.length - 1; i >= 0; i--) {
+      game._teslaBolts[i].life--;
+      if (game._teslaBolts[i].life <= 0) game._teslaBolts.splice(i, 1);
     }
   }
   // Tick footprints
@@ -9366,6 +9434,7 @@ function render() {
   renderSpawnBeacons();
   renderStructures();
   renderSmokeClouds();
+  renderTeslaBolts();
   renderAirstrikes();
   // Build-mode placement preview — only while in placing mode (not while
   // the radial picker is on top of the world).
@@ -9497,6 +9566,36 @@ function renderStructures() {
       ctx.arc(s.x, s.y, def.pingR, 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1;
+    } else if (s.kind === 'tesla') {
+      // Conical base + capacitor coil with humming arc
+      ctx.fillStyle = '#1A1A1A';
+      ctx.beginPath();
+      ctx.moveTo(s.x - r, s.y + r);
+      ctx.lineTo(s.x + r, s.y + r);
+      ctx.lineTo(s.x + 2, s.y - r * 0.3);
+      ctx.lineTo(s.x - 2, s.y - r * 0.3);
+      ctx.closePath();
+      ctx.fill();
+      // Toroid cap
+      ctx.fillStyle = '#3A4A6A';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y - r * 0.4, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#7AC9FF';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // Humming arc — small jagged lines around the toroid
+      const phase = (game.time * 0.4) % (Math.PI * 2);
+      ctx.strokeStyle = `rgba(122, 201, 255, ${s.fireCd > 30 ? 0.4 : 0.85})`;
+      ctx.lineWidth = 1;
+      for (let k = 0; k < 3; k++) {
+        const a = phase + k * Math.PI * 2 / 3;
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y - r * 0.4);
+        const wob = (Math.random() - 0.5) * 4;
+        ctx.lineTo(s.x + Math.cos(a) * 14 + wob, s.y - r * 0.4 + Math.sin(a) * 14 + wob);
+        ctx.stroke();
+      }
     } else if (s.kind === 'smoke') {
       // Drum-shaped emitter
       ctx.fillStyle = '#3A3A3A';
@@ -9543,6 +9642,48 @@ function renderStructures() {
       ctx.fillStyle = s.hp / s.maxHp > 0.4 ? '#3FE63F' : COLORS.red;
       ctx.fillRect(bx, by, bw * s.hp / s.maxHp, bh);
     }
+  }
+  ctx.restore();
+}
+
+// Render tesla bolts — jagged lightning between two world points, fading
+// over the bolt's life. Each segment renders as a few zigzag steps with
+// random side-jitter so it looks like real lightning rather than a line.
+function renderTeslaBolts() {
+  if (!game._teslaBolts || !game._teslaBolts.length) return;
+  ctx.save();
+  for (const b of game._teslaBolts) {
+    const a = b.life / 14;
+    if (a <= 0) continue;
+    const dx = b.x2 - b.x1, dy = b.y2 - b.y1;
+    const len = Math.hypot(dx, dy);
+    if (len <= 0.1) continue;
+    const nx = -dy / len, ny = dx / len;     // perpendicular unit
+    const segs = Math.max(4, Math.floor(len / 30));
+    // Outer glow
+    ctx.strokeStyle = `rgba(122, 201, 255, ${0.25 * a})`;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(b.x1, b.y1);
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs;
+      const wob = (Math.random() - 0.5) * 18;
+      ctx.lineTo(b.x1 + dx * t + nx * wob, b.y1 + dy * t + ny * wob);
+    }
+    ctx.lineTo(b.x2, b.y2);
+    ctx.stroke();
+    // Bright inner core
+    ctx.strokeStyle = `rgba(232, 240, 255, ${0.95 * a})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(b.x1, b.y1);
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs;
+      const wob = (Math.random() - 0.5) * 14;
+      ctx.lineTo(b.x1 + dx * t + nx * wob, b.y1 + dy * t + ny * wob);
+    }
+    ctx.lineTo(b.x2, b.y2);
+    ctx.stroke();
   }
   ctx.restore();
 }
