@@ -211,7 +211,10 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   background: rgba(10, 10, 10, 0.88);
   display: flex; align-items: center; justify-content: center;
   font-family: 'Courier New', monospace;
+  cursor: default;
 }
+/* Buttons inside modals get a real pointer so they obviously look clickable. */
+.modal-overlay button { cursor: pointer; }
 .modal-overlay[hidden] { display: none; }
 .modal-card {
   background: var(--cream);
@@ -240,40 +243,101 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   padding: 18px 24px;
   flex: 1;
 }
-/* Log entries */
+/* Log entries — dossier / classified-intel aesthetic ===================== */
+#logModal .modal-card {
+  width: min(820px, 95vw);
+  background: #E5E0D2;
+  border-color: var(--red);
+}
+#logModal .modal-tag {
+  background: linear-gradient(180deg, #2A2A2A 0%, #1A1A1A 100%);
+  letter-spacing: 4px;
+}
+.log-tag-main { font-weight: 900; letter-spacing: 6px; margin-right: 14px; }
+.log-tag-sub  { font-size: 9px; letter-spacing: 4px; opacity: 0.7; }
+.log-tag-counter {
+  margin-left: auto; font-size: 11px; letter-spacing: 4px;
+  font-family: 'Courier New', monospace;
+}
+.log-tag-counter b { color: var(--cream); font-weight: 900; font-size: 14px; }
+#logModalTitle { display: flex; align-items: center; gap: 8px; flex: 1; }
+
 .log-entry {
-  border-left: 3px solid var(--red);
-  padding: 10px 14px;
   margin-bottom: 14px;
-  background: var(--cream-dark);
+  border: 1px solid #B8B4A8;
+  background: rgba(232, 228, 216, 0.5);
+  font-family: 'Courier New', monospace;
+  position: relative;
 }
 .log-entry.fresh {
-  border-left-color: #FFD24A;
-  background: rgba(255, 210, 74, 0.18);
+  border: 2px solid var(--red);
+  background: rgba(232, 228, 216, 0.85);
+  box-shadow: 0 0 0 1px rgba(200,38,28,0.15), 0 2px 8px rgba(200,38,28,0.10);
 }
-.log-entry.locked {
-  opacity: 0.45;
-  border-left-color: var(--gray);
-  background: transparent;
+.log-entry.fresh::after {
+  content: 'NEW'; position: absolute; top: -1px; right: -1px;
+  background: var(--red); color: var(--cream);
+  font-size: 9px; letter-spacing: 2px; font-weight: 900;
+  padding: 2px 8px;
+}
+.log-entry .log-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 14px;
+  background: rgba(26, 26, 26, 0.06);
+  border-bottom: 1px solid rgba(26,26,26,0.12);
+}
+.log-entry.locked .log-header {
+  background: rgba(26, 26, 26, 0.12);
+}
+.log-entry .log-num {
+  font-size: 22px; font-weight: 900; color: var(--black);
+  letter-spacing: 1px; line-height: 1;
 }
 .log-entry .log-day {
   font-size: 11px; letter-spacing: 4px; font-weight: 800;
   color: var(--red);
-  margin-bottom: 4px;
 }
+.log-entry.locked .log-day { color: var(--gray); }
+.log-entry .log-status {
+  margin-left: auto;
+  font-size: 9px; letter-spacing: 2.5px; font-weight: 800;
+  padding: 2px 8px;
+  background: var(--red); color: var(--cream);
+}
+.log-entry.locked .log-status { background: #6B6B6B; }
+.log-entry.read .log-status { background: var(--gray); }
 .log-entry .log-title {
-  font-size: 14px; font-weight: 800;
-  margin-bottom: 6px;
+  font-size: 14px; font-weight: 900;
+  letter-spacing: 2px;
+  padding: 10px 14px 6px 14px;
+  color: var(--black);
 }
+.log-entry.locked .log-title { color: var(--gray); }
 .log-entry .log-body {
-  font-size: 12px; line-height: 1.7;
+  font-size: 12px; line-height: 1.75;
   color: var(--black);
   white-space: pre-line;
+  padding: 0 14px 12px 14px;
 }
-.log-entry.locked .log-body::after {
-  content: '[ ENCRYPTED ]'; color: var(--gray); font-style: italic;
+/* REDACTED bars — locked entries show black-bar redactions instead of text. */
+.log-entry.locked .log-body { display: flex; flex-direction: column; gap: 6px; padding: 4px 14px 12px 14px; }
+.log-entry.locked .log-body::before {
+  display: block;
+  font-size: 10px; letter-spacing: 3px;
+  color: var(--gray); font-style: italic;
+  margin: 6px 0;
+  content: '[ CLASSIFIED — ACCESS LEVEL INSUFFICIENT ]';
 }
-.log-entry.locked .log-body { display: none; }
+.log-redact {
+  background: var(--black);
+  height: 8px;
+  margin: 1px 0;
+}
+.log-redact.r1 { width: 90%; }
+.log-redact.r2 { width: 78%; }
+.log-redact.r3 { width: 94%; }
+.log-redact.r4 { width: 60%; }
+.log-redact.r5 { width: 88%; }
 /* Achievements — military-records style ============================== */
 .achv-tag-main { font-weight: 900; letter-spacing: 6px; margin-right: 14px; }
 .achv-tag-sub  { font-size: 9px; letter-spacing: 4px; opacity: 0.7; }
@@ -1233,23 +1297,59 @@ function buildLogModal() {
   const lang = (typeof getLang === 'function') ? getLang() : 'en';
   const dayN = (typeof getDayNum === 'function') ? getDayNum() : 14;
   const read = getReadLogs();
+  const total = LOG_ENTRIES.length;
+  const recovered = LOG_ENTRIES.filter(e => e.day <= dayN).length;
   body.innerHTML = '';
-  for (const e of LOG_ENTRIES) {
+  LOG_ENTRIES.forEach((e, i) => {
     const div = document.createElement('div');
     const unlocked = e.day <= dayN;
-    const isFresh = unlocked && !read.has(e.day);
-    div.className = 'log-entry' + (isFresh ? ' fresh' : '') + (unlocked ? '' : ' locked');
-    const dayLabel = (lang === 'zh') ? `第 ${e.day} 天` : `DAY ${e.day}`;
+    const wasRead = read.has(e.day);
+    const isFresh = unlocked && !wasRead;
+    div.className = 'log-entry' + (isFresh ? ' fresh' : (wasRead ? ' read' : '')) + (unlocked ? '' : ' locked');
+    const dayLabel = (lang === 'zh') ? `第 ${String(e.day).padStart(2, '0')} 天` : `DAY ${String(e.day).padStart(2, '0')}`;
     const title = (lang === 'zh') ? e.title_zh : e.title_en;
     const text  = (lang === 'zh') ? e.body_zh  : e.body_en;
-    div.innerHTML = `<div class="log-day">${dayLabel} · ${unlocked ? title : '???'}</div>` +
-                    `<div class="log-body">${text}</div>`;
+    const statusLabel = unlocked
+      ? (isFresh ? ((lang === 'zh') ? '新檔案' : 'RECOVERED')
+                 : ((lang === 'zh') ? '已讀'   : 'READ'))
+      : ((lang === 'zh') ? '機密' : 'CLASSIFIED');
+    const idx = String(i + 1).padStart(2, '0');
+    if (unlocked) {
+      div.innerHTML = `
+        <div class="log-header">
+          <span class="log-num">${idx}</span>
+          <span class="log-day">${dayLabel}</span>
+          <span class="log-status">${statusLabel}</span>
+        </div>
+        <div class="log-title">${title}</div>
+        <div class="log-body">${text}</div>
+      `;
+    } else {
+      // Redacted view — header still visible, body is black bars
+      div.innerHTML = `
+        <div class="log-header">
+          <span class="log-num">${idx}</span>
+          <span class="log-day">${dayLabel}</span>
+          <span class="log-status">${statusLabel}</span>
+        </div>
+        <div class="log-title">[ ${title.length} CHAR — REDACTED ]</div>
+        <div class="log-body">
+          <span class="log-redact r1"></span>
+          <span class="log-redact r2"></span>
+          <span class="log-redact r3"></span>
+          <span class="log-redact r4"></span>
+          <span class="log-redact r5"></span>
+        </div>
+      `;
+    }
     body.appendChild(div);
-    // Mark read after the user has seen the modal
     if (unlocked) markLogRead(e.day);
-  }
-  document.getElementById('logModalTitle').textContent =
-    (lang === 'zh') ? `操作員日誌 · 第 ${dayN} 天` : `OPERATOR LOG · DAY ${dayN}`;
+  });
+  // Header counter
+  document.getElementById('logModalTitle').innerHTML =
+    `<span class="log-tag-main">${(lang === 'zh') ? '操作員日誌' : 'OPERATOR LOG'}</span>` +
+    `<span class="log-tag-sub">${(lang === 'zh') ? '解密檔案' : 'DECLASSIFIED'} //</span>` +
+    `<span class="log-tag-counter"><b>${String(recovered).padStart(2, '0')}</b> / ${String(total).padStart(2, '0')} ${(lang === 'zh') ? '已恢復' : 'RECOVERED'}</span>`;
 }
 
 // ============ ACHIEVEMENTS ============
@@ -1343,6 +1443,11 @@ function getUnlockedAchievements() {
   try { return new Set(JSON.parse(localStorage.getItem('ag.achievements') || '[]')); }
   catch (e) { return new Set(); }
 }
+// Per-match unlock tracker — cleared at match start, surfaced on the
+// match-end result card so the player sees what they earned this round.
+let _matchAchievementUnlocks = [];
+function _resetMatchAchievementUnlocks() { _matchAchievementUnlocks = []; }
+
 function unlockAchievement(id) {
   const set = getUnlockedAchievements();
   if (set.has(id)) return;
@@ -1350,10 +1455,13 @@ function unlockAchievement(id) {
   try { localStorage.setItem('ag.achievements', JSON.stringify([...set])); } catch (e) {}
   const a = ACHIEVEMENTS.find(x => x.id === id);
   if (!a) return;
+  _matchAchievementUnlocks.push(a);
   const lang = (typeof getLang === 'function') ? getLang() : 'en';
   const title = (lang === 'zh') ? a.title_zh : a.title_en;
   if (typeof showRadioToast === 'function') {
-    showRadioToast(`${a.icon} ${(lang === 'zh') ? '解鎖' : 'UNLOCKED'}`, title, 4500);
+    // Plain text label since we no longer use emoji icons — keep the
+    // toast clean. The on-screen modal carries the full SVG.
+    showRadioToast((lang === 'zh') ? '成就解鎖' : 'ACHIEVEMENT', title, 4500);
   }
 }
 function buildAchievementsModal() {
@@ -4931,6 +5039,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   // Reset dynamic-radio cooldowns + heartbeat scheduler so a fresh match
   // doesn't carry over the old session's debounces.
   if (typeof _resetRadioCooldowns === 'function') _resetRadioCooldowns();
+  if (typeof _resetMatchAchievementUnlocks === 'function') _resetMatchAchievementUnlocks();
   _heartNextBeat = 0;
   // First-match story beats (no-op after first run — flag in localStorage)
   _scheduleFirstMatchToasts();
@@ -7616,11 +7725,61 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         })[game._nnGameMode] || T('对抗', 'DEATHMATCH');
         ctx.fillText(`${T('模式', 'Mode')} ${modeLabel}`, cx, y + 140);
         ctx.textAlign = 'left';
+        // Achievements unlocked this match — small chip row below the card
+        drawMatchUnlockStrip(cx, y + ch + 14, cw);
         ctx.restore();
       }
     },
   };
 };
+
+// Renders a horizontal chip row underneath the match-end card listing every
+// achievement the player unlocked THIS match. Each chip is "ACHV · TITLE"
+// in a red pill. Skipped if the per-match unlock list is empty.
+function drawMatchUnlockStrip(cx, y, maxW) {
+  if (!_matchAchievementUnlocks || _matchAchievementUnlocks.length === 0) return;
+  const lang = (typeof getLang === 'function') ? getLang() : 'en';
+  const heading = (lang === 'zh') ? '本場解鎖' : 'UNLOCKED THIS MATCH';
+  ctx.save();
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(heading, cx, y);
+  ctx.font = 'bold 11px sans-serif';
+  let chipY = y + 14;
+  // Pack chips on as many lines as needed
+  const chipH = 18, chipPadX = 8;
+  const titles = _matchAchievementUnlocks.map(a =>
+    (lang === 'zh') ? a.title_zh : a.title_en);
+  // Measure widths
+  const chipWidths = titles.map(t => ctx.measureText(t).width + chipPadX * 2);
+  // Lay out, wrapping at maxW
+  let line = []; let lineW = 0;
+  const lines = [];
+  for (let i = 0; i < titles.length; i++) {
+    const w = chipWidths[i] + 6;
+    if (lineW + w > maxW && line.length > 0) {
+      lines.push({ items: line, w: lineW - 6 });
+      line = []; lineW = 0;
+    }
+    line.push({ title: titles[i], w: chipWidths[i] });
+    lineW += w;
+  }
+  if (line.length > 0) lines.push({ items: line, w: lineW - 6 });
+  for (const ln of lines) {
+    let lx = cx - ln.w / 2;
+    for (const ch of ln.items) {
+      ctx.fillStyle = COLORS.red;
+      ctx.fillRect(lx, chipY, ch.w, chipH);
+      ctx.fillStyle = COLORS.cream;
+      ctx.textAlign = 'center';
+      ctx.fillText(ch.title, lx + ch.w / 2, chipY + 13);
+      lx += ch.w + 6;
+    }
+    chipY += chipH + 4;
+  }
+  ctx.restore();
+}
 
 // ============ NN SURVIVAL ============
 // You + 3 allies vs procedurally-spawned waves of red NN. Allies do NOT
@@ -8163,6 +8322,8 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
           ctx.textAlign = 'left';
           game._shareRunBtnRect = { x: sbX, y: shareBy, w: sbW, h: shareBh };
         }
+        // Achievements unlocked this round — chip row below the card
+        drawMatchUnlockStrip(cx, y + ch + 14, cw);
         ctx.restore();
       } else {
         game._reviveBtnRect = null;
