@@ -671,6 +671,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
     <button data-tool="redSpawn"  class="ed-tool">红出</button>
     <button data-tool="erase"     class="ed-tool">删</button>
     <span class="ed-spacer"></span>
+    <select id="edSlotSelect" class="ed-action" style="padding: 5px 8px;"></select>
     <button id="edClearBtn" class="ed-action">清空</button>
     <button id="edSaveBtn"  class="ed-action">存档</button>
     <select id="edTestMode" class="ed-action" style="padding: 5px 8px;">
@@ -1580,8 +1581,40 @@ function exitMatchToMenu() {
 }
 
 // ============ MAP EDITOR ============
-const editor = { tool: 'cover', spawn: { blue: null, red: null } };
+// Multi-slot custom maps: ag.customMaps = { active, slots: [{name, walls, spawn}] }.
+// Migration from old 'ag.customMap' single slot runs lazily on first read.
+const EDITOR_SLOT_COUNT = 3;
+const editor = { tool: 'cover', spawn: { blue: null, red: null }, slot: 0 };
 const EDITOR_BLOCK = 60;     // all placements snap to 60u grid
+
+function loadCustomMaps() {
+  try {
+    const fresh = JSON.parse(localStorage.getItem('ag.customMaps') || 'null');
+    if (fresh && Array.isArray(fresh.slots)) return fresh;
+    // Migrate single-slot legacy
+    const legacy = JSON.parse(localStorage.getItem('ag.customMap') || 'null');
+    const out = { active: 0, slots: [] };
+    for (let i = 0; i < EDITOR_SLOT_COUNT; i++) {
+      out.slots.push(i === 0 && legacy
+        ? { name: '我的地图 1', walls: legacy.walls || [], spawn: legacy.spawn || null }
+        : { name: `我的地图 ${i + 1}`, walls: [], spawn: null });
+    }
+    return out;
+  } catch (e) { return { active: 0, slots: Array.from({length: EDITOR_SLOT_COUNT}, (_, i) => ({ name: `我的地图 ${i+1}`, walls: [], spawn: null })) }; }
+}
+function saveCustomMaps(data) {
+  try { localStorage.setItem('ag.customMaps', JSON.stringify(data)); } catch (e) {}
+}
+function getActiveSlotData() {
+  const d = loadCustomMaps();
+  return d.slots[editor.slot] || d.slots[0];
+}
+function getAnyNonEmptyMap() {
+  const d = loadCustomMaps();
+  const filled = d.slots.filter(s => s && Array.isArray(s.walls) && s.walls.length > 0);
+  if (filled.length === 0) return null;
+  return filled[Math.floor(Math.random() * filled.length)];
+}
 
 function openEditor() {
   game.state = 'editor';
@@ -1598,23 +1631,37 @@ function openEditor() {
   bullets.length = 0;
   enemyBullets.length = 0;
   editor.spawn = { blue: null, red: null };
-  try {
-    const saved = JSON.parse(localStorage.getItem('ag.customMap') || 'null');
-    if (saved && Array.isArray(saved.walls)) {
-      for (const w of saved.walls) {
-        const x = NN_ARENA.x0 + w.x, y = NN_ARENA.y0 + w.y;
-        if (w.kind === 'cover') {
-          addLowCover(x, y, w.w, w.h, w.canopy ? '#3F4A3A' : COLORS.creamDark, { kind: w.canopy ? 'tree' : 'crate', canopy: !!w.canopy });
-        } else {
-          addBuilding(x, y, w.w, w.h, COLORS.gray);
-        }
+  // Restore the active slot's saved data into the editor canvas
+  const data = loadCustomMaps();
+  editor.slot = data.active || 0;
+  const slot = data.slots[editor.slot];
+  if (slot && Array.isArray(slot.walls)) {
+    for (const w of slot.walls) {
+      const x = NN_ARENA.x0 + w.x, y = NN_ARENA.y0 + w.y;
+      if (w.kind === 'cover') {
+        addLowCover(x, y, w.w, w.h, w.canopy ? '#3F4A3A' : COLORS.creamDark, { kind: w.canopy ? 'tree' : 'crate', canopy: !!w.canopy });
+      } else {
+        addBuilding(x, y, w.w, w.h, COLORS.gray);
       }
     }
-    if (saved && saved.spawn) {
-      editor.spawn.blue = saved.spawn.blue || null;
-      editor.spawn.red  = saved.spawn.red  || null;
+  }
+  if (slot && slot.spawn) {
+    editor.spawn.blue = slot.spawn.blue || null;
+    editor.spawn.red  = slot.spawn.red  || null;
+  }
+  // Sync slot selector UI
+  const sel = document.getElementById('edSlotSelect');
+  if (sel) {
+    sel.innerHTML = '';
+    for (let i = 0; i < data.slots.length; i++) {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      const filled = data.slots[i].walls && data.slots[i].walls.length > 0 ? '✓' : '';
+      opt.textContent = `${data.slots[i].name} ${filled}`;
+      sel.appendChild(opt);
     }
-  } catch (e) {}
+    sel.value = String(editor.slot);
+  }
 }
 function closeEditor() {
   game.state = 'menu';
@@ -1682,9 +1729,60 @@ function editorSerialize() {
 }
 function editorSave() {
   const data = editorSerialize();
+  // Write to the active slot inside the multi-map blob; also keep the legacy
+  // single-map key in sync for any old code path that still reads it.
+  const all = loadCustomMaps();
+  all.slots[editor.slot] = {
+    name: all.slots[editor.slot]?.name || `我的地图 ${editor.slot + 1}`,
+    walls: data.walls,
+    spawn: data.spawn || null,
+  };
+  all.active = editor.slot;
+  saveCustomMaps(all);
+  // Legacy mirror for the custom-variant getter
   try { localStorage.setItem('ag.customMap', JSON.stringify(data)); } catch (e) {}
   const sp = (data.spawn?.blue ? 1 : 0) + (data.spawn?.red ? 1 : 0);
-  showSwapToast(`已保存 ${data.walls.length} 块 · ${sp} 出生点`);
+  showSwapToast(`槽 ${editor.slot + 1} · ${data.walls.length} 块 · ${sp} 出生`);
+  // Refresh slot selector check marks
+  const sel = document.getElementById('edSlotSelect');
+  if (sel) {
+    Array.from(sel.options).forEach((opt, i) => {
+      const filled = all.slots[i].walls.length > 0 ? '✓' : '';
+      opt.textContent = `${all.slots[i].name} ${filled}`;
+    });
+  }
+}
+function editorSwitchSlot(idx) {
+  if (idx === editor.slot) return;
+  // Save current canvas to the previous slot before switching
+  editorSave();
+  editor.slot = idx;
+  const all = loadCustomMaps();
+  all.active = idx;
+  saveCustomMaps(all);
+  // Reload the new slot's content
+  buildings.length = 0;
+  lowCovers.length = 0;
+  editor.spawn = { blue: null, red: null };
+  const slot = all.slots[idx];
+  if (slot && slot.walls) {
+    for (const w of slot.walls) {
+      const x = NN_ARENA.x0 + w.x, y = NN_ARENA.y0 + w.y;
+      if (w.kind === 'cover') {
+        addLowCover(x, y, w.w, w.h, w.canopy ? '#3F4A3A' : COLORS.creamDark, { kind: w.canopy ? 'tree' : 'crate', canopy: !!w.canopy });
+      } else {
+        addBuilding(x, y, w.w, w.h, COLORS.gray);
+      }
+    }
+  }
+  if (slot && slot.spawn) {
+    editor.spawn.blue = slot.spawn.blue || null;
+    editor.spawn.red  = slot.spawn.red  || null;
+  }
+  // Mirror legacy key to current slot for the custom variant
+  try {
+    localStorage.setItem('ag.customMap', JSON.stringify({ walls: slot.walls || [], spawn: slot.spawn || undefined }));
+  } catch (e) {}
 }
 function editorClear() {
   buildings.length = 0;
@@ -1724,6 +1822,8 @@ _eb('edSaveBtn',  editorSave);
 _eb('edTestBtn',  editorTest);
 _eb('edExitBtn',  closeEditor);
 _eb('edClearBtn', editorClear);
+const _edSlotSel = document.getElementById('edSlotSelect');
+if (_edSlotSel) _edSlotSel.onchange = () => editorSwitchSlot(parseInt(_edSlotSel.value, 10));
 const _editorBtn = document.getElementById('editorBtn');
 if (_editorBtn) _editorBtn.onclick = openEditor;
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
@@ -3380,24 +3480,18 @@ const NN_MAP_VARIANTS = [
   },
 ];
 
-// User-built map slot — populated by the editor. Reads 'ag.customMap' at
-// variant-build time so saved changes are picked up live (no rebuild).
+// User-built map slot — randomly picks a non-empty slot from the 3-slot
+// customMaps store at variant-build time, so each match with the custom
+// variant rotates through whatever the player has saved.
+let _customPickCache = null;
 NN_MAP_VARIANTS.push({
   id: 'custom', name: '玩家自制 CUSTOM',
   walls: () => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('ag.customMap') || 'null');
-      return saved && Array.isArray(saved.walls) ? saved.walls : [];
-    } catch (e) { return []; }
+    _customPickCache = getAnyNonEmptyMap();   // share with spawn getter same call
+    return _customPickCache && Array.isArray(_customPickCache.walls) ? _customPickCache.walls : [];
   },
-  // Spawn anchors: the variant exposes a getter so startNNSkirmish picks up
-  // whatever was saved last. If the user saved blue+red, both are honored;
-  // missing slots fall back to startNNSkirmish defaults (200,h/2 / w-200,h/2).
   get spawn() {
-    try {
-      const saved = JSON.parse(localStorage.getItem('ag.customMap') || 'null');
-      if (saved && saved.spawn && (saved.spawn.blue || saved.spawn.red)) return saved.spawn;
-    } catch (e) {}
+    if (_customPickCache && _customPickCache.spawn) return _customPickCache.spawn;
     return undefined;
   },
   modes: ['dm'],
@@ -3407,12 +3501,7 @@ NN_MAP_VARIANTS.push({
 // Mode-aware variant pool. Variants without an explicit `modes` array
 // default to deathmatch only. Some variants tag multiple modes.
 function pickMapForMode(mode) {
-  const hasSavedCustom = (() => {
-    try {
-      const s = JSON.parse(localStorage.getItem('ag.customMap') || 'null');
-      return !!(s && Array.isArray(s.walls) && s.walls.length > 0);
-    } catch (e) { return false; }
-  })();
+  const hasSavedCustom = !!getAnyNonEmptyMap();
   // Backfill default tag for variants that don't declare modes. Custom
   // variant only joins the pool when the user has actually saved one.
   const pool = NN_MAP_VARIANTS.filter(v => {
