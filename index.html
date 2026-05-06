@@ -2391,13 +2391,10 @@ window.addEventListener('keydown', e => {
   // Esc / P: pause toggle. Works regardless of pause state — pressing Esc
   // again from inside the pause overlay resumes; the overlay has a separate
   // "退出主菜单 / EXIT TO MENU" button for actually leaving the match.
+  // (Earlier we hijacked Esc to also exit build mode, but that confused
+  //  players who expected the universal "pause" behaviour. Build mode now
+  //  exits via right-click / contextmenu instead.)
   if ((e.key === 'Escape' || k === 'p') && game.state === 'playing') {
-    // Esc inside the radial / build mode bails out without pausing the round.
-    if (e.key === 'Escape' && buildMode.active) {
-      exitBuildMode();
-      e.preventDefault();
-      return;
-    }
     togglePause();
     return;
   }
@@ -3284,7 +3281,18 @@ window.addEventListener('mouseup', e => {
     buildMode._dragEnd   = null;
   }
 });
-window.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  // Right-click inside build mode = soft cancel. Closes the radial if open
+  // (no module change), or exits placing mode entirely if radial is closed.
+  if (buildMode.active && game.state === 'playing' && !game._paused) {
+    if (buildMode.radialOpen) {
+      buildMode.radialOpen = false;
+    } else {
+      exitBuildMode();
+    }
+  }
+});
 
 // ============ GAME LIFECYCLE ============
 // Old campaign + free-skirmish entries removed — NN lobby is the single
