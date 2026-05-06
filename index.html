@@ -541,8 +541,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 
 
     <div class="footer-bar">
-      <span>俄乌战争逻辑的未来延伸</span>
-      <span>SECTOR 7G · UNIT 0451</span>
+      <span id="startStatsLine">SECTOR 7G · UNIT 0451</span>
       <span>建议 1080p+ 全屏体验</span>
     </div>
   </div>
@@ -4169,6 +4168,7 @@ function updateMission() {
 function onMissionSuccess() {
   // NN deathmatch: return to NN lobby instead of campaign progression
   if (game._nnMode) {
+    bumpMatchPlayed();   // track NN win
     showMessage(`BLUE 获胜！`, 220);
     playSfx('match_win');
     setTimeout(() => returnToNNLobby(), 2000);
@@ -4186,9 +4186,10 @@ function onMissionSuccess() {
 function onMissionFailed() {
   // NN deathmatch: return to NN lobby instead of retry/end-game
   if (game._nnMode) {
+    bumpMatchPlayed();   // track every NN match end (loss path)
     const tied = mission && mission.teamKills && mission.teamKills[0] === mission.teamKills[1];
     showMessage(tied ? `平手` : `RED 获胜`, 220);
-    playSfx(tied ? 'match_start' : 'match_loss');   // tied → neutral 'start' tone, not loss
+    playSfx(tied ? 'match_start' : 'match_loss');
     setTimeout(() => returnToNNLobby(), 2000);
     return;
   }
@@ -5170,6 +5171,47 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
 // respawn between waves (or within a wave) — each death is permanent for
 // the round. Pawn-swap auto-jump still works while alive bodies remain;
 // when none are left, the round ends. Score = waves cleared + total kills.
+// ============ GLOBAL PLAYER STATS ============
+// Persistent across sessions — shown on the start screen footer + used by
+// the main menu to motivate return visits.
+const STATS_KEY = 'ag.stats';
+function getGlobalStats() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STATS_KEY) || 'null');
+    if (s && typeof s === 'object') return Object.assign({ matchesPlayed: 0, totalKills: 0, bestSurvivalWave: 0 }, s);
+  } catch (e) {}
+  return { matchesPlayed: 0, totalKills: 0, bestSurvivalWave: 0 };
+}
+function saveGlobalStats(s) {
+  try { localStorage.setItem(STATS_KEY, JSON.stringify(s)); } catch (e) {}
+}
+function bumpMatchPlayed() {
+  const s = getGlobalStats();
+  s.matchesPlayed++;
+  s.totalKills += game.killCount || 0;
+  saveGlobalStats(s);
+  refreshStartStatsLine();
+}
+function bumpSurvivalWave(waveReached) {
+  const s = getGlobalStats();
+  if (waveReached > s.bestSurvivalWave) s.bestSurvivalWave = waveReached;
+  saveGlobalStats(s);
+  refreshStartStatsLine();
+}
+function refreshStartStatsLine() {
+  const el = document.getElementById('startStatsLine');
+  if (!el) return;
+  const s = getGlobalStats();
+  if (s.matchesPlayed === 0) {
+    el.textContent = 'SECTOR 7G · UNIT 0451';
+  } else {
+    el.textContent = `已 ${s.matchesPlayed} 局 · 击杀 ${s.totalKills}` +
+      (s.bestSurvivalWave > 0 ? ` · 生存最佳 W${s.bestSurvivalWave}` : '');
+  }
+}
+// Initial render once DOM is ready (this script runs at end of body so it's safe)
+if (typeof document !== 'undefined') refreshStartStatsLine();
+
 // ============ AD / CLOUD STUBS (Phase 3 swap-in points) ============
 // These wrap the lifecycle that the real AdMob / Firebase integrations will
 // plug into. Today they're local-only stubs — saving + loading come from
@@ -5217,6 +5259,8 @@ function recordSurvivalRun({ wave, kills, style }) {
   } catch (e) {}
   // Cloud upload (no-op until Firebase wires in)
   uploadSurvivalRun(run);
+  // Global stats
+  bumpSurvivalWave(wave);
   return getSurvivalScores();
 }
 
