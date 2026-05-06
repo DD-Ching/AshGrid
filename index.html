@@ -1202,6 +1202,108 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 </div>
 
 <script>
+// ============ DEATH RECAP ============
+// On player death, capture the kill context + flag the renderer to draw a
+// full-screen "OPERATOR DOWN" overlay for ~2.5s (auto-dismiss). The overlay
+// is visual only — pawn-swap (1-4) still works underneath so the player can
+// jump bodies during the recap if they want to skip it.
+const _deathRecap = {
+  active: false,
+  startTick: 0,
+  durationTicks: 150,         // 2.5s @ 60 TPS
+  killer: null,
+  killerCallsign: '',
+  killerWeapon: '',
+  killerX: 0, killerY: 0,
+  victimX: 0, victimY: 0,
+  distance: 0,
+  lastHits: [],               // {dmg, weapon} for the 3 most recent hits
+};
+function triggerDeathRecap() {
+  // Skip in non-NN modes (campaign hands its own end card; killcam noise)
+  if (!game._nnMode) return;
+  _deathRecap.active = true;
+  _deathRecap.startTick = game.time;
+  const k = player._killer;
+  _deathRecap.killer = k;
+  _deathRecap.killerCallsign = (k && k.callsign) || _r('敵方', 'ENEMY');
+  _deathRecap.killerWeapon  = player._killerWeapon || '';
+  _deathRecap.killerX = k ? k.x : player.x;
+  _deathRecap.killerY = k ? k.y : player.y;
+  _deathRecap.victimX = player.x;
+  _deathRecap.victimY = player.y;
+  _deathRecap.distance = k ? Math.hypot(k.x - player.x, k.y - player.y) : 0;
+  // Snapshot last few damage events from the recent damage log if we have one
+  _deathRecap.lastHits = (player._recentHits || []).slice(-3);
+}
+function dismissDeathRecap() { _deathRecap.active = false; }
+
+function renderDeathRecap() {
+  if (!_deathRecap.active) return;
+  const elapsed = game.time - _deathRecap.startTick;
+  if (elapsed >= _deathRecap.durationTicks) { _deathRecap.active = false; return; }
+  // Re-arm if the player swapped to a live ally — recap stays for the full
+  // window since the player may want to read it before keeping playing.
+  const t = elapsed / _deathRecap.durationTicks;
+  // Fade in / out (first + last 15% of duration)
+  const fade = t < 0.15 ? (t / 0.15) : (t > 0.85 ? (1 - t) / 0.15 : 1);
+
+  const W_ = W(), H_ = H();
+  ctx.save();
+  // Backdrop
+  ctx.fillStyle = `rgba(20, 8, 8, ${0.78 * fade})`;
+  ctx.fillRect(0, 0, W_, H_);
+  // CRT scanlines — 2px stripes alternating opacity
+  ctx.fillStyle = `rgba(0, 0, 0, ${0.20 * fade})`;
+  for (let y = 0; y < H_; y += 4) ctx.fillRect(0, y, W_, 2);
+  // Subtle red flicker at the top
+  if ((game.time & 6) < 3) {
+    ctx.fillStyle = `rgba(200, 38, 28, ${0.10 * fade})`;
+    ctx.fillRect(0, 0, W_, 30);
+    ctx.fillRect(0, H_ - 30, W_, 30);
+  }
+  // Header — OPERATOR DOWN big
+  ctx.globalAlpha = fade;
+  ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(_r('連結中斷 // SIGNAL LOST', 'NEURAL LINK SEVERED // SIGNAL LOST'), W_ / 2, H_ / 2 - 100);
+  ctx.font = 'bold 56px sans-serif';
+  ctx.fillStyle = COLORS.cream;
+  ctx.fillText(_r('操作員陣亡', 'OPERATOR DOWN'), W_ / 2, H_ / 2 - 50);
+  // Killer info card
+  const cw = 360, ch = 120;
+  const cx = W_ / 2, cy = H_ / 2 + 30;
+  const x = cx - cw / 2, y = cy - ch / 2;
+  ctx.fillStyle = `rgba(232, 228, 216, ${0.95 * fade})`;
+  ctx.fillRect(x, y, cw, ch);
+  ctx.strokeStyle = COLORS.red; ctx.lineWidth = 3;
+  ctx.strokeRect(x, y, cw, ch);
+  // Red corner tab
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(x + cw - 70, y - 4, 70, 8);
+  // Tag
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillStyle = COLORS.red;
+  ctx.fillText(_r('擊殺者 / KILLED BY', 'KILLED BY'), cx, y + 22);
+  // Callsign — big
+  ctx.font = 'bold 28px sans-serif';
+  ctx.fillStyle = COLORS.black;
+  ctx.fillText(_deathRecap.killerCallsign, cx, y + 60);
+  // Weapon + distance
+  ctx.font = '12px monospace';
+  ctx.fillStyle = COLORS.gray;
+  const dist = Math.round(_deathRecap.distance);
+  const weaponStr = _deathRecap.killerWeapon ? `${_deathRecap.killerWeapon} · ` : '';
+  ctx.fillText(`${weaponStr}${dist}u ${_r('距離', 'distance')}`, cx, y + 84);
+  // Hint to dismiss
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillStyle = `rgba(232, 228, 216, ${0.6 * fade})`;
+  ctx.fillText(_r('按 1-4 接管隊友 · 點擊跳過', 'PRESS 1-4 TO SWAP · CLICK TO SKIP'), cx, y + ch + 20);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
 // ============ OPERATOR'S LOG ============
 // 24 daily story entries that unlock progressively as ag.dayNum advances.
 // Each entry has a (day) trigger, title, and body in zh + en. Read state
@@ -2978,6 +3080,9 @@ function swapPlayerToAlly(idx) {
   if (idx < 0 || idx >= allies.length) return;
   const a = allies[idx];
   if (!a || !a.alive) return;
+  // Pawn-swap auto-dismisses the death recap — player wants to see the
+  // new body, not stare at the killer card.
+  if (typeof dismissDeathRecap === 'function') dismissDeathRecap();
 
   // Snapshot ally body before we overwrite the slot
   const targetCallsign  = a.callsign;
@@ -4142,6 +4247,12 @@ function _hitRect(r, x, y) {
 }
 window.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
+  // Click anywhere dismisses the death recap. Doesn't preventDefault so
+  // a click that ALSO hits a pawn-swap chip still triggers the swap.
+  if (_deathRecap.active) {
+    dismissDeathRecap();
+    // fall through — still process clicks normally
+  }
   // While paused: click resume bar = unpause; click exit bar = back to menu.
   if (game._paused) {
     if (_hitRect(game._pauseResumeRect, e.clientX, e.clientY)) togglePause();
@@ -10879,6 +10990,11 @@ function updateBullets() {
           player._killStreakFlashUntil = 0;
           createExplosion(player.x, player.y, 'big');
           playSfx('death');
+          // Trigger the death-recap overlay — captures the kill state at
+          // this instant so the render later doesn't have to recompute.
+          if (typeof triggerDeathRecap === 'function') {
+            triggerDeathRecap();
+          }
         }
       }
     }
@@ -13431,6 +13547,8 @@ function renderHUD() {
   }
   game._buildShopDrawnThisFrame = false;
   renderHUDOverlays();
+  // Death recap sits on top of the HUD so it dims everything behind it.
+  renderDeathRecap();
 }
 
 // Full minimap panel — extracted so renderHUD can early-skip when collapsed
