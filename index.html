@@ -1108,11 +1108,101 @@ function showRadioToast(label, text, ttl = 5500) {
   el.className = 'radio-toast';
   el.innerHTML = `<span class="label">${label}</span>${text}`;
   document.body.appendChild(el);
+  // Audio: short static burst + 2-tone beep so the channel feels physical.
+  // Sounds layered: BEEP at 1320 Hz, then static under it for ~0.4s.
+  if (typeof playRadioBeep === 'function') {
+    playRadioBeep(1320, 0.16);
+    setTimeout(() => playRadioBeep(880, 0.10), 70);
+    playRadioStatic(0.45, 0.32);
+  }
   setTimeout(() => {
     el.style.transition = 'opacity 0.4s';
     el.style.opacity = '0';
     setTimeout(() => el.remove(), 450);
   }, ttl);
+}
+
+// ============ DYNAMIC RADIO ============
+// Context-aware beats fired during a match: HP threshold, kill streak,
+// isolation, beacon destroyed, etc. Each beat has a cooldown so the
+// player isn't drowning in chatter when they sit at low HP.
+const _radioCD = {};
+function _radioOnce(key, cdSec, label, text) {
+  const now = (game && game.time) || 0;
+  if (_radioCD[key] && _radioCD[key] > now) return;
+  _radioCD[key] = now + cdSec * 60;
+  showRadioToast(label, text);
+}
+function _resetRadioCooldowns() { for (const k of Object.keys(_radioCD)) delete _radioCD[k]; }
+
+// Lookup helpers — all bilingual via active getLang()
+function _r(zh, en) { return (typeof getLang === 'function' && getLang() === 'zh') ? zh : en; }
+
+// Cardinal direction word for a delta (relative to player). Returns the
+// localised compass term so callouts read "BRAVO down — SOUTH-EAST" etc.
+function _dirCardinal(dx, dy) {
+  const a = Math.atan2(dy, dx) * 180 / Math.PI; // -180..180, 0=east, 90=south
+  // Octants: 0=E, 1=SE, 2=S, 3=SW, 4=W, 5=NW, 6=N, 7=NE
+  let oct = Math.round(((a + 360) % 360) / 45) % 8;
+  const labelsZh = ['东', '东南', '南', '西南', '西', '西北', '北', '东北'];
+  const labelsEn = ['EAST', 'SE', 'SOUTH', 'SW', 'WEST', 'NW', 'NORTH', 'NE'];
+  return _r(labelsZh[oct], labelsEn[oct]);
+}
+
+// Tick fired from update(). Looks at player + world state and fires beats
+// when conditions cross thresholds. Cooldowns prevent spam.
+function _tickDynamicRadio() {
+  if (!game || game.state !== 'playing' || game._paused) return;
+  if (!game._nnMode || !player) return;
+  // Low-HP threshold
+  if (player.alive && player.hp / player.maxHp < 0.25) {
+    _radioOnce('lowHp', 18, _r('指挥频道', 'COMMS'),
+      _r('"操作员重伤 — 找掩体"', '"Operator critical — find cover NOW"'));
+  }
+  // Isolation: nobody friendly within 200u + 2+ enemies within 240u
+  if (player.alive) {
+    let nearAllies = 0;
+    for (const a of allies) {
+      if (a.alive && Math.hypot(a.x - player.x, a.y - player.y) < 200) nearAllies++;
+    }
+    if (nearAllies === 0 && allies.length > 0) {
+      let closeEnemies = 0;
+      for (const e of enemies) {
+        if (e.alive && Math.hypot(e.x - player.x, e.y - player.y) < 240) closeEnemies++;
+      }
+      if (closeEnemies >= 2) {
+        _radioOnce('isolated', 22, _r('指挥频道', 'COMMS'),
+          _r('"你被切开了 — 撤回小队侧"', '"You\'re cut off — fall back to squad"'));
+      }
+    }
+  }
+  // Hot streak — 5+ kill chain
+  if ((player._killStreak || 0) >= 5) {
+    _radioOnce('hot', 30, _r('NN 数据流', 'NN-LOG'),
+      _r('"你被注意到了 — 整个 sector 在追你"',
+         '"You\'re tagged — every red in the sector wants you now"'));
+  }
+  // Hostile recon warning — 4 cardinal sectors. When ≥2 enemies appear in
+  // a sector for the first time this match, fire a one-shot directional
+  // alert. ag time-based, fires once per sector per match.
+  if (player.alive && enemies.length > 0) {
+    const sectors = { N: 0, S: 0, E: 0, W: 0 };
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const dx = e.x - player.x, dy = e.y - player.y;
+      if (Math.abs(dx) > Math.abs(dy)) sectors[dx > 0 ? 'E' : 'W']++;
+      else                              sectors[dy > 0 ? 'S' : 'N']++;
+    }
+    const _dirCh = { N:'北', S:'南', E:'东', W:'西' };
+    const _dirEn = { N:'NORTH', S:'SOUTH', E:'EAST', W:'WEST' };
+    for (const k of Object.keys(sectors)) {
+      if (sectors[k] >= 2) {
+        _radioOnce('recon_' + k, 25, _r('警报', 'ALERT'),
+          _r(`"敌方逼近 — ${_dirCh[k]} 侧"`,
+             `"Hostile push from the ${_dirEn[k]}"`));
+      }
+    }
+  }
 }
 
 // Schedule a few story beats during the player's first match. Marks
@@ -2491,6 +2581,98 @@ function audioUnlock() {
 // Wire any user gesture as the unlock event
 document.addEventListener('pointerdown', audioUnlock, { once: true });
 document.addEventListener('keydown',     audioUnlock, { once: true });
+
+// ============ NARRATIVE AUDIO ============
+// Short cinematic sounds that pair with the radio toasts + low-HP feedback
+// loops. All synthesised on the fly through Web Audio so we don't ship any
+// extra audio files.
+
+// Radio static burst — band-limited noise burst with a quick tail. Pairs
+// with every radio toast so the comm channel feels physical, not visual.
+function playRadioStatic(durationSec = 0.35, vol = 0.4) {
+  if (!AUDIO.ctx || AUDIO.muted) return;
+  const ctx = AUDIO.ctx;
+  const sampleRate = ctx.sampleRate;
+  const samples = Math.floor(sampleRate * durationSec);
+  const buf = ctx.createBuffer(1, samples, sampleRate);
+  const data = buf.getChannelData(0);
+  // White noise w/ a slight high-pass texture (subtract DC + scale by ramp)
+  for (let i = 0; i < samples; i++) {
+    const t = i / samples;
+    // Envelope: instant attack, exp decay
+    const env = Math.pow(1 - t, 1.6);
+    data[i] = (Math.random() * 2 - 1) * env;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  // Bandpass to make it sound like radio chatter, not white noise
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 1700;
+  bp.Q.value = 0.8;
+  const g = ctx.createGain();
+  g.gain.value = vol;
+  src.connect(bp); bp.connect(g); g.connect(AUDIO.master);
+  src.start();
+}
+
+// Two-tone radio chirp — short beep that precedes a transmission. Combined
+// with playRadioStatic for the classic "click → beep → message" feel.
+function playRadioBeep(freq = 1320, vol = 0.18) {
+  if (!AUDIO.ctx || AUDIO.muted) return;
+  const ctx = AUDIO.ctx;
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = 'square';
+  o.frequency.value = freq;
+  g.gain.value = 0;
+  g.gain.linearRampToValueAtTime(vol, ctx.currentTime + 0.005);
+  g.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.16);
+  o.connect(g); g.connect(AUDIO.master);
+  o.start(); o.stop(ctx.currentTime + 0.18);
+}
+
+// Heartbeat — kick-drum-ish low thud + a soft second pump. Played on a
+// loop with rate scaling with low-HP severity. update() schedules these
+// based on the player's HP%.
+function playHeartbeat(rate = 1.0, vol = 0.55) {
+  if (!AUDIO.ctx || AUDIO.muted) return;
+  const ctx = AUDIO.ctx;
+  // Two pumps to sound like lub-dub, second one a tick after the first
+  const pump = (offset, gain) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = 70;
+    o.frequency.exponentialRampToValueAtTime(35, ctx.currentTime + offset + 0.18);
+    g.gain.value = 0;
+    g.gain.linearRampToValueAtTime(gain * vol, ctx.currentTime + offset + 0.012);
+    g.gain.linearRampToValueAtTime(0, ctx.currentTime + offset + 0.20);
+    o.connect(g); g.connect(AUDIO.master);
+    o.start(ctx.currentTime + offset);
+    o.stop(ctx.currentTime + offset + 0.22);
+  };
+  pump(0, 1.0);
+  pump(0.18 / rate, 0.7);
+}
+
+// State: heart loop scheduler. update() calls _tickHeartbeat() each frame;
+// it triggers one beat on schedule and skips when game isn't playing.
+let _heartNextBeat = 0;
+function _tickHeartbeat() {
+  if (!game || game.state !== 'playing' || game._paused) return;
+  if (!player.alive || player.maxHp <= 0) return;
+  const hpFrac = player.hp / player.maxHp;
+  if (hpFrac > 0.45) return;            // calm — no heartbeat audible
+  // Rate ramps from 60bpm at 45% HP to 130bpm at <15% HP
+  const intensity = Math.max(0, Math.min(1, (0.45 - hpFrac) / 0.30));
+  const bpm = 60 + intensity * 70;
+  const intervalTicks = (60 / bpm) * 60;   // 60 ticks/sec
+  if (game.time >= _heartNextBeat) {
+    playHeartbeat(1 + intensity, 0.35 + intensity * 0.4);
+    _heartNextBeat = game.time + intervalTicks;
+  }
+}
 
 // ============ AMBIENT MUSIC ============
 // Synth-only — no audio file dependency. Two detuned sawtooth drones at
@@ -4207,7 +4389,17 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
     duel:     T(`单挑 1v1`, `Duel 1v1`),
     sniper:   T(`狙击巷战 · 一枪致命`, `Sniper · one-shot lethal`),
   })[gameMode] || gameMode;
-  showMessage(`NN ${modeLabel}`, 200);
+  // Day-themed mission flavor — cycles through 8 codenames + a generic
+  // "OP " prefix when wave > 8. Pulled by getDayNum() so the same DAY
+  // shows the same name on the start screen and in the banner.
+  const _dayN = (typeof getDayNum === 'function') ? getDayNum() : 14;
+  const _dayCode = ['AWAKENING','RECON','PROBE','HOLD','PUSH','SWARM','BLACKOUT','RECLAIM'][_dayN % 8];
+  const _dayLabel = T(`第 ${_dayN} 天 · ${_dayCode}`, `DAY ${_dayN} · ${_dayCode}`);
+  showMessage(`${_dayLabel}\nNN ${modeLabel}`, 200);
+  // Reset dynamic-radio cooldowns + heartbeat scheduler so a fresh match
+  // doesn't carry over the old session's debounces.
+  if (typeof _resetRadioCooldowns === 'function') _resetRadioCooldowns();
+  _heartNextBeat = 0;
   // First-match story beats (no-op after first run — flag in localStorage)
   _scheduleFirstMatchToasts();
 
@@ -9376,6 +9568,9 @@ function update() {
     if (game.messageTime <= 0) game.message = '';
   }
   if (game.hitFlash > 0) game.hitFlash--;
+  // Narrative + audio ticks (cheap, frame-rate-bound — no network IO)
+  _tickHeartbeat();
+  _tickDynamicRadio();
   // Camera shake decays linearly over the active window — the longer you've
   // gone, the smaller the jitter.
   if (game.time < game.shakeUntil) {
@@ -9989,11 +10184,26 @@ function updateBullets() {
       if (!a.alive) continue;
       if (Math.hypot(b.x - a.x, b.y - a.y) < a.radius) {
         if (a._invulnUntil != null && game.time < a._invulnUntil) { hit = true; break; }
+        const wasAlive = true;
+        const wasFullish = a.hp / a.maxHp > 0.5;
         a.hp -= b.damage;
         if (a.hp <= 0) {
           a.alive = false;
           createExplosion(a.x, a.y, 'small');
-          playPositionalSound(a.x, a.y, 1500, 'shot', false);  // distant ally death
+          playPositionalSound(a.x, a.y, 1500, 'shot', false);
+          // Squad callout: KIA — directional cue
+          if (typeof showRadioToast === 'function' && a.callsign) {
+            const dir = _dirCardinal(a.x - player.x, a.y - player.y);
+            _radioOnce('kia_' + a.callsign, 6, _r('小队', 'SQUAD'),
+              _r(`"${a.callsign} 阵亡 — ${dir}"`,
+                 `"${a.callsign} down — ${dir}"`));
+          }
+        } else if (wasFullish && a.hp / a.maxHp <= 0.5 && a.callsign) {
+          // First time this match the ally drops below 50% → callout
+          const dir = _dirCardinal(a.x - player.x, a.y - player.y);
+          _radioOnce('hurt_' + a.callsign, 8, _r('小队', 'SQUAD'),
+            _r(`"${a.callsign} 受伤 — ${dir} 侧"`,
+               `"${a.callsign} hit — ${dir} side"`));
         }
         hit = true;
         break;
@@ -12646,6 +12856,30 @@ function drawMinimapPanel(mx, my, mw, mh) {
 // overlay. Pulled out so the minimap-collapse path can short-circuit cleanly
 // without bailing on these.
 function renderHUDOverlays() {
+  // Low-HP vignette — pulsing red edges that close in as HP drops, paired
+  // with the heartbeat audio. Only renders once HP drops below 45%.
+  if (player.alive && player.maxHp > 0) {
+    const hpFrac = player.hp / player.maxHp;
+    if (hpFrac < 0.45) {
+      const intensity = Math.max(0, Math.min(1, (0.45 - hpFrac) / 0.30));
+      // Pulse roughly with heartbeat tempo so visual + audio stay in sync.
+      // Period eases from 1s @ 45% HP → 0.45s @ <15% HP.
+      const periodMs = 1000 - intensity * 550;
+      const phase = (Date.now() % periodMs) / periodMs;
+      const pulse = 0.5 + 0.5 * Math.sin(phase * Math.PI * 2);
+      const w = W(), h = H();
+      ctx.save();
+      const grad = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.2,
+                                            w / 2, h / 2, Math.max(w, h) * 0.7);
+      grad.addColorStop(0, 'rgba(200, 38, 28, 0)');
+      grad.addColorStop(0.6, `rgba(200, 38, 28, ${0.10 * intensity * (0.6 + pulse * 0.4)})`);
+      grad.addColorStop(1, `rgba(120, 10, 10, ${0.55 * intensity * (0.5 + pulse * 0.5)})`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    }
+  }
+
   // Kill-streak chip — flashes for 1.5s after each chain kill (≥2). Shows
   // multiplier (x2 / x3 / ...) + "KILL STREAK" label, fades out at the end.
   if (player._killStreak >= 2 && (player._killStreakFlashUntil || 0) > game.time) {
