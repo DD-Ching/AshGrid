@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -722,7 +722,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   </svg>
   <div class="end-content">
     <div class="end-tag" id="endTag">— 任务结算 —</div>
-    <div class="end-title" id="endTitle">单元失联</div>
+    <div class="end-title" id="endTitle">UNIT LOST</div>
     <div class="end-stats">
       <div class="end-stat"><div class="end-stat-num" id="endScore">0</div><div class="end-stat-label">总积分</div></div>
       <div class="end-stat"><div class="end-stat-num" id="endKills">0</div><div class="end-stat-label">击杀数</div></div>
@@ -747,8 +747,8 @@ const I18N = {
   '#start .title':          { zh: '未来<span class="slash">·</span><span class="red">战场</span>',
                               en: 'FUTURE<span class="slash">·</span><span class="red">BATTLEFIELD</span>' },
   '#start .subtitle':       { zh: '深度 · 持久 · 无人化', en: 'DEEP · PERSISTENT · UNMANNED' },
-  '#start .tagline':        { zh: 'FUTURE BATTLEFIELD — DEEP / PERSISTENT / UNMANNED',
-                              en: '神经网络驱动 · 双方共用同一 PPO 模型' },
+  '#start .tagline':        { zh: '神经网络驱动 · 双方共用同一 PPO 模型',
+                              en: 'NN-DRIVEN · BOTH TEAMS SHARE A SINGLE PPO MODEL' },
   '#start .ctrl-item:nth-of-type(1) span:last-child': { zh: '移动 / 飞行', en: 'Move / fly' },
   '#start .ctrl-item:nth-of-type(2) span:last-child': { zh: '瞄准 / 射击', en: 'Aim / fire' },
   '#start .ctrl-item:nth-of-type(2) .ctrl-key':       { zh: '鼠标', en: 'Mouse' },
@@ -824,10 +824,18 @@ const I18N = {
 };
 function getLang() {
   try { const v = localStorage.getItem('ag.lang'); if (v === 'en' || v === 'zh') return v; } catch (e) {}
-  // Auto-detect: if browser language is non-Chinese, default to English
-  const nav = (navigator.language || '').toLowerCase();
-  return /^zh|^cmn|^yue/.test(nav) ? 'zh' : 'en';
+  // Default to English — itch.io / global audience first. Players can flip to
+  // 中文 anytime via the top-right toggle (persisted thereafter).
+  return 'en';
 }
+// Canvas-rendered string helper. Pass both halves; returns the active one.
+// Faster than DOM lookup — checked once per draw call. Lang state cached at
+// each setLang() call so we don't read the DOM 100x per frame.
+let _CUR_LANG = 'en';
+function T(zh, en) { return _CUR_LANG === 'en' ? en : zh; }
+// Map / mission name helper — falls back to .name when nameEn isn't set.
+function mapName(m) { return (_CUR_LANG === 'en' && m && m.nameEn) ? m.nameEn : (m && m.name) || ''; }
+function missionTitle(m) { return (_CUR_LANG === 'en' && m && m.titleEn) ? m.titleEn : (m && m.title) || ''; }
 function setLang(lang) {
   if (lang !== 'zh' && lang !== 'en') lang = 'zh';
   for (const [sel, T] of Object.entries(I18N)) {
@@ -836,6 +844,7 @@ function setLang(lang) {
   }
   document.body.classList.toggle('lang-en', lang === 'en');
   document.body.classList.toggle('lang-zh', lang === 'zh');
+  _CUR_LANG = lang;
   // Update toggle chips
   document.querySelectorAll('[data-lang-toggle]').forEach(btn => {
     btn.querySelectorAll('.seg').forEach(seg => {
@@ -2572,7 +2581,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   // Randomize the wall layout from the same variant pool the model trained
   // on (open / pillars / cross / maze / corridor / random procedural + indoors)
   const variant = buildNNArenaVariant();
-  showMessage(`地图: ${variant.name}`, 120);
+  showMessage(`${T('地图', 'Map')}: ${mapName(variant)}`, 120);
   playSfx('match_start');
 
   // Team spawn anchors — variants may override per-team (custom user maps
@@ -2660,12 +2669,12 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
                     : 'nnDeathmatch';
   initMission({ type: missionType, id: 'nn-' + gameMode }, currentMap);
   const modeLabel = ({
-    dm:       `对抗 · 蓝 ${blueSize} vs 红 ${redSize}`,
-    survival: `生存模式 · 撑过每一波`,
-    helo:     `直升机撤离 · 守 LZ 60s`,
-    convoy:   `护送 UGV · 一路向东`,
-    duel:     `单挑 1v1`,
-    sniper:   `狙击巷战 · 一枪致命`,
+    dm:       T(`对抗 · 蓝 ${blueSize} vs 红 ${redSize}`, `Skirmish · Blue ${blueSize} vs Red ${redSize}`),
+    survival: T(`生存模式 · 撑过每一波`, `Survival · Hold every wave`),
+    helo:     T(`直升机撤离 · 守 LZ 60s`, `Helo Extract · hold LZ 60s`),
+    convoy:   T(`护送 UGV · 一路向东`, `Convoy · escort UGV east`),
+    duel:     T(`单挑 1v1`, `Duel 1v1`),
+    sniper:   T(`狙击巷战 · 一枪致命`, `Sniper · one-shot lethal`),
   })[gameMode] || gameMode;
   showMessage(`NN ${modeLabel}`, 200);
 
@@ -2719,7 +2728,7 @@ function startGame() {
 function endGame(victory) {
   game.state = 'gameover';
   document.getElementById('endTag').textContent = victory ? '— 任务完成 / MISSION COMPLETE —' : '— 任务结算 / MISSION END —';
-  document.getElementById('endTitle').textContent = victory ? '战场肃清' : '单元失联';
+  document.getElementById('endTitle').textContent = victory ? T('战场肃清', 'AREA SECURED') : T('单元失联', 'UNIT LOST');
   document.getElementById('endTitle').className = 'end-title' + (victory ? ' victory' : '');
   document.getElementById('endScore').textContent = game.score;
   document.getElementById('endKills').textContent = game.killCount;
@@ -2755,7 +2764,7 @@ function startNextWave() {
   // Light starting opposition seeded by the map's spawn config
   spawnWave(game.wave);
   // Brief intro
-  showMessage(`关卡 ${game.wave} · ${mission ? mission.title : currentMap.name}`, 220);
+  showMessage(`${T('关卡', 'Stage')} ${game.wave} · ${mission ? missionTitle(mission) : mapName(currentMap)}`, 220);
 }
 
 function showMessage(text, time = 90) {
@@ -5107,7 +5116,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   return {
     title: 'NN 对抗',
     titleEn: 'NN DEATHMATCH',
-    objective: `首达 ${KILL_GOAL} 击杀 · 或 90 秒内击杀更多`,
+    objective: T(`首达 ${KILL_GOAL} 击杀 · 或 90 秒内击杀更多`, `First to ${KILL_GOAL} kills · or most at 90s`),
     teamKills, KILL_GOAL,
 
     update() {
@@ -5271,9 +5280,9 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       const elapsed = game.time - startTick;
       const remaining = Math.max(0, Math.ceil((TIME_LIMIT_TICKS - elapsed) / 60));
       drawObjectivePanel([
-        `BLUE  ${teamKills[0]}    RED  ${teamKills[1]}    目标 ${KILL_GOAL}`,
-        winner ? `${winner === 'draw' ? '平手' : winner.toUpperCase() + ' 获胜！'}`
-               : `时间剩余 ${remaining}s`,
+        `BLUE  ${teamKills[0]}    RED  ${teamKills[1]}    ${T('目标', 'GOAL')} ${KILL_GOAL}`,
+        winner ? `${winner === 'draw' ? T('平手', 'DRAW') : winner.toUpperCase() + (T(' 获胜！', ' WINS!'))}`
+               : `${T('时间剩余', 'TIME LEFT')} ${remaining}s`,
       ]);
       // End-of-match stats card during the 4s end latch
       if (winner && winner !== null) {
@@ -5291,27 +5300,32 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         // Banner
         ctx.fillStyle = COLORS.red;
         ctx.font = 'bold 11px sans-serif';
-        ctx.fillText('对局结算 / MATCH RESULT', x + 16, y + 22);
+        ctx.fillText(T('对局结算 / MATCH RESULT', 'MATCH RESULT'), x + 16, y + 22);
         // Winner big text
         ctx.fillStyle = winner === 'blue' ? COLORS.black : (winner === 'red' ? COLORS.red : COLORS.gray);
         ctx.font = 'bold 32px sans-serif';
         ctx.textAlign = 'center';
-        const winLabel = winner === 'draw' ? '平手 DRAW'
-                       : winner === 'blue' ? '蓝队获胜 BLUE WIN'
-                                           : '红队获胜 RED WIN';
+        const winLabel = winner === 'draw' ? T('平手 DRAW', 'DRAW')
+                       : winner === 'blue' ? T('蓝队获胜 BLUE WIN', 'BLUE WIN')
+                                           : T('红队获胜 RED WIN', 'RED WIN');
         ctx.fillText(winLabel, cx, y + 64);
         // Scoreline
         ctx.fillStyle = COLORS.black;
         ctx.font = 'bold 14px monospace';
-        ctx.fillText(`蓝 ${teamKills[0]}  —  ${teamKills[1]} 红`, cx, y + 96);
+        ctx.fillText(`${T('蓝', 'BLUE')} ${teamKills[0]}  —  ${teamKills[1]} ${T('红', 'RED')}`, cx, y + 96);
         // Elapsed
         ctx.fillStyle = COLORS.gray;
         ctx.font = '11px sans-serif';
         const sec = Math.floor(elapsed / 60);
-        ctx.fillText(`耗时 ${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')} · 击杀目标 ${KILL_GOAL}`, cx, y + 120);
+        ctx.fillText(`${T('耗时', 'TIME')} ${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')} · ${T('击杀目标', 'GOAL')} ${KILL_GOAL}`, cx, y + 120);
         // Mode
-        const modeLabel = ({ dm:'对抗', survival:'生存', duel:'单挑', sniper:'狙击' })[game._nnGameMode] || '对抗';
-        ctx.fillText(`模式 ${modeLabel}`, cx, y + 140);
+        const modeLabel = ({
+          dm:       T('对抗', 'DEATHMATCH'),
+          survival: T('生存', 'SURVIVAL'),
+          duel:     T('单挑', 'DUEL'),
+          sniper:   T('狙击', 'SNIPER'),
+        })[game._nnGameMode] || T('对抗', 'DEATHMATCH');
+        ctx.fillText(`${T('模式', 'Mode')} ${modeLabel}`, cx, y + 140);
         ctx.textAlign = 'left';
         ctx.restore();
       }
@@ -5506,8 +5520,11 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
         a._invulnUntil = game.time + 60;
       }
     }
-    const edgeLabel = ({ N: '北', S: '南', E: '东', W: '西' })[edge] || '?';
-    showMessage(`第 ${n} 波 · ${size} 敌 来自${edgeLabel}方 (${tiers.join('/')})`, 150);
+    const edgeLabel = (_CUR_LANG === 'en'
+      ? ({ N: 'NORTH', S: 'SOUTH', E: 'EAST', W: 'WEST' })
+      : ({ N: '北', S: '南', E: '东', W: '西' }))[edge] || '?';
+    showMessage(T(`第 ${n} 波 · ${size} 敌 来自${edgeLabel}方 (${tiers.join('/')})`,
+                  `Wave ${n} · ${size} hostiles from the ${edgeLabel} (${tiers.join('/')})`), 150);
     playSfx('match_start', { vol: 0.45 });
   }
 
@@ -5581,7 +5598,8 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
         waveStarted = false;
         waveBreakUntil = game.time + 8 * 60;
         game._buildPhase = { active: true, left: 3 };
-        showMessage(`第 ${wave} 波清除 · 击杀 ${kills} · 点击放置掩体 (3)`, 150);
+        showMessage(T(`第 ${wave} 波清除 · 击杀 ${kills} · 点击放置掩体 (3)`,
+                      `Wave ${wave} clear · ${kills} kills · click to place cover (3)`), 150);
         playSfx('match_win', { vol: 0.4 });
       }
       // Spawn next wave after breather (or once player placed all 3 covers)
@@ -5671,7 +5689,7 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
 
     renderHUD() {
       const best = getSurvivalScores()[0];
-      const bestStr = best ? `· 最佳 W${best.wave}/K${best.kills}` : '';
+      const bestStr = best ? `· ${T('最佳', 'BEST')} W${best.wave}/K${best.kills}` : '';
       // Preview the NEXT wave's tier mix during the breather, so the player
       // knows what's coming while they place build-phase covers.
       let nextWaveStr = '';
@@ -5681,15 +5699,15 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
         const tiers = WAVE_TIERS[Math.min(nextN - 1, WAVE_TIERS.length - 1)];
         const sz = waveSize(nextN);
         const tierLabels = tiers.map(t => (DIFF_LABELS && DIFF_LABELS[t]) || t).join('/');
-        nextWaveStr = ` · 下一波: ${sz}× ${tierLabels}`;
+        nextWaveStr = ` · ${T('下一波', 'NEXT')}: ${sz}× ${tierLabels}`;
         breathSec = Math.max(0, Math.ceil((waveBreakUntil - game.time) / 60));
       }
       drawObjectivePanel([
-        `第 ${wave} 波 · 总击杀 ${kills} ${bestStr}`,
+        `${T('第', 'Wave')} ${wave}${T(' 波', '')} · ${T('总击杀', 'kills')} ${kills} ${bestStr}`,
         endStage === 'loss'
-          ? `阵亡 · 撑过 ${Math.max(0, wave - 1)} 波`
-          : (waveStarted ? `敌方剩余 ${enemies.filter(e => e.alive).length}`
-                         : `${breathSec}s 后开始${nextWaveStr}`),
+          ? `${T('阵亡 · 撑过', 'KIA · survived')} ${Math.max(0, wave - 1)}${T(' 波', ' waves')}`
+          : (waveStarted ? `${T('敌方剩余', 'Enemies')} ${enemies.filter(e => e.alive).length}`
+                         : `${breathSec}s${T(' 后开始', ' to wave start')}${nextWaveStr}`),
       ]);
       // On loss: show leaderboard top 5 in a centered card. If a revive
       // is still available, add a "watch ad" CTA at the bottom — clicking
@@ -5710,7 +5728,7 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
         ctx.fillRect(x + cw - 60, y - 4, 60, 8);
         ctx.fillStyle = COLORS.red;
         ctx.font = 'bold 11px sans-serif';
-        ctx.fillText('排行榜 / LEADERBOARD', x + 16, y + 22);
+        ctx.fillText(T('排行榜 / LEADERBOARD', 'LEADERBOARD'), x + 16, y + 22);
         ctx.fillStyle = COLORS.black;
         ctx.font = 'bold 10px monospace';
         ctx.fillText('#  WAVE  KILLS  STYLE', x + 16, y + 42);
@@ -5738,7 +5756,7 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
           ctx.fillStyle = COLORS.cream;
           ctx.font = 'bold 12px sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText('看广告续命 · WATCH AD TO REVIVE ▶', bx + bw / 2, by + 21);
+          ctx.fillText(T('看广告续命 · WATCH AD TO REVIVE ▶', 'WATCH AD TO REVIVE ▶'), bx + bw / 2, by + 21);
           ctx.textAlign = 'left';
           game._reviveBtnRect = { x: bx, y: by, w: bw, h: bh };
         } else {
@@ -6181,7 +6199,7 @@ function drawObjectivePanel(lines) {
   drawHUDPanel(x, y, w, h, null);
   ctx.fillStyle = COLORS.red;
   ctx.font = 'bold 11px sans-serif';
-  ctx.fillText(`任务 · ${mission.title}`, x + 10, y + 18);
+  ctx.fillText(`${T('任务', 'MISSION')} · ${missionTitle(mission)}`, x + 10, y + 18);
   ctx.fillStyle = COLORS.black;
   ctx.font = '10px monospace';
   for (let i = 0; i < lines.length; i++) {
@@ -9212,13 +9230,13 @@ function renderHUD() {
   game._pauseBtnRect = { x: _pbX, y: _pbY, w: _pbW, h: _pbH };
   ctx.fillStyle = COLORS.red;
   ctx.font = _narrow ? 'bold 10px sans-serif' : 'bold 12px sans-serif';
-  ctx.fillText(`关卡 ${game.wave}/${MISSIONS.length}  ${currentMap ? currentMap.name : ''}`, 26, 36);
+  ctx.fillText(`${T('关卡', 'Stage')} ${game.wave}/${MISSIONS.length}  ${mapName(currentMap)}`, 26, 36);
   ctx.fillStyle = COLORS.black;
   ctx.font = 'bold 10px sans-serif';
-  if (!_narrow) ctx.fillText(`视角 ${getModeLabel()}`, 26, 54);
+  if (!_narrow) ctx.fillText(`${T('视角', 'View')} ${getModeLabel()}`, 26, 54);
   const remaining = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
   ctx.fillStyle = remaining > 0 ? COLORS.red : COLORS.gray;
-  ctx.fillText(`敌方 ${remaining}`, 26, _narrow ? 54 : 70);
+  ctx.fillText(`${T('敌方', 'Enemies')} ${remaining}`, 26, _narrow ? 54 : 70);
   // Squad — in NN mode each chip is clickable to swap operator into that slot
   const sqAlive = allies.filter(a=>a.alive).length;
   ctx.fillStyle = sqAlive > 0 ? COLORS.black : COLORS.gray;
@@ -9231,7 +9249,7 @@ function renderHUD() {
     game._squadChipRects = [];
     const chipH = 14;
     let cursorX = 26;
-    const selfTxt = `[1·你${player.alive ? '' : '✕'}]`;
+    const selfTxt = `[1·${T('你', 'YOU')}${player.alive ? '' : '✕'}]`;
     ctx.fillText(selfTxt, cursorX, _chipTextY);
     cursorX += ctx.measureText(selfTxt).width + 4;
     ctx.font = 'bold 10px sans-serif';
@@ -9261,7 +9279,7 @@ function renderHUD() {
   } else {
     game._squadChipRects = null;
     const sqList = allies.map(a => a.alive ? a.callsign[0] + a.hp : a.callsign[0] + '✕').join(' ');
-    ctx.fillText(`小组 ${sqAlive}/${allies.length}  ${sqList}`, 26, _chipTextY);
+    ctx.fillText(`${T('小组', 'Squad')} ${sqAlive}/${allies.length}  ${sqList}`, 26, _chipTextY);
   }
   if (!_narrow) {
     ctx.fillStyle = COLORS.gray;
@@ -9282,7 +9300,7 @@ function renderHUD() {
   ctx.fillText(`${game.score}`, W() - 20, _narrow ? 30 : 46);
   ctx.fillStyle = COLORS.black;
   ctx.font = _narrow ? 'bold 8px sans-serif' : 'bold 9px sans-serif';
-  ctx.fillText(`SCORE · 击杀 ${game.killCount}`, W() - 20, _narrow ? 44 : 62);
+  ctx.fillText(`SCORE · ${T('击杀', 'KILLS')} ${game.killCount}`, W() - 20, _narrow ? 44 : 62);
   ctx.textAlign = 'left';
 
   // View mode banner (top-center) — slimmer. Hidden on narrow viewports so
@@ -9316,7 +9334,7 @@ function renderHUD() {
     ctx.textAlign = 'center';
     ctx.fillStyle = COLORS.red;
     ctx.font = 'bold 14px sans-serif';
-    ctx.fillText('—  阵亡  ·  重生中  —', cx, cy - 110);
+    ctx.fillText(T('—  阵亡  ·  重生中  —', '—  KIA  ·  RESPAWNING  —'), cx, cy - 110);
     // Killer info
     if (player._killer) {
       ctx.fillStyle = COLORS.cream;
@@ -9341,7 +9359,7 @@ function renderHUD() {
     ctx.fillStyle = COLORS.cream;
     ctx.font = '11px sans-serif';
     ctx.globalAlpha = 0.7;
-    ctx.fillText('在出生点重新部署 / RESPAWN AT BLUE BASE', cx, cy + 80);
+    ctx.fillText(T('在出生点重新部署 / RESPAWN AT BLUE BASE', 'RESPAWN AT BLUE BASE'), cx, cy + 80);
     ctx.globalAlpha = 1;
     ctx.textAlign = 'left';
   }
@@ -9384,11 +9402,11 @@ function renderHUD() {
     ctx.fillRect(barX + 210, barY + 44, 80 * (1 - player.reloadTime / 80), 4);
     ctx.fillStyle = COLORS.black;
     ctx.font = 'bold 9px sans-serif';
-    ctx.fillText('R 装填中', barX + 210, barY + 18);
+    ctx.fillText(T('R 装填中', 'R RELOADING'), barX + 210, barY + 18);
   } else {
     ctx.fillStyle = COLORS.gray;
     ctx.font = '9px sans-serif';
-    ctx.fillText('R · 装填', barX + 210, barY + 18);
+    ctx.fillText(T('R · 装填', 'R · RELOAD'), barX + 210, barY + 18);
   }
   // UAV/FPV cluster (right of bar)
   ctx.fillStyle = COLORS.black;
@@ -9442,7 +9460,7 @@ function renderHUD() {
 // Full minimap panel — extracted so renderHUD can early-skip when collapsed
 // without bailing out of the whole HUD pass.
 function drawMinimapPanel(mx, my, mw, mh) {
-  const mapLabel = currentMap ? `${currentMap.name} · MAP` : 'MAP';
+  const mapLabel = currentMap ? `${mapName(currentMap)} · MAP` : 'MAP';
   drawHUDPanel(mx, my, mw, mh, mapLabel);
   // Collapse toggle in the panel's top-right corner (small ▼)
   const tgX = mx + mw - 22, tgY = my + 4, tgW = 18, tgH = 18;
@@ -9603,7 +9621,7 @@ function renderHUDOverlays() {
     ctx.textAlign = 'center';
     ctx.fillText(`× ${player._killStreak}`, cx - 50, y + 35);
     ctx.font = 'bold 11px sans-serif';
-    ctx.fillText('连杀 / KILL STREAK', cx + 22, y + 22);
+    ctx.fillText(T('连杀 / KILL STREAK', 'KILL STREAK'), cx + 22, y + 22);
     ctx.font = 'bold 10px monospace';
     ctx.fillText(`+${player._killStreak * 25} BONUS`, cx + 22, y + 38);
     ctx.textAlign = 'left';
@@ -9754,7 +9772,7 @@ function renderHUDOverlays() {
     ctx.fillStyle = COLORS.cream;
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`建造阶段 · 剩 ${game._buildPhase.left} 块`, W() / 2, by + 18);
+    ctx.fillText(`${T('建造阶段', 'BUILD PHASE')} · ${T('剩', '')}${game._buildPhase.left}${T(' 块', ' left')}`, W() / 2, by + 18);
     ctx.textAlign = 'left';
     ctx.restore();
     // Ad-to-extend button below the banner (only if not already extended)
@@ -9769,7 +9787,7 @@ function renderHUDOverlays() {
       ctx.fillStyle = COLORS.cream;
       ctx.font = 'bold 10px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('看广告 +2 块 · +5s 时间 ▶', W() / 2, abY + 15);
+      ctx.fillText(T('看广告 +2 块 · +5s 时间 ▶', 'WATCH AD · +2 BLOCKS · +5s ▶'), W() / 2, abY + 15);
       ctx.textAlign = 'left';
       ctx.restore();
       game._buildPhaseAdRect = { x: bx, y: abY, w: bw, h: abH };
@@ -9904,7 +9922,7 @@ function renderHUDOverlays() {
       ctx.fillStyle = COLORS.cream;
       ctx.font = '13px monospace';
       ctx.globalAlpha = alpha * 0.8;
-      ctx.fillText(`目标: ${mission.objective}`, W()/2 + 6, H()/2 - msgH/2 + 64);
+      ctx.fillText(`${T('目标', 'Goal')}: ${mission.objective}`, W()/2 + 6, H()/2 - msgH/2 + 64);
     }
     ctx.textAlign = 'left';
     ctx.restore();
@@ -9918,7 +9936,7 @@ function renderHUDOverlays() {
     ctx.fillStyle = COLORS.cream;
     ctx.font = 'bold 72px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('单元失联', W()/2, H()/2);
+    ctx.fillText(T('单元失联', 'UNIT LOST'), W()/2, H()/2);
     ctx.font = 'bold 14px sans-serif';
     ctx.fillText('UNIT 0451 — SIGNAL LOST', W()/2, H()/2 + 28);
     ctx.textAlign = 'left';
@@ -9927,10 +9945,10 @@ function renderHUDOverlays() {
 
 function getModeLabel() {
   switch(game.mode) {
-    case 'tactical': return '俯视战术 TOP-DOWN';
-    case 'drone': return '无人机 UAV-RECON';
-    case 'fpv': return 'FPV 自杀无人机 KAMIKAZE';
-    case 'command': return '指挥俯瞰 COMMAND';
+    case 'tactical': return T('俯视战术 TOP-DOWN', 'TOP-DOWN TACTICAL');
+    case 'drone': return T('无人机 UAV-RECON', 'UAV RECON');
+    case 'fpv': return T('FPV 自杀无人机 KAMIKAZE', 'FPV KAMIKAZE');
+    case 'command': return T('指挥俯瞰 COMMAND', 'COMMAND VIEW');
   }
   return '';
 }
@@ -10045,7 +10063,7 @@ function renderDroneOverlay() {
   ctx.fillRect(32, H()/2 + 36, 110 * drone.battery/drone.maxBattery, 10);
   ctx.fillStyle = COLORS.gray;
   ctx.font = '10px monospace';
-  ctx.fillText('Q · 切换视角', 32, H()/2 + 64);
+  ctx.fillText(T('Q · 切换视角', 'Q · SWITCH VIEW'), 32, H()/2 + 64);
 
   // Frame brackets (corners)
   ctx.strokeStyle = COLORS.black;
@@ -10081,7 +10099,7 @@ function renderCommandOverlay() {
   ctx.fillRect(20, H()/2 - 60, 4, 120);
   ctx.fillStyle = COLORS.black;
   ctx.font = 'bold 11px sans-serif';
-  ctx.fillText('指挥视角 COMMAND VIEW', 32, H()/2 - 40);
+  ctx.fillText(T('指挥视角 COMMAND VIEW', 'COMMAND VIEW'), 32, H()/2 - 40);
   ctx.fillRect(32, H()/2 - 36, 40, 1);
   ctx.font = 'bold 12px monospace';
   ctx.fillText(`SECTOR    7G`, 32, H()/2 - 14);
@@ -10091,7 +10109,7 @@ function renderCommandOverlay() {
   ctx.fillText(`THREATS   ${dt}`, 32, H()/2 + 22);
   ctx.fillStyle = COLORS.gray;
   ctx.font = '10px sans-serif';
-  ctx.fillText('TAB · 返回战术视角', 32, H()/2 + 44);
+  ctx.fillText(T('TAB · 返回战术视角', 'TAB · BACK TO TACTICAL'), 32, H()/2 + 44);
 }
 
 // ============ PAUSE ============
@@ -10128,35 +10146,35 @@ function drawPauseOverlay() {
   // Title
   ctx.fillStyle = COLORS.red;
   ctx.font = 'bold 11px sans-serif';
-  ctx.fillText('单 元 0451 · 暂 停 / PAUSED', x + 24, y + 26);
+  ctx.fillText(T('单 元 0451 · 暂 停 / PAUSED', 'UNIT 0451 · PAUSED'), x + 24, y + 26);
   ctx.fillStyle = COLORS.black;
   ctx.font = 'bold 36px sans-serif';
-  ctx.fillText('暂停', x + 24, y + 70);
+  ctx.fillText(T('暂停', 'PAUSED'), x + 24, y + 70);
   ctx.font = 'bold 12px sans-serif';
   ctx.fillStyle = COLORS.gray;
-  ctx.fillText('快捷键 / KEY MAP', x + 24, y + 92);
+  ctx.fillText(T('快捷键 / KEY MAP', 'KEY MAP'), x + 24, y + 92);
   // Two-column shortcut list
   const cats = [
-    ['移动 MOVE', [
-      ['WASD',  '移动 / 飞行'],
-      ['Shift', '冲刺 SPRINT'],
-      ['鼠标',  '瞄准'],
-      ['左键',  '射击'],
-      ['V',     '自动瞄准 AIM-ASSIST'],
+    [T('移动 MOVE', 'MOVE'), [
+      ['WASD',  T('移动 / 飞行', 'Move / fly')],
+      ['Shift', T('冲刺 SPRINT', 'Sprint')],
+      [T('鼠标', 'Mouse'),  T('瞄准', 'Aim')],
+      [T('左键', 'L-click'), T('射击', 'Fire')],
+      ['V',     T('自动瞄准 AIM-ASSIST', 'Aim-assist')],
     ]],
-    ['装备 GEAR', [
-      ['R',     '装填弹药'],
-      ['G',     '投掷手雷'],
-      ['Q',     'UAV 无人机'],
-      ['E',     'FPV 自杀无人机'],
+    [T('装备 GEAR', 'GEAR'), [
+      ['R',     T('装填弹药', 'Reload')],
+      ['G',     T('投掷手雷', 'Throw grenade')],
+      ['Q',     T('UAV 无人机', 'UAV recon')],
+      ['E',     T('FPV 自杀无人机', 'FPV kamikaze')],
     ]],
-    ['视角 VIEW', [
-      ['Tab',   '战术指挥 COMMAND'],
+    [T('视角 VIEW', 'VIEW'), [
+      ['Tab',   T('战术指挥 COMMAND', 'Command view')],
     ]],
-    ['系统 SYSTEM', [
-      ['Esc/P', '暂停 / 继续'],
-      ['1-4',   'NN 模式接管队友'],
-      ['退出',  '从下方按钮回主菜单'],
+    [T('系统 SYSTEM', 'SYSTEM'), [
+      ['Esc/P', T('暂停 / 继续', 'Pause / resume')],
+      ['1-4',   T('NN 模式接管队友', 'Pawn-swap teammate')],
+      [T('退出', 'Exit'), T('从下方按钮回主菜单', 'Use button below')],
     ]],
   ];
   let colX = x + 24, colY = y + 116;
@@ -10197,7 +10215,7 @@ function drawPauseOverlay() {
   ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 12px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('按 Esc 继续 · RESUME', resumeX + resumeW / 2, barY + 18);
+  ctx.fillText(T('按 Esc 继续 · RESUME', 'Esc · RESUME'), resumeX + resumeW / 2, barY + 18);
 
   // Mute toggle — filled black w/ cream icon when muted, hollow when audible
   ctx.fillStyle = AUDIO.muted ? COLORS.black : COLORS.cream;
@@ -10207,7 +10225,7 @@ function drawPauseOverlay() {
   ctx.strokeRect(muteX, barY, muteW, 28);
   ctx.fillStyle = AUDIO.muted ? COLORS.cream : COLORS.black;
   ctx.font = 'bold 11px sans-serif';
-  ctx.fillText(AUDIO.muted ? '🔇 静音' : '🔊 声音', muteX + muteW / 2, barY + 18);
+  ctx.fillText(AUDIO.muted ? T('🔇 静音', '🔇 MUTE') : T('🔊 声音', '🔊 SOUND'), muteX + muteW / 2, barY + 18);
 
   ctx.fillStyle = COLORS.cream;
   ctx.fillRect(exitX, barY, exitW, 28);
@@ -10216,7 +10234,7 @@ function drawPauseOverlay() {
   ctx.strokeRect(exitX, barY, exitW, 28);
   ctx.fillStyle = COLORS.red;
   ctx.font = 'bold 12px sans-serif';
-  ctx.fillText('退出 · EXIT', exitX + exitW / 2, barY + 18);
+  ctx.fillText(T('退出 · EXIT', 'EXIT'), exitX + exitW / 2, barY + 18);
   ctx.textAlign = 'left';
 
   game._pauseResumeRect = { x: resumeX, y: barY, w: resumeW, h: 28 };
