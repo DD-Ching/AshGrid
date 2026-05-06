@@ -190,6 +190,149 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 .start-btn:hover { transform: translate(4px, -4px); background: var(--red-bright); }
 /* Language toggle button — small chip top-right of cards/screens. Click to flip
    between 中文 and English. Persisted in localStorage as ag.lang. */
+/* ============ INTRO OVERLAY ============ */
+/* Awakening sequence — black backdrop + monospace typewriter, deliberate
+   pacing. Red flash on initial fade-in to set the tone (alarm / boot
+   warning), then settles into a calm comm-channel feel. */
+.intro {
+  position: fixed; inset: 0; z-index: 9999;
+  background: #0A0A0A;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-family: 'Courier New', monospace;
+  color: var(--cream);
+  animation: introFadeIn 0.6s ease-out;
+  cursor: pointer;
+}
+.intro[hidden] { display: none; }
+@keyframes introFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.intro-flash {
+  position: absolute; inset: 0;
+  background: radial-gradient(circle at 50% 35%, rgba(200,38,28,0.55) 0%, transparent 60%);
+  pointer-events: none;
+  animation: introFlashPulse 1.2s ease-out 0.2s 1 forwards;
+  opacity: 0;
+}
+@keyframes introFlashPulse {
+  0%   { opacity: 0; }
+  20%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+.intro-content {
+  max-width: 720px;
+  padding: 24px 36px;
+  position: relative;
+  z-index: 1;
+}
+.intro-tag {
+  font-size: 11px; letter-spacing: 6px; color: var(--red);
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--red);
+  padding-bottom: 10px;
+  animation: introBlink 1.5s ease-in-out infinite;
+}
+@keyframes introBlink {
+  0%, 50%, 100% { opacity: 1; }
+  25%, 75%      { opacity: 0.4; }
+}
+.intro-block {
+  font-size: 14px; line-height: 1.9;
+  color: var(--cream);
+  margin: 0 0 24px 0;
+  white-space: pre-wrap;
+  min-height: 200px;
+}
+.intro-block .ok { color: #3FE63F; }
+.intro-block .warn { color: #FFD24A; }
+.intro-block .err { color: var(--red); }
+.intro-quote {
+  font-size: 16px; line-height: 1.7;
+  font-family: Georgia, 'Noto Serif', serif;
+  font-style: italic;
+  color: var(--cream-dark);
+  border-left: 3px solid var(--red);
+  padding: 8px 0 8px 16px;
+  margin: 0 0 24px 0;
+  min-height: 24px;
+  white-space: pre-wrap;
+}
+.intro-stamp {
+  font-size: 22px; letter-spacing: 4px; font-weight: 800;
+  color: var(--red);
+  text-align: center;
+  margin: 12px 0 24px 0;
+  min-height: 28px;
+  text-shadow: 0 0 12px rgba(200,38,28,0.4);
+}
+.intro-cta {
+  background: var(--red); color: var(--cream);
+  border: none; font-family: inherit;
+  font-size: 18px; letter-spacing: 8px; font-weight: 800;
+  padding: 18px 44px;
+  cursor: pointer;
+  display: block; margin: 0 auto;
+  position: relative;
+  animation: introCtaPulse 1.6s ease-in-out infinite;
+}
+.intro-cta:hover { transform: translate(2px, -2px); background: var(--red-bright); }
+.intro-cta::after {
+  content: ''; position: absolute; top: 5px; left: 5px;
+  width: 100%; height: 100%; background: var(--cream);
+  z-index: -1;
+}
+@keyframes introCtaPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(200,38,28,0.0); }
+  50%      { box-shadow: 0 0 32px rgba(200,38,28,0.7); }
+}
+.intro-skip {
+  position: absolute; bottom: 18px; right: 24px;
+  font-size: 10px; letter-spacing: 3px; color: var(--gray);
+  cursor: pointer;
+  background: transparent; border: 1px solid var(--gray);
+  padding: 6px 12px;
+  font-family: inherit;
+}
+.intro-skip:hover { color: var(--cream); border-color: var(--cream); }
+/* Day chip on the start-screen footer + a "REPLAY INTRO" link */
+.day-chip {
+  display: inline-block;
+  background: var(--red); color: var(--cream);
+  font-size: 11px; letter-spacing: 3px; font-weight: 800;
+  padding: 4px 10px;
+  margin-right: 12px;
+}
+.replay-intro {
+  background: transparent; border: none; color: var(--gray);
+  font-family: inherit; font-size: 10px; letter-spacing: 2px;
+  cursor: pointer; padding: 0; margin-left: 8px;
+  text-decoration: underline;
+}
+.replay-intro:hover { color: var(--cream); }
+/* Radio toast — tiny side banner shown during first-match story beats */
+.radio-toast {
+  position: fixed; left: 24px; bottom: 24px;
+  background: rgba(10, 10, 10, 0.92);
+  border-left: 3px solid var(--red);
+  color: var(--cream);
+  font-family: 'Courier New', monospace;
+  font-size: 13px; line-height: 1.5;
+  padding: 10px 14px;
+  max-width: 320px;
+  z-index: 200;
+  animation: radioToastIn 0.4s ease-out;
+}
+.radio-toast .label {
+  display: block; font-size: 9px; letter-spacing: 3px;
+  color: var(--red); font-weight: 800;
+  margin-bottom: 2px;
+}
+@keyframes radioToastIn {
+  from { transform: translateX(-12px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
 .lang-toggle {
   position: absolute; top: 14px; right: 14px;
   background: var(--cream-dark); border: 2px solid var(--black);
@@ -524,6 +667,24 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 <body>
 <canvas id="game"></canvas>
 
+<!-- ============ INTRO / AWAKEN SEQUENCE ============ -->
+<!-- Shown on first boot. The lobby is reframed as a "comm center" through
+     this opening — the player isn't picking modes, they're a re-awakened
+     human operator in a war that's gone fully autonomous. Set ag.introSeen
+     to '1' and this stays hidden on subsequent loads (replayable from the
+     start-screen footer link). -->
+<div class="overlay intro" id="intro" hidden>
+  <div class="intro-flash" id="introFlash"></div>
+  <div class="intro-content">
+    <div class="intro-tag" id="introTag">UNIT 0451 — STANDBY</div>
+    <pre class="intro-block" id="introBlock"></pre>
+    <div class="intro-quote" id="introQuote"></div>
+    <div class="intro-stamp" id="introStamp"></div>
+    <button class="intro-cta" id="introCta" hidden></button>
+  </div>
+  <button class="intro-skip" id="introSkip">SKIP ▶</button>
+</div>
+
 <div class="overlay start-screen" id="start">
   <button class="lang-toggle" data-lang-toggle><span class="seg on" data-seg="zh">中</span>/<span class="seg" data-seg="en">EN</span></button>
   <svg class="start-bg" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -569,7 +730,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 
 
     <div class="footer-bar">
-      <span id="startStatsLine">SECTOR 7G · UNIT 0451</span>
+      <span><span class="day-chip" id="dayChip">DAY 14</span><span id="startStatsLine">SECTOR 7G · UNIT 0451</span><button class="replay-intro" id="replayIntroBtn">▶ REPLAY INTRO</button></span>
       <span>建议 1080p+ 全屏体验</span>
     </div>
   </div>
@@ -744,6 +905,242 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 </div>
 
 <script>
+// ============ INTRO / NARRATIVE ============
+// First-boot awakening sequence + Day counter + first-match radio toasts.
+// Storage:
+//   ag.introSeen   '1'  → already played the awakening, skip on next boot
+//   ag.dayNum      int  → "DAY N" — increments on every match completion
+//   ag.firstMatch  '1'  → first match has happened (turn off story toasts)
+const INTRO = {
+  // Two-language script — picked at intro time based on getLang().
+  // Tag, the boot-block lines, the quote lines, and the final stamp render
+  // in sequence with their own typewriter pacing.
+  script: {
+    zh: {
+      tag: '單元 0451 — STANDBY',
+      bootLines: [
+        ['ok',   '> NEURAL LINK ONLINE'],
+        ['ok',   '> CONSCIOUSNESS RECOVERED — 14 DAYS LATE'],
+        ['warn', '> ALL SQUAD CHANNELS ... DARK'],
+        ['warn', '> NN INFERENCE LOOP — STILL ACTIVE'],
+        ['err',  '> HUMAN OPERATORS ONLINE: 1'],
+      ],
+      quote: '"操作員 0451,聽得到嗎?\n小隊 14 天前全部斷訊。\nNN 還在生兵 — 兩邊都是。\n沒人記得這一切是從誰開始的。\n你是這場戰爭裡最後一個還在環裡的人類。"',
+      stamp: '深 呼 吸 — 然 後 接 管',
+      cta: '甦 醒 ▶',
+    },
+    en: {
+      tag: 'UNIT 0451 — STANDBY',
+      bootLines: [
+        ['ok',   '> NEURAL LINK ONLINE'],
+        ['ok',   '> CONSCIOUSNESS RECOVERED — 14 DAYS LATE'],
+        ['warn', '> ALL SQUAD CHANNELS ... DARK'],
+        ['warn', '> NN INFERENCE LOOP — STILL ACTIVE'],
+        ['err',  '> HUMAN OPERATORS ONLINE: 1'],
+      ],
+      quote: `"Operator 0451, do you read?\nSquad went dark 14 days ago.\nThe NN keeps spawning bodies — on both sides.\nNobody remembers who started this.\nYou're the last human in the loop."`,
+      stamp: 'BREATHE — THEN TAKE COMMAND',
+      cta: 'AWAKEN ▶',
+    },
+  },
+};
+
+function getDayNum() {
+  try { const n = parseInt(localStorage.getItem('ag.dayNum') || '14', 10); return isFinite(n) ? n : 14; }
+  catch (e) { return 14; }
+}
+function bumpDayNum() {
+  const n = getDayNum() + 1;
+  try { localStorage.setItem('ag.dayNum', String(n)); } catch (e) {}
+  // Refresh the start-screen chip whenever player returns from a match
+  const chip = document.getElementById('dayChip');
+  if (chip) chip.textContent = `DAY ${n}`;
+  return n;
+}
+
+// Typewriter effect — type each char of `text` into `el` over ~18ms each,
+// then resolve. Skipping (clicking the overlay) instantly completes by
+// shorting the timer to a flush.
+let _introTypingPromise = null;
+let _introSkipFlag = false;
+function _introType(el, text, perChar = 18, klass = '') {
+  return new Promise(resolve => {
+    let i = 0;
+    if (klass) el.innerHTML += `<span class="${klass}"></span>`;
+    const target = klass ? el.lastElementChild : el;
+    const tick = () => {
+      if (_introSkipFlag) {
+        target.textContent = text;
+        resolve();
+        return;
+      }
+      target.textContent = text.slice(0, ++i);
+      if (i >= text.length) { resolve(); return; }
+      setTimeout(tick, perChar);
+    };
+    tick();
+  });
+}
+function _wait(ms) {
+  return new Promise(resolve => {
+    const start = Date.now();
+    const tick = () => {
+      if (_introSkipFlag) return resolve();
+      if (Date.now() - start >= ms) return resolve();
+      setTimeout(tick, 30);
+    };
+    tick();
+  });
+}
+
+async function playIntroSequence() {
+  const intro = document.getElementById('intro');
+  if (!intro) return;
+  // Pause the game tick while the intro plays so the underlying canvas
+  // doesn't run an empty match in the background.
+  game._paused = true;
+  intro.removeAttribute('hidden');
+  _introSkipFlag = false;
+
+  const lang = (typeof getLang === 'function') ? getLang() : 'en';
+  const s = INTRO.script[lang] || INTRO.script.en;
+  const tagEl   = document.getElementById('introTag');
+  const blockEl = document.getElementById('introBlock');
+  const quoteEl = document.getElementById('introQuote');
+  const stampEl = document.getElementById('introStamp');
+  const ctaEl   = document.getElementById('introCta');
+
+  // Reset everything for replay
+  tagEl.textContent = s.tag;
+  blockEl.innerHTML = '';
+  quoteEl.textContent = '';
+  stampEl.textContent = '';
+  ctaEl.hidden = true;
+  ctaEl.textContent = s.cta;
+
+  // 0.6s breath after the red flash, before boot text starts
+  await _wait(700);
+
+  // Boot lines — one by one, brief gap between
+  for (let i = 0; i < s.bootLines.length; i++) {
+    const [klass, txt] = s.bootLines[i];
+    await _introType(blockEl, txt, 14, klass);
+    blockEl.innerHTML += '\n';
+    await _wait(180);
+  }
+
+  await _wait(400);
+
+  // Operator quote — slower typewriter, more deliberate
+  await _introType(quoteEl, s.quote, 26);
+
+  await _wait(500);
+
+  // Stamp + CTA
+  stampEl.textContent = s.stamp;
+  await _wait(400);
+  ctaEl.hidden = false;
+}
+
+function dismissIntro() {
+  _introSkipFlag = true;
+  const intro = document.getElementById('intro');
+  if (intro) intro.setAttribute('hidden', '');
+  try { localStorage.setItem('ag.introSeen', '1'); } catch (e) {}
+  game._paused = false;
+}
+
+// Wire intro buttons after DOM is ready
+function _wireIntro() {
+  const cta = document.getElementById('introCta');
+  const skip = document.getElementById('introSkip');
+  const replay = document.getElementById('replayIntroBtn');
+  const intro = document.getElementById('intro');
+  if (cta) cta.onclick = (e) => { e.stopPropagation(); dismissIntro(); };
+  if (skip) skip.onclick = (e) => { e.stopPropagation(); dismissIntro(); };
+  if (intro) {
+    intro.onclick = () => {
+      // Click anywhere = fast-forward typewriter (or dismiss if CTA visible)
+      if (!cta.hidden) { dismissIntro(); return; }
+      _introSkipFlag = true;
+    };
+  }
+  if (replay) replay.onclick = () => {
+    try { localStorage.removeItem('ag.introSeen'); } catch (e) {}
+    document.getElementById('start').classList.add('hidden');
+    playIntroSequence();
+    // Re-show start screen after the intro is dismissed
+    const tick = () => {
+      const hidden = document.getElementById('intro').hasAttribute('hidden');
+      if (hidden) document.getElementById('start').classList.remove('hidden');
+      else setTimeout(tick, 200);
+    };
+    setTimeout(tick, 200);
+  };
+  // Day chip text on start-screen footer
+  const chip = document.getElementById('dayChip');
+  if (chip) chip.textContent = `DAY ${getDayNum()}`;
+}
+
+// Show intro on first boot (after a tiny delay so the page paints first)
+function _maybeShowIntro() {
+  let seen = false;
+  try { seen = localStorage.getItem('ag.introSeen') === '1'; } catch (e) {}
+  if (seen) return;
+  // Hide the start screen until intro completes
+  document.getElementById('start').classList.add('hidden');
+  playIntroSequence();
+  const watchTick = () => {
+    if (document.getElementById('intro').hasAttribute('hidden')) {
+      document.getElementById('start').classList.remove('hidden');
+    } else {
+      setTimeout(watchTick, 200);
+    }
+  };
+  setTimeout(watchTick, 200);
+}
+
+// Radio toast — small in-match story callout. Stacks at bottom-left,
+// auto-dismisses after `ttl` ms. Used during first match for narrative
+// beats: "they fall faster when you flank", "the NN reads your trail", etc.
+function showRadioToast(label, text, ttl = 5500) {
+  const el = document.createElement('div');
+  el.className = 'radio-toast';
+  el.innerHTML = `<span class="label">${label}</span>${text}`;
+  document.body.appendChild(el);
+  setTimeout(() => {
+    el.style.transition = 'opacity 0.4s';
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 450);
+  }, ttl);
+}
+
+// Schedule a few story beats during the player's first match. Marks
+// ag.firstMatch=1 after the first cycle so subsequent matches stay clean.
+function _scheduleFirstMatchToasts() {
+  let firstSeen = false;
+  try { firstSeen = localStorage.getItem('ag.firstMatch') === '1'; } catch (e) {}
+  if (firstSeen) return;
+  const lang = (typeof getLang === 'function') ? getLang() : 'en';
+  const beats = (lang === 'zh') ? [
+    ['指揮頻道', '"歡迎回來,操作員。 找個身體,動起來。"', 1800],
+    ['NN 數據流', '"側翼比正面快 2 倍。 試試看。"', 14000],
+    ['指揮頻道', '"按 B 蓋牆。 能源來自擊殺 + 發電機。"', 28000],
+    ['指揮頻道', '"連殺 3 個觸發子彈時間。 別客氣。"', 44000],
+  ] : [
+    ['COMMS', '"Welcome back, operator. Pick a body, move."', 1800],
+    ['NN-LOG', '"Flanking is 2× faster than head-on. Try it."', 14000],
+    ['COMMS', '"Press B to build walls. Energy = kills + generators."', 28000],
+    ['COMMS', '"3-kill streak triggers bullet time. No mercy."', 44000],
+  ];
+  for (const [label, text, atMs] of beats) {
+    setTimeout(() => {
+      if (game.state === 'playing' && !game._paused) showRadioToast(label, text);
+    }, atMs);
+  }
+  try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
+}
+
 // ============ I18N ============
 // Lobby/start-screen language toggle. Source-of-truth Chinese is preserved in
 // the HTML; this table provides the English alternates. setLang(lang) walks
@@ -940,6 +1337,10 @@ document.addEventListener('click', (e) => {
 });
 // Apply on first paint
 setLang(getLang());
+
+// Wire intro overlay buttons + maybe show on first boot.
+_wireIntro();
+_maybeShowIntro();
 
 // ============ SETUP ============
 const canvas = document.getElementById('game');
@@ -3807,6 +4208,8 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
     sniper:   T(`狙击巷战 · 一枪致命`, `Sniper · one-shot lethal`),
   })[gameMode] || gameMode;
   showMessage(`NN ${modeLabel}`, 200);
+  // First-match story beats (no-op after first run — flag in localStorage)
+  _scheduleFirstMatchToasts();
 
   // Initial spawn protection — same 1.5s immunity as a respawn so the very
   // first frame of the match isn't decided by who's already aimed at you.
@@ -6519,6 +6922,9 @@ function bumpMatchPlayed() {
   s.totalKills += game.killCount || 0;
   saveGlobalStats(s);
   refreshStartStatsLine();
+  // Day++ on every completed match — feeds the "DAY N" chip + sets up
+  // future per-day flavor missions / unlocks.
+  if (typeof bumpDayNum === 'function') bumpDayNum();
 }
 function bumpSurvivalWave(waveReached) {
   const s = getGlobalStats();
