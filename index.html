@@ -655,6 +655,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
         <button data-diff="warrior"      class="diff-btn">进攻<span>主动</span></button>
         <button data-diff="defensive"    class="diff-btn">防御<span>谨慎</span></button>
         <button data-diff="sharpshooter" class="diff-btn">枪神<span>卡点</span></button>
+        <button data-diff="cqb"          class="diff-btn">冲锋<span>近战</span></button>
       </div>
     </div>
     <div class="difficulty-row">
@@ -811,6 +812,7 @@ const I18N = {
   '#nnLobby [data-diff="warrior"]':      { zh: '进攻<span>主动</span>',     en: 'WARRIOR<span>aggressive</span>' },
   '#nnLobby [data-diff="defensive"]':    { zh: '防御<span>谨慎</span>',     en: 'GUARD<span>cautious</span>' },
   '#nnLobby [data-diff="sharpshooter"]': { zh: '枪神<span>卡点</span>',     en: 'SHARP<span>angle hold</span>' },
+  '#nnLobby [data-diff="cqb"]':          { zh: '冲锋<span>近战</span>',      en: 'RUSH<span>CQB</span>' },
   '#nnLobby .difficulty-row:has([data-weapon]) .difficulty-label': { zh: '武器 WEAPON', en: 'WEAPON' },
   '#nnLobby [data-weapon="SMG"]':     { zh: '冲锋<span>近战·快</span>',     en: 'SMG<span>close · fast</span>' },
   '#nnLobby [data-weapon="RIFLE"]':   { zh: '步枪<span>平衡</span>',         en: 'RIFLE<span>balanced</span>' },
@@ -3053,9 +3055,9 @@ document.querySelectorAll('#nnLobby .weap-btn').forEach(btn => {
 // language flip immediately reflects in dropdowns + objective panel without
 // a manual rebuild. The legacy keys (easy/medium/hard/evolved) are kept so
 // old saved lineup state still resolves to a label.
-const _DIFF_LABELS_ZH = { elite: '全能', warrior: '进攻', defensive: '防御', sharpshooter: '枪神',
+const _DIFF_LABELS_ZH = { elite: '全能', warrior: '进攻', defensive: '防御', sharpshooter: '枪神', cqb: '冲锋',
                           easy: '简单', medium: '中等', hard: '困难', evolved: '进化' };
-const _DIFF_LABELS_EN = { elite: 'ELITE', warrior: 'WARRIOR', defensive: 'GUARD', sharpshooter: 'SHARP',
+const _DIFF_LABELS_EN = { elite: 'ELITE', warrior: 'WARRIOR', defensive: 'GUARD', sharpshooter: 'SHARP', cqb: 'RUSH',
                           easy: 'EASY', medium: 'MEDIUM', hard: 'HARD', evolved: 'EVOLVED' };
 const _WPN_LABELS_ZH  = { SMG:'冲锋', RIFLE:'步枪', LMG:'机枪', SNIPER:'狙击', SHOTGUN:'霰弹', ROCKET:'火箭' };
 const _WPN_LABELS_EN  = { SMG:'SMG', RIFLE:'RIFLE', LMG:'LMG', SNIPER:'SNIPER', SHOTGUN:'SHOTGUN', ROCKET:'ROCKET' };
@@ -3097,7 +3099,7 @@ function makeSlotCard(team, idx, tag, isPlayer) {
   // Difficulty dropdown
   const diff = document.createElement('select');
   diff.className = 'lineup-select';
-  for (const d of ['elite','warrior','defensive','sharpshooter']) {
+  for (const d of ['elite','warrior','defensive','sharpshooter','cqb']) {
     const opt = document.createElement('option');
     opt.value = d; opt.textContent = DIFF_LABELS[d];
     diff.appendChild(opt);
@@ -4476,7 +4478,7 @@ const NN = {
   loading: false,
   loaded: false,
   error: null,
-  difficulty: null,        // 'easy' | 'medium' | 'hard' | 'evolved' | 'elite' | 'defensive' | null
+  difficulty: null,        // 'easy' | 'medium' | 'hard' | 'evolved' | 'elite' | 'defensive' | 'cqb' | null
   modelPaths: {
     easy:      'ai_arena/onnx/model_easy.onnx',
     medium:    'ai_arena/onnx/model_medium.onnx',
@@ -4486,6 +4488,7 @@ const NN = {
     defensive:    'ai_arena/onnx/model_norespawn.onnx',
     warrior:      'ai_arena/onnx/model_warrior.onnx',
     sharpshooter: 'ai_arena/onnx/model_sharpshooter.onnx',
+    cqb:          'ai_arena/onnx/model_cqb.onnx',
   },
   modelPath: 'ai_arena/onnx/model.onnx',  // legacy fallback
   // Constants must match the Python combat_env exactly
@@ -6558,15 +6561,18 @@ MISSION_FACTORIES.nnDefense = function(mapDef) {
   // need a couple of rocket hits.
   game._spawnBeacons = [];
 
+  // Defense wave mix — folds in cqb (rush bot) starting wave 3 so the player
+  // starts hitting fast melee-press attackers once their walls are up. Pairs
+  // with sharpshooter so the player can't just camp one corner.
   const WAVE_TIERS = [
     ['defensive'],
     ['defensive', 'elite'],
-    ['elite'],
+    ['elite', 'cqb'],
     ['elite', 'warrior'],
-    ['warrior'],
+    ['warrior', 'cqb'],
     ['warrior', 'sharpshooter'],
-    ['sharpshooter'],
-    ['warrior', 'sharpshooter'],
+    ['sharpshooter', 'cqb'],
+    ['warrior', 'sharpshooter', 'cqb'],
   ];
   const waveSize = (n) => Math.min(8, 3 + Math.floor(n / 2));   // 3,3,4,4,5,5,6,...
 
@@ -6887,7 +6893,7 @@ MISSION_FACTORIES.nnHelo = function(mapDef) {
   let endStage = null;               // null | 'win' | 'loss'
   let helo = { alt: 1.0, hp: 100 };  // alt 1=high, 0=on LZ
 
-  const STYLE_TIERS = ['defensive', 'elite', 'warrior', 'sharpshooter'];
+  const STYLE_TIERS = ['defensive', 'elite', 'warrior', 'sharpshooter', 'cqb'];
   const SIDES = ['E', 'N', 'W', 'S'];
   function spawnHeloWave(n) {
     const tiers = [STYLE_TIERS[Math.min(Math.floor(n/2), STYLE_TIERS.length-1)]];
@@ -7103,8 +7109,8 @@ MISSION_FACTORIES.nnConvoy = function(mapDef) {
   const startTick = game.time;
 
   function spawnConvoyWave(n) {
-    const tier = (['defensive', 'elite', 'warrior', 'sharpshooter'])
-                 [Math.min(Math.floor(n/2), 3)];
+    const tier = (['defensive', 'elite', 'warrior', 'sharpshooter', 'cqb'])
+                 [Math.min(Math.floor(n/2), 4)];
     const size = Math.min(4, 2 + Math.floor(n/3));
     const edge = SIDES[(n - 1) % SIDES.length];
     const ax = NN_ARENA.x0, ay = NN_ARENA.y0;
