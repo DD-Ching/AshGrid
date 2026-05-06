@@ -1,9 +1,9 @@
 # 上架路線圖 / RELEASE ROADMAP
 
-最後更新:2026-05-06。我自主執行 — 進度在 commits、需你動作的標 🔑。
+最後更新:2026-05-06(進化到 14 模塊 Defense + CQB 模型 + 全套 game-feel)。我自主執行 — 進度在 commits、需你動作的標 🔑。
 
 ## 階段 0:現況
-- ✅ 核心玩法穩定(NN tier × 4、aim-assist、pawn-swap、4 模式 ×16+ 地圖)
+- ✅ 核心玩法穩定(NN tier × 5、aim-assist、pawn-swap、5 模式 ×16+ 地圖)
 - ✅ 桌面瀏覽器體驗完整
 - ❌ 手機不能玩 — 是上架最大障礙
 
@@ -32,6 +32,21 @@
 - [x] Canvas HUD 全 i18n(暫停 / 結算 / 排行榜 / 補給 / 任務)— c7107c5
 - [x] 起始畫面 EN 預設 + cover image EN — c7107c5
 - [x] SHARE RUN 按鈕(navigator.share / 剪貼板)— 0e7a8f5
+
+## 階段 2c:Defense 模式 — 邊建造邊抵禦
+- [x] 核心 Defense mode + 6 基礎模塊(牆/炮塔/發電機/監視/機器人/終端)— 2b0feda
+- [x] 牆兩點成一線(Bresenham 拉繪)— 314334c
+- [x] Radial selector 取代底部條 — aad749e
+- [x] 火箭炮武器(可破壞建築) + 敵方重生點 + 30u 細格 — c3b3ab1
+- [x] CQB 衝鋒模型(第 5 種風格)— febedd1
+- [x] Camera shake + killstreak slow-mo — 3d7f784
+- [x] End-of-match S/A/B/C/D 評級 — 7ef1ded
+- [x] 進階模塊:特斯拉(鏈電)/ EMP / 醫療站 / 蜂群 — 262208b ~ dd6f63e
+- [x] 觸控 radial picker + 行動 B 鍵 — 09ca308 / 963b194
+- [x] Defense 獨立排行榜(與 Survival 分桶)— 下一個 commit
+- 隊伍人數上限 4 → 8
+
+**階段 2c 完成 ✅**(14 模塊 / 5 NN 風格 / 完整觸控)
 
 ## 階段 3:Stub 接點(我寫好,你補帳號)
 - [x] AdMob rewarded-ad interface — 746ed8d(stub `requestRewardedAd(id, cb)`)
