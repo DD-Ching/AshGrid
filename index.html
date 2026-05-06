@@ -243,6 +243,115 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   padding: 18px 24px;
   flex: 1;
 }
+/* Operator dossier — service-record card ================================ */
+#dossierModal .modal-card {
+  width: min(740px, 95vw);
+  background: #E5E0D2;
+  border-color: var(--red);
+}
+#dossierModal .modal-tag {
+  background: linear-gradient(180deg, #2A2A2A 0%, #1A1A1A 100%);
+  letter-spacing: 4px;
+}
+#dossierBody {
+  font-family: 'Courier New', monospace;
+  padding: 0;
+}
+.dossier-hero {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 18px;
+  padding: 22px 26px;
+  border-bottom: 2px solid rgba(26,26,26,0.15);
+  background: rgba(26,26,26,0.04);
+}
+.dossier-portrait {
+  width: 110px; height: 110px;
+  background: var(--cream-dark);
+  border: 2px solid var(--black);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.dossier-portrait svg { width: 90px; height: 90px; }
+.dossier-portrait::after {
+  content: ''; position: absolute; top: 4px; right: 4px;
+  width: 8px; height: 8px; background: var(--red); border-radius: 50%;
+  box-shadow: 0 0 4px rgba(200,38,28,0.7);
+}
+.dossier-id { font-size: 10px; letter-spacing: 4px; color: var(--red); font-weight: 800; }
+.dossier-name {
+  font-size: 28px; font-weight: 900;
+  letter-spacing: 4px; line-height: 1;
+  margin-top: 4px;
+}
+.dossier-tagline {
+  font-size: 11px; line-height: 1.6; color: var(--gray);
+  margin-top: 8px;
+  font-style: italic;
+  font-family: Georgia, 'Noto Serif', serif;
+  border-left: 3px solid var(--red);
+  padding-left: 10px;
+}
+.dossier-meta {
+  display: flex; flex-wrap: wrap; gap: 14px;
+  margin-top: 10px;
+  font-size: 10px; letter-spacing: 2px;
+}
+.dossier-meta b { color: var(--black); font-weight: 900; margin-right: 6px; }
+.dossier-meta span { color: var(--gray); }
+
+.dossier-stats {
+  padding: 18px 26px;
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.dossier-stat {
+  border: 1px solid rgba(26,26,26,0.18);
+  background: rgba(232,228,216,0.7);
+  padding: 10px 12px;
+  text-align: center;
+}
+.dossier-stat .v { font-size: 24px; font-weight: 900; color: var(--black); line-height: 1; }
+.dossier-stat .l { font-size: 9px; letter-spacing: 2px; color: var(--gray); margin-top: 6px; font-weight: 800; }
+.dossier-stat.accent .v { color: var(--red); }
+
+.dossier-progress {
+  padding: 0 26px 18px 26px;
+}
+.dossier-progress-row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  gap: 12px; align-items: center;
+  margin-bottom: 10px;
+}
+.dossier-progress-label {
+  font-size: 10px; letter-spacing: 3px; font-weight: 800;
+}
+.dossier-progress-bar {
+  height: 12px; background: rgba(26,26,26,0.10);
+  border: 1px solid rgba(26,26,26,0.25);
+  position: relative;
+}
+.dossier-progress-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: var(--red);
+}
+.dossier-progress-count {
+  font-size: 11px; font-weight: 900;
+  color: var(--black);
+  font-family: 'Courier New', monospace;
+}
+
+@media (max-width: 720px) {
+  .dossier-hero { grid-template-columns: 80px 1fr; gap: 12px; padding: 16px; }
+  .dossier-portrait { width: 80px; height: 80px; }
+  .dossier-portrait svg { width: 64px; height: 64px; }
+  .dossier-name { font-size: 22px; }
+  .dossier-stats { grid-template-columns: repeat(2, 1fr); padding: 14px; }
+  .dossier-progress { padding: 0 14px 14px 14px; }
+  .dossier-progress-row { grid-template-columns: 80px 1fr auto; }
+}
+
 /* Log entries — dossier / classified-intel aesthetic ===================== */
 #logModal .modal-card {
   width: min(820px, 95vw);
@@ -1004,9 +1113,20 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 
 
     <div class="footer-bar">
-      <span><span class="day-chip" id="dayChip">DAY 14</span><span id="startStatsLine">SECTOR 7G · UNIT 0451</span><button class="footer-link" id="logBtn">📖 LOG <span class="badge" id="logBadge" hidden>1</span></button><button class="footer-link" id="achievementsBtn">🏆 ACHIEVEMENTS</button><button class="replay-intro" id="replayIntroBtn">▶ INTRO</button></span>
+      <span><span class="day-chip" id="dayChip">DAY 14</span><span id="startStatsLine">SECTOR 7G · UNIT 0451</span><button class="footer-link" id="dossierBtn">DOSSIER</button><button class="footer-link" id="logBtn">LOG <span class="badge" id="logBadge" hidden>1</span></button><button class="footer-link" id="achievementsBtn">RECORDS</button><button class="replay-intro" id="replayIntroBtn">▶ INTRO</button></span>
       <span>建议 1080p+ 全屏体验</span>
     </div>
+  </div>
+</div>
+
+<!-- Operator Dossier — service record summary -->
+<div class="modal-overlay" id="dossierModal" hidden>
+  <div class="modal-card">
+    <div class="modal-tag">
+      <span id="dossierModalTitle">操作員檔案 / OPERATOR DOSSIER</span>
+      <button class="modal-close" id="dossierCloseBtn">CLOSE</button>
+    </div>
+    <div class="modal-body" id="dossierBody"></div>
   </div>
 </div>
 
@@ -1620,6 +1740,101 @@ function buildAchievementsModal() {
     `<span class="achv-tag-counter"><b>${String(done).padStart(2, '0')}</b> / ${String(total).padStart(2, '0')} ${(lang === 'zh') ? '已解鎖' : 'UNLOCKED'}</span>`;
 }
 
+// Operator portrait — picks the SVG silhouette based on saved chassis.
+function _dossierPortraitSvg(chassis) {
+  const stroke = '#1A1A1A';
+  if (chassis === 'wolf') {
+    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><g fill="${stroke}"><rect x="10" y="22" width="36" height="14"/><polygon points="46,22 56,28 46,36"/><rect x="14" y="36" width="6" height="10"/><rect x="36" y="36" width="6" height="10"/></g><circle cx="48" cy="29" r="2" fill="#C8261C"/></svg>`;
+  }
+  if (chassis === 'heavy') {
+    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><g fill="${stroke}"><rect x="14" y="14" width="36" height="36"/><rect x="8" y="14" width="6" height="22"/><rect x="50" y="14" width="6" height="22"/></g><rect x="22" y="22" width="20" height="6" fill="#C8261C"/><rect x="28" y="36" width="8" height="10" fill="#E5E0D2"/></svg>`;
+  }
+  // humanoid (default) — head + torso + gun barrel
+  return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><g fill="${stroke}"><circle cx="32" cy="14" r="6"/><rect x="20" y="22" width="24" height="28"/><rect x="44" y="32" width="14" height="4"/></g><rect x="28" y="32" width="8" height="4" fill="#C8261C"/></svg>`;
+}
+
+// Build the dossier modal — service-record style summary of the operator's
+// stats, achievements progress, log progress, and current loadout.
+function buildDossierModal() {
+  const body = document.getElementById('dossierBody');
+  if (!body) return;
+  const lang = (typeof getLang === 'function') ? getLang() : 'en';
+  const dayN = (typeof getDayNum === 'function') ? getDayNum() : 14;
+  // Stats
+  let stats = { matchesPlayed: 0, totalKills: 0, bestSurvivalWave: 0 };
+  try { stats = Object.assign(stats, JSON.parse(localStorage.getItem('ag.stats') || '{}')); } catch (e) {}
+  const buildCount = parseInt(localStorage.getItem('ag.buildCount') || '0', 10) || 0;
+  const chassis = (typeof _lobby !== 'undefined' && _lobby.chassis) || 'humanoid';
+  const weapon  = (typeof _lobby !== 'undefined' && _lobby.weapon)  || 'RIFLE';
+  const styleId = (typeof _lobby !== 'undefined' && _lobby.difficulty) || 'elite';
+  const chassisLabel = (CHASSIS[chassis]?.label?.()) || chassis;
+  const styleLabel  = (DIFF_LABELS && DIFF_LABELS[styleId]) || styleId;
+  const wpnLabel    = (WPN_LABELS  && WPN_LABELS[weapon])   || weapon;
+  // Tagline — pull the most-recent unlocked log entry's title as the
+  // operator's "current state of mind" callout
+  const recovered = LOG_ENTRIES.filter(e => e.day <= dayN);
+  const last = recovered[recovered.length - 1] || LOG_ENTRIES[0];
+  const taglineTitle = last ? ((lang === 'zh') ? last.title_zh : last.title_en) : '';
+  const taglineDay   = last ? `DAY ${last.day}` : '';
+  // Achievements progress
+  const totalAchv = ACHIEVEMENTS.length;
+  const doneAchv  = getUnlockedAchievements().size;
+  // Log progress
+  const totalLog  = LOG_ENTRIES.length;
+  const recoveredLog = recovered.length;
+
+  body.innerHTML = `
+    <div class="dossier-hero">
+      <div class="dossier-portrait">${_dossierPortraitSvg(chassis)}</div>
+      <div>
+        <div class="dossier-id">UNIT 0451 // SECTOR 7G</div>
+        <div class="dossier-name">${(lang === 'zh') ? '操作員 · 零四五一' : 'OPERATOR 0451'}</div>
+        <div class="dossier-tagline">"${taglineTitle}" — ${taglineDay}</div>
+        <div class="dossier-meta">
+          <span><b>${(lang === 'zh') ? '機體' : 'CHASSIS'}</b>${chassisLabel}</span>
+          <span><b>${(lang === 'zh') ? '武器' : 'WEAPON'}</b>${wpnLabel}</span>
+          <span><b>${(lang === 'zh') ? '風格' : 'STYLE'}</b>${styleLabel}</span>
+          <span><b>${(lang === 'zh') ? '日數' : 'DAYS IN LOOP'}</b>${dayN - 14}</span>
+        </div>
+      </div>
+    </div>
+    <div class="dossier-stats">
+      <div class="dossier-stat accent">
+        <div class="v">${stats.matchesPlayed || 0}</div>
+        <div class="l">${(lang === 'zh') ? '出擊次數' : 'DEPLOYMENTS'}</div>
+      </div>
+      <div class="dossier-stat">
+        <div class="v">${stats.totalKills || 0}</div>
+        <div class="l">${(lang === 'zh') ? '累計擊殺' : 'CONFIRMED KILLS'}</div>
+      </div>
+      <div class="dossier-stat">
+        <div class="v">${stats.bestSurvivalWave || 0}</div>
+        <div class="l">${(lang === 'zh') ? '最深波次' : 'DEEPEST WAVE'}</div>
+      </div>
+      <div class="dossier-stat">
+        <div class="v">${buildCount}</div>
+        <div class="l">${(lang === 'zh') ? '建造模塊' : 'MODULES BUILT'}</div>
+      </div>
+    </div>
+    <div class="dossier-progress">
+      <div class="dossier-progress-row">
+        <div class="dossier-progress-label">${(lang === 'zh') ? '戰鬥紀錄' : 'COMBAT RECORDS'}</div>
+        <div class="dossier-progress-bar"><div class="dossier-progress-fill" style="width: ${(doneAchv / totalAchv * 100).toFixed(0)}%"></div></div>
+        <div class="dossier-progress-count">${String(doneAchv).padStart(2, '0')} / ${String(totalAchv).padStart(2, '0')}</div>
+      </div>
+      <div class="dossier-progress-row">
+        <div class="dossier-progress-label">${(lang === 'zh') ? '解密日誌' : 'LOG RECOVERED'}</div>
+        <div class="dossier-progress-bar"><div class="dossier-progress-fill" style="width: ${(recoveredLog / totalLog * 100).toFixed(0)}%"></div></div>
+        <div class="dossier-progress-count">${String(recoveredLog).padStart(2, '0')} / ${String(totalLog).padStart(2, '0')}</div>
+      </div>
+    </div>
+  `;
+  document.getElementById('dossierModalTitle').innerHTML =
+    `<span class="achv-tag-main">${(lang === 'zh') ? '操作員檔案' : 'OPERATOR DOSSIER'}</span>` +
+    `<span class="achv-tag-sub">${(lang === 'zh') ? '服役紀錄' : 'SERVICE RECORD'} //</span>` +
+    `<span class="achv-tag-counter">DAY <b>${dayN}</b></span>`;
+}
+
 // Wire footer buttons + modal close. Called by _wireIntro since both run at boot.
 function _wireFooterModals() {
   const logBtn = document.getElementById('logBtn');
@@ -1628,6 +1843,12 @@ function _wireFooterModals() {
   const achvBtn = document.getElementById('achievementsBtn');
   const achvClose = document.getElementById('achvCloseBtn');
   const achvModal = document.getElementById('achvModal');
+  const dossierBtn = document.getElementById('dossierBtn');
+  const dossierClose = document.getElementById('dossierCloseBtn');
+  const dossierModal = document.getElementById('dossierModal');
+  if (dossierBtn) dossierBtn.onclick = () => { buildDossierModal(); dossierModal.removeAttribute('hidden'); };
+  if (dossierClose) dossierClose.onclick = () => dossierModal.setAttribute('hidden', '');
+  if (dossierModal) dossierModal.onclick = (e) => { if (e.target === dossierModal) dossierModal.setAttribute('hidden', ''); };
   if (logBtn) logBtn.onclick = () => { buildLogModal(); logModal.removeAttribute('hidden'); };
   if (logClose) logClose.onclick = () => { logModal.setAttribute('hidden', ''); refreshLogBadge(); };
   if (logModal) logModal.onclick = (e) => { if (e.target === logModal) { logModal.setAttribute('hidden', ''); refreshLogBadge(); } };
@@ -10823,6 +11044,17 @@ function updateBullets() {
         if (isKill) {
           e.alive = false; game.score += 100; game.killCount++;
           createExplosion(e.x, e.y, 'small'); playSfx('kill_confirm');
+          // Squad kill callout — when an ally got the kill, the player
+          // gets a brief radio toast naming who took out who. Filtered
+          // by cooldown + only fires when the kill came from a friendly
+          // (b.fromAlly) so the player's own kills stay quiet here.
+          if (b.fromAlly && b.fromUnit && b.fromUnit.callsign) {
+            const cs = b.fromUnit.callsign;
+            const tgt = e.callsign || _r('紅軍', 'RED');
+            _radioOnce('killcall_' + cs + '_' + game.time, 0.5,
+              _r('小隊', 'SQUAD'),
+              _r(`"${cs} 擊落 ${tgt}"`, `"${cs} dropped ${tgt}"`));
+          }
           // Kill streak — chain kills within 4s bump the counter
           const KS_WINDOW = 240;
           const last = player._lastKillTick || -9999;
