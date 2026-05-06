@@ -1143,15 +1143,22 @@ const AUDIO = {
   volume: 0.35,    // master gain; lower if it's too loud
   enabled: true,
   unlocked: false,
+  muted: false,
 };
+try { AUDIO.muted = localStorage.getItem('ag.muted') === '1'; } catch (e) {}
 function audioInit() {
   if (AUDIO.ctx) return;
   try {
     AUDIO.ctx = new (window.AudioContext || window.webkitAudioContext)();
     AUDIO.master = AUDIO.ctx.createGain();
-    AUDIO.master.gain.value = AUDIO.volume;
+    AUDIO.master.gain.value = AUDIO.muted ? 0 : AUDIO.volume;
     AUDIO.master.connect(AUDIO.ctx.destination);
   } catch (e) { AUDIO.enabled = false; }
+}
+function setAudioMuted(m) {
+  AUDIO.muted = !!m;
+  if (AUDIO.master) AUDIO.master.gain.value = AUDIO.muted ? 0 : AUDIO.volume;
+  try { localStorage.setItem('ag.muted', AUDIO.muted ? '1' : '0'); } catch (e) {}
 }
 function audioUnlock() {
   audioInit();
@@ -1722,6 +1729,7 @@ window.addEventListener('mousedown', e => {
   // While paused: click resume bar = unpause; click exit bar = back to menu.
   if (game._paused) {
     if (_hitRect(game._pauseResumeRect, e.clientX, e.clientY)) togglePause();
+    else if (_hitRect(game._pauseMuteRect, e.clientX, e.clientY)) setAudioMuted(!AUDIO.muted);
     else if (_hitRect(game._pauseExitRect, e.clientX, e.clientY)) exitMatchToMenu();
     e.preventDefault();
     return;
@@ -1847,6 +1855,7 @@ if (touchInput.enabled) {
       // 2) Pause overlay buttons (when paused)
       if (game._paused) {
         if (_hitRect(game._pauseResumeRect, t.clientX, t.clientY)) togglePause();
+        else if (_hitRect(game._pauseMuteRect, t.clientX, t.clientY)) setAudioMuted(!AUDIO.muted);
         else if (_hitRect(game._pauseExitRect, t.clientX, t.clientY)) exitMatchToMenu();
         continue;
       }
@@ -9614,13 +9623,16 @@ function drawPauseOverlay() {
       cyy += 18;
     }
   }
-  // Bottom action bar: [ Resume (red) ] [ Exit (cream w/ red border) ]
+  // Bottom action bar: [ Resume (red) ] [ Mute ] [ Exit (cream w/ red border) ]
   const barY = y + ch - 38;
-  const gap = 12;
-  const resumeW = Math.floor((cw - 48 - gap) * 0.65);
-  const exitW   = (cw - 48 - gap) - resumeW;
+  const gap = 8;
+  const totalW = cw - 48 - gap * 2;
+  const resumeW = Math.floor(totalW * 0.55);
+  const muteW   = Math.floor(totalW * 0.18);
+  const exitW   = totalW - resumeW - muteW;
   const resumeX = x + 24;
-  const exitX   = resumeX + resumeW + gap;
+  const muteX   = resumeX + resumeW + gap;
+  const exitX   = muteX + muteW + gap;
 
   ctx.fillStyle = COLORS.red;
   ctx.fillRect(resumeX, barY, resumeW, 28);
@@ -9629,16 +9641,28 @@ function drawPauseOverlay() {
   ctx.textAlign = 'center';
   ctx.fillText('按 Esc 继续 · RESUME', resumeX + resumeW / 2, barY + 18);
 
+  // Mute toggle — filled black w/ cream icon when muted, hollow when audible
+  ctx.fillStyle = AUDIO.muted ? COLORS.black : COLORS.cream;
+  ctx.fillRect(muteX, barY, muteW, 28);
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(muteX, barY, muteW, 28);
+  ctx.fillStyle = AUDIO.muted ? COLORS.cream : COLORS.black;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(AUDIO.muted ? '🔇 静音' : '🔊 声音', muteX + muteW / 2, barY + 18);
+
   ctx.fillStyle = COLORS.cream;
   ctx.fillRect(exitX, barY, exitW, 28);
   ctx.strokeStyle = COLORS.red;
   ctx.lineWidth = 2;
   ctx.strokeRect(exitX, barY, exitW, 28);
   ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 12px sans-serif';
   ctx.fillText('退出 · EXIT', exitX + exitW / 2, barY + 18);
   ctx.textAlign = 'left';
 
   game._pauseResumeRect = { x: resumeX, y: barY, w: resumeW, h: 28 };
+  game._pauseMuteRect   = { x: muteX,   y: barY, w: muteW,   h: 28 };
   game._pauseExitRect   = { x: exitX,   y: barY, w: exitW,   h: 28 };
 
   // Custom cursor on top of the overlay — body has cursor:none so without
