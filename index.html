@@ -3794,6 +3794,8 @@ function nnApplyAction(unit, action, friendlies, enemies) {
           life: w.bulletLife,
           damage: w.damage,
           fromAlly: isAlly,
+          fromUnit: unit,
+          weaponName: w.name,
         });
       }
       muzzleFlashes.push({ x: unit.x + Math.cos(aim)*22, y: unit.y + Math.sin(aim)*22, angle: aim, life: 5 });
@@ -4812,7 +4814,8 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           a._respawnAt = game.time + RESPAWN_TICKS;
           a._useNN = true;
           a._nnDifficulty = a._nnDifficulty || NN.difficulty || 'evolved';
-          showSwapToast(`接管 ${a.callsign === '前操作员' ? '隊友' : a.callsign}`);
+          const killerInfo = player._killer ? ` · 死於 ${player._killer.callsign || '敌方'}` : '';
+          showSwapToast(`接管 ${a.callsign === '前操作员' ? '隊友' : a.callsign}${killerInfo}`);
           playSfx('countdown', { freq: 1320, vol: 0.45 });
         } else {
           player._respawnAt = game.time + RESPAWN_TICKS;
@@ -5118,7 +5121,8 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
           a.y = player._lastDeathY != null ? player._lastDeathY : a.y;
           a.callsign = '前操作员';
           a._respawnAt = null;   // never respawn
-          showSwapToast(`紧急接管`);
+          const killerInfo = player._killer ? ` · 死於 ${player._killer.callsign || '敌方'}` : '';
+          showSwapToast(`紧急接管${killerInfo}`);
           playSfx('countdown', { freq: 1320, vol: 0.45 });
         } else {
           // No allies left — round entering loss state. On first transition,
@@ -6274,6 +6278,8 @@ function updateAllies() {
         vx: Math.cos(ang)*w.bulletSpeed, vy: Math.sin(ang)*w.bulletSpeed,
         life: w.bulletLife, damage: w.damage,
         fromAlly: true,
+        fromUnit: a,
+        weaponName: w.name,
       });
       muzzleFlashes.push({ x: a.x + Math.cos(ang)*22, y: a.y + Math.sin(ang)*22, angle: ang, life: 5 });
       applyRecoil(a, w);
@@ -6699,6 +6705,8 @@ function updateEnemies() {
         y: e.y + Math.sin(ang)*16,
         vx: Math.cos(ang)*w.bulletSpeed, vy: Math.sin(ang)*w.bulletSpeed,
         life: w.bulletLife, damage: w.damage,
+        fromUnit: e,
+        weaponName: w.name,
       });
       applyRecoil(e, w);
       e.fireCd = w.fireCd + Math.floor(Math.random()*8);
@@ -7123,6 +7131,8 @@ function fire() {
       vx: Math.cos(barrel)*w.bulletSpeed, vy: Math.sin(barrel)*w.bulletSpeed,
       life: w.bulletLife, damage: w.damage,
       fromAlly: false,
+      fromUnit: player,
+      weaponName: w.name,
     });
   }
   // One muzzle flash per shot (not per pellet) — spread looks like a cloud
@@ -7185,10 +7195,15 @@ function updateBullets() {
         player.hp -= b.damage;
         game.hitFlash = 12;
         playSfx('hit');
+        // Track most recent damage source for the killer-info banner
+        player._lastDamageBy = b.fromUnit || null;
+        player._lastDamageWeapon = b.weaponName || '';
         if (player.hp <= 0) {
           player.hp = 0;
           player.alive = false;
           player._lastDeathX = player.x; player._lastDeathY = player.y;
+          player._killer = b.fromUnit || null;
+          player._killerWeapon = b.weaponName || '';
           createExplosion(player.x, player.y, 'big');
           playSfx('death');
         }
@@ -8809,6 +8824,16 @@ function renderHUD() {
     ctx.fillStyle = COLORS.red;
     ctx.font = 'bold 14px sans-serif';
     ctx.fillText('—  阵亡  ·  重生中  —', cx, cy - 110);
+    // Killer info
+    if (player._killer) {
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = 'bold 12px sans-serif';
+      const killerName = player._killer.callsign || '敌方';
+      const wpn = player._killerWeapon ? ` (${player._killerWeapon})` : '';
+      ctx.globalAlpha = 0.85;
+      ctx.fillText(`击杀者 / KILLED BY  ${killerName}${wpn}`, cx, cy - 88);
+      ctx.globalAlpha = 1;
+    }
     // Big countdown number
     ctx.fillStyle = COLORS.cream;
     ctx.font = 'bold 140px sans-serif';
