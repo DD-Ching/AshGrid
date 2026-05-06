@@ -410,6 +410,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   border-bottom: 2px solid var(--red);
   pointer-events: auto;
   z-index: 200;
+  flex-wrap: wrap;     /* mobile portrait: rows wrap instead of clipping */
 }
 .editor-title { color: var(--red); font-weight: 800; letter-spacing: 4px;
                 font-size: 13px; margin-right: 12px; }
@@ -422,7 +423,13 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 .ed-tool:hover, .ed-action:hover { background: var(--cream); }
 .ed-tool.active  { background: var(--red); color: var(--cream); border-color: var(--red); }
 .ed-action.active { background: var(--red); color: var(--cream); border-color: var(--red); }
-.ed-spacer { flex: 1; }
+.ed-spacer { flex: 1; min-width: 0; }
+@media (max-width: 720px) {
+  .editor-toolbar { gap: 4px; padding: 6px 8px; }
+  .editor-title   { font-size: 10px; letter-spacing: 2px; margin-right: 4px; }
+  .ed-tool, .ed-action { padding: 5px 8px; font-size: 11px; letter-spacing: 1px; }
+  .ed-spacer { display: none; }
+}
 
 .end-screen {
   background: var(--cream);
@@ -666,7 +673,13 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
     <span class="ed-spacer"></span>
     <button id="edClearBtn" class="ed-action">清空</button>
     <button id="edSaveBtn"  class="ed-action">存档</button>
-    <button id="edTestBtn"  class="ed-action active">测试</button>
+    <select id="edTestMode" class="ed-action" style="padding: 5px 8px;">
+      <option value="dm">对抗</option>
+      <option value="survival">生存</option>
+      <option value="duel">单挑</option>
+      <option value="sniper">狙击</option>
+    </select>
+    <button id="edTestBtn"  class="ed-action active">测试 ▶</button>
     <button id="edExitBtn"  class="ed-action">退出</button>
   </div>
 </div>
@@ -1667,12 +1680,23 @@ function editorClear() {
 function editorTest() {
   editorSave();
   document.getElementById('editor').classList.add('hidden');
-  // Force the custom variant in the map pool by setting Math.random briefly.
+  // Read selected test mode from the toolbar dropdown
+  let mode = 'dm';
+  const sel = document.getElementById('edTestMode');
+  if (sel && sel.value) mode = sel.value;
+  // Make sure 'custom' is in the picked mode's pool for the test run by
+  // tagging it temporarily
+  const cv = NN_MAP_VARIANTS.find(v => v.id === 'custom');
+  const prevModes = cv.modes;
+  cv.modes = [mode];
+  // Force the custom variant by overriding Math.random for one match-start
   const idx = NN_MAP_VARIANTS.findIndex(v => v.id === 'custom');
   const _orig = Math.random;
   if (idx >= 0) Math.random = () => idx / NN_MAP_VARIANTS.length + 0.0001;
-  startNNSkirmish(3, 3, 'elite', 'RIFLE', null, 'dm');
-  setTimeout(() => { Math.random = _orig; }, 500);
+  // Sniper / duel / survival overrides team size + weapons inside
+  // startNNSkirmish; pass any default values for blue/red.
+  startNNSkirmish(3, 3, 'elite', 'RIFLE', null, mode);
+  setTimeout(() => { Math.random = _orig; cv.modes = prevModes; }, 800);
 }
 // Wire toolbar
 document.querySelectorAll('#editor .ed-tool').forEach(btn => {
