@@ -1596,8 +1596,10 @@ const buildMode = { active: false, radialOpen: false, kind: 'wall' };
 // forward; Esc bails out anywhere. Activating from OFF opens the radial
 // straight away so the user can pick a module without an extra click.
 function toggleBuildMode() {
-  if (game._nnGameMode !== 'defense') {
-    showSwapToast(T('仅防御模式可建造', 'Build available in Defense mode only'));
+  // Building works in any NN mode now. The energy economy ticks the same
+  // way regardless — kills and generators are the only payout sources.
+  if (!game._nnMode || game.state !== 'playing') {
+    showSwapToast(T('未在战场中', 'Not on the battlefield'));
     return;
   }
   if (!buildMode.active) {
@@ -3584,6 +3586,20 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   game._nnMode = true;
   game._nnEpochStart = 0;
   game._nnTeamKills = [0, 0];
+  // Building globals — fresh for every NN match. Defense mode overwrites
+  // _energy in its factory; other modes inherit this baseline so toggleBuild
+  // works anywhere on the battlefield. Per-kill +20 / passive +0.5/sec
+  // payouts come from updateStructures' generator tick.
+  game._energy = 100;
+  game._structures = [];
+  game._airstrikes = [];
+  game._smokeClouds = [];
+  game._teslaBolts = [];
+  game._empPulses = [];
+  game._autoDrones = [];
+  game._footprints = [];
+  buildMode.active = false; buildMode.radialOpen = false;
+  buildMode._dragStart = null; buildMode._dragEnd = null;
 
   // Apply selected weapon (mag size, reserve, weight) before HP reset
   const w = WEAPONS[weaponId] || WEAPONS.RIFLE;
@@ -5354,6 +5370,17 @@ function initMission(missionDef, mapDef) {
 function updateMission() {
   if (!mission || mission.status !== 'active') return;
   if (mission.update) mission.update();
+  // Structures + battlefield FX tick in every NN mode (defense's factory
+  // calls updateStructures redundantly — guard with a flag so we don't
+  // double-tick when defense's update() runs first).
+  if (game._nnMode && !game._structuresTickedThisFrame) {
+    // Same passive energy drip as defense, so non-defense modes can also
+    // build (just slower without per-wave bonuses). Generators add on top.
+    game._energy = Math.min(999, (game._energy || 0) + 0.5 / 60);
+    updateStructures();
+    updateAirstrikes();
+  }
+  game._structuresTickedThisFrame = false;
   if (mission.isComplete && mission.isComplete()) {
     mission.status = 'success';
     onMissionSuccess();
@@ -7037,9 +7064,11 @@ MISSION_FACTORIES.nnDefense = function(mapDef) {
     update() {
       // Passive energy drip
       game._energy = Math.min(999, (game._energy || 0) + 0.5 / 60);
-      // Tick structures + airstrikes
+      // Tick structures + airstrikes (also marks the frame as ticked so
+      // updateMission's fallback tick won't double-run them).
       updateStructures();
       updateAirstrikes();
+      game._structuresTickedThisFrame = true;
 
       const blueAlive = (player.alive ? 1 : 0) + allies.filter(a => a.alive).length;
       if (blueAlive === 0) {
@@ -7129,7 +7158,10 @@ function _radialKindUnderCursor(sx, sy) {
 }
 
 function drawDefenseShop() {
-  if (game._nnGameMode !== 'defense') return;
+  // Status pill + radial render in every NN mode now that build works
+  // anywhere. Pill stays minimal so non-defense modes aren't cluttered.
+  if (!game._nnMode) return;
+  game._buildShopDrawnThisFrame = true;
   // Status pill — always shown while in defense mode (compact, non-cluttered)
   drawDefenseStatusPill();
   // Radial menu — only when explicitly open
@@ -9302,6 +9334,11 @@ function updateBullets() {
           // Bonus score for streaks (small but feels good)
           if (player._killStreak >= 2) {
             game.score += player._killStreak * 25;
+          }
+          // Per-kill energy bonus (any NN mode) so building is sustainable
+          // even outside Defense's wave-clear payouts.
+          if (game._nnMode) {
+            game._energy = Math.min(999, (game._energy || 0) + 20);
           }
           // Slow-mo on 3+ killstreak — 0.55× for 1.5s, retriggers on each
           // subsequent kill so a hot streak stays in slow-mo. Tiny shake on
@@ -11864,6 +11901,13 @@ function renderHUD() {
     ctx.textAlign = 'left';
     game._minimapToggleRect = { x: tx, y: ty, w: tw, h: th };
   } else { drawMinimapPanel(mx, my, mw, mh); }
+  // Build status pill + radial picker — render in every NN mode (defense
+  // factory's renderHUD also calls drawDefenseShop, guard against double-
+  // call by checking if we already rendered it this frame).
+  if (game._nnMode && !game._buildShopDrawnThisFrame) {
+    drawDefenseShop();
+  }
+  game._buildShopDrawnThisFrame = false;
   renderHUDOverlays();
 }
 
@@ -12305,7 +12349,7 @@ function renderHUDOverlays() {
       { id: 'v', label: 'V',   sub: '助', active: !!player._aimAssist },
       { id: 'r', label: 'R',   sub: '弹' },
     ];
-    if (game._nnGameMode === 'defense') {
+    if (game._nnMode) {
       buttons.push({ id: 'b', label: 'B', sub: T('建', 'BUILD'), active: buildMode.active });
     }
     const colH = buttons.length * BTN_SIZE + (buttons.length - 1) * BTN_GAP;
