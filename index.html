@@ -669,6 +669,14 @@ body.lang-en .lang-toggle .on { color: var(--black); }
         <button data-weapon="ROCKET"  class="weap-btn">火箭<span>破坏建筑</span></button>
       </div>
     </div>
+    <div class="difficulty-row">
+      <label class="difficulty-label">机体 CHASSIS</label>
+      <div class="diff-pick-inner">
+        <button data-chassis="humanoid" class="chassis-btn diff-btn active">人形<span>平衡</span></button>
+        <button data-chassis="wolf"     class="chassis-btn diff-btn">机器狼<span>快·脆</span></button>
+        <button data-chassis="heavy"    class="chassis-btn diff-btn">重甲<span>慢·厚</span></button>
+      </div>
+    </div>
 
     <div class="difficulty-row" style="border-bottom: none;">
       <label class="difficulty-label">阵容 LINEUP</label>
@@ -820,6 +828,10 @@ const I18N = {
   '#nnLobby [data-weapon="SNIPER"]':  { zh: '狙击<span>一枪秒·单发</span>', en: 'SNIPER<span>one-shot</span>' },
   '#nnLobby [data-weapon="SHOTGUN"]': { zh: '霰弹<span>近战毁灭</span>',     en: 'SHOTGUN<span>CQB</span>' },
   '#nnLobby [data-weapon="ROCKET"]':  { zh: '火箭<span>破坏建筑</span>',      en: 'ROCKET<span>break walls</span>' },
+  '#nnLobby .difficulty-row:has([data-chassis]) .difficulty-label': { zh: '机体 CHASSIS', en: 'CHASSIS' },
+  '#nnLobby [data-chassis="humanoid"]': { zh: '人形<span>平衡</span>',     en: 'HUMAN<span>balanced</span>' },
+  '#nnLobby [data-chassis="wolf"]':     { zh: '机器狼<span>快·脆</span>', en: 'WOLF<span>fast · fragile</span>' },
+  '#nnLobby [data-chassis="heavy"]':    { zh: '重甲<span>慢·厚</span>',    en: 'HEAVY<span>slow · armored</span>' },
   '#nnLobby .difficulty-row:has(#lineupToggle) .difficulty-label': { zh: '阵容 LINEUP', en: 'LINEUP' },
   '#lineupToggle':          { zh: '默认（全队同设置） ▼', en: 'DEFAULT (all same) ▼' },
   '#nnLobby .lineup-team-label.blue': { zh: '蓝队 BLUE', en: 'BLUE TEAM' },
@@ -1844,6 +1856,7 @@ function swapPlayerToAlly(idx) {
   const targetGun       = a.gunAngle || a.angle;
   const targetGunRecoil = a.gunRecoil || 0;
   const targetHp        = a.hp, targetMaxHp = a.maxHp;
+  const targetChassis   = a._chassis || 'humanoid';
 
   // What to put in the ally slot we just left behind:
   //   - If the operator was ALIVE, hand the live body to NN intact (full hp,
@@ -1860,11 +1873,12 @@ function swapPlayerToAlly(idx) {
       swayPhase: Math.random() * Math.PI * 2,
       walkPhase: player.walkPhase || 0,
       hp: player.hp, maxHp: player.maxHp,
-      alive: true, radius: 13,
-      speed: 2.5, fireCd: 0,
+      alive: true, radius: player.radius || 13,
+      speed: player.speed || 2.5, fireCd: 0,
       weaponId: 'M4',
       _weapon: playerWeapon,
       _nnDifficulty: a._nnDifficulty || NN.difficulty || 'evolved',
+      _chassis: player._chassis || 'humanoid',
       target: null, lookPhase: 0,
       team: 0,
       _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
@@ -1907,6 +1921,11 @@ function swapPlayerToAlly(idx) {
   player.gunAngle = targetGun;
   player.gunRecoil = targetGunRecoil * 0.4;
   player.hp = targetHp; player.maxHp = targetMaxHp;
+  // Inherit the ally's chassis (speed / radius / silhouette) on pawn-swap
+  player._chassis = targetChassis || player._chassis || 'humanoid';
+  const _cdef = CHASSIS[player._chassis] || CHASSIS.humanoid;
+  player.speed  = 2.8 * _cdef.speedMul;
+  player.radius = Math.round(14 * _cdef.radiusMul);
   player._invulnUntil = game.time + 60;
   player._lastX = targetX; player._lastY = targetY;
   player._velX = 0; player._velY = 0;
@@ -1924,6 +1943,46 @@ function swapPlayerToAlly(idx) {
 // the player was rapid-switching between bodies.
 function showSwapToast(text) {
   game._swapToast = { text, ttl: 75 };   // 1.25s
+}
+
+// ============ CHASSIS ============
+// Different unit body types with distinct stat profiles. Affects speed,
+// max HP, hitbox radius, weapon-recoil tolerance, and silhouette. Lobby
+// picker selects the global chassis; per-slot lineup can override later.
+const CHASSIS = {
+  humanoid: {
+    speedMul: 1.00, hpMul: 1.00, radiusMul: 1.00,
+    label: () => T('人形', 'HUMANOID'),
+    blurb: () => T('平衡 · 默认', 'Balanced · default'),
+  },
+  // 機器狼: fast, low-profile, lower HP. Smaller hitbox is the real edge —
+  // harder to hit while flanking. NN AI compensates by aiming aggressively.
+  wolf: {
+    speedMul: 1.50, hpMul: 0.70, radiusMul: 0.78,
+    label: () => T('机器狼', 'WOLF'),
+    blurb: () => T('快 · 低姿态 · 脆', 'Fast · low-profile · fragile'),
+  },
+  // 重甲機甲: slow tank with double HP and bigger hitbox (easier to hit but
+  // can soak much more). Pair with LMG / SHOTGUN for a walking fortress.
+  heavy: {
+    speedMul: 0.72, hpMul: 1.80, radiusMul: 1.20,
+    label: () => T('重甲', 'HEAVY'),
+    blurb: () => T('慢 · 厚甲 · 高血量', 'Slow · armored · tanky'),
+  },
+};
+const CHASSIS_ORDER = ['humanoid', 'wolf', 'heavy'];
+
+// Apply a chassis profile to a unit (player or NN). Stores _chassis on the
+// unit so render + NN inference can read it later. Stats are computed from
+// a base value × the chassis multiplier, so weapon picks still drive their
+// own modifiers on top.
+function applyChassisToUnit(u, chassisId, baseSpeed, baseHp, baseRadius) {
+  const c = CHASSIS[chassisId] || CHASSIS.humanoid;
+  u._chassis = chassisId || 'humanoid';
+  u.speed   = baseSpeed  * c.speedMul;
+  u.maxHp   = Math.round(baseHp * c.hpMul);
+  u.hp      = u.maxHp;
+  u.radius  = Math.round(baseRadius * c.radiusMul);
 }
 
 function applyWeaponToPlayer(w) {
@@ -3309,10 +3368,11 @@ document.getElementById('restartBtn').onclick = () => {
 const _lobby = {
   blue: 3, red: 3, min: 1, max: 8,
   difficulty: 'elite', weapon: 'RIFLE',
+  chassis: 'humanoid',              // 'humanoid' | 'wolf' | 'heavy'
   mode: 'dm',                       // 'dm' | 'survival' | 'duel' | 'sniper'
   lineupOpen: false,
-  // lineup[team][slotIdx] = { difficulty, weapon } — undefined entries fall
-  // back to global picks at startNNSkirmish time
+  // lineup[team][slotIdx] = { difficulty, weapon, chassis } — undefined
+  // entries fall back to global picks at startNNSkirmish time
   lineup: { blue: [], red: [] },
 };
 // Restore previous match config if the player started one before. Only the
@@ -3322,7 +3382,7 @@ try {
   if (raw) {
     const saved = JSON.parse(raw);
     if (saved && typeof saved === 'object') {
-      ['blue','red','difficulty','weapon','mode'].forEach(k => {
+      ['blue','red','difficulty','weapon','chassis','mode'].forEach(k => {
         if (saved[k] != null) _lobby[k] = saved[k];
       });
     }
@@ -3331,7 +3391,8 @@ try {
 function _saveLobbyConfig() {
   try {
     const slim = { blue: _lobby.blue, red: _lobby.red,
-                   difficulty: _lobby.difficulty, weapon: _lobby.weapon, mode: _lobby.mode };
+                   difficulty: _lobby.difficulty, weapon: _lobby.weapon,
+                   chassis: _lobby.chassis, mode: _lobby.mode };
     localStorage.setItem('ag.lobbyConfig', JSON.stringify(slim));
   } catch (e) {}
 }
@@ -3352,8 +3413,12 @@ if (_nnBtn) {
     // Sync active highlights to current _lobby state (restored from localStorage)
     document.querySelectorAll('#nnLobby .mode-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.mode === _lobby.mode));
-    document.querySelectorAll('#nnLobby .diff-btn:not(.mode-btn)').forEach(b =>
+    // Style buttons: .diff-btn[data-diff] (chassis-btn shares the class but
+    // uses data-chassis instead — exclude it via the [data-diff] gate)
+    document.querySelectorAll('#nnLobby .diff-btn[data-diff]').forEach(b =>
       b.classList.toggle('active', b.dataset.diff === _lobby.difficulty));
+    document.querySelectorAll('#nnLobby .chassis-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.chassis === _lobby.chassis));
     document.querySelectorAll('#nnLobby .weap-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.weapon === _lobby.weapon));
     if (_lobby.lineupOpen) rebuildLineupUI();
@@ -3377,11 +3442,22 @@ document.querySelectorAll('#nnLobby .counter button').forEach(btn => {
     _saveLobbyConfig();
   };
 });
-// Style buttons (.diff-btn but NOT .mode-btn) — pick global STYLE
-document.querySelectorAll('#nnLobby .diff-btn:not(.mode-btn)').forEach(btn => {
+// Style buttons — only those carrying data-diff (chassis buttons share
+// the .diff-btn class but route via data-chassis below).
+document.querySelectorAll('#nnLobby .diff-btn[data-diff]').forEach(btn => {
   btn.onclick = () => {
     _lobby.difficulty = btn.dataset.diff;
-    document.querySelectorAll('#nnLobby .diff-btn:not(.mode-btn)').forEach(b =>
+    document.querySelectorAll('#nnLobby .diff-btn[data-diff]').forEach(b =>
+      b.classList.toggle('active', b === btn));
+    if (_lobby.lineupOpen) rebuildLineupUI();
+    _saveLobbyConfig();
+  };
+});
+// Chassis buttons — pick global humanoid / wolf / heavy
+document.querySelectorAll('#nnLobby .chassis-btn').forEach(btn => {
+  btn.onclick = () => {
+    _lobby.chassis = btn.dataset.chassis;
+    document.querySelectorAll('#nnLobby .chassis-btn').forEach(b =>
       b.classList.toggle('active', b === btn));
     if (_lobby.lineupOpen) rebuildLineupUI();
     _saveLobbyConfig();
@@ -3564,6 +3640,9 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
                                     ? 'SNIPER'
                                     : ((team === 'blue' ? blueLineup[idx] : redLineup[idx])?.weapon
                                        || pickRandomNNWeaponId()));
+  // Chassis: per-slot override → global lobby pick → humanoid fallback.
+  const slotChassis = (team, idx) => (team === 'blue' ? blueLineup[idx] : redLineup[idx])?.chassis
+                                      || _lobby.chassis || 'humanoid';
 
   // Pre-load every difficulty actually referenced (could be just 1 or up to 4)
   const allDiffs = new Set([difficulty]);
@@ -3604,6 +3683,11 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   // Apply selected weapon (mag size, reserve, weight) before HP reset
   const w = WEAPONS[weaponId] || WEAPONS.RIFLE;
   applyWeaponToPlayer(w);
+  // Apply chassis profile (humanoid / wolf / heavy) — overrides player base
+  // speed / maxHp / radius. Slot 0 of blue lineup overrides global pick.
+  applyChassisToUnit(player,
+    (lineup?.blue?.[0]?.chassis) || _lobby.chassis || 'humanoid',
+    2.8, 100, 14);
   player.hp = player.maxHp;
   player.alive = true;
   player._respawnAt = null;
@@ -3645,7 +3729,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   for (let i = 0; i < blueSize - 1; i++) {
     const slotIdx = i + 1;   // ally i fills slot i+1 (slot 0 = player)
     const wid = slotWpn('blue', slotIdx);
-    allies.push({
+    const ally = {
       callsign: ['BRAVO', 'CHARLIE', 'DELTA', 'ECHO', 'FOXTROT', 'GOLF', 'HOTEL', 'INDIA'][i] || ('U' + i),
       offsetX: -110, offsetY: 60,
       x: game._nnSpawnBlue.x,
@@ -3663,7 +3747,9 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
       team: 0,
       _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
       _respawnAt: null,
-    });
+    };
+    applyChassisToUnit(ally, slotChassis('blue', slotIdx), 2.5, 80, 13);
+    allies.push(ally);
   }
 
   // Enemy team: redSize NN-driven enemies (slots 0..N-1 of red)
@@ -3673,7 +3759,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
     : NN_ARENA.y0 + enemySpacing * (i + 1);
   for (let i = 0; i < redSize; i++) {
     const wid = slotWpn('red', i);
-    enemies.push({
+    const enemy = {
       x: game._nnSpawnRed.x,
       y: enemySpawnY(i),
       hp: 50, maxHp: 50, angle: Math.PI,
@@ -3685,7 +3771,9 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
       _nnDifficulty: slotDiff('red', i),
       _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
       _respawnAt: null,
-    });
+    };
+    applyChassisToUnit(enemy, slotChassis('red', i), 1.0, 50, 13);
+    enemies.push(enemy);
   }
 
   // Player at the player slot. Clamp to arena interior so we never start
@@ -7036,7 +7124,10 @@ MISSION_FACTORIES.nnDefense = function(mapDef) {
       const offY = (Math.random() - 0.5) * 60;
       const tier = tiers[i % tiers.length];
       const w = WEAPONS[_lobby.weapon] || WEAPONS.RIFLE;
-      enemies.push({
+      // Defense waves: enemies pick chassis from a rotating mix so the
+      // player has to fight a variety of bodies — not just humanoid.
+      const enemyChassis = ['humanoid', 'humanoid', 'wolf', 'heavy'][i % 4];
+      const enemy = {
         x: beacon.x + offX, y: beacon.y + offY,
         angle: 0, gunAngle: 0, gunRecoil: 0,
         swayPhase: Math.random() * Math.PI * 2,
@@ -7049,7 +7140,9 @@ MISSION_FACTORIES.nnDefense = function(mapDef) {
         _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
         callsign: 'R' + i,
         _invulnUntil: game.time + 30,
-      });
+      };
+      applyChassisToUnit(enemy, enemyChassis, 2.4, 80, 13);
+      enemies.push(enemy);
     }
     showMessage(T(`第 ${n} 波 · ${size} 敌 · ${liveBeacons.length} 重生点活动`,
                   `Wave ${n} · ${size} hostiles · ${liveBeacons.length} spawns active`), 150);
@@ -10658,7 +10751,7 @@ function renderWorld() {
     const eInvuln = e._invulnUntil != null && game.time < e._invulnUntil;
     if (eInvuln) alpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
     ctx.globalAlpha = alpha;
-    drawHumanoid(e.x, e.y, e.angle, e.walkPhase, COLORS.red, true);
+    drawHumanoid(e.x, e.y, e.angle, e.walkPhase, COLORS.red, true, e);
     if (e.hp < e.maxHp) {
       ctx.fillStyle = COLORS.black;
       ctx.fillRect(e.x-15, e.y-26, 30, 3);
@@ -10706,7 +10799,7 @@ function renderWorld() {
     if (!a.alive) continue;
     const aInvuln = a._invulnUntil != null && game.time < a._invulnUntil;
     if (aInvuln) ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
-    drawHumanoid(a.x, a.y, a.angle, a.walkPhase, COLORS.creamDark, false);
+    drawHumanoid(a.x, a.y, a.angle, a.walkPhase, COLORS.creamDark, false, a);
     if (aInvuln) ctx.globalAlpha = 1;
     // Cream outline highlight to distinguish from enemies
     ctx.save();
@@ -10738,7 +10831,7 @@ function renderWorld() {
   if (player.alive) {
     const pInvuln = player._invulnUntil != null && game.time < player._invulnUntil;
     if (pInvuln) ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
-    drawHumanoid(player.x, player.y, player.angle, player.walkPhase, COLORS.black, false);
+    drawHumanoid(player.x, player.y, player.angle, player.walkPhase, COLORS.black, false, player);
     if (pInvuln) ctx.globalAlpha = 1;
   }
 
@@ -11586,7 +11679,16 @@ function drawGunAimIndicator() {
   ctx.restore();
 }
 
-function drawHumanoid(x, y, angle, walkPhase, color, isEnemy) {
+function drawHumanoid(x, y, angle, walkPhase, color, isEnemy, unitOrChassis) {
+  // Dispatch to chassis-specific silhouettes. Accepts a chassis id string
+  // or a unit object (reads u._chassis). Defaults to humanoid when nothing
+  // is supplied — keeps legacy call sites working.
+  const chassisId = (typeof unitOrChassis === 'string')
+    ? unitOrChassis
+    : (unitOrChassis && unitOrChassis._chassis) || 'humanoid';
+  if (chassisId === 'wolf')  { _drawWolfChassis(x, y, angle, walkPhase, color, isEnemy); return; }
+  if (chassisId === 'heavy') { _drawHeavyChassis(x, y, angle, walkPhase, color, isEnemy); return; }
+  // Humanoid (default)
   ctx.save();
   ctx.translate(x, y);
   ctx.fillStyle = COLORS.creamDark;
@@ -11615,6 +11717,87 @@ function drawHumanoid(x, y, angle, walkPhase, color, isEnemy) {
     ctx.fillRect(-2, 2, 4, 6);
   }
 
+  ctx.restore();
+}
+
+// Wolf: quadruped silhouette — longer + lower than humanoid, four short
+// stubby legs that alternate-pair gait. Smaller hitbox communicated by the
+// thin elliptical shadow.
+function _drawWolfChassis(x, y, angle, walkPhase, color, isEnemy) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = COLORS.creamDark;
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 14, 5, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.rotate(angle);
+  // 4 legs in trot pattern (front-L + rear-R, then front-R + rear-L)
+  const phase = walkPhase * 1.4;
+  const legA = Math.sin(phase) * 3;
+  const legB = Math.sin(phase + Math.PI) * 3;
+  ctx.fillStyle = color;
+  ctx.fillRect(-12, -7 + legA, 4, 5);
+  ctx.fillRect(-12,  3 + legB, 4, 5);
+  ctx.fillRect( 4, -7 + legB, 4, 5);
+  ctx.fillRect( 4,  3 + legA, 4, 5);
+  // Long thin body
+  ctx.fillRect(-13, -5, 22, 10);
+  // Head — pointed
+  ctx.beginPath();
+  ctx.moveTo(9, -3); ctx.lineTo(15, 0); ctx.lineTo(9, 3); ctx.closePath();
+  ctx.fill();
+  // Mounted gun (shorter than humanoid's)
+  ctx.fillStyle = isEnemy ? COLORS.redDim : COLORS.black;
+  ctx.fillRect(8, -1.5, 14, 3);
+  // Eye
+  if (isEnemy) {
+    ctx.fillStyle = COLORS.red;
+    ctx.beginPath();
+    ctx.arc(11, 0, 1.6, 0, Math.PI*2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(-2, -1, 3, 2);
+  }
+  ctx.restore();
+}
+
+// Heavy mech: bulkier square chassis + big shoulders + thicker barrel.
+function _drawHeavyChassis(x, y, angle, walkPhase, color, isEnemy) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = COLORS.creamDark;
+  ctx.beginPath();
+  ctx.ellipse(2, 6, 21, 7, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.rotate(angle);
+  // Chunky legs (smaller swing than humanoid)
+  const legOffset = Math.sin(walkPhase * 0.7) * 2.5;
+  ctx.fillStyle = color;
+  ctx.fillRect(-11, -5 + legOffset,  9, 8);
+  ctx.fillRect(-11,  3 - legOffset,  9, 8);
+  // Wide armored body
+  ctx.fillRect(-13, -13, 22, 26);
+  // Shoulder plates
+  ctx.fillStyle = isEnemy ? COLORS.redDim : '#333';
+  ctx.fillRect(-15, -13, 4, 12);
+  ctx.fillRect( 9, -13, 4, 12);
+  // Heavy gun barrel
+  ctx.fillStyle = isEnemy ? COLORS.redDim : COLORS.black;
+  ctx.fillRect(5, -3, 24, 6);
+  // Cockpit window / eye
+  if (isEnemy) {
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(-4, -8, 8, 4);
+  } else {
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(-4, -8, 8, 3);
+    ctx.fillStyle = COLORS.black;
+    ctx.fillRect(-2, 4, 4, 6);
+  }
+  // Center rivet
+  ctx.fillStyle = COLORS.black;
+  ctx.beginPath(); ctx.arc(0, 0, 1.4, 0, Math.PI*2); ctx.fill();
   ctx.restore();
 }
 
