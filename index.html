@@ -1939,6 +1939,26 @@ const _lobby = {
   // back to global picks at startNNSkirmish time
   lineup: { blue: [], red: [] },
 };
+// Restore previous match config if the player started one before. Only the
+// scalar settings — lineup state stays per-session to avoid silent surprises.
+try {
+  const raw = localStorage.getItem('ag.lobbyConfig');
+  if (raw) {
+    const saved = JSON.parse(raw);
+    if (saved && typeof saved === 'object') {
+      ['blue','red','difficulty','weapon','mode'].forEach(k => {
+        if (saved[k] != null) _lobby[k] = saved[k];
+      });
+    }
+  }
+} catch (e) {}
+function _saveLobbyConfig() {
+  try {
+    const slim = { blue: _lobby.blue, red: _lobby.red,
+                   difficulty: _lobby.difficulty, weapon: _lobby.weapon, mode: _lobby.mode };
+    localStorage.setItem('ag.lobbyConfig', JSON.stringify(slim));
+  } catch (e) {}
+}
 const _nnBtn = document.getElementById('nnBtn');
 if (_nnBtn) {
   _nnBtn.onclick = () => {
@@ -1953,6 +1973,13 @@ if (_nnBtn) {
     }
     document.getElementById('blueSizeLabel').textContent = _lobby.blue;
     document.getElementById('redSizeLabel').textContent  = _lobby.red;
+    // Sync active highlights to current _lobby state (restored from localStorage)
+    document.querySelectorAll('#nnLobby .mode-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.mode === _lobby.mode));
+    document.querySelectorAll('#nnLobby .diff-btn:not(.mode-btn)').forEach(b =>
+      b.classList.toggle('active', b.dataset.diff === _lobby.difficulty));
+    document.querySelectorAll('#nnLobby .weap-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.weapon === _lobby.weapon));
     if (_lobby.lineupOpen) rebuildLineupUI();
   };
 }
@@ -1970,7 +1997,8 @@ document.querySelectorAll('#nnLobby .counter button').forEach(btn => {
     const dir = parseInt(btn.dataset.dir, 10);
     _lobby[team] = Math.max(_lobby.min, Math.min(_lobby.max, _lobby[team] + dir));
     document.getElementById(team + 'SizeLabel').textContent = _lobby[team];
-    if (_lobby.lineupOpen) rebuildLineupUI();   // re-render slots when team size changes
+    if (_lobby.lineupOpen) rebuildLineupUI();
+    _saveLobbyConfig();
   };
 });
 // Style buttons (.diff-btn but NOT .mode-btn) — pick global STYLE
@@ -1980,6 +2008,7 @@ document.querySelectorAll('#nnLobby .diff-btn:not(.mode-btn)').forEach(btn => {
     document.querySelectorAll('#nnLobby .diff-btn:not(.mode-btn)').forEach(b =>
       b.classList.toggle('active', b === btn));
     if (_lobby.lineupOpen) rebuildLineupUI();
+    _saveLobbyConfig();
   };
 });
 // Mode buttons — pick game mode (dm / survival / duel / sniper)
@@ -1988,6 +2017,7 @@ document.querySelectorAll('#nnLobby .mode-btn').forEach(btn => {
     _lobby.mode = btn.dataset.mode;
     document.querySelectorAll('#nnLobby .mode-btn').forEach(b =>
       b.classList.toggle('active', b === btn));
+    _saveLobbyConfig();
   };
 });
 document.querySelectorAll('#nnLobby .weap-btn').forEach(btn => {
@@ -1995,6 +2025,7 @@ document.querySelectorAll('#nnLobby .weap-btn').forEach(btn => {
     _lobby.weapon = btn.dataset.weapon;
     document.querySelectorAll('#nnLobby .weap-btn').forEach(b =>
       b.classList.toggle('active', b === btn));
+    _saveLobbyConfig();
   };
 });
 
