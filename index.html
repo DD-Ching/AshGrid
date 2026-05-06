@@ -188,6 +188,22 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   z-index: -1;
 }
 .start-btn:hover { transform: translate(4px, -4px); background: var(--red-bright); }
+/* Language toggle button — small chip top-right of cards/screens. Click to flip
+   between 中文 and English. Persisted in localStorage as ag.lang. */
+.lang-toggle {
+  position: absolute; top: 14px; right: 14px;
+  background: var(--cream-dark); border: 2px solid var(--black);
+  color: var(--black); font-family: inherit;
+  font-size: 10px; letter-spacing: 2px; font-weight: 800;
+  padding: 5px 10px; cursor: pointer;
+  z-index: 5;
+}
+.lang-toggle:hover { background: var(--black); color: var(--cream); }
+.lang-toggle .seg { padding: 0 4px; }
+.lang-toggle .on { color: var(--red); }
+body.lang-en .lang-toggle .on { color: var(--black); }
+.lobby-card { position: relative; }
+#start { position: relative; }
 .footer-bar {
   display: flex; justify-content: space-between;
   font-size: 10px; letter-spacing: 3px; color: var(--gray);
@@ -509,6 +525,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 <canvas id="game"></canvas>
 
 <div class="overlay start-screen" id="start">
+  <button class="lang-toggle" data-lang-toggle><span class="seg on" data-seg="zh">中</span>/<span class="seg" data-seg="en">EN</span></button>
   <svg class="start-bg" viewBox="0 0 100 100" preserveAspectRatio="none">
     <circle cx="78" cy="28" r="20" fill="#C8261C"/>
     <polygon points="0,100 0,42 48,100" fill="#C8261C"/>
@@ -561,6 +578,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 <!-- First-time tutorial — shown once on first lobby entry -->
 <div class="overlay nn-lobby hidden" id="tutorial">
   <div class="lobby-card" style="max-width: 540px;">
+    <button class="lang-toggle" data-lang-toggle><span class="seg on" data-seg="zh">中</span>/<span class="seg" data-seg="en">EN</span></button>
     <div class="lobby-tag">首次提示 · QUICK BRIEFING</div>
     <h2 style="font-size: 26px; letter-spacing: 4px;">操作 · CORE</h2>
     <div class="lobby-sub">三件事先記住,剩下打就懂。</div>
@@ -596,6 +614,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 <!-- NN Skirmish team-size lobby -->
 <div class="overlay nn-lobby hidden" id="nnLobby">
   <div class="lobby-card">
+    <button class="lang-toggle" data-lang-toggle><span class="seg on" data-seg="zh">中</span>/<span class="seg" data-seg="en">EN</span></button>
     <div class="lobby-tag">单元 0451 · 神经网络对抗 / NN SKIRMISH</div>
     <h2>对抗设置</h2>
     <div class="lobby-sub">PPO 模型驱动 · 双方共用同一神经网络</div>
@@ -714,6 +733,129 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 </div>
 
 <script>
+// ============ I18N ============
+// Lobby/start-screen language toggle. Source-of-truth Chinese is preserved in
+// the HTML; this table provides the English alternates. setLang(lang) walks
+// the table, applying innerHTML per selector. Persisted at ag.lang. Fallback
+// is 'zh' to match historical default. Only the first matching element per
+// selector is translated for selectors without [...] iteration semantics —
+// for collection swaps (mode/diff/weapon buttons), we use [data-...] which
+// targets unique elements anyway.
+const I18N = {
+  // ---- Start screen ----
+  '#start .brand-mark':     { zh: '单元 0451 · 战术模拟 / TACTICAL SIM', en: 'UNIT 0451 · TACTICAL SIM' },
+  '#start .title':          { zh: '未来<span class="slash">·</span><span class="red">战场</span>',
+                              en: 'FUTURE<span class="slash">·</span><span class="red">BATTLEFIELD</span>' },
+  '#start .subtitle':       { zh: '深度 · 持久 · 无人化', en: 'DEEP · PERSISTENT · UNMANNED' },
+  '#start .tagline':        { zh: 'FUTURE BATTLEFIELD — DEEP / PERSISTENT / UNMANNED',
+                              en: '神经网络驱动 · 双方共用同一 PPO 模型' },
+  '#start .ctrl-item:nth-of-type(1) span:last-child': { zh: '移动 / 飞行', en: 'Move / fly' },
+  '#start .ctrl-item:nth-of-type(2) span:last-child': { zh: '瞄准 / 射击', en: 'Aim / fire' },
+  '#start .ctrl-item:nth-of-type(2) .ctrl-key':       { zh: '鼠标', en: 'Mouse' },
+  '#start .ctrl-item:nth-of-type(3) span:last-child': { zh: '装填弹药', en: 'Reload' },
+  '#start .ctrl-item:nth-of-type(4) span:last-child': { zh: '无人机侦察 UAV', en: 'UAV recon' },
+  '#start .ctrl-item:nth-of-type(5) span:last-child': { zh: 'FPV 自杀无人机', en: 'FPV kamikaze' },
+  '#start .ctrl-item:nth-of-type(6) span:last-child': { zh: '战术指挥 RTS', en: 'RTS command' },
+  '#start .missions-tag':   { zh: '模式 / GAME MODES', en: 'GAME MODES' },
+  '#start .mission:nth-of-type(1) .mission-name':   { zh: '对抗 · DEATHMATCH', en: 'DEATHMATCH' },
+  '#start .mission:nth-of-type(1) .mission-rhythm': { zh: '蓝队 vs 红队 · 自由配阵 · 全地图', en: 'Blue vs Red · custom lineup · all maps' },
+  '#start .mission:nth-of-type(2) .mission-name':   { zh: '生存 · SURVIVAL', en: 'SURVIVAL' },
+  '#start .mission:nth-of-type(2) .mission-rhythm': { zh: '守住每一波 · 队友死了不复活 · 撑越久越强', en: 'Hold each wave · teammates stay dead · scale up' },
+  '#start .mission:nth-of-type(3) .mission-name':   { zh: '单挑 · DUEL 1v1', en: 'DUEL 1v1' },
+  '#start .mission:nth-of-type(3) .mission-rhythm': { zh: '没队友 · 没无人机 · 纯走位 + 枪法', en: 'No teammates · no drones · pure aim + footwork' },
+  '#start .mission:nth-of-type(4) .mission-name':   { zh: '狙击 · SNIPER ONLY', en: 'SNIPER ONLY' },
+  '#start .mission:nth-of-type(4) .mission-rhythm': { zh: '全员一击致命 · 长视野 · 卡角拉锯', en: 'One-shot kill · long sight · angle hold' },
+  '#nnBtn':       { zh: '进入对抗 ENTER COMBAT ▶', en: 'ENTER COMBAT ▶' },
+  '#editorBtn':   { zh: '地图编辑器 EDITOR', en: 'MAP EDITOR' },
+  '#start .footer-bar > span:last-child': { zh: '建议 1080p+ 全屏体验', en: '1080p+ fullscreen recommended' },
+
+  // ---- Tutorial card ----
+  '#tutorial .lobby-tag':   { zh: '首次提示 · QUICK BRIEFING', en: 'QUICK BRIEFING' },
+  '#tutorial h2':           { zh: '操作 · CORE', en: 'CORE CONTROLS' },
+  '#tutorial .lobby-sub':   { zh: '三件事先記住,剩下打就懂。', en: 'Three things to remember — the rest is muscle memory.' },
+  '#tutorial > .lobby-card > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1)':
+    { zh: '自動瞄準 AIM-ASSIST', en: 'AIM-ASSIST' },
+  '#tutorial > .lobby-card > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2)':
+    { zh: '按 V 切換。鎖定後子彈自動射擊、射擊預判、無視抖動。手機默認開啟,右上 V 按鈕。',
+      en: 'Press V to toggle. Auto-fires on lock, leads moving targets, ignores shake. Mobile: V button top-right.' },
+  '#tutorial > .lobby-card > div:nth-of-type(3) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1)':
+    { zh: '接管隊友 PAWN-SWAP', en: 'PAWN-SWAP' },
+  '#tutorial > .lobby-card > div:nth-of-type(3) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2)':
+    { zh: '數字鍵 / 點 HUD 上的 [2·B80] 直接切到那個隊友身上 — 你死了會自動跳到最近的隊友,不用等 respawn。',
+      en: 'Press 1-4 / tap a HUD chip to jump to that teammate. On death you auto-swap to the nearest ally — no respawn wait.' },
+  '#tutorial > .lobby-card > div:nth-of-type(3) > div:nth-of-type(3) > div:nth-of-type(2) > div:nth-of-type(1)':
+    { zh: '無人機 / FPV / 手雷', en: 'UAV / FPV / GRENADE' },
+  '#tutorial > .lobby-card > div:nth-of-type(3) > div:nth-of-type(3) > div:nth-of-type(2) > div:nth-of-type(2)':
+    { zh: 'Q 部署偵察 UAV(共享視野)、E 發射 FPV 自殺機、G 投手雷。手機右側按鈕。',
+      en: 'Q deploys UAV (shared sight), E fires an FPV drone, G throws a grenade. Mobile: right-side buttons.' },
+  '#tutorialDoneBtn':       { zh: '我懂了 GOT IT ▶', en: 'GOT IT ▶' },
+
+  // ---- NN Lobby ----
+  '#nnLobby .lobby-tag':    { zh: '单元 0451 · 神经网络对抗 / NN SKIRMISH', en: 'UNIT 0451 · NN SKIRMISH' },
+  '#nnLobby h2':            { zh: '对抗设置', en: 'COMBAT SETUP' },
+  '#nnLobby .lobby-sub':    { zh: 'PPO 模型驱动 · 双方共用同一神经网络', en: 'PPO-driven · same NN both teams' },
+  '#nnLobby .team-pick.blue label': { zh: '友军 BLUE (含你)', en: 'FRIENDLY · BLUE (you)' },
+  '#nnLobby .team-pick.red label':  { zh: '敌军 RED', en: 'ENEMY · RED' },
+  '#nnLobby .difficulty-row:has([data-mode]) .difficulty-label': { zh: '模式 MODE', en: 'MODE' },
+  '#nnLobby [data-mode="dm"]':       { zh: '对抗<span>DEATHMATCH</span>',     en: 'DM<span>deathmatch</span>' },
+  '#nnLobby [data-mode="survival"]': { zh: '生存<span>SURVIVAL</span>',       en: 'SURV<span>hold waves</span>' },
+  '#nnLobby [data-mode="helo"]':     { zh: '撤离<span>HELO EXTRACT</span>',   en: 'HELO<span>LZ extract</span>' },
+  '#nnLobby [data-mode="convoy"]':   { zh: '护送<span>CONVOY</span>',         en: 'CONVOY<span>UGV escort</span>' },
+  '#nnLobby [data-mode="duel"]':     { zh: '单挑<span>DUEL 1v1</span>',       en: 'DUEL<span>1 v 1</span>' },
+  '#nnLobby [data-mode="sniper"]':   { zh: '狙击<span>SNIPER ONLY</span>',    en: 'SNIPER<span>only</span>' },
+  '#globalDiffRow .difficulty-label': { zh: '风格 STYLE', en: 'STYLE' },
+  '#nnLobby [data-diff="elite"]':        { zh: '全能<span>平衡</span>',     en: 'ELITE<span>balanced</span>' },
+  '#nnLobby [data-diff="warrior"]':      { zh: '进攻<span>主动</span>',     en: 'WARRIOR<span>aggressive</span>' },
+  '#nnLobby [data-diff="defensive"]':    { zh: '防御<span>谨慎</span>',     en: 'GUARD<span>cautious</span>' },
+  '#nnLobby [data-diff="sharpshooter"]': { zh: '枪神<span>卡点</span>',     en: 'SHARP<span>angle hold</span>' },
+  '#nnLobby .difficulty-row:has([data-weapon]) .difficulty-label': { zh: '武器 WEAPON', en: 'WEAPON' },
+  '#nnLobby [data-weapon="SMG"]':     { zh: '冲锋<span>近战·快</span>',     en: 'SMG<span>close · fast</span>' },
+  '#nnLobby [data-weapon="RIFLE"]':   { zh: '步枪<span>平衡</span>',         en: 'RIFLE<span>balanced</span>' },
+  '#nnLobby [data-weapon="LMG"]':     { zh: '机枪<span>压制·重</span>',     en: 'LMG<span>suppress</span>' },
+  '#nnLobby [data-weapon="SNIPER"]':  { zh: '狙击<span>一枪秒·单发</span>', en: 'SNIPER<span>one-shot</span>' },
+  '#nnLobby [data-weapon="SHOTGUN"]': { zh: '霰弹<span>近战毁灭</span>',     en: 'SHOTGUN<span>CQB</span>' },
+  '#nnLobby .difficulty-row:has(#lineupToggle) .difficulty-label': { zh: '阵容 LINEUP', en: 'LINEUP' },
+  '#lineupToggle':          { zh: '默认（全队同设置） ▼', en: 'DEFAULT (all same) ▼' },
+  '#nnLobby .lineup-team-label.blue': { zh: '蓝队 BLUE', en: 'BLUE TEAM' },
+  '#nnLobby .lineup-team-label.red':  { zh: '敌军 RED',  en: 'RED TEAM' },
+  '#lobbyStartBtn':         { zh: '开始战斗 ▶', en: 'START ▶' },
+  '#lobbyCancelBtn':        { zh: '返回', en: 'BACK' },
+  '#nnLobby .lobby-hint':   { zh: '每方 1-4 人 · 不对称也可以 (1v3、3v1)', en: '1-4 per side · asymmetric OK (1v3, 3v1)' },
+};
+function getLang() {
+  try { const v = localStorage.getItem('ag.lang'); if (v === 'en' || v === 'zh') return v; } catch (e) {}
+  // Auto-detect: if browser language is non-Chinese, default to English
+  const nav = (navigator.language || '').toLowerCase();
+  return /^zh|^cmn|^yue/.test(nav) ? 'zh' : 'en';
+}
+function setLang(lang) {
+  if (lang !== 'zh' && lang !== 'en') lang = 'zh';
+  for (const [sel, T] of Object.entries(I18N)) {
+    const els = document.querySelectorAll(sel);
+    els.forEach(el => { if (T[lang] != null) el.innerHTML = T[lang]; });
+  }
+  document.body.classList.toggle('lang-en', lang === 'en');
+  document.body.classList.toggle('lang-zh', lang === 'zh');
+  // Update toggle chips
+  document.querySelectorAll('[data-lang-toggle]').forEach(btn => {
+    btn.querySelectorAll('.seg').forEach(seg => {
+      seg.classList.toggle('on', seg.dataset.seg === lang);
+    });
+  });
+  document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+  try { localStorage.setItem('ag.lang', lang); } catch (e) {}
+}
+// Wire up language toggle buttons (delegated, fires regardless of which copy was clicked)
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-lang-toggle]');
+  if (!t) return;
+  const cur = (document.body.classList.contains('lang-en')) ? 'en' : 'zh';
+  setLang(cur === 'en' ? 'zh' : 'en');
+  e.stopPropagation();
+});
+// Apply on first paint
+setLang(getLang());
+
 // ============ SETUP ============
 const canvas = document.getElementById('game');
 // alpha:false skips per-pixel compositing — meaningful on full-screen HiDPI.
