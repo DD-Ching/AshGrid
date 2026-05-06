@@ -987,6 +987,36 @@ const game = {
   _timeScale: 1, _slowMoUntil: 0,
 };
 
+// End-of-match grade letter — given a 0..1 score, return S/A/B/C/D and a
+// colour hint. Used by every match-end card so the player gets an instant
+// "how'd I do" without reading three numbers.
+function gradeFromScore(score01) {
+  if (score01 >= 0.90) return { letter: 'S', color: '#FFD24A' };
+  if (score01 >= 0.70) return { letter: 'A', color: '#3FE63F' };
+  if (score01 >= 0.50) return { letter: 'B', color: COLORS.cream };
+  if (score01 >= 0.30) return { letter: 'C', color: '#B8B4A8' };
+  return { letter: 'D', color: COLORS.gray };
+}
+function drawGradeBadge(grade, x, y, size) {
+  const r = size || 36;
+  ctx.save();
+  ctx.fillStyle = grade.color;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = COLORS.black;
+  ctx.font = `bold ${Math.floor(r * 1.3)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(grade.letter, x, y + 2);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
 // Trigger camera shake. Bigger mag overrides smaller pending one but
 // shorter duration is ignored — both ramps feed into the visible motion.
 function triggerShake(mag, duration) {
@@ -6005,6 +6035,16 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         ctx.strokeRect(x, y, cw, ch);
         ctx.fillStyle = COLORS.red;
         ctx.fillRect(x + cw - 60, y - 4, 60, 8);
+        // Grade badge — top-right corner. Score blends win margin with
+        // personal kill share so a stomp-win + carry pulls an S.
+        const margin = teamKills[0] - teamKills[1];
+        const winS = winner === 'blue' ? 0.6 : (winner === 'draw' ? 0.4 : 0.15);
+        const marginS = Math.max(-0.3, Math.min(0.3, margin / 12));
+        const personalKills = game.killCount || 0;
+        const totalKills = teamKills[0] + teamKills[1];
+        const carryS = totalKills > 0 ? 0.1 * (personalKills / totalKills) : 0;
+        const grade = gradeFromScore(Math.max(0, Math.min(1, winS + marginS + carryS)));
+        drawGradeBadge(grade, x + cw - 36, y + 36, 24);
         // Banner
         ctx.fillStyle = COLORS.red;
         ctx.font = 'bold 11px sans-serif';
@@ -6509,6 +6549,12 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
         ctx.fillStyle = COLORS.red;
         ctx.font = 'bold 11px sans-serif';
         ctx.fillText(T('排行榜 / LEADERBOARD', 'LEADERBOARD'), x + 16, y + 22);
+        // Grade badge — top-right of the loss card. Score = wave reach
+        // (out of 10) with a small kill-rate bonus.
+        const waveS = Math.min(1, (wave || 0) / 10);
+        const killS = wave > 0 ? Math.min(0.15, (kills / (wave * 4))) : 0;
+        const grade = gradeFromScore(Math.max(0, Math.min(1, waveS * 0.85 + killS)));
+        drawGradeBadge(grade, x + cw - 36, y + 36, 22);
         ctx.fillStyle = COLORS.black;
         ctx.font = 'bold 10px monospace';
         ctx.fillText('#  WAVE  KILLS  STYLE', x + 16, y + 42);
