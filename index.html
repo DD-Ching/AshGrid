@@ -821,6 +821,23 @@ const I18N = {
   '#lobbyStartBtn':         { zh: '开始战斗 ▶', en: 'START ▶' },
   '#lobbyCancelBtn':        { zh: '返回', en: 'BACK' },
   '#nnLobby .lobby-hint':   { zh: '每方 1-4 人 · 不对称也可以 (1v3、3v1)', en: '1-4 per side · asymmetric OK (1v3, 3v1)' },
+
+  // ---- Map editor toolbar ----
+  '#editor .editor-title':                    { zh: '編輯器 / EDITOR', en: 'EDITOR' },
+  '#editor [data-tool="wall"]':               { zh: '墙',  en: 'WALL' },
+  '#editor [data-tool="cover"]':              { zh: '掩',  en: 'COVER' },
+  '#editor [data-tool="tree"]':               { zh: '树',  en: 'TREE' },
+  '#editor [data-tool="blueSpawn"]':          { zh: '蓝出', en: 'BLUE+' },
+  '#editor [data-tool="redSpawn"]':           { zh: '红出', en: 'RED+' },
+  '#editor [data-tool="erase"]':              { zh: '删',  en: 'ERASE' },
+  '#edClearBtn':                              { zh: '清空', en: 'CLEAR' },
+  '#edSaveBtn':                               { zh: '存档', en: 'SAVE' },
+  '#edTestMode option[value="dm"]':           { zh: '对抗', en: 'DM' },
+  '#edTestMode option[value="survival"]':     { zh: '生存', en: 'SURVIVAL' },
+  '#edTestMode option[value="duel"]':         { zh: '单挑', en: 'DUEL' },
+  '#edTestMode option[value="sniper"]':       { zh: '狙击', en: 'SNIPER' },
+  '#edTestBtn':                               { zh: '测试 ▶', en: 'TEST ▶' },
+  '#edExitBtn':                               { zh: '退出', en: 'EXIT' },
 };
 function getLang() {
   try { const v = localStorage.getItem('ag.lang'); if (v === 'en' || v === 'zh') return v; } catch (e) {}
@@ -834,8 +851,32 @@ function getLang() {
 let _CUR_LANG = 'en';
 function T(zh, en) { return _CUR_LANG === 'en' ? en : zh; }
 // Map / mission name helper — falls back to .name when nameEn isn't set.
-function mapName(m) { return (_CUR_LANG === 'en' && m && m.nameEn) ? m.nameEn : (m && m.name) || ''; }
-function missionTitle(m) { return (_CUR_LANG === 'en' && m && m.titleEn) ? m.titleEn : (m && m.title) || ''; }
+// In EN mode, also auto-strips the Chinese half from "中文 ENGLISH"-pattern
+// variant names (走廊 CORRIDOR → CORRIDOR, NN 竞技场 → kept as-is via .nameEn).
+function _stripCJKPrefix(s) {
+  // Find the last run of CJK chars; everything after it (trimmed) is the EN tail
+  const m = String(s || '').match(/^([^A-Za-z0-9]*)(.*)$/);
+  return (m && m[2]) ? m[2].trim() : s;
+}
+function mapName(m) {
+  if (!m) return '';
+  if (_CUR_LANG === 'en') {
+    if (m.nameEn) return m.nameEn;
+    // Heuristic: pull EN tail out of "中文 ENGLISH" if present
+    const tail = _stripCJKPrefix(m.name || '');
+    if (tail && /[A-Za-z]/.test(tail)) return tail;
+  }
+  return (m.name) || '';
+}
+function missionTitle(m) {
+  if (!m) return '';
+  if (_CUR_LANG === 'en') {
+    if (m.titleEn) return m.titleEn;
+    const tail = _stripCJKPrefix(m.title || '');
+    if (tail && /[A-Za-z]/.test(tail)) return tail;
+  }
+  return (m.title) || '';
+}
 function setLang(lang) {
   if (lang !== 'zh' && lang !== 'en') lang = 'zh';
   for (const [sel, T] of Object.entries(I18N)) {
@@ -853,6 +894,23 @@ function setLang(lang) {
   });
   document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
   try { localStorage.setItem('ag.lang', lang); } catch (e) {}
+  // Refresh dynamic UI built in JS (slot picker / lineup cards / lineup toggle).
+  // The static I18N table doesn't reach into innerHTML rebuilt by JS, so we
+  // re-run those rebuilders if they exist + the relevant panel is open.
+  try {
+    if (typeof rebuildEditorSlotUI === 'function' && document.getElementById('edSlotSelect')) {
+      rebuildEditorSlotUI();
+    }
+    if (typeof rebuildLineupUI === 'function' && typeof _lobby !== 'undefined' && _lobby.lineupOpen) {
+      rebuildLineupUI();
+    }
+    const lt = document.getElementById('lineupToggle');
+    if (lt && typeof _lobby !== 'undefined') {
+      lt.textContent = _lobby.lineupOpen
+        ? (lang === 'en' ? 'CUSTOM LINEUP ▲' : '自定义阵容 ▲')
+        : (lang === 'en' ? 'DEFAULT (all same) ▼' : '默认（全队同设置） ▼');
+    }
+  } catch (e) {}
 }
 // Wire up language toggle buttons (delegated, fires regardless of which copy was clicked)
 document.addEventListener('click', (e) => {
@@ -1152,7 +1210,7 @@ function swapPlayerToAlly(idx) {
   //     respawns under NN control after the standard timer.
   if (player.alive) {
     allies[idx] = {
-      callsign: '前操作员',
+      callsign: T('前操作员', 'EX-OPERATOR'),
       offsetX: a.offsetX, offsetY: a.offsetY,
       x: player.x, y: player.y,
       angle: player.angle, gunAngle: player.gunAngle, gunRecoil: player.gunRecoil,
@@ -1176,7 +1234,7 @@ function swapPlayerToAlly(idx) {
     const corpseX = player._lastDeathX != null ? player._lastDeathX : player.x;
     const corpseY = player._lastDeathY != null ? player._lastDeathY : player.y;
     allies[idx] = {
-      callsign: '前操作员',
+      callsign: T('前操作员', 'EX-OPERATOR'),
       offsetX: a.offsetX, offsetY: a.offsetY,
       x: corpseX, y: corpseY,
       angle: 0, gunAngle: 0, gunRecoil: 0,
@@ -1214,7 +1272,7 @@ function swapPlayerToAlly(idx) {
   applyWeaponToPlayer(targetWeapon);
   player.hp = targetHp;   // applyWeaponToPlayer doesn't touch HP — be explicit
 
-  showSwapToast(`${wasResurrected ? '紧急接管' : '接管'} ${targetCallsign}`);
+  showSwapToast(`${wasResurrected ? T('紧急接管', 'EMERGENCY SWAP') : T('接管', 'SWAP')} ${targetCallsign}`);
   playSfx('countdown', { freq: 1320, vol: 0.45 });
 }
 
@@ -1707,7 +1765,7 @@ window.addEventListener('keydown', e => {
     else if (k === 'v') {
       player._aimAssist = !player._aimAssist;
       try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (err) {}
-      showMessage(`AIM-ASSIST · ${player._aimAssist ? '开启' : '关闭'}`, 60);
+      showMessage(`AIM-ASSIST · ${player._aimAssist ? T('开启', 'ON') : T('关闭', 'OFF')}`, 60);
     }
     // 1-4 in NN mode: pawn-swap to that team-0 slot (1 = self, 2-4 = allies).
     // 1-6 in campaign: dev jump to mission N (only when not in NN mode).
@@ -1834,6 +1892,17 @@ function openEditor() {
   rebuildEditorSlotUI();
 }
 
+// Slot-name display helper. Default-named slots ("我的地图 N") get re-labelled
+// to "Map N" when the language flips to EN, even if persisted as Chinese in
+// localStorage. User-renamed slots stay untouched.
+function _displaySlotName(raw, idx) {
+  const m = String(raw || '').match(/^我的地图\s*(\d+)$/);
+  if (m && _CUR_LANG === 'en') return `Map ${m[1]}`;
+  // Match the auto-default we generate in EN ("Map N") and flip it back to ZH
+  const me = String(raw || '').match(/^Map\s*(\d+)$/);
+  if (me && _CUR_LANG === 'zh') return `我的地图 ${me[1]}`;
+  return raw;
+}
 function rebuildEditorSlotUI() {
   const sel = document.getElementById('edSlotSelect');
   if (!sel) return;
@@ -1843,14 +1912,17 @@ function rebuildEditorSlotUI() {
     const opt = document.createElement('option');
     opt.value = String(i);
     const filled = data.slots[i].walls && data.slots[i].walls.length > 0 ? '✓' : '';
-    opt.textContent = `${data.slots[i].name} ${filled}`;
+    opt.textContent = `${_displaySlotName(data.slots[i].name, i)} ${filled}`;
     sel.appendChild(opt);
   }
   // Locked slot beyond unlocked count → "ad to unlock"
   if (data.slots.length < EDITOR_SLOT_MAX) {
     const opt = document.createElement('option');
     opt.value = '__unlock__';
-    opt.textContent = `🔒 看广告解锁更多 (${data.slots.length}/${EDITOR_SLOT_MAX})`;
+    opt.textContent = T(
+      `🔒 看广告解锁更多 (${data.slots.length}/${EDITOR_SLOT_MAX})`,
+      `🔒 Watch ad to unlock more (${data.slots.length}/${EDITOR_SLOT_MAX})`
+    );
     sel.appendChild(opt);
   }
   sel.value = String(editor.slot);
@@ -1934,7 +2006,10 @@ function editorSave() {
   // Legacy mirror for the custom-variant getter
   try { localStorage.setItem('ag.customMap', JSON.stringify(data)); } catch (e) {}
   const sp = (data.spawn?.blue ? 1 : 0) + (data.spawn?.red ? 1 : 0);
-  showSwapToast(`槽 ${editor.slot + 1} · ${data.walls.length} 块 · ${sp} 出生`);
+  showSwapToast(T(
+    `槽 ${editor.slot + 1} · ${data.walls.length} 块 · ${sp} 出生`,
+    `Slot ${editor.slot + 1} · ${data.walls.length} blocks · ${sp} spawns`
+  ));
   // Refresh slot selector check marks
   const sel = document.getElementById('edSlotSelect');
   if (sel) {
@@ -2020,7 +2095,7 @@ if (_edSlotSel) _edSlotSel.onchange = () => {
     // Restore previous selection while ad is in flight
     _edSlotSel.value = String(editor.slot);
     requestRewardedAd('editor_extra_slots', (ok) => {
-      if (!ok) { showSwapToast('解锁取消'); return; }
+      if (!ok) { showSwapToast(T('解锁取消', 'Unlock cancelled')); return; }
       const cur = getUnlockedSlotCount();
       const next = setUnlockedSlotCount(cur + 2);
       // Append new empty slots to the persisted blob
@@ -2030,7 +2105,8 @@ if (_edSlotSel) _edSlotSel.onchange = () => {
       }
       saveCustomMaps(all);
       rebuildEditorSlotUI();
-      showSwapToast(`已解锁 · 现有 ${next}/${EDITOR_SLOT_MAX} 槽`);
+      showSwapToast(T(`已解锁 · 现有 ${next}/${EDITOR_SLOT_MAX} 槽`,
+                       `Unlocked · ${next}/${EDITOR_SLOT_MAX} slots`));
     });
     return;
   }
@@ -2144,7 +2220,8 @@ function placeBuildBlock(screenX, screenY) {
   addLowCover(cx, cy, SIZE, SIZE, COLORS.creamDark, { kind: 'crate' });
   game._buildPhase.left--;
   playSfx('reload', { vol: 0.5 });
-  showSwapToast(`放置掩体 · 剩余 ${game._buildPhase.left}`);
+  showSwapToast(T(`放置掩体 · 剩余 ${game._buildPhase.left}`,
+                   `Cover placed · ${game._buildPhase.left} left`));
 }
 
 // Restore collapsed state from previous session
@@ -2422,10 +2499,22 @@ document.querySelectorAll('#nnLobby .weap-btn').forEach(btn => {
 });
 
 // === Lineup editor (per-unit difficulty/weapon picker) ===
-const DIFF_LABELS = { elite: '全能', warrior: '进攻', defensive: '防御', sharpshooter: '枪神',
-  // legacy entries kept so old saved lineup state still has a label
-  easy: '简单', medium: '中等', hard: '困难', evolved: '进化' };
-const WPN_LABELS  = { SMG:'冲锋', RIFLE:'步枪', LMG:'机枪', SNIPER:'狙击', SHOTGUN:'霰弹' };
+// DIFF_LABELS / WPN_LABELS are getters that pick zh/en at access time so a
+// language flip immediately reflects in dropdowns + objective panel without
+// a manual rebuild. The legacy keys (easy/medium/hard/evolved) are kept so
+// old saved lineup state still resolves to a label.
+const _DIFF_LABELS_ZH = { elite: '全能', warrior: '进攻', defensive: '防御', sharpshooter: '枪神',
+                          easy: '简单', medium: '中等', hard: '困难', evolved: '进化' };
+const _DIFF_LABELS_EN = { elite: 'ELITE', warrior: 'WARRIOR', defensive: 'GUARD', sharpshooter: 'SHARP',
+                          easy: 'EASY', medium: 'MEDIUM', hard: 'HARD', evolved: 'EVOLVED' };
+const _WPN_LABELS_ZH  = { SMG:'冲锋', RIFLE:'步枪', LMG:'机枪', SNIPER:'狙击', SHOTGUN:'霰弹' };
+const _WPN_LABELS_EN  = { SMG:'SMG', RIFLE:'RIFLE', LMG:'LMG', SNIPER:'SNIPER', SHOTGUN:'SHOTGUN' };
+const DIFF_LABELS = new Proxy({}, {
+  get(_t, k) { return (_CUR_LANG === 'en' ? _DIFF_LABELS_EN : _DIFF_LABELS_ZH)[k]; }
+});
+const WPN_LABELS  = new Proxy({}, {
+  get(_t, k) { return (_CUR_LANG === 'en' ? _WPN_LABELS_EN : _WPN_LABELS_ZH)[k]; }
+});
 function rebuildLineupUI() {
   const blueSlots = document.getElementById('blueSlots');
   const redSlots  = document.getElementById('redSlots');
@@ -2434,7 +2523,7 @@ function rebuildLineupUI() {
   // Blue slots — slot 0 is YOU (player), 1..N are NN allies
   for (let i = 0; i < _lobby.blue; i++) {
     const isPlayer = i === 0;
-    const tag = isPlayer ? 'YOU 你' : ['BRAVO','CHARLIE','DELTA','ECHO'][i-1];
+    const tag = isPlayer ? T('YOU 你', 'YOU') : ['BRAVO','CHARLIE','DELTA','ECHO'][i-1];
     blueSlots.appendChild(makeSlotCard('blue', i, tag, isPlayer));
   }
   for (let i = 0; i < _lobby.red; i++) {
@@ -2451,7 +2540,7 @@ function makeSlotCard(team, idx, tag, isPlayer) {
   if (isPlayer) {
     const note = document.createElement('div');
     note.className = 'lineup-slot-note';
-    note.textContent = '武器看上方武器栏';
+    note.textContent = T('武器看上方武器栏', 'See weapon row above');
     card.appendChild(note);
     return card;
   }
@@ -2495,7 +2584,9 @@ if (_lineupToggle) {
     document.getElementById('globalDiffRow').style.display =
       _lobby.lineupOpen ? 'none' : '';
     _lineupToggle.classList.toggle('active', _lobby.lineupOpen);
-    _lineupToggle.textContent = _lobby.lineupOpen ? '自定义阵容 ▲' : '默认（全队同设置） ▼';
+    _lineupToggle.textContent = _lobby.lineupOpen
+      ? T('自定义阵容 ▲', 'CUSTOM LINEUP ▲')
+      : T('默认（全队同设置） ▼', 'DEFAULT (all same) ▼');
     if (_lobby.lineupOpen) rebuildLineupUI();
   };
 }
@@ -2533,7 +2624,7 @@ function startSkirmish() {
   initMission({ type: 'skirmish', id: 'skirmish' }, currentMap);
   // Spawn initial enemies
   for (let i = 0; i < 6; i++) spawnSoldier({ soldierBias: 'ringFromPlayer' });
-  showMessage('对抗模式 · 自由射击', 150);
+  showMessage(T('对抗模式 · 自由射击', 'Skirmish · free fire'), 150);
 }
 
 async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', weaponId = 'RIFLE', lineup = null, gameMode = 'dm') {
@@ -2571,11 +2662,11 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   const allDiffs = new Set([difficulty]);
   for (let i = 1; i < blueSize; i++) allDiffs.add(slotDiff('blue', i));
   for (let i = 0; i < redSize;  i++) allDiffs.add(slotDiff('red',  i));
-  const tierLabel = (DIFF_LABELS[difficulty] || '全能');
-  showMessage(`载入神经网络 · ${[...allDiffs].length === 1 ? tierLabel : '多脑混合'}...`, 60);
+  const tierLabel = (DIFF_LABELS[difficulty] || T('全能', 'ELITE'));
+  showMessage(`${T('载入神经网络', 'Loading NN')} · ${[...allDiffs].length === 1 ? tierLabel : T('多脑混合', 'mixed brains')}...`, 60);
   const ok = await nnLoadAll([...allDiffs]);
   if (!ok) {
-    showMessage('NN 载入失败 · 退回普通对抗', 180);
+    showMessage(T('NN 载入失败 · 退回普通对抗', 'NN load failed · fallback to vanilla'), 180);
     return startSkirmish();
   }
 
@@ -2755,7 +2846,9 @@ function startGame() {
 
 function endGame(victory) {
   game.state = 'gameover';
-  document.getElementById('endTag').textContent = victory ? '— 任务完成 / MISSION COMPLETE —' : '— 任务结算 / MISSION END —';
+  document.getElementById('endTag').textContent = victory
+    ? T('— 任务完成 / MISSION COMPLETE —', '— MISSION COMPLETE —')
+    : T('— 任务结算 / MISSION END —', '— MISSION END —');
   document.getElementById('endTitle').textContent = victory ? T('战场肃清', 'AREA SECURED') : T('单元失联', 'UNIT LOST');
   document.getElementById('endTitle').className = 'end-title' + (victory ? ' victory' : '');
   document.getElementById('endScore').textContent = game.score;
@@ -4359,14 +4452,14 @@ function onMissionSuccess() {
   // NN deathmatch: return to NN lobby instead of campaign progression
   if (game._nnMode) {
     bumpMatchPlayed();   // track NN win
-    showMessage(`BLUE 获胜！`, 220);
+    showMessage(T(`BLUE 获胜！`, `BLUE WINS!`), 220);
     playSfx('match_win');
     setTimeout(() => returnToNNLobby(), 2000);
     return;
   }
   game.score += 800;
   game.missionRetries = 0; // reset retry counter on each successful mission
-  showMessage(`任务完成 +800`, 200);
+  showMessage(T(`任务完成 +800`, `Mission complete +800`), 200);
   game.waveBreak = 220;
 }
 
@@ -4378,18 +4471,18 @@ function onMissionFailed() {
   if (game._nnMode) {
     bumpMatchPlayed();   // track every NN match end (loss path)
     const tied = mission && mission.teamKills && mission.teamKills[0] === mission.teamKills[1];
-    showMessage(tied ? `平手` : `RED 获胜`, 220);
+    showMessage(tied ? T(`平手`, `DRAW`) : T(`RED 获胜`, `RED WINS`), 220);
     playSfx(tied ? 'match_start' : 'match_loss');
     setTimeout(() => returnToNNLobby(), 2000);
     return;
   }
   game.missionRetries = (game.missionRetries || 0) + 1;
   if (game.missionRetries >= 3) {
-    showMessage(`任务三次失败 · 撤退`, 200);
+    showMessage(T(`任务三次失败 · 撤退`, `Mission failed 3× · retreat`), 200);
     setTimeout(() => endGame(false), 2200);
     return;
   }
-  showMessage(`任务失败 · 重试 (${game.missionRetries}/3)`, 200);
+  showMessage(T(`任务失败 · 重试 (${game.missionRetries}/3)`, `Mission failed · retry (${game.missionRetries}/3)`), 200);
   setTimeout(() => retryCurrentMission(), 1800);
 }
 
@@ -4434,7 +4527,7 @@ function retryCurrentMission() {
   spawnAllies();
   initMission(missionDef, currentMap);
   spawnWave(game.wave);
-  showMessage(`重试 · ${mission.title}`, 150);
+  showMessage(`${T('重试', 'Retry')} · ${missionTitle(mission)}`, 150);
   game.waveBreak = 0;
 }
 
@@ -4495,7 +4588,7 @@ MISSION_FACTORIES.escort = function(mapDef) {
   return {
     title: '护送补给车',
     titleEn: 'CONVOY ESCORT',
-    objective: '保护 Cargo UGV 抵达终点',
+    objective: T('保护 Cargo UGV 抵达终点', 'Escort the Cargo UGV to extraction'),
     ugv, path,
     update() {
       // First-frame: any enemies that pre-spawned via spawnWave get the UGV
@@ -4600,7 +4693,7 @@ MISSION_FACTORIES.escort = function(mapDef) {
       ctx.fillRect(dest.x - 80, dest.y - 18, 160, 36);
       ctx.fillStyle = COLORS.cream;
       ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText('终点 EXTRACT', dest.x, dest.y + 6);
+      ctx.fillText(T('终点 EXTRACT', 'EXTRACT'), dest.x, dest.y + 6);
       ctx.textAlign = 'left';
       ctx.restore();
 
@@ -4657,7 +4750,7 @@ MISSION_FACTORIES.escort = function(mapDef) {
       const totalDist = Math.hypot(path[0].x - dest.x, path[0].y - dest.y);
       const pct = ugv.alive ? Math.floor((1 - Math.hypot(dest.x - ugv.x, dest.y - ugv.y)/totalDist) * 100) : 0;
       drawObjectivePanel([
-        `UGV   ${ugv.alive ? ugv.hp + '/' + ugv.maxHp : '已损毁'}`,
+        `UGV   ${ugv.alive ? ugv.hp + '/' + ugv.maxHp : T('已损毁', 'DESTROYED')}`,
         `进度  ${pct}%   剩 ${dist}m`,
       ]);
     },
@@ -4690,7 +4783,7 @@ MISSION_FACTORIES.capture = function(mapDef) {
   return {
     title: '夺取讯号节点',
     titleEn: 'CAPTURE NODES',
-    objective: '占领 A · B · C 三个节点',
+    objective: T('占领 A · B · C 三个节点', 'Capture nodes A · B · C'),
     zones,
     update() {
       for (const z of zones) {
@@ -4749,7 +4842,7 @@ MISSION_FACTORIES.capture = function(mapDef) {
     renderHUD() {
       const lines = zones.map(z => {
         const pct = Math.round(z.capture);
-        const tag = z.owner === 'friendly' ? '已占领' : z.owner === 'hostile' ? '敌占' : `${pct > 0 ? '+' : ''}${pct}%`;
+        const tag = z.owner === 'friendly' ? T('已占领', 'HELD') : z.owner === 'hostile' ? T('敌占', 'HOSTILE') : `${pct > 0 ? '+' : ''}${pct}%`;
         return `节点 ${z.id}   ${tag}`;
       });
       drawObjectivePanel(lines);
@@ -4768,7 +4861,7 @@ MISSION_FACTORIES.destroyHive = function(mapDef) {
   return {
     title: '摧毁无人机蜂巢',
     titleEn: 'DESTROY HIVE',
-    objective: '炸毁中央蜂巢塔，阻止 FPV 持续生成',
+    objective: T('炸毁中央蜂巢塔，阻止 FPV 持续生成', 'Destroy the hive tower · stop FPV spawns'),
     hive,
     update() {
       if (!hive.alive) return;
@@ -4842,14 +4935,14 @@ MISSION_FACTORIES.recover = function(mapDef) {
   return {
     title: '回收黑盒',
     titleEn: 'RECOVER BLACK BOX',
-    objective: '找到坠毁单元的资料核心，带回撤离区',
+    objective: T('找到坠毁单元的资料核心，带回撤离区', 'Recover the data core · return to extraction'),
     blackBox, extraction,
     update() {
       blackBox.pulse += 0.08;
       if (!blackBox.pickedUp) {
         if (player.alive && Math.hypot(player.x - blackBox.x, player.y - blackBox.y) < blackBox.radius + player.radius) {
           blackBox.pickedUp = true;
-          showMessage('黑盒已回收 · 撤离', 150);
+          showMessage(T('黑盒已回收 · 撤离', 'Black box recovered · extract'), 150);
         }
       } else {
         // Box rides on the player
@@ -4877,7 +4970,7 @@ MISSION_FACTORIES.recover = function(mapDef) {
       ctx.setLineDash([]);
       ctx.fillStyle = blackBox.pickedUp ? COLORS.red : COLORS.gray;
       ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText('撤离 EXTRACT', extraction.x, extraction.y + 5);
+      ctx.fillText(T('撤离 EXTRACT', 'EXTRACT'), extraction.x, extraction.y + 5);
       ctx.textAlign = 'left';
       ctx.restore();
       // Black box
@@ -4925,7 +5018,7 @@ MISSION_FACTORIES.heavyInsert = function(mapDef) {
   return {
     title: '重型机具进场',
     titleEn: 'HEAVY INSERTION',
-    objective: '护送破障 UGV 进入资料核心并完成破障',
+    objective: T('护送破障 UGV 进入资料核心并完成破障', 'Escort breach UGV into the core · complete the breach'),
     heavy, target,
     update() {
       if (!heavy.alive) return;
@@ -4934,7 +5027,7 @@ MISSION_FACTORIES.heavyInsert = function(mapDef) {
         const d = Math.hypot(dx, dy);
         if (d < 100) {
           heavy.arrivedAt = game.time;
-          showMessage('破障开始 · 防御 12s', 150);
+          showMessage(T('破障开始 · 防御 12s', 'Breach started · defend 12s'), 150);
         } else {
           heavy.angle = Math.atan2(dy, dx);
           heavy.x += Math.cos(heavy.angle) * heavy.speed;
@@ -5006,7 +5099,7 @@ MISSION_FACTORIES.heavyInsert = function(mapDef) {
       }
     },
     renderHUD() {
-      const lines = [`UGV   ${heavy.alive ? heavy.hp + '/' + heavy.maxHp : '已损毁'}`];
+      const lines = [`UGV   ${heavy.alive ? heavy.hp + '/' + heavy.maxHp : T('已损毁', 'DESTROYED')}`];
       if (heavy.arrivedAt) {
         lines.push(`破障   ${Math.floor(heavy.breachProgress / heavy.breachDuration * 100)}%`);
       } else if (heavy.alive) {
@@ -5193,12 +5286,12 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           a.alive = false;
           a.x = player._lastDeathX != null ? player._lastDeathX : a.x;
           a.y = player._lastDeathY != null ? player._lastDeathY : a.y;
-          a.callsign = '前操作员';
+          a.callsign = T('前操作员', 'EX-OPERATOR');
           a._respawnAt = game.time + RESPAWN_TICKS;
           a._useNN = true;
           a._nnDifficulty = a._nnDifficulty || NN.difficulty || 'evolved';
-          const killerInfo = player._killer ? ` · 死於 ${player._killer.callsign || '敌方'}` : '';
-          showSwapToast(`接管 ${a.callsign === '前操作员' ? '隊友' : a.callsign}${killerInfo}`);
+          const killerInfo = player._killer ? ` · ${T('死於', 'killed by')} ${player._killer.callsign || T('敌方', 'enemy')}` : '';
+          showSwapToast(`${T('接管', 'SWAP')} ${(a.callsign === '前操作员' || a.callsign === 'EX-OPERATOR') ? T('隊友', 'ALLY') : a.callsign}${killerInfo}`);
           playSfx('countdown', { freq: 1320, vol: 0.45 });
         } else {
           player._respawnAt = game.time + RESPAWN_TICKS;
@@ -5625,10 +5718,10 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
           a.alive = false;
           a.x = player._lastDeathX != null ? player._lastDeathX : a.x;
           a.y = player._lastDeathY != null ? player._lastDeathY : a.y;
-          a.callsign = '前操作员';
+          a.callsign = T('前操作员', 'EX-OPERATOR');
           a._respawnAt = null;   // never respawn
-          const killerInfo = player._killer ? ` · 死於 ${player._killer.callsign || '敌方'}` : '';
-          showSwapToast(`紧急接管${killerInfo}`);
+          const killerInfo = player._killer ? ` · ${T('死於', 'killed by')} ${player._killer.callsign || T('敌方', 'enemy')}` : '';
+          showSwapToast(`${T('紧急接管', 'EMERGENCY SWAP')}${killerInfo}`);
           playSfx('countdown', { freq: 1320, vol: 0.45 });
         } else {
           // No allies left — round entering loss state. On first transition,
@@ -5736,7 +5829,7 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
         // Resume the wave loop — finish the current wave from where we were
         endStage = null;
         this._endAt = null;
-        showSwapToast(`续命 · 战场重启`);
+        showSwapToast(T(`续命 · 战场重启`, `Revived · back in the fight`));
         playSfx('match_start', { vol: 0.5 });
       });
     },
@@ -5970,8 +6063,8 @@ MISSION_FACTORIES.nnHelo = function(mapDef) {
           player._velX = 0; player._velY = 0;
           mouse.down = false;
           applyWeaponToPlayer(a._weapon || WEAPONS.RIFLE);
-          a.alive = false; a._respawnAt = null; a.callsign = '前操作员';
-          showSwapToast('紧急接管');
+          a.alive = false; a._respawnAt = null; a.callsign = T('前操作员', 'EX-OPERATOR');
+          showSwapToast(T('紧急接管', 'EMERGENCY SWAP'));
           playSfx('countdown', { freq: 1320, vol: 0.45 });
         } else if (endStage !== 'loss' && endStage !== 'win') {
           endStage = 'loss';
@@ -5998,14 +6091,14 @@ MISSION_FACTORIES.nnHelo = function(mapDef) {
         phaseTick++;
         if (phase === 'hold' && phaseTick >= HOLD_TICKS) {
           phase = 'descend'; phaseTick = 0;
-          showMessage('直升機進場 / HELO INBOUND', 180);
+          showMessage(T('直升機進場 / HELO INBOUND', 'HELO INBOUND'), 180);
           playSfx('match_start', { vol: 0.6 });
         } else if (phase === 'descend') {
           helo.alt = 1.0 - (phaseTick / DESCEND_TICKS);
           if (phaseTick >= DESCEND_TICKS) {
             helo.alt = 0;
             phase = 'liftoff'; phaseTick = 0;
-            showMessage('登機 / BOARD NOW', 180);
+            showMessage(T('登機 / BOARD NOW', 'BOARD NOW'), 180);
           }
         } else if (phase === 'liftoff') {
           helo.alt = (phaseTick / LIFTOFF_TICKS);
@@ -6095,7 +6188,7 @@ MISSION_FACTORIES.nnHelo = function(mapDef) {
         const tLeft = Math.ceil((LIFTOFF_TICKS - phaseTick) / 60);
         line2 = `撤离中 · 留在 LZ 内 · ${tLeft}s`;
       } else {
-        line2 = endStage === 'win' ? '撤离成功 / EXTRACTED' : '任务失败 / FAILED';
+        line2 = endStage === 'win' ? T('撤离成功 / EXTRACTED', 'EXTRACTED') : T('任务失败 / FAILED', 'FAILED');
       }
       drawObjectivePanel([
         `波 ${waveNum} · 击杀 ${kills}`,
@@ -6179,8 +6272,8 @@ MISSION_FACTORIES.nnConvoy = function(mapDef) {
           player._velX = 0; player._velY = 0;
           mouse.down = false;
           applyWeaponToPlayer(a._weapon || WEAPONS.RIFLE);
-          a.alive = false; a._respawnAt = null; a.callsign = '前操作员';
-          showSwapToast('紧急接管');
+          a.alive = false; a._respawnAt = null; a.callsign = T('前操作员', 'EX-OPERATOR');
+          showSwapToast(T('紧急接管', 'EMERGENCY SWAP'));
         } else if (endStage == null) {
           endStage = 'loss';
           if (this._endAt == null) this._endAt = game.time + 240;
@@ -6288,8 +6381,8 @@ MISSION_FACTORIES.nnConvoy = function(mapDef) {
       const pct = Math.max(0, Math.min(100, Math.round(100 * traveled / total)));
       drawObjectivePanel([
         `UGV ${ugv.hp}/${ugv.maxHp} · 击杀 ${kills}`,
-        endStage === 'win' ? `撤离成功 / DELIVERED`
-        : endStage === 'loss' ? `任务失败 / FAILED`
+        endStage === 'win' ? T(`撤离成功 / DELIVERED`, `DELIVERED`)
+        : endStage === 'loss' ? T(`任务失败 / FAILED`, `FAILED`)
         : `进度 ${pct}% · 波 ${waveNum}`,
       ]);
     },
@@ -6875,7 +6968,7 @@ function toggleDrone() {
     drone.x = player.x;
     drone.y = player.y - 40;
     game.mode = 'drone';
-    showMessage('UAV 已部署', 60);
+    showMessage(T('UAV 已部署', 'UAV deployed'), 60);
   } else {
     game.mode = (game.mode === 'drone') ? 'tactical' : 'drone';
   }
@@ -6883,7 +6976,7 @@ function toggleDrone() {
 
 function launchFPV() {
   if (fpv.active) return;
-  if (fpv.available <= 0) { showMessage('FPV 已耗尽', 60); return; }
+  if (fpv.available <= 0) { showMessage(T('FPV 已耗尽', 'FPV depleted'), 60); return; }
   fpv.active = true;
   fpv.available--;
   fpv.x = player.x + Math.cos(player.angle)*40;
@@ -6891,7 +6984,7 @@ function launchFPV() {
   fpv.angle = player.angle;
   fpv.trail = [];
   game.mode = 'fpv';
-  showMessage('FPV 自杀无人机已发射', 60);
+  showMessage(T('FPV 自杀无人机已发射', 'FPV kamikaze launched'), 60);
 }
 
 function startReload() {
@@ -7951,7 +8044,7 @@ function updateFPV() {
     createExplosion(fpv.x, fpv.y, 'medium');
     fpv.active = false;
     if (game.mode === 'fpv') game.mode = 'tactical';
-    showMessage(`FPV 命中 · 剩余 ${fpv.available}`, 60);
+    showMessage(T(`FPV 命中 · 剩余 ${fpv.available}`, `FPV hit · ${fpv.available} left`), 60);
   }
 }
 
@@ -8058,8 +8151,8 @@ function renderEditorOverlay() {
     ctx.textAlign = 'left';
     ctx.globalAlpha = 1;
   };
-  drawSpawnMarker(editor.spawn.blue, '#1A1A1A', '蓝');
-  drawSpawnMarker(editor.spawn.red,  COLORS.red, '红');
+  drawSpawnMarker(editor.spawn.blue, '#1A1A1A', T('蓝', 'B'));
+  drawSpawnMarker(editor.spawn.red,  COLORS.red, T('红', 'R'));
 
   // Cursor preview block at the snapped grid cell under the mouse
   const wp = screenToWorld(mouse.x, mouse.y);
@@ -9456,10 +9549,10 @@ function renderHUD() {
     if (player._killer) {
       ctx.fillStyle = COLORS.cream;
       ctx.font = 'bold 12px sans-serif';
-      const killerName = player._killer.callsign || '敌方';
+      const killerName = player._killer.callsign || T('敌方', 'ENEMY');
       const wpn = player._killerWeapon ? ` (${player._killerWeapon})` : '';
       ctx.globalAlpha = 0.85;
-      ctx.fillText(`击杀者 / KILLED BY  ${killerName}${wpn}`, cx, cy - 88);
+      ctx.fillText(`${T('击杀者 / KILLED BY', 'KILLED BY')}  ${killerName}${wpn}`, cx, cy - 88);
       ctx.globalAlpha = 1;
     }
     // Big countdown number
@@ -10001,7 +10094,7 @@ function renderHUDOverlays() {
     ctx.textAlign = 'center';
     ctx.fillText('G', gx + gSize/2, gy + (_nb ? 28 : 32));
     ctx.font = `bold ${_nb ? 9 : 10}px sans-serif`;
-    ctx.fillText('手雷', gx + gSize/2, gy + (_nb ? 46 : 52));
+    ctx.fillText(T('手雷', 'GRENADE'), gx + gSize/2, gy + (_nb ? 46 : 52));
     ctx.textAlign = 'left';
     ctx.restore();
     game._touchActionButtons = [{ id: 'g', x: gx, y: gy, w: gSize, h: gSize }];
