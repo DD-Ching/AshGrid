@@ -1062,9 +1062,21 @@ const player = {
 // as units; render adds them to the world pass; defense mission ticks
 // their behaviour. Costs deduct from game._energy at place time.
 const STRUCTURE_DEFS = {
+  // 3-tier cover ladder (all line-drag-able):
+  //  cover  — cheap, low HP, doesn't block line-of-sight (half-height)
+  //  wall   — balanced, blocks both bullets + LoS
+  //  bunker — expensive, very tanky, blocks both
+  cover: {
+    cost: 18, hp: 60, size: 30, blocks: true, blocksLOS: false,
+    label: () => T('掩体', 'COVER'),
+  },
   wall: {
     cost: 30, hp: 100, size: 30, blocks: true, blocksLOS: true,
     label: () => T('牆', 'WALL'),
+  },
+  bunker: {
+    cost: 70, hp: 260, size: 30, blocks: true, blocksLOS: true,
+    label: () => T('堡垒', 'BUNKER'),
   },
   turret: {
     cost: 100, hp: 80, size: 50, blocks: false, blocksLOS: false,
@@ -1156,10 +1168,14 @@ const STRUCTURE_DEFS = {
     label: () => T('蜂群', 'DRONES'),
   },
 };
-const STRUCTURE_ORDER = ['wall', 'turret', 'generator', 'camera', 'bot', 'terminal',
+const STRUCTURE_ORDER = ['cover', 'wall', 'bunker', 'turret', 'generator', 'camera', 'bot', 'terminal',
                          'mine', 'tripmine', 'sensor', 'smoke', 'tesla', 'emp', 'medstation', 'dronebay'];
 
 function getStructureCost(kind) { return STRUCTURE_DEFS[kind]?.cost || 0; }
+// Cover-archetype kinds (cover/wall/bunker) all support drag-line placement
+// because they're modular building blocks. Other modules are single-place.
+const WALL_KINDS = new Set(['cover', 'wall', 'bunker']);
+function isWallKind(kind) { return WALL_KINDS.has(kind); }
 function canAffordStructure(kind) { return (game._energy || 0) >= getStructureCost(kind); }
 
 // Place a structure at world (wx, wy). For combat-bot it instead spawns an
@@ -2826,7 +2842,7 @@ window.addEventListener('mousemove', e => {
   mouse.x = e.clientX; mouse.y = e.clientY;
   // Defense-mode wall drag: while the LMB is held with a wall anchor, track
   // the snapped end cell so renderBuildPreview can ghost the full line.
-  if (buildMode.active && buildMode.kind === 'wall' && buildMode._dragStart
+  if (buildMode.active && isWallKind(buildMode.kind) && buildMode._dragStart
       && game.state === 'playing' && !game._paused) {
     const wp = screenToWorld(e.clientX, e.clientY);
     const SNAP = 30;
@@ -2963,10 +2979,10 @@ window.addEventListener('mousedown', e => {
     const SNAP = 30;
     const gx = Math.round(wp.x / SNAP) * SNAP;
     const gy = Math.round(wp.y / SNAP) * SNAP;
-    if (buildMode.kind === 'wall') {
+    if (isWallKind(buildMode.kind)) {
       buildMode._dragStart = { gx, gy };
       buildMode._dragEnd   = { gx, gy };
-      placeStructure('wall', gx, gy);
+      placeStructure(buildMode.kind, gx, gy);
     } else {
       placeStructure(buildMode.kind, gx, gy);
     }
@@ -3100,10 +3116,10 @@ if (touchInput.enabled) {
         const gx = Math.round(wp.x / SNAP) * SNAP;
         const gy = Math.round(wp.y / SNAP) * SNAP;
         // Walls support drag-line on touch too: record anchor + place first
-        if (buildMode.kind === 'wall') {
+        if (isWallKind(buildMode.kind)) {
           buildMode._dragStart = { gx, gy };
           buildMode._dragEnd   = { gx, gy };
-          placeStructure('wall', gx, gy);
+          placeStructure(buildMode.kind, gx, gy);
         } else {
           placeStructure(buildMode.kind, gx, gy);
         }
@@ -3175,7 +3191,7 @@ if (touchInput.enabled) {
     }
     // Defense wall drag: update preview end while finger is held down on
     // the canvas, mirroring the mousemove path.
-    if (buildMode.active && buildMode.kind === 'wall' && buildMode._dragStart
+    if (buildMode.active && isWallKind(buildMode.kind) && buildMode._dragStart
         && !buildMode.radialOpen && game.state === 'playing' && !game._paused) {
       const t = e.changedTouches[0];
       if (t) {
@@ -3199,20 +3215,21 @@ if (touchInput.enabled) {
     }
     // Defense wall drag-release: commit the Bresenham line on touchend
     // (same path as the mouseup handler) so the user can stretch + lift.
-    if (buildMode.active && buildMode.kind === 'wall' && buildMode._dragStart && buildMode._dragEnd) {
+    if (buildMode.active && isWallKind(buildMode.kind) && buildMode._dragStart && buildMode._dragEnd) {
       const a = buildMode._dragStart, b = buildMode._dragEnd;
       if (a.gx !== b.gx || a.gy !== b.gy) {
         const cells = _editorLineCells(a.gx, a.gy, b.gx, b.gy, 30);
+        const kind = buildMode.kind;
         for (let i = 1; i < cells.length; i++) {
           const c = cells[i];
           const occupied = (game._structures || []).some(s =>
-            s.kind === 'wall' && s.hp > 0 && s.x === c.cx && s.y === c.cy);
+            isWallKind(s.kind) && s.hp > 0 && s.x === c.cx && s.y === c.cy);
           if (occupied) continue;
-          if (!canAffordStructure('wall')) {
+          if (!canAffordStructure(kind)) {
             showSwapToast(T('能源不足', 'Out of energy'));
             break;
           }
-          placeStructure('wall', c.cx, c.cy);
+          placeStructure(kind, c.cx, c.cy);
         }
       }
       buildMode._dragStart = null;
@@ -3243,23 +3260,24 @@ window.addEventListener('mouseup', e => {
   // Defense-mode wall drag-release: same Bresenham walk, but place each
   // cell as a structure (which deducts energy). Stops mid-line if energy
   // runs out — last placed cell sits as the line tail.
-  if (buildMode.active && buildMode.kind === 'wall' && buildMode._dragStart && buildMode._dragEnd) {
+  if (buildMode.active && isWallKind(buildMode.kind) && buildMode._dragStart && buildMode._dragEnd) {
     const a = buildMode._dragStart, b = buildMode._dragEnd;
     if (a.gx !== b.gx || a.gy !== b.gy) {
       const cells = _editorLineCells(a.gx, a.gy, b.gx, b.gy, 30);
+      const kind = buildMode.kind;
       // Skip the first cell — already placed on mousedown.
       for (let i = 1; i < cells.length; i++) {
         const c = cells[i];
-        // Skip cells that already host a wall (drag back over the line)
+        // Skip cells that already host any wall-kind structure
         const occupied = (game._structures || []).some(s =>
-          s.kind === 'wall' && s.hp > 0 && s.x === c.cx && s.y === c.cy
+          isWallKind(s.kind) && s.hp > 0 && s.x === c.cx && s.y === c.cy
         );
         if (occupied) continue;
-        if (!canAffordStructure('wall')) {
+        if (!canAffordStructure(kind)) {
           showSwapToast(T('能源不足', 'Out of energy'));
           break;
         }
-        placeStructure('wall', c.cx, c.cy);
+        placeStructure(kind, c.cx, c.cy);
       }
     }
     buildMode._dragStart = null;
@@ -9673,12 +9691,49 @@ function renderStructures() {
     const def = STRUCTURE_DEFS[s.kind]; if (!def) continue;
     const r = def.size / 2;
     // Body
-    if (s.kind === 'wall') {
+    if (s.kind === 'cover') {
+      // Half-height cover — drawn as a shorter rectangle so the player can
+      // tell it's penetrable visually. Top tier of the rect is faded.
+      ctx.fillStyle = COLORS.creamDark;
+      ctx.fillRect(s.x - r, s.y - r * 0.4, def.size, def.size * 0.7);
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(s.x - r, s.y - r * 0.4, def.size, def.size * 0.7);
+      // Two horizontal scratch lines for texture
+      ctx.strokeStyle = 'rgba(26, 26, 26, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(s.x - r + 4, s.y - r * 0.1); ctx.lineTo(s.x + r - 4, s.y - r * 0.1);
+      ctx.moveTo(s.x - r + 4, s.y + r * 0.3); ctx.lineTo(s.x + r - 4, s.y + r * 0.3);
+      ctx.stroke();
+    } else if (s.kind === 'wall') {
       ctx.fillStyle = COLORS.gray;
       ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
       ctx.strokeStyle = COLORS.black;
       ctx.lineWidth = 2;
       ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
+    } else if (s.kind === 'bunker') {
+      // Armored bunker — dark fill + diagonal cross-hatch + thick border to
+      // sell its tanky 260-HP feel.
+      ctx.fillStyle = '#3A3F4A';
+      ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
+      // Cross-hatch for armor texture
+      ctx.strokeStyle = 'rgba(232, 228, 216, 0.18)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let k = -def.size; k < def.size * 2; k += 6) {
+        ctx.moveTo(s.x - r + k,        s.y - r);
+        ctx.lineTo(s.x - r + k - 30,   s.y - r + 30);
+      }
+      ctx.stroke();
+      // Center red rivet — armored module signal
+      ctx.fillStyle = COLORS.red;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
+      ctx.fill();
     } else if (s.kind === 'turret') {
       // Octagonal base
       ctx.fillStyle = '#2A2A2A';
@@ -10149,7 +10204,7 @@ function renderBuildPreview() {
 
   // Wall + active drag → ghost the entire line, colour-code which cells fit
   // in the current energy budget vs which would run out mid-line.
-  if (buildMode.kind === 'wall' && buildMode._dragStart && buildMode._dragEnd
+  if (isWallKind(buildMode.kind) && buildMode._dragStart && buildMode._dragEnd
       && (buildMode._dragStart.gx !== buildMode._dragEnd.gx
           || buildMode._dragStart.gy !== buildMode._dragEnd.gy)) {
     const a = buildMode._dragStart, b = buildMode._dragEnd;
@@ -10179,7 +10234,7 @@ function renderBuildPreview() {
     ctx.globalAlpha = 1;
     ctx.fillStyle = COLORS.cream;
     ctx.font = 'bold 12px sans-serif';
-    ctx.fillText(`${cells.length}× ${T('牆', 'WALL')}  ${totalCost}⚡`,
+    ctx.fillText(`${cells.length}× ${def.label()}  ${totalCost}⚡`,
                  b.gx + 12, b.gy - 12);
     ctx.restore();
     return;
