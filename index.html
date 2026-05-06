@@ -665,6 +665,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
         <button data-weapon="LMG"     class="weap-btn">机枪<span>压制·重</span></button>
         <button data-weapon="SNIPER"  class="weap-btn">狙击<span>一枪秒·单发</span></button>
         <button data-weapon="SHOTGUN" class="weap-btn">霰弹<span>近战毁灭</span></button>
+        <button data-weapon="ROCKET"  class="weap-btn">火箭<span>破坏建筑</span></button>
       </div>
     </div>
 
@@ -816,6 +817,7 @@ const I18N = {
   '#nnLobby [data-weapon="LMG"]':     { zh: '机枪<span>压制·重</span>',     en: 'LMG<span>suppress</span>' },
   '#nnLobby [data-weapon="SNIPER"]':  { zh: '狙击<span>一枪秒·单发</span>', en: 'SNIPER<span>one-shot</span>' },
   '#nnLobby [data-weapon="SHOTGUN"]': { zh: '霰弹<span>近战毁灭</span>',     en: 'SHOTGUN<span>CQB</span>' },
+  '#nnLobby [data-weapon="ROCKET"]':  { zh: '火箭<span>破坏建筑</span>',      en: 'ROCKET<span>break walls</span>' },
   '#nnLobby .difficulty-row:has(#lineupToggle) .difficulty-label': { zh: '阵容 LINEUP', en: 'LINEUP' },
   '#lineupToggle':          { zh: '默认（全队同设置） ▼', en: 'DEFAULT (all same) ▼' },
   '#nnLobby .lineup-team-label.blue': { zh: '蓝队 BLUE', en: 'BLUE TEAM' },
@@ -1007,7 +1009,7 @@ const player = {
 // their behaviour. Costs deduct from game._energy at place time.
 const STRUCTURE_DEFS = {
   wall: {
-    cost: 60, hp: 200, size: 60, blocks: true, blocksLOS: true,
+    cost: 30, hp: 100, size: 30, blocks: true, blocksLOS: true,
     label: () => T('牆', 'WALL'),
   },
   turret: {
@@ -1509,6 +1511,18 @@ const WEAPONS = {
             pellets: 7,
             soundProfile: { peakFreq: 410, decay: 7,  bassFreq: 80,  bassDur: 0.11, volMul: 1.30 },
             blurb: '近战毁灭·散布' },
+  // ROCKET LAUNCHER — slow projectile, big AOE on impact, 2× structure dmg.
+  // Direct hit on a unit: 80 dmg to the target + 60 AOE dmg in 110u radius.
+  // Structure damage: 4× the projectile's listed `damage` so it can punch
+  // through walls (200 hp) in 2 hits. Tiny mag, slow reload — high impact
+  // ammo that has to count.
+  ROCKET: { name: 'RPG / 火箭炮', follow: 0.20, swayAmp: 0.026, swayFreq: 0.05, movePenalty: 0.020,
+            recoilPerShot: 0.55, recoilDecay: 0.74, spread: 0.012,
+            fireCd: 60, damage: 80, bulletSpeed: 11, bulletLife: 80, soundIntensity: 1900,
+            magSize: 2, reserveStart: 6, speedMul: 0.88, auto: false, reloadFrames: 160,
+            isRocket: true, blastR: 110, blastDmg: 60, structDmgMul: 4,
+            soundProfile: { peakFreq: 220, decay: 5, bassFreq: 60, bassDur: 0.30, volMul: 1.55 },
+            blurb: '爆破·破坏建筑' },
 
   // Allies (campaign) — kept separate so balancing AI doesn't bleed into player picks
   M4:  { follow: 0.14, swayAmp: 0.030, swayFreq: 0.07, movePenalty: 0.022,
@@ -2193,19 +2207,21 @@ const editor = { tool: 'cover', spawn: { blue: null, red: null }, slot: 0,
   _dragStart: null, _dragEnd: null };
 const EDITOR_BLOCK = 60;     // all placements snap to 60u grid
 
-// Returns [{cx, cy}] cell coords (multiples of EDITOR_BLOCK) along the
-// Bresenham line from cell A to cell B. Used by drag-to-line wall drawing.
-function _editorLineCells(ax, ay, bx, by) {
+// Returns [{cx, cy}] cell coords (multiples of `step`) along the Bresenham
+// line from cell A to cell B. Used by drag-to-line wall drawing.
+// Step defaults to EDITOR_BLOCK so the editor's 60u grid stays unchanged;
+// in-game defense wall drag passes the finer 30u SNAP for tighter layouts.
+function _editorLineCells(ax, ay, bx, by, step) {
+  const s = step || EDITOR_BLOCK;
   const cells = [];
-  // Convert to cell indexes for integer-only Bresenham
-  let x0 = Math.round(ax / EDITOR_BLOCK), y0 = Math.round(ay / EDITOR_BLOCK);
-  const x1 = Math.round(bx / EDITOR_BLOCK), y1 = Math.round(by / EDITOR_BLOCK);
+  let x0 = Math.round(ax / s), y0 = Math.round(ay / s);
+  const x1 = Math.round(bx / s), y1 = Math.round(by / s);
   const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
   const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
   let err = dx - dy;
   let safety = 4096;
   while (safety-- > 0) {
-    cells.push({ cx: x0 * EDITOR_BLOCK, cy: y0 * EDITOR_BLOCK });
+    cells.push({ cx: x0 * s, cy: y0 * s });
     if (x0 === x1 && y0 === y1) break;
     const e2 = err * 2;
     if (e2 > -dy) { err -= dy; x0 += sx; }
@@ -2551,7 +2567,7 @@ window.addEventListener('mousemove', e => {
   if (buildMode.active && buildMode.kind === 'wall' && buildMode._dragStart
       && game.state === 'playing' && !game._paused) {
     const wp = screenToWorld(e.clientX, e.clientY);
-    const SNAP = 60;
+    const SNAP = 30;
     const gx = Math.round(wp.x / SNAP) * SNAP;
     const gy = Math.round(wp.y / SNAP) * SNAP;
     buildMode._dragEnd = { gx, gy };
@@ -2682,7 +2698,7 @@ window.addEventListener('mousedown', e => {
     }
     // Placing mode (radial closed): drop a structure at the snapped cell.
     const wp = screenToWorld(e.clientX, e.clientY);
-    const SNAP = 60;
+    const SNAP = 30;
     const gx = Math.round(wp.x / SNAP) * SNAP;
     const gy = Math.round(wp.y / SNAP) * SNAP;
     if (buildMode.kind === 'wall') {
@@ -2901,7 +2917,7 @@ window.addEventListener('mouseup', e => {
   if (buildMode.active && buildMode.kind === 'wall' && buildMode._dragStart && buildMode._dragEnd) {
     const a = buildMode._dragStart, b = buildMode._dragEnd;
     if (a.gx !== b.gx || a.gy !== b.gy) {
-      const cells = _editorLineCells(a.gx, a.gy, b.gx, b.gy);
+      const cells = _editorLineCells(a.gx, a.gy, b.gx, b.gy, 30);
       // Skip the first cell — already placed on mousedown.
       for (let i = 1; i < cells.length; i++) {
         const c = cells[i];
@@ -3041,8 +3057,8 @@ const _DIFF_LABELS_ZH = { elite: '全能', warrior: '进攻', defensive: '防御
                           easy: '简单', medium: '中等', hard: '困难', evolved: '进化' };
 const _DIFF_LABELS_EN = { elite: 'ELITE', warrior: 'WARRIOR', defensive: 'GUARD', sharpshooter: 'SHARP',
                           easy: 'EASY', medium: 'MEDIUM', hard: 'HARD', evolved: 'EVOLVED' };
-const _WPN_LABELS_ZH  = { SMG:'冲锋', RIFLE:'步枪', LMG:'机枪', SNIPER:'狙击', SHOTGUN:'霰弹' };
-const _WPN_LABELS_EN  = { SMG:'SMG', RIFLE:'RIFLE', LMG:'LMG', SNIPER:'SNIPER', SHOTGUN:'SHOTGUN' };
+const _WPN_LABELS_ZH  = { SMG:'冲锋', RIFLE:'步枪', LMG:'机枪', SNIPER:'狙击', SHOTGUN:'霰弹', ROCKET:'火箭' };
+const _WPN_LABELS_EN  = { SMG:'SMG', RIFLE:'RIFLE', LMG:'LMG', SNIPER:'SNIPER', SHOTGUN:'SHOTGUN', ROCKET:'ROCKET' };
 const DIFF_LABELS = new Proxy({}, {
   get(_t, k) { return (_CUR_LANG === 'en' ? _DIFF_LABELS_EN : _DIFF_LABELS_ZH)[k]; }
 });
@@ -3095,7 +3111,7 @@ function makeSlotCard(team, idx, tag, isPlayer) {
   // Weapon dropdown
   const wpn = document.createElement('select');
   wpn.className = 'lineup-select';
-  for (const w of ['SMG','RIFLE','LMG','SNIPER','SHOTGUN']) {
+  for (const w of ['SMG','RIFLE','LMG','SNIPER','SHOTGUN','ROCKET']) {
     const opt = document.createElement('option');
     opt.value = w; opt.textContent = WPN_LABELS[w];
     wpn.appendChild(opt);
@@ -6536,6 +6552,11 @@ MISSION_FACTORIES.nnDefense = function(mapDef) {
   game._energy = 100;
   game._structures = [];
   game._airstrikes = [];
+  // Spawn beacons — visible enemy reinforcement points. Destroying a beacon
+  // halts that side's spawning for the rest of the round + 60⚡ refund.
+  // Placed on the 4 arena edges; HP scales with wave so late-game beacons
+  // need a couple of rocket hits.
+  game._spawnBeacons = [];
 
   const WAVE_TIERS = [
     ['defensive'],
@@ -6549,26 +6570,57 @@ MISSION_FACTORIES.nnDefense = function(mapDef) {
   ];
   const waveSize = (n) => Math.min(8, 3 + Math.floor(n / 2));   // 3,3,4,4,5,5,6,...
 
+  // Build / refresh spawn beacons for a given wave. Beacons are persistent
+  // — destroyed ones don't come back — but their HP resets each new wave so
+  // a wave 4 beacon is still tough even if you weakened it last round.
+  function ensureBeacons(n) {
+    const SIDES = ['E', 'N', 'S', 'W'];
+    const ax = NN_ARENA.x0, ay = NN_ARENA.y0;
+    const aw = NN_ARENA.w,  ah = NN_ARENA.h;
+    const inset = 50;
+    const beaconHp = 120 + n * 30;
+    for (let i = 0; i < SIDES.length; i++) {
+      const side = SIDES[i];
+      let bx, by;
+      if (side === 'E')      { bx = ax + aw - inset; by = ay + ah / 2; }
+      else if (side === 'W') { bx = ax + inset;       by = ay + ah / 2; }
+      else if (side === 'N') { bx = ax + aw / 2;      by = ay + inset; }
+      else                   { bx = ax + aw / 2;      by = ay + ah - inset; }
+      // Reuse existing beacon at this side if still alive (HP refresh)
+      const existing = game._spawnBeacons.find(b => b.side === side);
+      if (existing) { existing.hp = beaconHp; existing.maxHp = beaconHp; continue; }
+      // Otherwise — only create a fresh beacon for the first 2 waves; later
+      // waves keep whatever beacons survived. This makes destroying them
+      // permanent for the round — strategic upside.
+      if (n <= 2) {
+        game._spawnBeacons.push({ side, x: bx, y: by, hp: beaconHp, maxHp: beaconHp });
+      }
+    }
+  }
+
   function spawnWave(n) {
     const tiers = WAVE_TIERS[Math.min(n - 1, WAVE_TIERS.length - 1)];
     const size = waveSize(n);
     enemies.length = 0;
-    // Spawn from rotating edges + a sprinkle of multi-direction
-    const SIDES = ['E', 'N', 'S', 'W'];
-    const ax = NN_ARENA.x0, ay = NN_ARENA.y0;
-    const aw = NN_ARENA.w,  ah = NN_ARENA.h;
+    ensureBeacons(n);
+    // Distribute the wave across surviving beacons. If all beacons are
+    // destroyed, the wave can't spawn — round becomes free real estate.
+    const liveBeacons = game._spawnBeacons.filter(b => b.hp > 0);
+    if (!liveBeacons.length) {
+      showMessage(T(`所有重生点已摧毁 · 第 ${n} 波取消`,
+                    `All spawns destroyed · wave ${n} cancelled`), 180);
+      return;
+    }
     for (let i = 0; i < size; i++) {
-      const edge = SIDES[(n + i) % SIDES.length];
-      const sp = (edge === 'E' || edge === 'W') ? ah / (size + 1) : aw / (size + 1);
-      let x, y;
-      if (edge === 'E')      { x = ax + aw - 60; y = ay + sp * (i + 1); }
-      else if (edge === 'W') { x = ax + 60;       y = ay + sp * (i + 1); }
-      else if (edge === 'N') { x = ax + sp * (i + 1); y = ay + 60; }
-      else                   { x = ax + sp * (i + 1); y = ay + ah - 60; }
+      const beacon = liveBeacons[i % liveBeacons.length];
+      // Slight scatter around the beacon so units don't stack on top of it
+      const offX = (Math.random() - 0.5) * 60;
+      const offY = (Math.random() - 0.5) * 60;
       const tier = tiers[i % tiers.length];
       const w = WEAPONS[_lobby.weapon] || WEAPONS.RIFLE;
       enemies.push({
-        x, y, angle: 0, gunAngle: 0, gunRecoil: 0,
+        x: beacon.x + offX, y: beacon.y + offY,
+        angle: 0, gunAngle: 0, gunRecoil: 0,
         swayPhase: Math.random() * Math.PI * 2,
         walkPhase: Math.random() * Math.PI * 2,
         hp: 80, maxHp: 80, alive: true, radius: 13,
@@ -6581,7 +6633,8 @@ MISSION_FACTORIES.nnDefense = function(mapDef) {
         _invulnUntil: game.time + 30,
       });
     }
-    showMessage(T(`第 ${n} 波 · ${size} 敌`, `Wave ${n} · ${size} hostiles`), 150);
+    showMessage(T(`第 ${n} 波 · ${size} 敌 · ${liveBeacons.length} 重生点活动`,
+                  `Wave ${n} · ${size} hostiles · ${liveBeacons.length} spawns active`), 150);
     playSfx('match_start', { vol: 0.4 });
   }
 
@@ -8675,12 +8728,132 @@ function fire() {
       fromAlly: false,
       fromUnit: player,
       weaponName: w.name,
+      // Rocket flag — turn the bullet into an AOE projectile on impact
+      isRocket: !!w.isRocket,
+      blastR: w.blastR, blastDmg: w.blastDmg, structDmgMul: w.structDmgMul,
     });
   }
   // One muzzle flash per shot (not per pellet) — spread looks like a cloud
   muzzleFlashes.push({ x: player.x + Math.cos(baseAngle)*22, y: player.y + Math.sin(baseAngle)*22, angle: baseAngle, life: 5 });
   applyRecoil(player, w);
   emitSound(player.x, player.y, w.soundIntensity, true, true, w.soundProfile);
+}
+
+// Rocket projectile sprite — chunky black body + flame trail, oriented to
+// velocity. Called from the bullet render loop when bullet has isRocket.
+function _drawRocket(b, isEnemy) {
+  const a = Math.atan2(b.vy, b.vx);
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(a);
+  // Flame tail
+  ctx.fillStyle = '#FFB244';
+  ctx.beginPath();
+  ctx.moveTo(-10, 0);
+  ctx.lineTo(-22 - (game.time & 3), -4);
+  ctx.lineTo(-22 - (game.time & 3),  4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = COLORS.cream;
+  ctx.beginPath();
+  ctx.moveTo(-10, 0);
+  ctx.lineTo(-18, -2);
+  ctx.lineTo(-18,  2);
+  ctx.closePath();
+  ctx.fill();
+  // Body
+  ctx.fillStyle = isEnemy ? COLORS.red : COLORS.black;
+  ctx.fillRect(-10, -3, 20, 6);
+  // Nose
+  ctx.fillStyle = isEnemy ? COLORS.cream : COLORS.red;
+  ctx.beginPath();
+  ctx.moveTo(10, 0);
+  ctx.lineTo(4, -3);
+  ctx.lineTo(4, 3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// Rocket impact: AOE damage to enemies + extra damage to player-built
+// structures and arena cover/walls (defense-mode only). The bullet's own
+// `damage` already hit whatever it stopped on — this adds the splash.
+function detonateRocket(b) {
+  const r = b.blastR || 110;
+  const splashDmg = b.blastDmg || 60;
+  const structMul = b.structDmgMul || 4;
+  createExplosion(b.x, b.y, 'big');
+  emitSound(b.x, b.y, 1900, false);
+  playSfx('death', { vol: 0.6 });
+  // Enemies in radius
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    if (e._invulnUntil != null && game.time < e._invulnUntil) continue;
+    const d = Math.hypot(e.x - b.x, e.y - b.y);
+    if (d >= r) continue;
+    const dmg = Math.round(splashDmg * (1 - d / r));
+    e.hp -= dmg;
+    if (e.hp <= 0 && e.alive) {
+      e.alive = false; game.score += 100; game.killCount++;
+      createExplosion(e.x, e.y, 'small'); playSfx('kill_confirm');
+    }
+  }
+  // Enemy drones
+  for (const d of enemyDrones) {
+    if (!d.alive) continue;
+    const dist = Math.hypot(d.x - b.x, d.y - b.y);
+    if (dist < r) {
+      d.hp -= splashDmg;
+      if (d.hp <= 0) { d.alive = false; createExplosion(d.x, d.y, 'small'); }
+    }
+  }
+  // Player-built structures — friendly fire on own modules CAN happen
+  if (game._structures) {
+    for (let si = game._structures.length - 1; si >= 0; si--) {
+      const s = game._structures[si];
+      const def = STRUCTURE_DEFS[s.kind]; if (!def || s.hp <= 0) continue;
+      const dist = Math.hypot(s.x - b.x, s.y - b.y);
+      if (dist < r) s.hp -= splashDmg * structMul;
+    }
+  }
+  // Arena buildings + lowCovers — destructible only in defense mode
+  if (game._nnGameMode === 'defense') {
+    for (let bi = buildings.length - 1; bi >= 0; bi--) {
+      const bd = buildings[bi];
+      const cx = bd.x + bd.w / 2, cy = bd.y + bd.h / 2;
+      if (Math.hypot(cx - b.x, cy - b.y) < r + Math.max(bd.w, bd.h) / 2) {
+        if (bd.hp != null) {
+          bd.hp -= splashDmg * structMul;
+          if (bd.hp <= 0) { createExplosion(cx, cy, 'small'); buildings.splice(bi, 1); }
+        }
+      }
+    }
+    for (let li = lowCovers.length - 1; li >= 0; li--) {
+      const lc = lowCovers[li];
+      const cx = lc.x + lc.w / 2, cy = lc.y + lc.h / 2;
+      if (Math.hypot(cx - b.x, cy - b.y) < r + Math.max(lc.w, lc.h) / 2) {
+        if (lc.hp != null) {
+          lc.hp -= splashDmg * structMul;
+          if (lc.hp <= 0) { createExplosion(cx, cy, 'small'); lowCovers.splice(li, 1); }
+        }
+      }
+    }
+  }
+  // Enemy spawn beacons (defense mode) — rocket destroys them outright
+  if (game._spawnBeacons) {
+    for (let bk = game._spawnBeacons.length - 1; bk >= 0; bk--) {
+      const beacon = game._spawnBeacons[bk];
+      if (Math.hypot(beacon.x - b.x, beacon.y - b.y) < r + 20) {
+        beacon.hp -= splashDmg * structMul;
+        if (beacon.hp <= 0) {
+          createExplosion(beacon.x, beacon.y, 'big');
+          showSwapToast(T(`敌方重生点已摧毁`, `Enemy spawn destroyed`));
+          game._spawnBeacons.splice(bk, 1);
+          game._energy = Math.min(999, (game._energy || 0) + 60);
+        }
+      }
+    }
+  }
 }
 
 function updateBullets() {
@@ -8758,6 +8931,43 @@ function updateBullets() {
         }
         hit = true; break;
       }
+    }
+    // Spawn beacons: small + circular hitbox; hit them with regular fire too
+    if (!hit && game._spawnBeacons) {
+      for (let ci = 0; ci < game._spawnBeacons.length; ci++) {
+        const bk = game._spawnBeacons[ci];
+        if (bk.hp <= 0) continue;
+        if (Math.hypot(b.x - bk.x, b.y - bk.y) < 22) {
+          bk.hp -= b.damage || 12;
+          spawnDamagePopup(bk.x, bk.y - 24, b.damage || 12, false);
+          if (bk.hp <= 0) {
+            createExplosion(bk.x, bk.y, 'big');
+            showSwapToast(T(`敌方重生点已摧毁`, `Enemy spawn destroyed`));
+            game._spawnBeacons.splice(ci, 1);
+            game._energy = Math.min(999, (game._energy || 0) + 60);
+            game.score += 250;
+          }
+          hit = true; break;
+        }
+      }
+    }
+    // Rockets ALSO detonate on contact with structure walls (the player's
+    // own wall stack lives in game._structures, not buildings[], so the
+    // generic check above doesn't see them). Same for enemy structures
+    // when those exist later. AOE handles damage; here we just trigger.
+    if (!hit && b.isRocket && game._structures) {
+      for (const s of game._structures) {
+        const def = STRUCTURE_DEFS[s.kind]; if (!def || s.hp <= 0) continue;
+        if (!def.blocks) continue;   // only solid blockers (walls)
+        const r = def.size / 2;
+        if (Math.abs(b.x - s.x) <= r && Math.abs(b.y - s.y) <= r) { hit = true; break; }
+      }
+    }
+    if (hit && b.isRocket) {
+      detonateRocket(b);
+    } else if (b.life <= 0 && b.isRocket) {
+      // Lifetime-expired rocket detonates in mid-air rather than vanishing
+      detonateRocket(b);
     }
     if (hit || b.life <= 0) bullets.splice(i, 1);
   }
@@ -8873,6 +9083,7 @@ function updateBullets() {
         }
       }
     }
+    if (hit && b.isRocket) detonateRocket(b);
     if (hit || b.life <= 0) enemyBullets.splice(i, 1);
   }
 }
@@ -9034,6 +9245,7 @@ function render() {
   if (game.state === 'editor') renderEditorOverlay();
   // Player-built structures + airstrike telegraphs in defense mode
   renderFootprints();
+  renderSpawnBeacons();
   renderStructures();
   renderSmokeClouds();
   renderAirstrikes();
@@ -9259,6 +9471,51 @@ function renderFootprints() {
   ctx.restore();
 }
 
+// Render enemy spawn beacons — red diamond pylons with HP rings. Player can
+// see them on the world + minimap. Destroying one halts that side's spawns.
+function renderSpawnBeacons() {
+  if (!game._spawnBeacons || !game._spawnBeacons.length) return;
+  ctx.save();
+  for (const b of game._spawnBeacons) {
+    if (b.hp <= 0) continue;
+    // Diamond pylon
+    const r = 22;
+    ctx.fillStyle = COLORS.red;
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y - r);
+    ctx.lineTo(b.x + r, b.y);
+    ctx.lineTo(b.x, b.y + r);
+    ctx.lineTo(b.x - r, b.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = COLORS.cream;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Pulsing inner core
+    const pulse = 0.5 + 0.5 * Math.sin(game.time * 0.12);
+    ctx.fillStyle = `rgba(232, 228, 216, ${pulse})`;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    // HP ring
+    if (b.hp < b.maxHp) {
+      const bw = 36, bh = 4;
+      const bx = b.x - bw / 2, by = b.y - r - 12;
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = b.hp / b.maxHp > 0.4 ? '#3FE63F' : COLORS.red;
+      ctx.fillRect(bx, by, bw * b.hp / b.maxHp, bh);
+    }
+    // Label
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(T('敌方重生', 'ENEMY SPAWN'), b.x, b.y + r + 14);
+    ctx.textAlign = 'left';
+  }
+  ctx.restore();
+}
+
 // Telegraphed airstrike marker — red ground circle that flashes faster as it
 // nears detonation. Players (and friendly NN) should see + scatter.
 function renderAirstrikes() {
@@ -9293,7 +9550,7 @@ function renderAirstrikes() {
 function renderBuildPreview() {
   const wp = screenToWorld(mouse.x, mouse.y);
   // Snap to 60-unit grid (same as build_phase + editor)
-  const SNAP = 60;
+  const SNAP = 30;
   const gx = Math.round(wp.x / SNAP) * SNAP;
   const gy = Math.round(wp.y / SNAP) * SNAP;
   const def = STRUCTURE_DEFS[buildMode.kind];
@@ -9307,7 +9564,7 @@ function renderBuildPreview() {
       && (buildMode._dragStart.gx !== buildMode._dragEnd.gx
           || buildMode._dragStart.gy !== buildMode._dragEnd.gy)) {
     const a = buildMode._dragStart, b = buildMode._dragEnd;
-    const cells = _editorLineCells(a.gx, a.gy, b.gx, b.gy);
+    const cells = _editorLineCells(a.gx, a.gy, b.gx, b.gy, 30);
     const cost = def.cost;
     const energy = game._energy || 0;
     // First cell is already paid (placed on mousedown); count budget for the rest
@@ -9590,10 +9847,12 @@ function renderWorld() {
   }
   ctx.globalAlpha = 1;
 
-  // Bullets
+  // Bullets — rockets render as a chunky missile body + flame tail; regular
+  // rounds keep the simple line streak.
   ctx.lineWidth = 2;
   ctx.strokeStyle = COLORS.black;
   for (const b of bullets) {
+    if (b.isRocket) { _drawRocket(b, false); continue; }
     ctx.beginPath();
     ctx.moveTo(b.x, b.y);
     ctx.lineTo(b.x - b.vx*1.6, b.y - b.vy*1.6);
@@ -9602,6 +9861,7 @@ function renderWorld() {
   ctx.strokeStyle = COLORS.red;
   for (const b of enemyBullets) {
     if (!isVisibleToFriendly(b.x, b.y)) continue;
+    if (b.isRocket) { _drawRocket(b, true); continue; }
     ctx.beginPath();
     ctx.moveTo(b.x, b.y);
     ctx.lineTo(b.x - b.vx*1.6, b.y - b.vy*1.6);
