@@ -4945,6 +4945,46 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         winner ? `${winner === 'draw' ? '平手' : winner.toUpperCase() + ' 获胜！'}`
                : `时间剩余 ${remaining}s`,
       ]);
+      // End-of-match stats card during the 4s end latch
+      if (winner && winner !== null) {
+        const cw = 320, ch = 160;
+        const cx = W() / 2, cy = H() / 2;
+        const x = cx - cw / 2, y = cy - ch / 2;
+        ctx.save();
+        ctx.fillStyle = COLORS.cream;
+        ctx.fillRect(x, y, cw, ch);
+        ctx.strokeStyle = winner === 'blue' ? COLORS.black : (winner === 'red' ? COLORS.red : COLORS.gray);
+        ctx.lineWidth = 4;
+        ctx.strokeRect(x, y, cw, ch);
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(x + cw - 60, y - 4, 60, 8);
+        // Banner
+        ctx.fillStyle = COLORS.red;
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('对局结算 / MATCH RESULT', x + 16, y + 22);
+        // Winner big text
+        ctx.fillStyle = winner === 'blue' ? COLORS.black : (winner === 'red' ? COLORS.red : COLORS.gray);
+        ctx.font = 'bold 32px sans-serif';
+        ctx.textAlign = 'center';
+        const winLabel = winner === 'draw' ? '平手 DRAW'
+                       : winner === 'blue' ? '蓝队获胜 BLUE WIN'
+                                           : '红队获胜 RED WIN';
+        ctx.fillText(winLabel, cx, y + 64);
+        // Scoreline
+        ctx.fillStyle = COLORS.black;
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText(`蓝 ${teamKills[0]}  —  ${teamKills[1]} 红`, cx, y + 96);
+        // Elapsed
+        ctx.fillStyle = COLORS.gray;
+        ctx.font = '11px sans-serif';
+        const sec = Math.floor(elapsed / 60);
+        ctx.fillText(`耗时 ${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')} · 击杀目标 ${KILL_GOAL}`, cx, y + 120);
+        // Mode
+        const modeLabel = ({ dm:'对抗', survival:'生存', duel:'单挑', sniper:'狙击' })[game._nnGameMode] || '对抗';
+        ctx.fillText(`模式 ${modeLabel}`, cx, y + 140);
+        ctx.textAlign = 'left';
+        ctx.restore();
+      }
     },
   };
 };
