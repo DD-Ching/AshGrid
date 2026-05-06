@@ -7268,6 +7268,11 @@ function updateBullets() {
         // Track most recent damage source for the killer-info banner
         player._lastDamageBy = b.fromUnit || null;
         player._lastDamageWeapon = b.weaponName || '';
+        // Directional hurt indicator — angle FROM player TO bullet source.
+        // Decays over ~30 frames; render in renderHUDOverlays as edge glow.
+        const srcX = b.x - b.vx, srcY = b.y - b.vy;
+        player._hurtAngle = Math.atan2(srcY - player.y, srcX - player.x);
+        player._hurtIntensity = Math.min(1, (player._hurtIntensity || 0) + 0.6);
         if (player.hp <= 0) {
           player.hp = 0;
           player.alive = false;
@@ -9184,6 +9189,26 @@ function drawMinimapPanel(mx, my, mw, mh) {
 // overlay. Pulled out so the minimap-collapse path can short-circuit cleanly
 // without bailing on these.
 function renderHUDOverlays() {
+  // Directional hurt indicator — red glow on the edge facing the damage source.
+  // Decays each render frame; intensity = 0 → no draw.
+  if (player._hurtIntensity > 0) {
+    const intensity = player._hurtIntensity;
+    const ang = player._hurtAngle || 0;
+    // Edge midpoint: project ang to nearest edge (top/bot/left/right)
+    const cx = W()/2, cy = H()/2;
+    const edge = 80;
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    // Offset for gradient origin = center + dir × max
+    const ox = cx + dx * Math.max(W(), H());
+    const oy = cy + dy * Math.max(W(), H());
+    const grad = ctx.createRadialGradient(ox, oy, edge, ox, oy, Math.max(W(), H()));
+    grad.addColorStop(0, `rgba(200, 38, 28, ${intensity * 0.55})`);
+    grad.addColorStop(1, 'rgba(200, 38, 28, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W(), H());
+    player._hurtIntensity = Math.max(0, intensity - 0.05);
+  }
+
   // Pawn-swap toast — small top-center chip, fades the last 30% of its life.
   // Replaces the giant center-screen "接管 BRAVO" banner that used to block
   // view while rapid-switching.
