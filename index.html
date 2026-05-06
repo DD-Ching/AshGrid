@@ -274,26 +274,131 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   content: '[ ENCRYPTED ]'; color: var(--gray); font-style: italic;
 }
 .log-entry.locked .log-body { display: none; }
-/* Achievements grid */
-.achv-grid {
+/* Achievements — military-records style ============================== */
+.achv-tag-main { font-weight: 900; letter-spacing: 6px; margin-right: 14px; }
+.achv-tag-sub  { font-size: 9px; letter-spacing: 4px; opacity: 0.7; }
+.achv-tag-counter {
+  margin-left: auto; font-size: 11px; letter-spacing: 4px;
+  font-family: 'Courier New', monospace;
+}
+.achv-tag-counter b { color: var(--cream); font-weight: 900; font-size: 14px; }
+#achvModalTitle { display: flex; align-items: center; gap: 8px; flex: 1; }
+#achvModal .modal-card {
+  width: min(900px, 95vw);
+  background: #E5E0D2;
+  border-color: var(--red);
+  box-shadow: 0 0 0 1px rgba(200,38,28,0.4), 0 0 60px rgba(0,0,0,0.5);
+}
+#achvModal .modal-tag {
+  background: linear-gradient(180deg, #2A2A2A 0%, #1A1A1A 100%);
+  letter-spacing: 4px;
+}
+.achv-grid-v2 {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
-.achv-cell {
-  border: 1px solid var(--gray);
-  background: var(--cream-dark);
-  padding: 10px 12px;
-  font-size: 12px; line-height: 1.4;
+.achv-card {
+  display: grid;
+  grid-template-columns: 56px 64px 1fr 32px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid #B8B4A8;
+  background: rgba(232, 228, 216, 0.5);
+  position: relative;
+  font-family: 'Courier New', monospace;
 }
-.achv-cell.unlocked {
-  border-color: var(--red);
-  background: rgba(200, 38, 28, 0.12);
+.achv-card.unlocked {
+  border: 2px solid var(--red);
+  background: rgba(232, 228, 216, 0.85);
+  box-shadow: 0 0 0 1px rgba(200,38,28,0.15), 0 2px 8px rgba(200,38,28,0.10);
 }
-.achv-cell .achv-icon { font-size: 20px; margin-right: 6px; }
-.achv-cell .achv-title { font-weight: 800; }
-.achv-cell .achv-desc { color: var(--gray); font-size: 11px; margin-top: 4px; }
-.achv-cell.locked .achv-title { color: var(--gray); }
+.achv-card.locked .achv-icon-frame svg { opacity: 0.55; }
+.achv-card.locked .achv-title { color: var(--black); }
+.achv-card.locked .achv-desc  { color: var(--gray); }
+
+.achv-num {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  min-height: 56px; justify-content: center;
+}
+.achv-num-big {
+  font-size: 28px; font-weight: 900; color: var(--black);
+  line-height: 1; letter-spacing: 1px;
+}
+.achv-num-pill {
+  font-size: 8px; letter-spacing: 1.5px; font-weight: 800;
+  padding: 2px 5px;
+  background: #6B6B6B; color: var(--cream);
+}
+.achv-card.unlocked .achv-num-pill {
+  background: var(--red);
+}
+
+.achv-icon-frame {
+  width: 56px; height: 56px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.4);
+  border: 1px solid rgba(26,26,26,0.15);
+}
+.achv-icon-frame svg { width: 44px; height: 44px; }
+
+.achv-meta { min-width: 0; }
+.achv-meta .achv-title {
+  font-weight: 900; font-size: 13px;
+  letter-spacing: 2px; color: var(--black);
+  margin-bottom: 4px;
+  font-family: 'Courier New', monospace;
+}
+.achv-meta .achv-desc {
+  font-size: 10px; line-height: 1.45;
+  color: var(--gray);
+  margin-bottom: 4px;
+}
+.achv-meta .achv-status {
+  font-size: 9px; letter-spacing: 2px;
+  color: var(--gray); font-weight: 800;
+}
+.achv-meta .achv-status.unlocked-mark {
+  color: var(--red);
+}
+
+.achv-lock {
+  display: flex; align-items: center; justify-content: center;
+}
+
+.achv-completion {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(26,26,26,0.15);
+  display: flex; align-items: center; gap: 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px; letter-spacing: 3px;
+  color: var(--gray);
+}
+.achv-completion-label { font-weight: 800; }
+.achv-completion-pips { display: flex; gap: 3px; flex: 1; }
+.achv-pip {
+  width: 16px; height: 14px;
+  background: #B8B4A8;
+  display: inline-block;
+}
+.achv-pip.done { background: var(--red); }
+.achv-completion-count {
+  font-weight: 900; font-size: 12px; color: var(--black);
+}
+.achv-completion-count::before {
+  content: ''; display: inline-block; vertical-align: middle;
+}
+
+/* Narrow viewport: stack to 1 column */
+@media (max-width: 720px) {
+  .achv-grid-v2 { grid-template-columns: 1fr; }
+  .achv-card { grid-template-columns: 44px 52px 1fr 24px; gap: 8px; padding: 8px; }
+  .achv-num-big { font-size: 22px; }
+  .achv-icon-frame { width: 44px; height: 44px; }
+  .achv-icon-frame svg { width: 34px; height: 34px; }
+}
 
 /* ============ INTRO OVERLAY ============ */
 /* Awakening sequence — black backdrop + monospace typewriter, deliberate
@@ -1148,34 +1253,90 @@ function buildLogModal() {
 }
 
 // ============ ACHIEVEMENTS ============
-// 12 unlocks — fired by hooks scattered through the game (kill, wave, build,
-// etc.). On unlock, fires a radio toast + stores in ag.achievements set.
+// 12 unlocks — fired by hooks scattered through the game. Each card has a
+// hand-drawn SVG (no emoji — gritty military aesthetic), a numbered badge,
+// localised title + description, and a progress getter that returns
+// {current,total} so the modal can render "PROGRESS: 37 / 100" live.
+const _ICON_FIRST_BLOOD = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><g fill="none" stroke="#1A1A1A" stroke-width="2.5"><path d="M8 8 L8 18 L18 8" /><path d="M56 8 L56 18 L46 8" /><path d="M8 56 L8 46 L18 56" /><path d="M56 56 L56 46 L46 56" /></g><path d="M32 16 C32 16 22 32 22 40 A10 10 0 0 0 42 40 C42 32 32 16 32 16 Z" fill="#C8261C" stroke="#1A1A1A" stroke-width="1.5"/></svg>`;
+const _ICON_KILL_CHAIN = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><g fill="#1A1A1A"><path d="M14 12 Q22 22 18 50 L22 50 Q26 22 18 12 Z"/><path d="M28 12 Q36 22 32 52 L36 52 Q40 22 32 12 Z"/><path d="M42 12 Q50 22 46 50 L50 50 Q54 22 46 12 Z"/></g></svg>`;
+const _ICON_HEAT_BLOOM = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><path d="M32 8 L58 54 L6 54 Z" fill="none" stroke="#1A1A1A" stroke-width="3" stroke-linejoin="round"/><g stroke="#1A1A1A" stroke-width="2.5" stroke-linecap="round" fill="none"><path d="M22 36 Q26 32 22 28 Q18 24 22 20"/><path d="M32 38 Q36 34 32 30 Q28 26 32 22"/><path d="M42 36 Q46 32 42 28 Q38 24 42 20"/></g></svg>`;
+const _ICON_BODY_COUNT = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><path d="M22 8 L42 8 L52 18 L52 56 L12 56 L12 18 Z" fill="#E8E4D8" stroke="#1A1A1A" stroke-width="2.5"/><circle cx="32" cy="14" r="2.5" fill="#1A1A1A"/><g fill="#1A1A1A"><path d="M32 26 C24 26 20 31 20 38 C20 42 22 46 26 48 L26 52 L30 52 L30 48 L34 48 L34 52 L38 52 L38 48 C42 46 44 42 44 38 C44 31 40 26 32 26 Z"/></g><g fill="#E8E4D8"><circle cx="27" cy="38" r="2.5"/><circle cx="37" cy="38" r="2.5"/><rect x="29" y="42" width="6" height="2"/></g></svg>`;
+const _ICON_HOLD_LINE = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><path d="M32 6 L52 14 L52 34 Q52 48 32 58 Q12 48 12 34 L12 14 Z" fill="none" stroke="#1A1A1A" stroke-width="2.5"/><path d="M18 30 Q23 26 28 30 T38 30 T48 30" fill="none" stroke="#1A1A1A" stroke-width="2.5"/><path d="M18 38 Q23 34 28 38 T38 38 T48 38" fill="none" stroke="#1A1A1A" stroke-width="2.5"/></svg>`;
+const _ICON_LAST_WALL = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><path d="M32 8 L58 54 L6 54 Z" fill="none" stroke="#1A1A1A" stroke-width="3" stroke-linejoin="round"/><path d="M14 44 Q19 40 24 44 T34 44 T44 44 T54 44" fill="none" stroke="#1A1A1A" stroke-width="2.5"/><rect x="30" y="22" width="4" height="14" fill="#1A1A1A"/><circle cx="32" cy="42" r="2.2" fill="#1A1A1A"/></svg>`;
+const _ICON_FIELD_ENGINEER = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><g fill="#1A1A1A"><rect x="10" y="36" width="10" height="8"/><rect x="22" y="36" width="10" height="8"/><rect x="34" y="36" width="10" height="8"/><rect x="16" y="46" width="10" height="8"/><rect x="28" y="46" width="10" height="8"/><rect x="40" y="46" width="10" height="8"/></g><g transform="translate(36 8) rotate(35)"><path d="M10 0 Q14 -4 18 0 Q22 4 18 8 L18 22 L24 28 L20 32 L14 26 L14 8 Q10 4 10 0 Z" fill="#1A1A1A"/></g></svg>`;
+const _ICON_BEACON_DOWN = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><g fill="none" stroke="#1A1A1A" stroke-width="2.5" stroke-linecap="round"><path d="M22 14 Q14 22 14 32 Q14 42 22 50"/><path d="M42 14 Q50 22 50 32 Q50 42 42 50"/><path d="M26 18 Q22 24 22 32 Q22 40 26 46"/><path d="M38 18 Q42 24 42 32 Q42 40 38 46"/></g><circle cx="32" cy="32" r="3" fill="#C8261C"/><path d="M32 32 L26 56 L38 56 Z" fill="#1A1A1A"/></svg>`;
+const _ICON_ROCKET = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><g transform="translate(32 32) rotate(-30)"><path d="M-22 -3 L18 -3 L26 0 L18 3 L-22 3 Z" fill="#1A1A1A"/><path d="M18 -3 L24 -6 L24 6 L18 3 Z" fill="#1A1A1A"/><circle cx="14" cy="0" r="2.5" fill="#E8E4D8"/><path d="M-22 -3 L-30 -7 L-26 0 L-30 7 L-22 3 Z" fill="#C8261C"/></g></svg>`;
+const _ICON_REDLINE = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><path d="M4 32 L18 32 L22 32 L26 12 L32 52 L38 24 L42 32 L60 32" fill="none" stroke="#C8261C" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+const _ICON_FULL_SPECTRUM = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="32" r="24" fill="none" stroke="#1A1A1A" stroke-width="2"/><path d="M32 12 L36 26 L50 26 L39 35 L43 49 L32 41 L21 49 L25 35 L14 26 L28 26 Z" fill="#1A1A1A"/></svg>`;
+const _ICON_DAY30 = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="14" width="48" height="44" fill="#E8E4D8" stroke="#1A1A1A" stroke-width="2.5"/><rect x="8" y="14" width="48" height="10" fill="#1A1A1A"/><rect x="14" y="8" width="4" height="12" fill="#1A1A1A"/><rect x="46" y="8" width="4" height="12" fill="#1A1A1A"/><text x="32" y="48" font-family="Courier New, monospace" font-weight="900" font-size="18" text-anchor="middle" fill="#1A1A1A">D30</text></svg>`;
+
 const ACHIEVEMENTS = [
-  { id: 'first_blood',  icon: '🩸', title_zh: '初戰',         title_en: 'FIRST BLOOD',
-    desc_zh: '第一次擊殺敵方 NN', desc_en: 'First confirmed NN kill' },
-  { id: 'killstreak3',  icon: '🔥', title_zh: '連殺',         title_en: 'STREAK',
-    desc_zh: '一場 3 連殺',       desc_en: 'Chain 3 kills in a single round' },
-  { id: 'killstreak5',  icon: '🌋', title_zh: '熱區',         title_en: 'HOT ZONE',
-    desc_zh: '一場 5 連殺',       desc_en: 'Chain 5 kills' },
-  { id: 'kills_100',    icon: '💀', title_zh: '百人斬',       title_en: 'CENTURION',
-    desc_zh: '累計擊殺 100',      desc_en: 'Cumulative 100 kills' },
-  { id: 'wave5',        icon: '🌊', title_zh: '潮汐',         title_en: 'TIDE',
-    desc_zh: '生存撐過第 5 波',   desc_en: 'Hold survival to wave 5' },
-  { id: 'wave10',       icon: '🪨', title_zh: '海嘯',         title_en: 'TSUNAMI',
-    desc_zh: '生存撐過第 10 波',  desc_en: 'Hold survival to wave 10' },
-  { id: 'build_50',     icon: '🧱', title_zh: '建築師',       title_en: 'ARCHITECT',
-    desc_zh: '累計建造 50 模塊',  desc_en: 'Build 50 structures' },
-  { id: 'beacon_kill',  icon: '🎯', title_zh: '斷源',         title_en: 'CUT THE SOURCE',
-    desc_zh: '摧毀敵方重生點',    desc_en: 'Destroy an enemy spawn beacon' },
-  { id: 'rocket_kill',  icon: '🚀', title_zh: '爆破王',       title_en: 'DEMOLITIONIST',
-    desc_zh: '用火箭炮擊殺',      desc_en: 'Get a kill with the rocket launcher' },
-  { id: 'survive_low',  icon: '❤️', title_zh: '一線生機',      title_en: 'CLOSE CALL',
-    desc_zh: '5HP 以下擊殺敵人',  desc_en: 'Kill an enemy at <5 HP yourself' },
-  { id: 'tactical_win', icon: '🎖️', title_zh: '指揮官',        title_en: 'COMMANDER',
-    desc_zh: '使用所有 3 種機體完成 1 場',
-    desc_en: 'Win with all 3 chassis types' },
-  { id: 'day_30',       icon: '📅', title_zh: '半個月',       title_en: 'HALF A MONTH',
-    desc_zh: '達到第 30 天',     desc_en: 'Reach Day 30' },
+  { id: 'first_blood',  icon: _ICON_FIRST_BLOOD, title_zh: '初戰',     title_en: 'FIRST BLOOD',
+    desc_zh: '第一次擊殺敵方 NN', desc_en: 'First confirmed NN kill',
+    progress: () => ({ cur: getUnlockedAchievements().has('first_blood') ? 1 : 0, tot: 1 }) },
+  { id: 'killstreak3',  icon: _ICON_KILL_CHAIN, title_zh: '連殺鏈',    title_en: 'KILL CHAIN',
+    desc_zh: '一場 3 連殺',       desc_en: 'Chain 3 kills in a single round',
+    progress: () => ({ cur: Math.min(3, player._killStreak || 0), tot: 3 }) },
+  { id: 'killstreak5',  icon: _ICON_HEAT_BLOOM, title_zh: '熱浪',      title_en: 'HEAT BLOOM',
+    desc_zh: '一場 5 連殺',       desc_en: 'Chain 5 kills',
+    progress: () => ({ cur: Math.min(5, player._killStreak || 0), tot: 5 }) },
+  { id: 'kills_100',    icon: _ICON_BODY_COUNT, title_zh: '百人斬',    title_en: 'BODY COUNT: 100',
+    desc_zh: '累計擊殺 100',      desc_en: 'Cumulative 100 kills',
+    progress: () => {
+      try {
+        const s = JSON.parse(localStorage.getItem('ag.stats') || '{}');
+        const total = (s.totalKills || 0) + (game.killCount || 0);
+        return { cur: Math.min(100, total), tot: 100 };
+      } catch (e) { return { cur: 0, tot: 100 }; }
+    }
+  },
+  { id: 'wave5',        icon: _ICON_HOLD_LINE, title_zh: '守住戰線',   title_en: 'HOLD THE LINE',
+    desc_zh: '生存撐過第 5 波',   desc_en: 'Hold survival to wave 5',
+    progress: () => {
+      try {
+        const s = JSON.parse(localStorage.getItem('ag.stats') || '{}');
+        return { cur: Math.min(5, s.bestSurvivalWave || 0), tot: 5 };
+      } catch (e) { return { cur: 0, tot: 5 }; }
+    }
+  },
+  { id: 'wave10',       icon: _ICON_LAST_WALL, title_zh: '最後防線',   title_en: 'LAST WALL',
+    desc_zh: '生存撐過第 10 波',  desc_en: 'Hold survival to wave 10',
+    progress: () => {
+      try {
+        const s = JSON.parse(localStorage.getItem('ag.stats') || '{}');
+        return { cur: Math.min(10, s.bestSurvivalWave || 0), tot: 10 };
+      } catch (e) { return { cur: 0, tot: 10 }; }
+    }
+  },
+  { id: 'build_50',     icon: _ICON_FIELD_ENGINEER, title_zh: '工兵',     title_en: 'FIELD ENGINEER',
+    desc_zh: '累計建造 50 模塊',  desc_en: 'Build 50 structures',
+    progress: () => {
+      try {
+        return { cur: Math.min(50, parseInt(localStorage.getItem('ag.buildCount') || '0', 10)), tot: 50 };
+      } catch (e) { return { cur: 0, tot: 50 }; }
+    }
+  },
+  { id: 'beacon_kill',  icon: _ICON_BEACON_DOWN, title_zh: '信標斷源',   title_en: 'BEACON DOWN',
+    desc_zh: '摧毀敵方重生點',    desc_en: 'Destroy an enemy spawn beacon',
+    progress: () => ({ cur: getUnlockedAchievements().has('beacon_kill') ? 1 : 0, tot: 1 }) },
+  { id: 'rocket_kill',  icon: _ICON_ROCKET, title_zh: '火箭確認',    title_en: 'ROCKET CONFIRM',
+    desc_zh: '用火箭炮擊殺',      desc_en: 'Get a kill with the rocket launcher',
+    progress: () => ({ cur: getUnlockedAchievements().has('rocket_kill') ? 1 : 0, tot: 1 }) },
+  { id: 'survive_low',  icon: _ICON_REDLINE, title_zh: '紅線倖存者',  title_en: 'REDLINE SURVIVOR',
+    desc_zh: '5HP 以下擊殺敵人',  desc_en: 'Kill an enemy at <5 HP yourself',
+    progress: () => ({ cur: getUnlockedAchievements().has('survive_low') ? 1 : 0, tot: 1 }) },
+  { id: 'tactical_win', icon: _ICON_FULL_SPECTRUM, title_zh: '全機型',     title_en: 'FULL SPECTRUM',
+    desc_zh: '使用所有 3 種機體',  desc_en: 'Win with all 3 chassis types',
+    progress: () => {
+      try {
+        const u = JSON.parse(localStorage.getItem('ag.chassisUsed') || '[]');
+        return { cur: Math.min(3, u.length), tot: 3 };
+      } catch (e) { return { cur: 0, tot: 3 }; }
+    }
+  },
+  { id: 'day_30',       icon: _ICON_DAY30, title_zh: '半個月倖存者', title_en: 'DAY 30 SURVIVOR',
+    desc_zh: '達到第 30 天',     desc_en: 'Reach Day 30',
+    progress: () => ({ cur: Math.min(30, (typeof getDayNum === 'function' ? getDayNum() : 14)), tot: 30 }) },
 ];
 
 function getUnlockedAchievements() {
@@ -1200,27 +1361,53 @@ function buildAchievementsModal() {
   if (!body) return;
   const lang = (typeof getLang === 'function') ? getLang() : 'en';
   const unlocked = getUnlockedAchievements();
+  const total = ACHIEVEMENTS.length, done = unlocked.size;
   body.innerHTML = '';
   const grid = document.createElement('div');
-  grid.className = 'achv-grid';
-  for (const a of ACHIEVEMENTS) {
-    const cell = document.createElement('div');
+  grid.className = 'achv-grid-v2';
+  ACHIEVEMENTS.forEach((a, i) => {
     const isUnlocked = unlocked.has(a.id);
-    cell.className = 'achv-cell ' + (isUnlocked ? 'unlocked' : 'locked');
+    const idx = String(i + 1).padStart(2, '0');
     const title = (lang === 'zh') ? a.title_zh : a.title_en;
     const desc  = (lang === 'zh') ? a.desc_zh  : a.desc_en;
-    cell.innerHTML = `<span class="achv-icon">${a.icon}</span><span class="achv-title">${title}</span>` +
-                     `<div class="achv-desc">${desc}</div>`;
+    let prog = { cur: 0, tot: 1 };
+    try { prog = a.progress(); } catch (e) {}
+    const cell = document.createElement('div');
+    cell.className = 'achv-card' + (isUnlocked ? ' unlocked' : ' locked');
+    // 4-column layout: number badge | icon frame | title+desc+status | lock pad
+    const statusHtml = isUnlocked
+      ? `<div class="achv-status unlocked-mark">${(lang === 'zh') ? '✓ 已解锁' : '✓ UNLOCKED'}</div>`
+      : `<div class="achv-status">${(lang === 'zh') ? '進度' : 'PROGRESS'}: ${prog.cur} / ${prog.tot}</div>`;
+    cell.innerHTML = `
+      <div class="achv-num">
+        <div class="achv-num-big">${idx}</div>
+        <div class="achv-num-pill">${isUnlocked ? ((lang === 'zh') ? '已解锁' : 'UNLOCKED') : ((lang === 'zh') ? '锁定' : 'LOCKED')}</div>
+      </div>
+      <div class="achv-icon-frame">${a.icon}</div>
+      <div class="achv-meta">
+        <div class="achv-title">${title}</div>
+        <div class="achv-desc">${desc}</div>
+        ${statusHtml}
+      </div>
+      <div class="achv-lock">${isUnlocked ? '' : '<svg viewBox="0 0 24 24" width="22" height="22"><path d="M7 10 V7 a5 5 0 0 1 10 0 v3" fill="none" stroke="#6B6B6B" stroke-width="2"/><rect x="5" y="10" width="14" height="11" fill="none" stroke="#6B6B6B" stroke-width="2"/><circle cx="12" cy="15.5" r="1.5" fill="#6B6B6B"/></svg>'}</div>
+    `;
     grid.appendChild(cell);
-  }
+  });
   body.appendChild(grid);
-  const total = ACHIEVEMENTS.length, done = unlocked.size;
-  const summary = document.createElement('div');
-  summary.style = 'margin-top: 16px; font-size: 11px; color: var(--gray); text-align: center;';
-  summary.textContent = (lang === 'zh') ? `${done} / ${total} 已解鎖` : `${done} / ${total} unlocked`;
-  body.appendChild(summary);
-  document.getElementById('achvModalTitle').textContent =
-    (lang === 'zh') ? `成就 · ${done}/${total}` : `ACHIEVEMENTS · ${done}/${total}`;
+
+  // Bottom completion strip — N filled red squares + total
+  const strip = document.createElement('div');
+  strip.className = 'achv-completion';
+  let cells = '';
+  for (let i = 0; i < total; i++) cells += `<span class="achv-pip ${i < done ? 'done' : ''}"></span>`;
+  strip.innerHTML = `<span class="achv-completion-label">${(lang === 'zh') ? '戰鬥紀錄完成度' : 'COMBAT RECORD COMPLETION'}</span><span class="achv-completion-pips">${cells}</span><span class="achv-completion-count">${done} / ${total}</span>`;
+  body.appendChild(strip);
+
+  // Header counter
+  document.getElementById('achvModalTitle').innerHTML =
+    `<span class="achv-tag-main">${(lang === 'zh') ? '成就' : 'ACHIEVEMENTS'}</span>` +
+    `<span class="achv-tag-sub">${(lang === 'zh') ? '戰鬥紀錄' : 'COMBAT RECORDS'} //</span>` +
+    `<span class="achv-tag-counter"><b>${String(done).padStart(2, '0')}</b> / ${String(total).padStart(2, '0')} ${(lang === 'zh') ? '已解鎖' : 'UNLOCKED'}</span>`;
 }
 
 // Wire footer buttons + modal close. Called by _wireIntro since both run at boot.
