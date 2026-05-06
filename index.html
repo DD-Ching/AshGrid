@@ -1726,6 +1726,13 @@ window.addEventListener('mousedown', e => {
     e.preventDefault();
     return;
   }
+  // Survival "watch ad to revive" — when the loss leaderboard is up,
+  // clicking the red CTA button triggers the rewarded-ad stub.
+  if (_hitRect(game._reviveBtnRect, e.clientX, e.clientY)) {
+    if (mission && typeof mission.tryRevive === 'function') mission.tryRevive();
+    e.preventDefault();
+    return;
+  }
   // BUILD PHASE: between waves in survival, click → place a 60×60 cover
   // at the world coord (clamped to arena interior) — 3 placements per phase.
   if (game._buildPhase && game._buildPhase.active && game._buildPhase.left > 0) {
@@ -1833,6 +1840,11 @@ if (touchInput.enabled) {
           }
         }
         if (hit) continue;
+      }
+      // 4b) Survival revive CTA — rewarded-ad on tap
+      if (_hitRect(game._reviveBtnRect, t.clientX, t.clientY)) {
+        if (mission && typeof mission.tryRevive === 'function') mission.tryRevive();
+        continue;
       }
       // 5a) BUILD PHASE: between-wave cover placement takes precedence
       if (game._buildPhase && game._buildPhase.active && game._buildPhase.left > 0) {
@@ -4925,6 +4937,7 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
   let waveBreakUntil = startTick + 90;   // 1.5s breather before wave 1
   let waveStarted = false;
   let endStage = null;      // null | 'win' (impossible) | 'loss'
+  let reviveUsed = false;   // one rewarded-ad revive per round
   // NN tier mix per wave — index by min(wave-1, len-1)
   const WAVE_TIERS = [
     ['defensive'],                          // 1
@@ -5053,12 +5066,19 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
           showSwapToast(`紧急接管`);
           playSfx('countdown', { freq: 1320, vol: 0.45 });
         } else {
-          // No allies left — round ends. Record the run on first transition.
+          // No allies left — round entering loss state. On first transition,
+          // record the run + open a 10s window for the player to watch a
+          // rewarded ad and revive. After the window or after a failed ad,
+          // _endAt is set normally and the round ends.
           if (endStage !== 'loss') {
             endStage = 'loss';
             recordSurvivalRun({ wave: Math.max(0, wave - 0), kills, style: _lobby.difficulty });
           }
-          if (this._endAt == null) this._endAt = game.time + 240;
+          if (this._endAt == null) {
+            // Longer window if a revive is still available — gives player
+            // time to read the leaderboard and decide.
+            this._endAt = game.time + (reviveUsed ? 240 : 600);
+          }
         }
       }
       // Allies don't respawn in survival; just clear any pending timer.
@@ -5095,6 +5115,69 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
       return false;
     },
 
+    // Hooked from the survival HUD's "看广告续命" button. Triggers the
+    // rewarded-ad stub (real AdMob in Phase 4) — on success, brings 2 fresh
+    // NN allies in at the blue spawn anchor, restores the operator to full
+    // HP + mag, and resets endStage so the wave loop continues.
+    tryRevive() {
+      if (reviveUsed || endStage !== 'loss') return;
+      reviveUsed = true;
+      this._endAt = null;       // pause the round-end timer while ad plays
+      requestRewardedAd('survival_revive', (ok) => {
+        if (!ok) {
+          // Ad failed/dismissed — re-arm the round-end (4s) and bail
+          this._endAt = game.time + 240;
+          return;
+        }
+        // === REVIVE ===
+        // Drop the corpses + bring 2 NN allies in at blue spawn anchor.
+        const spawnAnchor = game._nnSpawnBlue;
+        const spawnAlly = (i) => {
+          const offset = (i - 0.5) * 70;
+          allies[i] = {
+            callsign: ['BRAVO', 'CHARLIE'][i] || ('R' + i),
+            offsetX: -110, offsetY: 60,
+            x: spawnAnchor.x, y: spawnAnchor.y + offset,
+            angle: 0, gunAngle: 0, gunRecoil: 0, swayPhase: Math.random() * Math.PI * 2,
+            walkPhase: Math.random() * Math.PI * 2,
+            hp: 80, maxHp: 80,
+            alive: true, radius: 13,
+            speed: 2.5, fireCd: 0,
+            weaponId: 'M4',
+            _weapon: WEAPONS[pickRandomNNWeaponId()],
+            _nnDifficulty: _lobby.difficulty || 'elite',
+            target: null, lookPhase: 0,
+            team: 0,
+            _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+            _respawnAt: null,
+            _invulnUntil: game.time + 90,
+          };
+        };
+        // Make sure the array can hold 2 (replaces "前操作员" corpses)
+        allies.length = Math.max(allies.length, 2);
+        spawnAlly(0); spawnAlly(1);
+        // Bring the operator back at the spawn anchor with full kit
+        player.alive = true;
+        player.x = spawnAnchor.x; player.y = spawnAnchor.y;
+        player.hp = player.maxHp;
+        player._invulnUntil = game.time + 120;
+        player._respawnAt = null;
+        player._lastDeathX = null; player._lastDeathY = null;
+        if (playerWeapon) {
+          player.ammo = playerWeapon.magSize;
+          player.reserve = playerWeapon.reserveStart;
+        }
+        // Resume the wave loop — finish the current wave from where we were
+        endStage = null;
+        this._endAt = null;
+        showSwapToast(`续命 · 战场重启`);
+        playSfx('match_start', { vol: 0.5 });
+      });
+    },
+
+    // Returns true if a revive button should currently be shown
+    canRevive() { return endStage === 'loss' && !reviveUsed; },
+
     renderHUD() {
       const best = getSurvivalScores()[0];
       const bestStr = best ? `· 最佳 W${best.wave}/K${best.kills}` : '';
@@ -5105,10 +5188,13 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
           : (waveStarted ? `敌方剩余 ${enemies.filter(e => e.alive).length}`
                          : `准备下一波...`),
       ]);
-      // On loss: show leaderboard top 5 in a centered card
+      // On loss: show leaderboard top 5 in a centered card. If a revive
+      // is still available, add a "watch ad" CTA at the bottom — clicking
+      // it triggers the rewarded-ad stub via mission.tryRevive().
       if (endStage === 'loss') {
         const scores = getSurvivalScores().slice(0, 5);
-        const cw = 320, rowH = 22, ch = 60 + scores.length * rowH;
+        const showRevive = !reviveUsed;
+        const cw = 320, rowH = 22, ch = 60 + scores.length * rowH + (showRevive ? 44 : 0);
         const cx = W() / 2, cy = H() / 2;
         const x = cx - cw / 2, y = cy - ch / 2;
         ctx.save();
@@ -5141,7 +5227,23 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
           );
           yy += rowH;
         }
+        // Revive CTA (rewarded ad)
+        if (showRevive) {
+          const bx = x + 16, by = yy + 8, bw = cw - 32, bh = 32;
+          ctx.fillStyle = COLORS.red;
+          ctx.fillRect(bx, by, bw, bh);
+          ctx.fillStyle = COLORS.cream;
+          ctx.font = 'bold 12px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('看广告续命 · WATCH AD TO REVIVE ▶', bx + bw / 2, by + 21);
+          ctx.textAlign = 'left';
+          game._reviveBtnRect = { x: bx, y: by, w: bw, h: bh };
+        } else {
+          game._reviveBtnRect = null;
+        }
         ctx.restore();
+      } else {
+        game._reviveBtnRect = null;
       }
     },
   };
