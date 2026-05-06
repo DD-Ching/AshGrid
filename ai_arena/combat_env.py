@@ -297,12 +297,137 @@ def _map_corridor(world_w, world_h):
     return _scale_walls(base, world_w, world_h)
 
 
+def _map_fortress(world_w, world_h):
+    # Central square + 4 corner crates
+    base = [Wall(500, 500, 200, 200),
+            Wall(480, 480, 60, 60), Wall(660, 480, 60, 60),
+            Wall(480, 660, 60, 60), Wall(660, 660, 60, 60)]
+    return _scale_walls(base, world_w, world_h)
+
+
+def _map_crossfire(world_w, world_h):
+    # 4 perimeter covers — units exposed in the middle
+    base = [Wall(540, 200, 120, 120), Wall(540, 880, 120, 120),
+            Wall(200, 540, 120, 120), Wall(880, 540, 120, 120)]
+    return _scale_walls(base, world_w, world_h)
+
+
+def _map_arena(world_w, world_h):
+    # 8 walls in a circle (alternating building/cover treated identically here)
+    base = []
+    cx, cy, r = 600, 600, 380
+    for i in range(8):
+        a = (i / 8) * math.pi * 2
+        x = cx + math.cos(a) * r - 40
+        y = cy + math.sin(a) * r - 40
+        base.append(Wall(round(x), round(y), 80, 80))
+    return _scale_walls(base, world_w, world_h)
+
+
+def _map_urban(world_w, world_h):
+    # L-shaped buildings + covers (bullet-blocking treatment is uniform here)
+    base = [Wall(200, 200, 240, 70), Wall(200, 200, 70, 240),
+            Wall(760, 200, 240, 70), Wall(930, 200, 70, 240),
+            Wall(200, 930, 70, 70),  Wall(930, 930, 70, 70),
+            Wall(540, 540, 120, 120), Wall(380, 740, 60, 60),
+            Wall(760, 460, 60, 60)]
+    return _scale_walls(base, world_w, world_h)
+
+
+def _map_bunker(world_w, world_h):
+    # Thick central bunker with one entrance per side + 4 outer covers
+    base = [Wall(440, 440, 320, 50), Wall(440, 710, 320, 50),
+            Wall(440, 440, 50, 130), Wall(440, 630, 50, 130),
+            Wall(710, 440, 50, 130), Wall(710, 630, 50, 130),
+            Wall(240, 240, 80, 80), Wall(880, 240, 80, 80),
+            Wall(240, 880, 80, 80), Wall(880, 880, 80, 80)]
+    return _scale_walls(base, world_w, world_h)
+
+
+def _map_fortress2(world_w, world_h):
+    # Dueling forts L+R with center crates
+    base = [Wall(100, 400, 120, 60), Wall(100, 540, 60, 120), Wall(100, 740, 120, 60),
+            Wall(980, 400, 120, 60), Wall(1040, 540, 60, 120), Wall(980, 740, 120, 60),
+            Wall(460, 540, 80, 120), Wall(660, 540, 80, 120)]
+    return _scale_walls(base, world_w, world_h)
+
+
+# ---- Indoor variants — perimeter-walled rooms with internal cover ----
+# These spawn both teams inside the perimeter (handled by _indoor_spawn_for).
+# Internal walls deliberately leave wide gaps so the policy can navigate
+# without a doorway-pathfinder.
+def _map_office(world_w, world_h):
+    # 800×800 perimeter w/ doorways centered on each side; internal cubicle
+    # rows + reception desks. Mirrors index.html office variant exactly.
+    out = []
+    T, D = 30, 200
+    x1, x2, y1, y2 = 200, 1000, 200, 1000
+    cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+    out += [Wall(x1,            y1,        (cx - D/2) - x1, T),
+            Wall(cx + D/2,      y1,        x2 - (cx + D/2), T),
+            Wall(x1,            y2 - T,    (cx - D/2) - x1, T),
+            Wall(cx + D/2,      y2 - T,    x2 - (cx + D/2), T),
+            Wall(x1,            y1,        T,               (cy - D/2) - y1),
+            Wall(x1,            cy + D/2,  T,               y2 - (cy + D/2)),
+            Wall(x2 - T,        y1,        T,               (cy - D/2) - y1),
+            Wall(x2 - T,        cy + D/2,  T,               y2 - (cy + D/2))]
+    out += [Wall(320, 360, 200, 30), Wall(680, 360, 200, 30),
+            Wall(480, 540, 240, 30),
+            Wall(320, 720, 200, 30), Wall(680, 720, 200, 30),
+            Wall(260, 580, 50, 80),  Wall(890, 580, 50, 80)]
+    return _scale_walls(out, world_w, world_h)
+
+
+def _map_parking(world_w, world_h):
+    # 3×3 column grid + parked cars + side covers
+    out = []
+    for r in range(3):
+        for c in range(3):
+            out.append(Wall(380 + c * 220, 380 + r * 220, 50, 50))
+    out += [Wall(380, 280, 110, 50), Wall(720, 280, 110, 50),
+            Wall(380, 870, 110, 50), Wall(720, 870, 110, 50),
+            Wall(250, 540, 60, 120), Wall(890, 540, 60, 120)]
+    return _scale_walls(out, world_w, world_h)
+
+
+def _map_school(world_w, world_h):
+    # 800×800 perimeter w/ doorways + 2 short partial dividers + desk cover
+    out = []
+    T, D = 30, 200
+    x1, x2, y1, y2 = 200, 1000, 200, 1000
+    cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+    out += [Wall(x1,            y1,        (cx - D/2) - x1, T),
+            Wall(cx + D/2,      y1,        x2 - (cx + D/2), T),
+            Wall(x1,            y2 - T,    (cx - D/2) - x1, T),
+            Wall(cx + D/2,      y2 - T,    x2 - (cx + D/2), T),
+            Wall(x1,            y1,        T,               (cy - D/2) - y1),
+            Wall(x1,            cy + D/2,  T,               y2 - (cy + D/2)),
+            Wall(x2 - T,        y1,        T,               (cy - D/2) - y1),
+            Wall(x2 - T,        cy + D/2,  T,               y2 - (cy + D/2))]
+    out += [Wall(480, 280, T, 200), Wall(720, 720, T, 200)]
+    for cxd in (320, 540, 760):
+        out += [Wall(cxd, 380, 60, 40), Wall(cxd, 540, 60, 40), Wall(cxd, 760, 60, 40)]
+    return _scale_walls(out, world_w, world_h)
+
+
+def _map_basement(world_w, world_h):
+    # Tall rectangle + 2 partial dividers + scattered crates
+    out = [Wall(200, 300, 800, 30), Wall(200, 870, 800, 30),
+           Wall(200, 300, 30, 600), Wall(970, 300, 30, 600),
+           Wall(420, 300, 30, 240), Wall(760, 660, 30, 240),
+           Wall(320, 450, 60, 60), Wall(540, 540, 60, 60),
+           Wall(680, 450, 60, 60), Wall(320, 750, 60, 60),
+           Wall(540, 700, 60, 60), Wall(880, 750, 60, 60)]
+    return _scale_walls(out, world_w, world_h)
+
+
 def _map_random(rng_seed, world_w, world_h):
+    # Bumped to match deployment complexity (was 2-6 walls; now 3-10).
     rng = random.Random(rng_seed)
     walls = []
-    for _ in range(rng.randint(2, 6)):
-        w = rng.randint(60, max(80, world_w // 6))
-        h = rng.randint(60, max(80, world_h // 6))
+    for _ in range(rng.randint(3, 10)):
+        w = rng.randint(60, max(80, world_w // 5))
+        h = rng.randint(60, max(80, world_h // 5))
         margin = max(120, world_w // 10)
         x = rng.randint(margin, world_w - margin - w)
         y = rng.randint(margin, world_h - margin - h)
@@ -310,14 +435,39 @@ def _map_random(rng_seed, world_w, world_h):
     return walls
 
 
-FIXED_MAPS = [_map_open, _map_pillars, _map_cross, _map_maze, _map_corridor]
+# Outdoor maps — picked 80% of the time
+FIXED_MAPS = [
+    _map_open, _map_pillars, _map_cross, _map_maze, _map_corridor,
+    _map_fortress, _map_crossfire, _map_arena, _map_urban, _map_bunker, _map_fortress2,
+]
+# Indoor maps — picked 15% of the time (use _indoor_spawn_for to spawn inside)
+INDOOR_MAPS = [_map_office, _map_parking, _map_school, _map_basement]
+# Indoor spawn anchors mirroring the JS-side variant.spawn entries
+INDOOR_SPAWN = {
+    _map_office:   ((280, 600), (920, 600)),
+    _map_parking:  ((200, 600), (1000, 600)),
+    _map_school:   ((280, 600), (920, 600)),
+    _map_basement: ((280, 600), (920, 600)),
+}
 
 
 def pick_map(seed, world_w, world_h):
+    """Return (walls, indoor_spawn_or_None). Indoor maps come with anchor
+    coords (in deploy-scale 1200×1200) for spawning units inside the building."""
     rng = random.Random(seed)
-    if rng.random() < 0.85:
-        return rng.choice(FIXED_MAPS)(world_w, world_h)
-    return _map_random(seed + 7, world_w, world_h)
+    roll = rng.random()
+    if roll < 0.80:
+        fn = rng.choice(FIXED_MAPS)
+        return fn(world_w, world_h), None
+    elif roll < 0.95:
+        fn = rng.choice(INDOOR_MAPS)
+        anchors = INDOOR_SPAWN[fn]
+        sx_ = world_w / DEPLOY_WORLD_W
+        sy_ = world_h / DEPLOY_WORLD_H
+        scaled = ((anchors[0][0] * sx_, anchors[0][1] * sy_),
+                  (anchors[1][0] * sx_, anchors[1][1] * sy_))
+        return fn(world_w, world_h), scaled
+    return _map_random(seed + 7, world_w, world_h), None
 
 
 # ============================================================
@@ -409,33 +559,41 @@ class CombatEnv:
         self.world_h = max(400, int(self.cur.world_h))
         self.match_ticks = int(self.cur.match_ticks)
 
-        self.walls = pick_map(seed, self.world_w, self.world_h)
+        self.walls, indoor_spawn = pick_map(seed, self.world_w, self.world_h)
         self.cover_points = cover_points_for(self.walls)
 
         self.tick = 0
         self.bullets: List[Bullet] = []
 
-        # Spawn placement: blue at left, red at right, separated by spawn_dist
-        spawn_dist = max(120.0, min(self.world_w - 200, self.cur.spawn_dist))
-        cx = self.world_w / 2
         cy = self.world_h / 2
-        blue_x = cx - spawn_dist / 2
-        red_x  = cx + spawn_dist / 2
+        if indoor_spawn is not None:
+            # Indoor map: both teams spawn INSIDE the building near the
+            # variant's anchor. Tighter Y-spread (50u) since rooms are small.
+            (blue_x, blue_y), (red_x, red_y) = indoor_spawn
+            blue_y_fn = lambda i: blue_y + (i - (self.squad_size - 1) / 2) * 50
+            red_y_fn  = lambda i: red_y  + (i - (self.squad_size - 1) / 2) * 50
+        else:
+            spawn_dist = max(120.0, min(self.world_w - 200, self.cur.spawn_dist))
+            cx = self.world_w / 2
+            blue_x = cx - spawn_dist / 2
+            red_x  = cx + spawn_dist / 2
+            blue_y_fn = lambda i: cy + (i - (self.squad_size - 1) / 2) * 80
+            red_y_fn  = blue_y_fn
 
         self.units: List[Unit] = []
         for i in range(self.squad_size):
-            offset_y = (i - (self.squad_size - 1) / 2) * 80
+            by = blue_y_fn(i)
             self.units.append(Unit(
-                x=blue_x, y=cy + offset_y, angle=0.0,
+                x=blue_x, y=by, angle=0.0,
                 hp=PLAYER_HP, team=0,
-                spawn_x=blue_x, spawn_y=cy + offset_y,
+                spawn_x=blue_x, spawn_y=by,
             ))
         for i in range(self.squad_size):
-            offset_y = (i - (self.squad_size - 1) / 2) * 80
+            ry = red_y_fn(i)
             self.units.append(Unit(
-                x=red_x, y=cy + offset_y, angle=math.pi,
+                x=red_x, y=ry, angle=math.pi,
                 hp=PLAYER_HP, team=1,
-                spawn_x=red_x, spawn_y=cy + offset_y,
+                spawn_x=red_x, spawn_y=ry,
             ))
 
         self.team_kills = [0, 0]
