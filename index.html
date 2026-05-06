@@ -9634,6 +9634,14 @@ function togglePause() {
   // Drop any held mouse so we don't keep firing on resume
   if (game._paused) mouse.down = false;
 }
+// Auto-pause when the tab loses focus or becomes hidden — prevents ghost
+// kills while the player tabs to look something up.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && game.state === 'playing' && !game._paused) togglePause();
+});
+window.addEventListener('blur', () => {
+  if (game.state === 'playing' && !game._paused) togglePause();
+});
 function drawPauseOverlay() {
   // Dim backdrop
   ctx.fillStyle = 'rgba(20, 18, 24, 0.78)';
