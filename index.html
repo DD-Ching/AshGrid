@@ -2084,6 +2084,14 @@ window.addEventListener('mousedown', e => {
     e.preventDefault();
     return;
   }
+  // Survival "share run" — visible on the loss card alongside revive
+  if (_hitRect(game._shareRunBtnRect, e.clientX, e.clientY)) {
+    if (mission && typeof mission.getRunSummary === 'function') {
+      shareSurvivalRun(mission.getRunSummary());
+    }
+    e.preventDefault();
+    return;
+  }
   // Build-phase skip-wave button — watch ad to skip the next wave + refill.
   // Checked BEFORE the cover-extend ad so it can sit below it without being
   // shadowed when both rects overlap (they shouldn't, but defensive).
@@ -2223,6 +2231,13 @@ if (touchInput.enabled) {
       // 4b) Survival revive CTA — rewarded-ad on tap
       if (_hitRect(game._reviveBtnRect, t.clientX, t.clientY)) {
         if (mission && typeof mission.tryRevive === 'function') mission.tryRevive();
+        continue;
+      }
+      // 4b2) Survival share-run on tap
+      if (_hitRect(game._shareRunBtnRect, t.clientX, t.clientY)) {
+        if (mission && typeof mission.getRunSummary === 'function') {
+          shareSurvivalRun(mission.getRunSummary());
+        }
         continue;
       }
       // 4c2) Build-phase skip-wave button
@@ -5411,6 +5426,37 @@ function requestRewardedAd(rewardId, cb) {
   setTimeout(() => cb && cb(true, { rewardId, amount: 1 }), 500);
 }
 
+// Share-run helper — called from the survival end card. Builds a one-line
+// brag text + the page URL, then prefers Web Share API (mobile native
+// sheet) and falls back to clipboard. The toast tells the player which
+// path fired so they can paste manually if neither worked.
+function shareSurvivalRun({ wave, kills, style }) {
+  const styleLabel = (DIFF_LABELS && DIFF_LABELS[style]) || style || 'elite';
+  const url = location.href.split('?')[0].split('#')[0];
+  const text = T(
+    `AshGrid · 撑过 ${wave} 波 · 击杀 ${kills} · 风格 ${styleLabel}`,
+    `AshGrid · Wave ${wave} · ${kills} kills · ${styleLabel}`
+  );
+  const shareData = { title: 'AshGrid · Tactical Sim', text, url };
+  if (navigator.share) {
+    navigator.share(shareData).then(
+      () => showSwapToast(T('已分享 ✓', 'Shared ✓')),
+      () => {/* user cancelled — silent */}
+    );
+    return;
+  }
+  // Fallback: clipboard copy
+  const blurb = `${text}\n${url}`;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(blurb).then(
+      () => showSwapToast(T('已复制 · 贴到 X / Discord', 'Copied · paste to X / Discord')),
+      () => showSwapToast(T('复制失败,长按文字手动复制', 'Copy failed, long-press to copy manually'))
+    );
+  } else {
+    showSwapToast(T('请手动复制:', 'Copy manually:') + ' ' + blurb);
+  }
+}
+
 // Cloud leaderboard upload — currently a no-op. Real impl pushes to Firestore.
 function uploadSurvivalRun(run) {
   // STUB. Real impl:
@@ -5734,6 +5780,12 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
         && game._buildPhase && game._buildPhase.active;
     },
 
+    // Snapshot the current run for the share button. Wave clamped to the
+    // last cleared wave (matches what we record to localStorage).
+    getRunSummary() {
+      return { wave: Math.max(0, wave - 0), kills, style: _lobby.difficulty };
+    },
+
     renderHUD() {
       const best = getSurvivalScores()[0];
       const bestStr = best ? `· ${T('最佳', 'BEST')} W${best.wave}/K${best.kills}` : '';
@@ -5762,7 +5814,8 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
       if (endStage === 'loss') {
         const scores = getSurvivalScores().slice(0, 5);
         const showRevive = !reviveUsed;
-        const cw = 320, rowH = 22, ch = 60 + scores.length * rowH + (showRevive ? 44 : 0);
+        // Card height now also reserves room for the share button (always visible)
+        const cw = 320, rowH = 22, ch = 60 + scores.length * rowH + (showRevive ? 44 : 0) + 36;
         const cx = W() / 2, cy = H() / 2;
         const x = cx - cw / 2, y = cy - ch / 2;
         ctx.save();
@@ -5809,9 +5862,26 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
         } else {
           game._reviveBtnRect = null;
         }
+        // Share Run button — always visible at the very bottom of the card.
+        // Click → navigator.share() (mobile), or copy-to-clipboard fallback.
+        // Drives organic discovery: each share names the wave, kills, and a
+        // back-link to the page so friends can try to beat it.
+        {
+          const shareBy = y + ch - 32, shareBh = 24;
+          const sbX = x + 16, sbW = cw - 32;
+          ctx.fillStyle = COLORS.black;
+          ctx.fillRect(sbX, shareBy, sbW, shareBh);
+          ctx.fillStyle = COLORS.cream;
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(T('分享战绩 · SHARE RUN', 'SHARE RUN ▶'), sbX + sbW / 2, shareBy + 16);
+          ctx.textAlign = 'left';
+          game._shareRunBtnRect = { x: sbX, y: shareBy, w: sbW, h: shareBh };
+        }
         ctx.restore();
       } else {
         game._reviveBtnRect = null;
+        game._shareRunBtnRect = null;
       }
     },
   };
