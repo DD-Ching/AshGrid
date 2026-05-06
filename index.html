@@ -1147,9 +1147,17 @@ const STRUCTURE_DEFS = {
     healCd: 60, healR: 200, healAmt: 4,
     label: () => T('医疗站', 'MED'),
   },
+  // Drone bay: every spawnCd, launches a mini autonomous FPV drone that
+  // homes on the nearest enemy + detonates on contact. Drones live in
+  // game._autoDrones, ticked + rendered separately.
+  dronebay: {
+    cost: 200, hp: 80, size: 38, blocks: false, blocksLOS: false,
+    spawnCd: 360, droneHp: 30, droneSpeed: 5, droneDmg: 40, droneBlastR: 60,
+    label: () => T('蜂群', 'DRONES'),
+  },
 };
 const STRUCTURE_ORDER = ['wall', 'turret', 'generator', 'camera', 'bot', 'terminal',
-                         'mine', 'tripmine', 'sensor', 'smoke', 'tesla', 'emp', 'medstation'];
+                         'mine', 'tripmine', 'sensor', 'smoke', 'tesla', 'emp', 'medstation', 'dronebay'];
 
 function getStructureCost(kind) { return STRUCTURE_DEFS[kind]?.cost || 0; }
 function canAffordStructure(kind) { return (game._energy || 0) >= getStructureCost(kind); }
@@ -1297,6 +1305,28 @@ function updateStructures() {
         s.emitCd = def.emitCd;
       }
     }
+    // Drone bay: spawns a homing mini-FPV every spawnCd. The drone lives
+    // in game._autoDrones until it hits an enemy or its life runs out.
+    if (s.kind === 'dronebay') {
+      if (s.spawnCd === undefined) s.spawnCd = 60;
+      if (s.spawnCd > 0) s.spawnCd--;
+      if (s.spawnCd <= 0) {
+        const target = enemies.find(e => e.alive);
+        if (target) {
+          game._autoDrones = game._autoDrones || [];
+          game._autoDrones.push({
+            x: s.x, y: s.y, vx: 0, vy: 0,
+            hp: def.droneHp, speed: def.droneSpeed,
+            dmg: def.droneDmg, blastR: def.droneBlastR,
+            life: 360, target,
+          });
+          s.spawnCd = def.spawnCd;
+          playSfx('reload', { vol: 0.4, src: { x: s.x, y: s.y } });
+        } else {
+          s.spawnCd = 30;
+        }
+      }
+    }
     // EMP pylon: periodic stun pulse. Marks every enemy in pulseR with
     // _stunUntil so the NN dispatcher skips them. Visual: spawn an
     // expanding ring entry in game._empPulses; render fades it out.
@@ -1407,6 +1437,49 @@ function updateStructures() {
     for (let i = game._empPulses.length - 1; i >= 0; i--) {
       game._empPulses[i].life--;
       if (game._empPulses[i].life <= 0) game._empPulses.splice(i, 1);
+    }
+  }
+  // Tick auto drones (drone bay): home on target + detonate on contact
+  if (game._autoDrones) {
+    for (let i = game._autoDrones.length - 1; i >= 0; i--) {
+      const d = game._autoDrones[i];
+      d.life--;
+      // Re-target if current is dead
+      if (!d.target || !d.target.alive) {
+        d.target = enemies.find(e => e.alive);
+      }
+      if (d.target) {
+        const dx = d.target.x - d.x, dy = d.target.y - d.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 24) {
+          // Detonate: AOE damage
+          createExplosion(d.x, d.y, 'small');
+          playSfx('death', { vol: 0.4, src: { x: d.x, y: d.y } });
+          for (const e of enemies) {
+            if (!e.alive) continue;
+            const ed = Math.hypot(e.x - d.x, e.y - d.y);
+            if (ed < d.blastR) {
+              const dmg = Math.round(d.dmg * (1 - ed / d.blastR));
+              e.hp -= dmg;
+              if (e.hp <= 0 && e.alive) {
+                e.alive = false; game.score += 100; game.killCount++;
+                createExplosion(e.x, e.y, 'small');
+              }
+            }
+          }
+          game._autoDrones.splice(i, 1);
+          continue;
+        }
+        // Home — soft steering toward target
+        const ux = dx / (dist || 1), uy = dy / (dist || 1);
+        d.vx = d.vx * 0.85 + ux * d.speed * 0.4;
+        d.vy = d.vy * 0.85 + uy * d.speed * 0.4;
+        d.x += d.vx; d.y += d.vy;
+      } else {
+        // No target — fly forward then expire
+        d.x += d.vx; d.y += d.vy;
+      }
+      if (d.life <= 0 || d.hp <= 0) game._autoDrones.splice(i, 1);
     }
   }
   // Tick footprints
@@ -9500,6 +9573,7 @@ function render() {
   renderSmokeClouds();
   renderTeslaBolts();
   renderEMPPulses();
+  renderAutoDrones();
   renderAirstrikes();
   // Build-mode placement preview — only while in placing mode (not while
   // the radial picker is on top of the world).
@@ -9757,6 +9831,42 @@ function renderStructures() {
       ctx.fillStyle = s.hp / s.maxHp > 0.4 ? '#3FE63F' : COLORS.red;
       ctx.fillRect(bx, by, bw * s.hp / s.maxHp, bh);
     }
+  }
+  ctx.restore();
+}
+
+// Render auto-drones — small black diamonds with a red eye + motion trail.
+function renderAutoDrones() {
+  if (!game._autoDrones || !game._autoDrones.length) return;
+  ctx.save();
+  for (const d of game._autoDrones) {
+    const a = Math.atan2(d.vy, d.vx) || 0;
+    // Trail (3 fading dots behind)
+    for (let k = 1; k <= 3; k++) {
+      const tx = d.x - Math.cos(a) * (k * 5);
+      const ty = d.y - Math.sin(a) * (k * 5);
+      ctx.fillStyle = `rgba(200, 38, 28, ${0.5 - k * 0.13})`;
+      ctx.beginPath();
+      ctx.arc(tx, ty, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Body — diamond
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    ctx.rotate(a);
+    ctx.fillStyle = COLORS.black;
+    ctx.beginPath();
+    ctx.moveTo(8, 0);
+    ctx.lineTo(0, -4);
+    ctx.lineTo(-6, 0);
+    ctx.lineTo(0, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = COLORS.red;
+    ctx.beginPath();
+    ctx.arc(2, 0, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
   ctx.restore();
 }
