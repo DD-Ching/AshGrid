@@ -576,6 +576,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
       <div class="diff-pick-inner">
         <button data-mode="dm"       class="mode-btn diff-btn active">对抗<span>DEATHMATCH</span></button>
         <button data-mode="survival" class="mode-btn diff-btn">生存<span>SURVIVAL</span></button>
+        <button data-mode="helo"     class="mode-btn diff-btn">撤离<span>HELO EXTRACT</span></button>
         <button data-mode="duel"     class="mode-btn diff-btn">单挑<span>DUEL 1v1</span></button>
         <button data-mode="sniper"   class="mode-btn diff-btn">狙击<span>SNIPER ONLY</span></button>
       </div>
@@ -1799,9 +1800,10 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
 
   // Mode-specific overrides
   if (gameMode === 'duel') { blueSize = 1; redSize = 1; }
-  // SURVIVAL spawns enemies per-wave; the initial redSize gets overridden
-  // by the first wave's spawn anyway. Treat it as 0-now-but-waves-will-fill.
-  if (gameMode === 'survival') { redSize = 3; }   // first wave size
+  // SURVIVAL + HELO spawn enemies per-wave; initial redSize is overridden
+  // by the mission factory anyway. Just set a sane initial squad size.
+  if (gameMode === 'survival') { redSize = 3; }
+  if (gameMode === 'helo')     { redSize = 0; blueSize = Math.max(blueSize, 3); }
   if (gameMode === 'sniper')   { weaponId = 'SNIPER'; }
   game._nnGameMode = gameMode;
 
@@ -1944,14 +1946,15 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   for (const a of allies) { a.x = clampX(a.x); a.y = clampY(a.y); }
   for (const e of enemies) { e.x = clampX(e.x); e.y = clampY(e.y); }
 
-  // Pick mission type by gameMode. Duel + Sniper run over the standard
-  // deathmatch rules with their own spawn/weapon overrides. Survival uses
-  // a dedicated factory with wave logic + no auto-respawn for blue allies.
-  const missionType = gameMode === 'survival' ? 'nnSurvival' : 'nnDeathmatch';
+  // Pick mission type by gameMode.
+  const missionType = gameMode === 'survival' ? 'nnSurvival'
+                    : gameMode === 'helo'     ? 'nnHelo'
+                    : 'nnDeathmatch';
   initMission({ type: missionType, id: 'nn-' + gameMode }, currentMap);
   const modeLabel = ({
     dm:       `对抗 · 蓝 ${blueSize} vs 红 ${redSize}`,
     survival: `生存模式 · 撑过每一波`,
+    helo:     `直升机撤离 · 守 LZ 60s`,
     duel:     `单挑 1v1`,
     sniper:   `狙击巷战 · 一枪致命`,
   })[gameMode] || gameMode;
@@ -2684,7 +2687,7 @@ const NN_MAP_VARIANTS = [
       { x: 480, y: 660, w: 60,  h: 60,  kind: 'cover' },
       { x: 660, y: 660, w: 60,  h: 60,  kind: 'cover' },
     ],
-    modes: ['dm', 'survival'],
+    modes: ['dm', 'survival', 'helo'],
   },
   { id: 'crossfire', name: '交叉火力 CROSSFIRE',
     walls: () => [
@@ -2723,7 +2726,7 @@ const NN_MAP_VARIANTS = [
       { x: 380, y: 740, w: 60, h: 60, kind: 'cover' },
       { x: 760, y: 460, w: 60, h: 60, kind: 'cover' },
     ],
-    modes: ['dm', 'survival', 'sniper'],
+    modes: ['dm', 'survival', 'sniper', 'helo'],
   },
   { id: 'bunker', name: '碉堡 BUNKER',
     walls: () => [
@@ -2740,7 +2743,7 @@ const NN_MAP_VARIANTS = [
       { x: 240, y: 880, w: 80, h: 80, kind: 'cover' },
       { x: 880, y: 880, w: 80, h: 80, kind: 'cover' },
     ],
-    modes: ['dm', 'survival'],
+    modes: ['dm', 'survival', 'helo'],
   },
   { id: 'fortress2', name: '阵地战 SIEGE',
     walls: () => [
@@ -2755,7 +2758,7 @@ const NN_MAP_VARIANTS = [
       { x: 460, y: 540, w: 80, h: 120, kind: 'cover' },
       { x: 660, y: 540, w: 80, h: 120, kind: 'cover' },
     ],
-    modes: ['dm', 'sniper', 'survival'],
+    modes: ['dm', 'sniper', 'survival', 'helo'],
   },
   // ========= Indoor variants — single-room interiors with cover =========
   // Spawn anchors are placed INSIDE the perimeter so the whole match plays
@@ -2791,7 +2794,7 @@ const NN_MAP_VARIANTS = [
       return out;
     },
     spawn: { blue: { x: 280, y: 600 }, red: { x: 920, y: 600 } },
-    modes: ['dm', 'survival'],
+    modes: ['dm', 'survival', 'helo'],
   },
   { id: 'parking', name: '停车场 PARKING',
     walls: () => {
@@ -2904,7 +2907,7 @@ const NN_MAP_VARIANTS = [
       return out;
     },
     spawn: { blue: { x: 400, y: 600 }, red: { x: 1100, y: 600 } },
-    modes: ['survival', 'dm'],
+    modes: ['survival', 'dm', 'helo'],
   },
 
   // Duel 决斗场: small symmetric arena with center pillar + 8 cover blocks.
@@ -2980,7 +2983,7 @@ const NN_MAP_VARIANTS = [
       return out;
     },
     spawn: { blue: { x: 200, y: 600 }, red: { x: 1000, y: 600 } },
-    modes: ['dm', 'survival'],
+    modes: ['dm', 'survival', 'helo'],
     forest: true,    // marker for UAV-disable + minimap green tint
   },
 ];
@@ -4765,6 +4768,224 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
         }
         ctx.restore();
       }
+    },
+  };
+};
+
+// ============ NN HELO EXTRACT ============
+// Hold the LZ for 60s while reds attack from rotating edges, then survive
+// 6s while the helo descends + 3s while it lifts off. Win = at least one
+// blue alive on the LZ when helo lifts off. Loss = all blue dead at any
+// point. Allies don't respawn (each death is permanent for the round).
+MISSION_FACTORIES.nnHelo = function(mapDef) {
+  const HOLD_TICKS    = 60 * 60;     // 60s defend timer
+  const DESCEND_TICKS = 6 * 60;      // 6s helo coming down
+  const LIFTOFF_TICKS = 3 * 60;      // 3s rising
+  const WAVE_INTERVAL = 8 * 60;      // every 8s a fresh wave
+  const lzCx = NN_ARENA.x0 + NN_ARENA.w / 2;
+  const lzCy = NN_ARENA.y0 + NN_ARENA.h / 2;
+  const lzR  = 130;
+  const startTick = game.time;
+  let phase = 'hold';                // 'hold' | 'descend' | 'liftoff' | 'done'
+  let phaseTick = 0;
+  let nextWaveAt = game.time + 90;
+  let waveNum = 0;
+  let kills = 0;
+  let endStage = null;               // null | 'win' | 'loss'
+  let helo = { alt: 1.0, hp: 100 };  // alt 1=high, 0=on LZ
+
+  const STYLE_TIERS = ['defensive', 'elite', 'warrior', 'sharpshooter'];
+  const SIDES = ['E', 'N', 'W', 'S'];
+  function spawnHeloWave(n) {
+    const tiers = [STYLE_TIERS[Math.min(Math.floor(n/2), STYLE_TIERS.length-1)]];
+    const size = Math.min(4, 2 + Math.floor(n/3));
+    const edge = SIDES[(n - 1) % SIDES.length];
+    const ax = NN_ARENA.x0, ay = NN_ARENA.y0;
+    const aw = NN_ARENA.w,  ah = NN_ARENA.h;
+    const m = 100;
+    const place = (i) => {
+      const t = (i + 1) / (size + 1);
+      if (edge === 'E') return { x: ax + aw - m, y: ay + t * ah };
+      if (edge === 'W') return { x: ax + m,       y: ay + t * ah };
+      if (edge === 'N') return { x: ax + t * aw, y: ay + m };
+                          return { x: ax + t * aw, y: ay + ah - m };
+    };
+    for (let i = 0; i < size; i++) {
+      const p = place(i);
+      enemies.push({
+        x: p.x, y: p.y,
+        hp: 50, maxHp: 50,
+        angle: Math.atan2(lzCy - p.y, lzCx - p.x),
+        fireCd: 0, fireRate: 50, radius: 13, alive: true,
+        walkPhase: Math.random() * Math.PI * 2,
+        speed: 1.0, team: 1,
+        _weapon: WEAPONS[pickRandomNNWeaponId()],
+        _nnDifficulty: tiers[0],
+        _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+        _respawnAt: null, _invulnUntil: game.time + 90,
+      });
+    }
+  }
+
+  return {
+    title: 'NN 撤离',
+    titleEn: 'HELO EXTRACT',
+    objective: '守住 LZ · 直升机降落 · 全员撤离',
+    _endAt: null,
+
+    update() {
+      // Auto-jump on player death (no respawn — same as survival)
+      if (!player.alive && player._respawnAt == null) {
+        let bestIdx = -1, bestD = Infinity;
+        for (let i = 0; i < allies.length; i++) {
+          const ax = allies[i];
+          if (!ax || !ax.alive) continue;
+          const d = Math.hypot(ax.x - player.x, ax.y - player.y);
+          if (d < bestD) { bestD = d; bestIdx = i; }
+        }
+        if (bestIdx >= 0) {
+          const a = allies[bestIdx];
+          player.alive = true;
+          player.x = a.x; player.y = a.y;
+          player.angle = a.angle; player.gunAngle = a.gunAngle || a.angle;
+          player.gunRecoil = (a.gunRecoil || 0) * 0.4;
+          player.hp = a.hp; player.maxHp = a.maxHp;
+          player._invulnUntil = game.time + 60;
+          player._lastX = a.x; player._lastY = a.y;
+          player._velX = 0; player._velY = 0;
+          mouse.down = false;
+          applyWeaponToPlayer(a._weapon || WEAPONS.RIFLE);
+          a.alive = false; a._respawnAt = null; a.callsign = '前操作员';
+          showSwapToast('紧急接管');
+          playSfx('countdown', { freq: 1320, vol: 0.45 });
+        } else if (endStage !== 'loss' && endStage !== 'win') {
+          endStage = 'loss';
+          if (this._endAt == null) this._endAt = game.time + 240;
+        }
+      }
+      for (const a of allies) { if (!a.alive) a._respawnAt = null; }
+
+      // Wave spawning during hold + descend
+      if ((phase === 'hold' || phase === 'descend') && game.time >= nextWaveAt) {
+        waveNum++;
+        spawnHeloWave(waveNum);
+        nextWaveAt = game.time + WAVE_INTERVAL;
+      }
+      // Track kills (deaths since last tick)
+      // Simpler: count "newly dead" reds via _wasAlive
+      for (const e of enemies) {
+        if (e._wasAlive && !e.alive) kills++;
+        e._wasAlive = e.alive;
+      }
+
+      // Phase progression
+      if (endStage == null) {
+        phaseTick++;
+        if (phase === 'hold' && phaseTick >= HOLD_TICKS) {
+          phase = 'descend'; phaseTick = 0;
+          showMessage('直升機進場 / HELO INBOUND', 180);
+          playSfx('match_start', { vol: 0.6 });
+        } else if (phase === 'descend') {
+          helo.alt = 1.0 - (phaseTick / DESCEND_TICKS);
+          if (phaseTick >= DESCEND_TICKS) {
+            helo.alt = 0;
+            phase = 'liftoff'; phaseTick = 0;
+            showMessage('登機 / BOARD NOW', 180);
+          }
+        } else if (phase === 'liftoff') {
+          helo.alt = (phaseTick / LIFTOFF_TICKS);
+          if (phaseTick >= LIFTOFF_TICKS) {
+            // Win check: at least one blue alive within LZ radius
+            const blueAt = (u) => u && u.alive && Math.hypot(u.x - lzCx, u.y - lzCy) < lzR;
+            const anyOnLz = blueAt(player) || allies.some(blueAt);
+            endStage = anyOnLz ? 'win' : 'loss';
+            phase = 'done';
+            if (this._endAt == null) this._endAt = game.time + 300;
+          }
+        }
+      }
+    },
+
+    isComplete() {
+      if (endStage === 'win') {
+        if (this._endAt == null) this._endAt = game.time + 240;
+        return game.time >= this._endAt;
+      }
+      return false;
+    },
+    isFailed() {
+      if (endStage === 'loss') {
+        if (this._endAt == null) this._endAt = game.time + 240;
+        return game.time >= this._endAt;
+      }
+      return false;
+    },
+
+    renderWorld() {
+      // LZ ring on the ground — pulses red when helo is descending.
+      ctx.save();
+      const pulse = phase === 'descend' ? (0.5 + 0.5 * Math.sin(game.time * 0.18)) : 1;
+      ctx.globalAlpha = phase === 'hold' ? 0.6 : 0.85 * pulse;
+      ctx.strokeStyle = COLORS.red;
+      ctx.lineWidth = 4;
+      ctx.setLineDash([12, 8]);
+      ctx.beginPath();
+      ctx.arc(lzCx, lzCy, lzR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // LZ "H" mark
+      ctx.fillStyle = COLORS.red;
+      ctx.font = 'bold 48px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('H', lzCx, lzCy + 16);
+      ctx.textAlign = 'left';
+      // Helo (when descending or on LZ or lifting off)
+      if (phase === 'descend' || phase === 'liftoff') {
+        const heloY = lzCy - helo.alt * 200;     // floats up to 200u during alt=1
+        ctx.save();
+        ctx.translate(lzCx, heloY);
+        // Drop shadow scales with altitude
+        ctx.fillStyle = `rgba(0,0,0,${0.3 * (1 - helo.alt)})`;
+        ctx.fillRect(-30, helo.alt * 200 - 6, 60, 12);
+        // Helo body (top-down)
+        ctx.fillStyle = COLORS.black;
+        ctx.fillRect(-22, -10, 44, 20);
+        // Tail
+        ctx.fillRect(-6, 10, 12, 30);
+        ctx.fillRect(-3, 38, 6, 16);
+        // Rotor (spin angle)
+        const rotAng = game.time * 0.6;
+        ctx.strokeStyle = COLORS.gray;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(rotAng) * 36, Math.sin(rotAng) * 36);
+        ctx.lineTo(-Math.cos(rotAng) * 36, -Math.sin(rotAng) * 36);
+        ctx.moveTo(Math.cos(rotAng + Math.PI/2) * 36, Math.sin(rotAng + Math.PI/2) * 36);
+        ctx.lineTo(-Math.cos(rotAng + Math.PI/2) * 36, -Math.sin(rotAng + Math.PI/2) * 36);
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+    },
+
+    renderHUD() {
+      let line2;
+      if (phase === 'hold') {
+        const tLeft = Math.ceil((HOLD_TICKS - phaseTick) / 60);
+        line2 = `守住 LZ · ${tLeft}s 直升机进场`;
+      } else if (phase === 'descend') {
+        const tLeft = Math.ceil((DESCEND_TICKS - phaseTick) / 60);
+        line2 = `直升机进场 · ${tLeft}s`;
+      } else if (phase === 'liftoff') {
+        const tLeft = Math.ceil((LIFTOFF_TICKS - phaseTick) / 60);
+        line2 = `撤离中 · 留在 LZ 内 · ${tLeft}s`;
+      } else {
+        line2 = endStage === 'win' ? '撤离成功 / EXTRACTED' : '任务失败 / FAILED';
+      }
+      drawObjectivePanel([
+        `波 ${waveNum} · 击杀 ${kills}`,
+        line2,
+      ]);
     },
   };
 };
