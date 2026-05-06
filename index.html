@@ -1817,8 +1817,34 @@ function setUnlockedSlotCount(n) {
   try { localStorage.setItem('ag.editorSlots', String(clamped)); } catch (e) {}
   return clamped;
 }
-const editor = { tool: 'cover', spawn: { blue: null, red: null }, slot: 0 };
+const editor = { tool: 'cover', spawn: { blue: null, red: null }, slot: 0,
+  // Drag-to-line state. _dragStart is set on mousedown over wall/cover/tree/
+  // erase; _dragEnd updates on mousemove. mouseup walks Bresenham from start
+  // to end and places at every cell. A single click (start === end) places
+  // a single cell — so legacy click-tap still works.
+  _dragStart: null, _dragEnd: null };
 const EDITOR_BLOCK = 60;     // all placements snap to 60u grid
+
+// Returns [{cx, cy}] cell coords (multiples of EDITOR_BLOCK) along the
+// Bresenham line from cell A to cell B. Used by drag-to-line wall drawing.
+function _editorLineCells(ax, ay, bx, by) {
+  const cells = [];
+  // Convert to cell indexes for integer-only Bresenham
+  let x0 = Math.round(ax / EDITOR_BLOCK), y0 = Math.round(ay / EDITOR_BLOCK);
+  const x1 = Math.round(bx / EDITOR_BLOCK), y1 = Math.round(by / EDITOR_BLOCK);
+  const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+  let safety = 4096;
+  while (safety-- > 0) {
+    cells.push({ cx: x0 * EDITOR_BLOCK, cy: y0 * EDITOR_BLOCK });
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = err * 2;
+    if (e2 > -dy) { err -= dy; x0 += sx; }
+    if (e2 <  dx) { err += dx; y0 += sy; }
+  }
+  return cells;
+}
 
 function loadCustomMaps() {
   const slotCount = getUnlockedSlotCount();
@@ -1929,18 +1955,30 @@ function rebuildEditorSlotUI() {
 }
 function closeEditor() {
   game.state = 'menu';
+  // Drop any in-flight drag so a stale preview doesn't bleed into a fresh
+  // editor session if the user re-opens it.
+  editor._dragStart = null;
+  editor._dragEnd   = null;
   document.getElementById('editor').classList.add('hidden');
   document.getElementById('start').classList.remove('hidden');
 }
-function editorPlaceAt(screenX, screenY) {
+// Maps a screen-space click to its snapped local cell (gx/gy in arena-local
+// coords, multiples of EDITOR_BLOCK), or null if the click lands outside the
+// arena. Returned record is reused by single-place + line-place paths.
+function _editorCellAtScreen(screenX, screenY) {
   const wp = screenToWorld(screenX, screenY);
   const localX = wp.x - NN_ARENA.x0, localY = wp.y - NN_ARENA.y0;
   const gx = Math.floor(localX / EDITOR_BLOCK) * EDITOR_BLOCK;
   const gy = Math.floor(localY / EDITOR_BLOCK) * EDITOR_BLOCK;
-  if (gx < 0 || gy < 0 || gx + EDITOR_BLOCK > NN_ARENA.w || gy + EDITOR_BLOCK > NN_ARENA.h) return;
+  if (gx < 0 || gy < 0 || gx + EDITOR_BLOCK > NN_ARENA.w || gy + EDITOR_BLOCK > NN_ARENA.h) return null;
+  return { gx, gy, wx: NN_ARENA.x0 + gx, wy: NN_ARENA.y0 + gy };
+}
+
+// Places (or erases) at a single cell. Spawn tools always go through here —
+// drag has no meaning for them. Wall/cover/tree/erase use this for both the
+// single-click case and as the inner step of the line-fill loop.
+function _editorPlaceCell(gx, gy) {
   const wx = NN_ARENA.x0 + gx, wy = NN_ARENA.y0 + gy;
-  // Spawn anchors store the cell CENTER, in arena-local coords (matching the
-  // shape used by built-in indoor variants' `spawn` field).
   if (editor.tool === 'blueSpawn') {
     editor.spawn.blue = { x: gx + EDITOR_BLOCK / 2, y: gy + EDITOR_BLOCK / 2 };
     return;
@@ -1950,7 +1988,6 @@ function editorPlaceAt(screenX, screenY) {
     return;
   }
   if (editor.tool === 'erase') {
-    // Erase blocks first; if the click is on an existing spawn cell, clear it
     let i = lowCovers.findIndex(lc => lc.x === wx && lc.y === wy);
     if (i >= 0) { lowCovers.splice(i, 1); return; }
     i = buildings.findIndex(b => b.x === wx && b.y === wy);
@@ -1972,6 +2009,27 @@ function editorPlaceAt(screenX, screenY) {
   } else if (editor.tool === 'tree') {
     addLowCover(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, '#3F4A3A', { kind: 'tree', canopy: true });
   }
+}
+
+// Public API kept stable for the legacy mousedown click path. With drag-to-
+// line wired up, this runs only on plain taps that never moved between
+// down + up — _editorPlaceLine handles the dragged case at mouseup.
+function editorPlaceAt(screenX, screenY) {
+  const c = _editorCellAtScreen(screenX, screenY);
+  if (!c) return;
+  _editorPlaceCell(c.gx, c.gy);
+}
+
+// Drag-to-line: walks Bresenham from start cell to end cell and places at
+// each step. Spawn tools fall back to a single placement at the end cell —
+// you only get one of each spawn anyway, so a line of them makes no sense.
+function _editorPlaceLine(startGX, startGY, endGX, endGY) {
+  if (editor.tool === 'blueSpawn' || editor.tool === 'redSpawn') {
+    _editorPlaceCell(endGX, endGY);
+    return;
+  }
+  const cells = _editorLineCells(startGX, startGY, endGX, endGY);
+  for (const c of cells) _editorPlaceCell(c.cx, c.cy);
 }
 function editorSerialize() {
   const walls = [];
@@ -2081,6 +2139,9 @@ function editorTest() {
 document.querySelectorAll('#editor .ed-tool').forEach(btn => {
   btn.onclick = () => {
     editor.tool = btn.dataset.tool;
+    // Clear any in-flight drag preview when the user picks a new tool
+    editor._dragStart = null;
+    editor._dragEnd   = null;
     document.querySelectorAll('#editor .ed-tool').forEach(b => b.classList.toggle('active', b === btn));
   };
 });
@@ -2115,7 +2176,14 @@ if (_edSlotSel) _edSlotSel.onchange = () => {
 const _editorBtn = document.getElementById('editorBtn');
 if (_editorBtn) _editorBtn.onclick = openEditor;
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
-window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  // Map editor drag preview — track the current cell while the button is held
+  if (game.state === 'editor' && editor._dragStart) {
+    const c = _editorCellAtScreen(e.clientX, e.clientY);
+    if (c) editor._dragEnd = { gx: c.gx, gy: c.gy };
+  }
+});
 function _hitRect(r, x, y) {
   return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
@@ -2202,9 +2270,18 @@ window.addEventListener('mousedown', e => {
     e.preventDefault();
     return;
   }
-  // Map editor click — only registers when state is 'editor'.
+  // Map editor click — only registers when state is 'editor'. mousedown
+  // starts a drag (so dragging draws a line of cells); a stationary click
+  // still places one cell because mouseup walks the same start..end pair.
   if (game.state === 'editor') {
-    editorPlaceAt(e.clientX, e.clientY);
+    const c = _editorCellAtScreen(e.clientX, e.clientY);
+    if (c) {
+      editor._dragStart = { gx: c.gx, gy: c.gy };
+      editor._dragEnd   = { gx: c.gx, gy: c.gy };
+      // Place the starting cell immediately — gives instant feedback even
+      // if the user releases without ever moving.
+      _editorPlaceCell(c.gx, c.gy);
+    }
     e.preventDefault();
     return;
   }
@@ -2386,7 +2463,22 @@ if (touchInput.enabled) {
   window.addEventListener('touchend',    onEnd,   { passive: false });
   window.addEventListener('touchcancel', onEnd,   { passive: false });
 }
-window.addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; });
+window.addEventListener('mouseup', e => {
+  if (e.button !== 0) return;
+  mouse.down = false;
+  // Map editor drag-release: walk start → end as a Bresenham line of cells.
+  // Single-click case (start === end) is a no-op here because mousedown
+  // already placed the start cell. So this runs ONLY for actual drags,
+  // which lays down everything between the anchor and where you let go.
+  if (game.state === 'editor' && editor._dragStart && editor._dragEnd) {
+    const a = editor._dragStart, b = editor._dragEnd;
+    if (a.gx !== b.gx || a.gy !== b.gy) {
+      _editorPlaceLine(a.gx, a.gy, b.gx, b.gy);
+    }
+    editor._dragStart = null;
+    editor._dragEnd   = null;
+  }
+});
 window.addEventListener('contextmenu', e => e.preventDefault());
 
 // ============ GAME LIFECYCLE ============
@@ -8153,6 +8245,42 @@ function renderEditorOverlay() {
   };
   drawSpawnMarker(editor.spawn.blue, '#1A1A1A', T('蓝', 'B'));
   drawSpawnMarker(editor.spawn.red,  COLORS.red, T('红', 'R'));
+
+  // Drag-line preview — when the user is mid-drag, ghost out every cell that
+  // mouseup would commit. Lets them aim a wall before letting go.
+  if (editor._dragStart && editor._dragEnd
+      && editor.tool !== 'blueSpawn' && editor.tool !== 'redSpawn'
+      && (editor._dragStart.gx !== editor._dragEnd.gx
+          || editor._dragStart.gy !== editor._dragEnd.gy)) {
+    const cells = _editorLineCells(
+      editor._dragStart.gx, editor._dragStart.gy,
+      editor._dragEnd.gx,   editor._dragEnd.gy
+    );
+    const ghostFill = editor.tool === 'wall'  ? COLORS.gray
+                    : editor.tool === 'tree'  ? '#3F4A3A'
+                    : editor.tool === 'erase' ? COLORS.red
+                                              : COLORS.creamDark;
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = ghostFill;
+    for (const c of cells) {
+      const wx = NN_ARENA.x0 + c.cx, wy = NN_ARENA.y0 + c.cy;
+      if (wx < NN_ARENA.x0 || wy < NN_ARENA.y0) continue;
+      if (wx + EDITOR_BLOCK > NN_ARENA.x0 + NN_ARENA.w) continue;
+      if (wy + EDITOR_BLOCK > NN_ARENA.y0 + NN_ARENA.h) continue;
+      ctx.fillRect(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK);
+    }
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = COLORS.red;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(NN_ARENA.x0 + editor._dragStart.gx + EDITOR_BLOCK / 2,
+               NN_ARENA.y0 + editor._dragStart.gy + EDITOR_BLOCK / 2);
+    ctx.lineTo(NN_ARENA.x0 + editor._dragEnd.gx   + EDITOR_BLOCK / 2,
+               NN_ARENA.y0 + editor._dragEnd.gy   + EDITOR_BLOCK / 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // Cursor preview block at the snapped grid cell under the mouse
   const wp = screenToWorld(mouse.x, mouse.y);
