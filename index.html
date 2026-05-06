@@ -1923,6 +1923,25 @@ window.addEventListener('mousedown', e => {
     e.preventDefault();
     return;
   }
+  // Build-phase ad-extend button — click to watch ad for +2 placements + 5s
+  if (_hitRect(game._buildPhaseAdRect, e.clientX, e.clientY)) {
+    if (game._buildPhase && !game._buildPhase._adExtended) {
+      game._buildPhase._adExtended = true;
+      requestRewardedAd('build_phase_extend', (ok) => {
+        if (!ok) { game._buildPhase._adExtended = false; return; }
+        if (game._buildPhase) {
+          game._buildPhase.left += 2;
+          showSwapToast(`+2 掩体 · 时间延长 5s`);
+        }
+        // Extend breather timer too (search the active mission)
+        if (mission && typeof mission._extendBreather === 'function') {
+          mission._extendBreather(300);
+        }
+      });
+    }
+    e.preventDefault();
+    return;
+  }
   // BUILD PHASE: between waves in survival, click → place a 60×60 cover
   // at the world coord (clamped to arena interior) — 3 placements per phase.
   if (game._buildPhase && game._buildPhase.active && game._buildPhase.left > 0) {
@@ -2035,6 +2054,23 @@ if (touchInput.enabled) {
       // 4b) Survival revive CTA — rewarded-ad on tap
       if (_hitRect(game._reviveBtnRect, t.clientX, t.clientY)) {
         if (mission && typeof mission.tryRevive === 'function') mission.tryRevive();
+        continue;
+      }
+      // 4c) Build-phase ad-extend button
+      if (_hitRect(game._buildPhaseAdRect, t.clientX, t.clientY)) {
+        if (game._buildPhase && !game._buildPhase._adExtended) {
+          game._buildPhase._adExtended = true;
+          requestRewardedAd('build_phase_extend', (ok) => {
+            if (!ok) { game._buildPhase._adExtended = false; return; }
+            if (game._buildPhase) {
+              game._buildPhase.left += 2;
+              showSwapToast(`+2 掩体 · 时间延长 5s`);
+            }
+            if (mission && typeof mission._extendBreather === 'function') {
+              mission._extendBreather(300);
+            }
+          });
+        }
         continue;
       }
       // 5a) BUILD PHASE: between-wave cover placement takes precedence
@@ -5432,6 +5468,9 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
 
     // Returns true if a revive button should currently be shown
     canRevive() { return endStage === 'loss' && !reviveUsed; },
+
+    // Called by the build-phase ad button to push the next-wave timer back
+    _extendBreather(frames) { waveBreakUntil += frames; },
 
     renderHUD() {
       const best = getSurvivalScores()[0];
@@ -9509,7 +9548,7 @@ function renderHUDOverlays() {
     ctx.fillRect(p00.x, p00.y, p11.x - p00.x, p11.y - p00.y);
     ctx.setLineDash([]);
     ctx.restore();
-    // HUD banner top-center
+    // HUD banner top-center + "watch ad for +2 covers" button below
     ctx.save();
     const bw = 240, bh = 28;
     const bx = W() / 2 - bw / 2, by = 60;
@@ -9521,6 +9560,27 @@ function renderHUDOverlays() {
     ctx.fillText(`建造阶段 · 剩 ${game._buildPhase.left} 块`, W() / 2, by + 18);
     ctx.textAlign = 'left';
     ctx.restore();
+    // Ad-to-extend button below the banner (only if not already extended)
+    if (!game._buildPhase._adExtended) {
+      ctx.save();
+      const abY = by + bh + 4, abH = 22;
+      ctx.fillStyle = 'rgba(20, 18, 24, 0.85)';
+      ctx.fillRect(bx, abY, bw, abH);
+      ctx.strokeStyle = COLORS.red;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(bx, abY, bw, abH);
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('看广告 +2 块 · +5s 时间 ▶', W() / 2, abY + 15);
+      ctx.textAlign = 'left';
+      ctx.restore();
+      game._buildPhaseAdRect = { x: bx, y: abY, w: bw, h: abH };
+    } else {
+      game._buildPhaseAdRect = null;
+    }
+  } else {
+    game._buildPhaseAdRect = null;
   }
 
   // ---- Touch overlay: virtual sticks + action buttons ----
