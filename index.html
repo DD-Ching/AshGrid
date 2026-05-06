@@ -1490,6 +1490,13 @@ const landmarks = [];     // map's signature structures (drawn separately)
 const themeShapes = [];   // big themed geometry covering 70%+ of the map (drawn under buildings)
 const decorations = [];
 const muzzleFlashes = [];
+// Floating damage popups — { x, y, vy, life, damage, kill } drawn above
+// hit position, drift up + fade. Kill hits use red/larger; non-fatal cream.
+const damagePopups = [];
+function spawnDamagePopup(x, y, dmg, kill) {
+  damagePopups.push({ x, y, vy: -1.4, life: 36, damage: Math.round(dmg), kill: !!kill });
+  if (damagePopups.length > 40) damagePopups.shift();
+}
 const networkNodes = [];
 
 // Friendly squad (vision is shared with the player)
@@ -2143,7 +2150,7 @@ function startSkirmish() {
   fpv.active = false; fpv.available = fpv.max; fpv.trail = [];
   bullets.length = 0; enemyBullets.length = 0;
   enemies.length = 0; enemyDrones.length = 0;
-  explosions.length = 0; muzzleFlashes.length = 0;
+  explosions.length = 0; muzzleFlashes.length = 0; damagePopups.length = 0;
   soundEvents.length = 0;
   generateWorld(ARENA_MAP_INDEX);
   spawnAllies();
@@ -2217,7 +2224,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   fpv.active = false; fpv.available = fpv.max; fpv.trail = [];
   bullets.length = 0; enemyBullets.length = 0;
   enemies.length = 0; enemyDrones.length = 0;
-  explosions.length = 0; muzzleFlashes.length = 0;
+  explosions.length = 0; muzzleFlashes.length = 0; damagePopups.length = 0;
   soundEvents.length = 0;
   allies.length = 0;
   NN.lastSound = null;
@@ -7179,7 +7186,9 @@ function updateBullets() {
         e.alerted = Math.max(e.alerted || 0, 240);
         e.alertX = b.x - b.vx*4; // alert toward where the shot came from
         e.alertY = b.y - b.vy*4;
-        if (e.hp <= 0) { e.alive = false; game.score += 100; game.killCount++; createExplosion(e.x, e.y, 'small'); playSfx('kill_confirm'); }
+        const isKill = e.hp <= 0;
+        spawnDamagePopup(e.x, e.y - 14, b.damage, isKill);
+        if (isKill) { e.alive = false; game.score += 100; game.killCount++; createExplosion(e.x, e.y, 'small'); playSfx('kill_confirm'); }
         hit = true; break;
       }
     }
@@ -7317,6 +7326,13 @@ function updateExplosions() {
   for (let i = muzzleFlashes.length-1; i >= 0; i--) {
     muzzleFlashes[i].life--;
     if (muzzleFlashes[i].life <= 0) muzzleFlashes.splice(i, 1);
+  }
+  for (let i = damagePopups.length-1; i >= 0; i--) {
+    const p = damagePopups[i];
+    p.y += p.vy;
+    p.vy *= 0.96;
+    p.life--;
+    if (p.life <= 0) damagePopups.splice(i, 1);
   }
 }
 
@@ -7669,6 +7685,21 @@ function renderWorld() {
     ctx.lineTo(22, 7);
     ctx.closePath();
     ctx.fill();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+
+  // Damage popups — float up + fade. Kill hits use bigger red text,
+  // non-fatal hits cream + smaller. Drawn in WORLD-space (camera applies).
+  for (const p of damagePopups) {
+    const t = p.life / 36;             // 1 → 0
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, t * 1.4);
+    ctx.fillStyle = p.kill ? COLORS.red : COLORS.cream;
+    ctx.font = p.kill ? 'bold 16px sans-serif' : 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.kill ? `−${p.damage}!` : `−${p.damage}`, p.x, p.y);
+    ctx.textAlign = 'left';
     ctx.restore();
   }
   ctx.globalAlpha = 1;
