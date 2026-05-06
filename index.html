@@ -7645,6 +7645,9 @@ function renderHUD() {
   ctx.fillStyle = sqAlive > 0 ? COLORS.black : COLORS.gray;
   const _chipBaseY = _narrow ? 60 : 76;
   const _chipTextY = _narrow ? 70 : 86;
+  // On touch devices, expand the click rect ~10px on every side so a
+  // thumb tap lands reliably even though the visible chip is small.
+  const _touchPad = (typeof touchInput !== 'undefined' && touchInput.enabled) ? 8 : 0;
   if (game._nnMode) {
     game._squadChipRects = [];
     const chipH = 14;
@@ -7665,7 +7668,15 @@ function renderHUD() {
         ctx.fillStyle = COLORS.gray;
       }
       ctx.fillText(text, cursorX, _chipTextY);
-      game._squadChipRects.push({ x: cursorX - 2, y: _chipBaseY, w, h: chipH, allyIdx: i, alive: a.alive });
+      // Hit-rect padded for thumbs (touch only) — visible rect unchanged.
+      game._squadChipRects.push({
+        x: cursorX - 2 - _touchPad,
+        y: _chipBaseY - _touchPad,
+        w: w + _touchPad * 2,
+        h: chipH + _touchPad * 2,
+        allyIdx: i,
+        alive: a.alive
+      });
       cursorX += w + 2;
     }
   } else {
@@ -8076,6 +8087,25 @@ function renderHUDOverlays() {
 
   // ---- Touch overlay: virtual sticks + action buttons ----
   if (touchInput.enabled && game.state === 'playing' && !game._paused) {
+    const _nb = W() < 500;
+    // Suggested resting positions for the thumbs — drawn faintly when no
+    // touch is active so the player knows where they can put their fingers.
+    const moveAnchor = { x: _nb ? 90 : 130, y: H() - (_nb ? 160 : 200) };
+    const aimAnchor  = { x: W() - (_nb ? 90 : 130), y: H() - (_nb ? 160 : 200) };
+    const drawGhost = (a) => {
+      ctx.save();
+      ctx.globalAlpha = 0.18;
+      ctx.strokeStyle = COLORS.cream;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, TOUCH_STICK_RADIUS, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    };
+    if (!touchInput.moveTouch) drawGhost(moveAnchor);
+    if (!touchInput.aimTouch)  drawGhost(aimAnchor);
     const drawStick = (s) => {
       if (!s) return;
       const len = Math.hypot(s.dx, s.dy);
@@ -8083,7 +8113,7 @@ function renderHUDOverlays() {
       const tx = s.anchorX + (len > 0 ? (s.dx / len) * TOUCH_STICK_RADIUS * k : 0);
       const ty = s.anchorY + (len > 0 ? (s.dy / len) * TOUCH_STICK_RADIUS * k : 0);
       ctx.save();
-      ctx.globalAlpha = 0.45;
+      ctx.globalAlpha = 0.5;
       ctx.strokeStyle = COLORS.cream;
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -8098,23 +8128,40 @@ function renderHUDOverlays() {
     drawStick(touchInput.moveTouch);
     drawStick(touchInput.aimTouch);
 
-    // Action buttons: top-right column. Buttons are big enough for thumbs.
-    // Narrow (mobile portrait OR landscape phone): 44×44 with 6px gap so a
-    // 5-button column (5×44 + 4×6 = 244) clears the bottom even on landscape
-    // phones (~375px tall) when starting at y=80.
-    const _nb = W() < 500;
-    const BTN_SIZE = _nb ? 44 : 56;
-    const BTN_GAP  = _nb ? 6  : 10;
+    // Action buttons — split between BOTTOM-LEFT (G grenade, big, easy left-
+    // thumb tap during a fight) and MID-RIGHT (Q/E/V/R column near the right
+    // thumb's aim-stick rest). Replaces the old top-right 5-button column
+    // that forced the right thumb to leave its aim grip.
+    const BTN_SIZE = _nb ? 44 : 52;
+    const BTN_GAP  = _nb ? 6  : 8;
+    // G grenade — standalone left-side button, slightly larger
+    const gSize = _nb ? 60 : 68;
+    const gx = 24, gy = H() - gSize - 90;
+    ctx.save();
+    ctx.fillStyle = 'rgba(20, 18, 24, 0.7)';
+    ctx.fillRect(gx, gy, gSize, gSize);
+    ctx.strokeStyle = COLORS.red;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(gx, gy, gSize, gSize);
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = `bold ${_nb ? 18 : 22}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('G', gx + gSize/2, gy + (_nb ? 28 : 32));
+    ctx.font = `bold ${_nb ? 9 : 10}px sans-serif`;
+    ctx.fillText('手雷', gx + gSize/2, gy + (_nb ? 46 : 52));
+    ctx.textAlign = 'left';
+    ctx.restore();
+    game._touchActionButtons = [{ id: 'g', x: gx, y: gy, w: gSize, h: gSize }];
+    // Right-side column: Q / E / V / R. Vertically centered around mid-screen.
     const buttons = [
       { id: 'q', label: 'Q',   sub: 'UAV' },
       { id: 'e', label: 'E',   sub: 'FPV' },
-      { id: 'g', label: 'G',   sub: '雷' },
-      { id: 'r', label: 'R',   sub: '弹' },
       { id: 'v', label: 'V',   sub: '助', active: !!player._aimAssist },
+      { id: 'r', label: 'R',   sub: '弹' },
     ];
+    const colH = buttons.length * BTN_SIZE + (buttons.length - 1) * BTN_GAP;
     let bx = W() - BTN_SIZE - 12;
-    let by = _nb ? 80 : 130;
-    game._touchActionButtons = [];
+    let by = Math.round(H() / 2 - colH / 2);
     const _labelF = _nb ? 'bold 14px sans-serif' : 'bold 18px sans-serif';
     const _subF   = _nb ? 'bold 7px sans-serif'  : 'bold 9px sans-serif';
     const _labelY = _nb ? 22 : 26;
