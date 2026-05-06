@@ -3077,6 +3077,38 @@ if (touchInput.enabled) {
         }
         if (hit) continue;
       }
+      // 4a) Defense radial picker — tap a wedge to select; tap dead-zone
+      // or outside to soft-cancel. Must come BEFORE the stick logic so the
+      // tap doesn't get consumed as a movement input.
+      if (buildMode.active && buildMode.radialOpen && game.state === 'playing' && !game._paused) {
+        const picked = _radialKindUnderCursor(t.clientX, t.clientY);
+        if (picked) {
+          buildMode.kind = picked;
+          buildMode.radialOpen = false;
+          showSwapToast(`${T('已选', 'Selected')}: ${STRUCTURE_DEFS[picked].label()}`);
+        } else {
+          buildMode.radialOpen = false;
+        }
+        hit = true;
+        continue;
+      }
+      // 4a2) Defense placing-mode tap — drop a structure at the snapped cell
+      if (buildMode.active && !buildMode.radialOpen && game.state === 'playing' && !game._paused) {
+        const wp = screenToWorld(t.clientX, t.clientY);
+        const SNAP = 30;
+        const gx = Math.round(wp.x / SNAP) * SNAP;
+        const gy = Math.round(wp.y / SNAP) * SNAP;
+        // Walls support drag-line on touch too: record anchor + place first
+        if (buildMode.kind === 'wall') {
+          buildMode._dragStart = { gx, gy };
+          buildMode._dragEnd   = { gx, gy };
+          placeStructure('wall', gx, gy);
+        } else {
+          placeStructure(buildMode.kind, gx, gy);
+        }
+        hit = true;
+        continue;
+      }
       // 4b) Survival revive CTA — rewarded-ad on tap
       if (_hitRect(game._reviveBtnRect, t.clientX, t.clientY)) {
         if (mission && typeof mission.tryRevive === 'function') mission.tryRevive();
@@ -3140,6 +3172,19 @@ if (touchInput.enabled) {
         touchInput.aimTouch.dy = t.clientY - touchInput.aimTouch.anchorY;
       }
     }
+    // Defense wall drag: update preview end while finger is held down on
+    // the canvas, mirroring the mousemove path.
+    if (buildMode.active && buildMode.kind === 'wall' && buildMode._dragStart
+        && !buildMode.radialOpen && game.state === 'playing' && !game._paused) {
+      const t = e.changedTouches[0];
+      if (t) {
+        const wp = screenToWorld(t.clientX, t.clientY);
+        const SNAP = 30;
+        const gx = Math.round(wp.x / SNAP) * SNAP;
+        const gy = Math.round(wp.y / SNAP) * SNAP;
+        buildMode._dragEnd = { gx, gy };
+      }
+    }
     e.preventDefault();
   };
   const onEnd = (e) => {
@@ -3150,6 +3195,27 @@ if (touchInput.enabled) {
       if (touchInput.aimTouch && touchInput.aimTouch.id === t.identifier) {
         touchInput.aimTouch = null;
       }
+    }
+    // Defense wall drag-release: commit the Bresenham line on touchend
+    // (same path as the mouseup handler) so the user can stretch + lift.
+    if (buildMode.active && buildMode.kind === 'wall' && buildMode._dragStart && buildMode._dragEnd) {
+      const a = buildMode._dragStart, b = buildMode._dragEnd;
+      if (a.gx !== b.gx || a.gy !== b.gy) {
+        const cells = _editorLineCells(a.gx, a.gy, b.gx, b.gy, 30);
+        for (let i = 1; i < cells.length; i++) {
+          const c = cells[i];
+          const occupied = (game._structures || []).some(s =>
+            s.kind === 'wall' && s.hp > 0 && s.x === c.cx && s.y === c.cy);
+          if (occupied) continue;
+          if (!canAffordStructure('wall')) {
+            showSwapToast(T('能源不足', 'Out of energy'));
+            break;
+          }
+          placeStructure('wall', c.cx, c.cy);
+        }
+      }
+      buildMode._dragStart = null;
+      buildMode._dragEnd   = null;
     }
     e.preventDefault();
   };
