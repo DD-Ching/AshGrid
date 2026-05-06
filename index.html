@@ -3107,11 +3107,36 @@ const NN_MAP_VARIANTS = [
   },
 ];
 
+// User-built map slot — populated by the editor (Phase 3b). Reads
+// 'ag.customMap' at variant-build time so changes are picked up live.
+NN_MAP_VARIANTS.push({
+  id: 'custom', name: '玩家自制 CUSTOM',
+  walls: () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('ag.customMap') || 'null');
+      return saved && Array.isArray(saved.walls) ? saved.walls : [];
+    } catch (e) { return []; }
+  },
+  // Tag DM only for now — once editor lands, the user can re-tag from UI.
+  modes: ['dm'],
+  // Available only when the user has actually saved a custom map.
+  // pickMapForMode filters this out when localStorage slot is empty.
+  _gateOnSavedMap: true,
+});
+
 // Mode-aware variant pool. Variants without an explicit `modes` array
 // default to deathmatch only. Some variants tag multiple modes.
 function pickMapForMode(mode) {
-  // Backfill default tag for variants that don't declare modes
+  const hasSavedCustom = (() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('ag.customMap') || 'null');
+      return !!(s && Array.isArray(s.walls) && s.walls.length > 0);
+    } catch (e) { return false; }
+  })();
+  // Backfill default tag for variants that don't declare modes. Custom
+  // variant only joins the pool when the user has actually saved one.
   const pool = NN_MAP_VARIANTS.filter(v => {
+    if (v._gateOnSavedMap && !hasSavedCustom) return false;
     const tags = v.modes || ['dm'];
     return tags.includes(mode);
   });
@@ -4646,9 +4671,36 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
 // respawn between waves (or within a wave) — each death is permanent for
 // the round. Pawn-swap auto-jump still works while alive bodies remain;
 // when none are left, the round ends. Score = waves cleared + total kills.
+// ============ AD / CLOUD STUBS (Phase 3 swap-in points) ============
+// These wrap the lifecycle that the real AdMob / Firebase integrations will
+// plug into. Today they're local-only stubs — saving + loading come from
+// localStorage and "rewarded ad" just simulates a 0.5s wait then resolves
+// successfully. When the user authenticates AdMob / Firebase, drop the real
+// SDK into the marked spots — every callsite on the rest of the codebase
+// stays unchanged.
+
+// Rewarded ad — call requestRewardedAd(rewardId, cb). cb(true) on success,
+// cb(false) on user-dismiss or no-fill. Triggers below: revive on survival
+// loss, unlock cosmetic, etc.
+function requestRewardedAd(rewardId, cb) {
+  // STUB: just simulate a 500ms ad watch + always succeed.
+  // Real impl (AdMob / Google Mobile Ads SDK):
+  //   admob.rewarded.show(rewardId, (ok, reward) => cb(ok, reward));
+  console.log('[ad-stub]', rewardId, 'requested');
+  setTimeout(() => cb && cb(true, { rewardId, amount: 1 }), 500);
+}
+
+// Cloud leaderboard upload — currently a no-op. Real impl pushes to Firestore.
+function uploadSurvivalRun(run) {
+  // STUB. Real impl:
+  //   firebase.firestore().collection('survival').add({ ...run, uid });
+  // For now we keep the local list authoritative.
+  return Promise.resolve(run);
+}
+
 // Local survival leaderboard (localStorage). Top 10 runs sorted by waves
-// then kills. Cloud upload (Firebase) is a Phase-3 swap-in: the API stays
-// the same, getSurvivalScores() / recordSurvivalRun() just point elsewhere.
+// then kills. recordSurvivalRun() will both store locally AND fire the
+// cloud upload stub — when Firebase ships, both paths populate.
 const SURVIVAL_KEY = 'ag.survivalScores';
 const SURVIVAL_MAX = 10;
 function getSurvivalScores() {
@@ -4656,14 +4708,17 @@ function getSurvivalScores() {
   catch (e) { return []; }
 }
 function recordSurvivalRun({ wave, kills, style }) {
+  const run = { wave, kills, style: style || 'elite', ts: Date.now() };
   try {
     const list = getSurvivalScores();
-    list.push({ wave, kills, style: style || 'elite', ts: Date.now() });
+    list.push(run);
     list.sort((a, b) => (b.wave - a.wave) || (b.kills - a.kills));
     list.length = Math.min(list.length, SURVIVAL_MAX);
     localStorage.setItem(SURVIVAL_KEY, JSON.stringify(list));
-    return list;
-  } catch (e) { return []; }
+  } catch (e) {}
+  // Cloud upload (no-op until Firebase wires in)
+  uploadSurvivalRun(run);
+  return getSurvivalScores();
 }
 
 MISSION_FACTORIES.nnSurvival = function(mapDef) {
