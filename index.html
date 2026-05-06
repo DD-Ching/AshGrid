@@ -7652,14 +7652,15 @@ function renderHUD() {
     }
   }
 
-  // Top-right: score (smaller)
+  // Top-right: score. On narrow, shrink so multi-digit values don't reach
+  // back into the right-edge action button column (x ≥ ~303 on portrait).
   ctx.textAlign = 'right';
   ctx.fillStyle = COLORS.red;
-  ctx.font = 'bold 30px sans-serif';
-  ctx.fillText(`${game.score}`, W() - 20, 46);
+  ctx.font = _narrow ? 'bold 16px sans-serif' : 'bold 30px sans-serif';
+  ctx.fillText(`${game.score}`, W() - 20, _narrow ? 30 : 46);
   ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 9px sans-serif';
-  ctx.fillText(`SCORE  ·  击杀 ${game.killCount}`, W() - 20, 62);
+  ctx.font = _narrow ? 'bold 8px sans-serif' : 'bold 9px sans-serif';
+  ctx.fillText(`SCORE · 击杀 ${game.killCount}`, W() - 20, _narrow ? 44 : 62);
   ctx.textAlign = 'left';
 
   // View mode banner (top-center) — slimmer. Hidden on narrow viewports so
@@ -7961,8 +7962,11 @@ function renderHUDOverlays() {
     const alpha = t < 0.3 ? (t / 0.3) : 1;     // fade out at end
     ctx.save();
     ctx.globalAlpha = alpha;
+    // On narrow viewports the status panel only goes to y=96 (height 80) so
+    // place the toast below at y=104. Wide screens keep the original y=88.
+    const _ntoast = W() < 500;
     const tw = 220, th = 26;
-    const tx = W() / 2 - tw / 2, ty = 88;
+    const tx = W() / 2 - tw / 2, ty = _ntoast ? 104 : 88;
     ctx.fillStyle = 'rgba(20, 18, 24, 0.85)';
     ctx.fillRect(tx, ty, tw, th);
     ctx.strokeStyle = COLORS.red;
@@ -8063,7 +8067,12 @@ function renderHUDOverlays() {
     drawStick(touchInput.aimTouch);
 
     // Action buttons: top-right column. Buttons are big enough for thumbs.
-    const BTN_SIZE = 56, BTN_GAP = 10;
+    // Narrow (mobile portrait OR landscape phone): 44×44 with 6px gap so a
+    // 5-button column (5×44 + 4×6 = 244) clears the bottom even on landscape
+    // phones (~375px tall) when starting at y=80.
+    const _nb = W() < 500;
+    const BTN_SIZE = _nb ? 44 : 56;
+    const BTN_GAP  = _nb ? 6  : 10;
     const buttons = [
       { id: 'q', label: 'Q',   sub: 'UAV' },
       { id: 'e', label: 'E',   sub: 'FPV' },
@@ -8071,9 +8080,13 @@ function renderHUDOverlays() {
       { id: 'r', label: 'R',   sub: '弹' },
       { id: 'v', label: 'V',   sub: '助', active: !!player._aimAssist },
     ];
-    let bx = W() - BTN_SIZE - 16;
-    let by = 130;
+    let bx = W() - BTN_SIZE - 12;
+    let by = _nb ? 80 : 130;
     game._touchActionButtons = [];
+    const _labelF = _nb ? 'bold 14px sans-serif' : 'bold 18px sans-serif';
+    const _subF   = _nb ? 'bold 7px sans-serif'  : 'bold 9px sans-serif';
+    const _labelY = _nb ? 22 : 26;
+    const _subY   = _nb ? 35 : 44;
     for (const b of buttons) {
       ctx.save();
       ctx.fillStyle = b.active ? COLORS.red : 'rgba(20, 18, 24, 0.65)';
@@ -8082,11 +8095,11 @@ function renderHUDOverlays() {
       ctx.lineWidth = 2;
       ctx.strokeRect(bx, by, BTN_SIZE, BTN_SIZE);
       ctx.fillStyle = COLORS.cream;
-      ctx.font = 'bold 18px sans-serif';
+      ctx.font = _labelF;
       ctx.textAlign = 'center';
-      ctx.fillText(b.label, bx + BTN_SIZE / 2, by + 26);
-      ctx.font = 'bold 9px sans-serif';
-      ctx.fillText(b.sub, bx + BTN_SIZE / 2, by + 44);
+      ctx.fillText(b.label, bx + BTN_SIZE / 2, by + _labelY);
+      ctx.font = _subF;
+      ctx.fillText(b.sub, bx + BTN_SIZE / 2, by + _subY);
       ctx.textAlign = 'left';
       ctx.restore();
       game._touchActionButtons.push({ id: b.id, x: bx, y: by, w: BTN_SIZE, h: BTN_SIZE });
