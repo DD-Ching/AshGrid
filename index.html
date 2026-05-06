@@ -979,7 +979,29 @@ const game = {
   message: '',
   messageTime: 0,
   hitFlash: 0,
+  // Camera shake — render() applies a random offset proportional to mag
+  // until shakeUntil. Stacked: bigger events overwrite if their mag wins.
+  shakeMag: 0, shakeUntil: 0,
+  // Slow-mo time scale; killstreak ≥3 sets this < 1 for a brief window.
+  // The main game loop uses (game._timeScale ?? 1) to subsample updates.
+  _timeScale: 1, _slowMoUntil: 0,
 };
+
+// Trigger camera shake. Bigger mag overrides smaller pending one but
+// shorter duration is ignored — both ramps feed into the visible motion.
+function triggerShake(mag, duration) {
+  if (mag > game.shakeMag) game.shakeMag = mag;
+  const until = game.time + (duration || 8);
+  if (until > game.shakeUntil) game.shakeUntil = until;
+}
+// Trigger slow-mo. Doesn't stack — strongest bid wins; shortest duration
+// runs to its end. Used by killstreak ≥3 (mul 0.55 for 90 ticks).
+function triggerSlowMo(mul, duration) {
+  if (mul < game._timeScale || game.time > game._slowMoUntil) {
+    game._timeScale = mul;
+    game._slowMoUntil = game.time + (duration || 90);
+  }
+}
 
 const player = {
   x: WORLD.w/2, y: WORLD.h/2,
@@ -1426,6 +1448,12 @@ function explodeGrenade(g) {
   createExplosion(g.x, g.y, 'big');
   playSfx('death', { vol: 0.6 });
   emitSound(g.x, g.y, 1500, false);
+  // Shake intensity scales with proximity to player
+  if (player.alive) {
+    const d = Math.hypot(player.x - g.x, player.y - g.y);
+    const closeness = Math.max(0, 1 - d / 220);
+    if (closeness > 0) triggerShake(8 * closeness, 18);
+  }
   const targets = [player, ...allies, ...enemies];
   for (const u of targets) {
     if (!u.alive) continue;
@@ -8460,6 +8488,16 @@ function update() {
     if (game.messageTime <= 0) game.message = '';
   }
   if (game.hitFlash > 0) game.hitFlash--;
+  // Camera shake decays linearly over the active window — the longer you've
+  // gone, the smaller the jitter.
+  if (game.time < game.shakeUntil) {
+    const remaining = (game.shakeUntil - game.time) / 12;
+    game.shakeMag *= Math.max(0.85, Math.min(1, remaining));
+  }
+  // Slow-mo restore — once the window ends, snap back to 1×.
+  if (game._timeScale < 1 && game.time >= game._slowMoUntil) {
+    game._timeScale = 1;
+  }
 
   // Low-HP heartbeat — periodic thump while HP < 25%. Tempo speeds up as HP drops.
   if (player.alive && player.hp > 0 && player.hp < player.maxHp * 0.25) {
@@ -8791,6 +8829,14 @@ function detonateRocket(b) {
   createExplosion(b.x, b.y, 'big');
   emitSound(b.x, b.y, 1900, false);
   playSfx('death', { vol: 0.6 });
+  // Heavy shake on every rocket detonation — feels like ordnance
+  if (player.alive) {
+    const d = Math.hypot(player.x - b.x, player.y - b.y);
+    const closeness = Math.max(0.4, 1 - d / 280);
+    triggerShake(10 * closeness, 22);
+  } else {
+    triggerShake(6, 18);
+  }
   // Enemies in radius
   for (const e of enemies) {
     if (!e.alive) continue;
@@ -8900,6 +8946,15 @@ function updateBullets() {
           if (player._killStreak >= 2) {
             game.score += player._killStreak * 25;
           }
+          // Slow-mo on 3+ killstreak — 0.55× for 1.5s, retriggers on each
+          // subsequent kill so a hot streak stays in slow-mo. Tiny shake on
+          // every kill so even a single shot punches.
+          if (player._killStreak >= 3) {
+            triggerSlowMo(0.55, 90);
+            triggerShake(4, 8);
+          } else {
+            triggerShake(2, 4);
+          }
         }
         hit = true; break;
       }
@@ -8993,6 +9048,7 @@ function updateBullets() {
         player.hp -= b.damage;
         game.hitFlash = 12;
         playSfx('hit');
+        triggerShake(Math.min(6, b.damage * 0.25), 8);
         // Track most recent damage source for the killer-info banner
         player._lastDamageBy = b.fromUnit || null;
         player._lastDamageWeapon = b.weaponName || '';
@@ -9241,8 +9297,18 @@ function render() {
   ctx.fillStyle = COLORS.cream;
   ctx.fillRect(0, 0, W(), H());
 
+  // Apply camera shake — small random offset that decays each tick. Pure
+  // screen-space jitter; the world transform stays clean below.
+  let shakeX = 0, shakeY = 0;
+  if (game.time < game.shakeUntil && game.shakeMag > 0) {
+    shakeX = (Math.random() - 0.5) * 2 * game.shakeMag;
+    shakeY = (Math.random() - 0.5) * 2 * game.shakeMag;
+  } else {
+    game.shakeMag = 0;
+  }
+
   ctx.save();
-  ctx.translate(W()/2, H()/2);
+  ctx.translate(W()/2 + shakeX, H()/2 + shakeY);
   ctx.scale(camera.scale, camera.scale);
   ctx.rotate(camera.rotation);
   ctx.translate(-camera.x, -camera.y);
@@ -12050,11 +12116,19 @@ function drawPauseOverlay() {
 }
 
 // ============ MAIN LOOP ============
+// Slow-mo: when game._timeScale < 1, we accumulate a fractional update step
+// and only call update() when ≥ 1 has accumulated. So at 0.55× the world
+// runs ~0.55 simulated frames per real frame. Render runs every frame so
+// the camera + UI stay smooth.
+let _stepAccumulator = 0;
 function loop() {
   // Ambient music plays only during a live match; pauses are silent.
   if (game.state === 'playing' && !game._paused && AUDIO.unlocked && !MUSIC.active) startMusic();
   else if ((game.state !== 'playing' || game._paused) && MUSIC.active) stopMusic();
-  if (!game._paused) update();
+  if (!game._paused) {
+    _stepAccumulator += game._timeScale != null ? game._timeScale : 1;
+    while (_stepAccumulator >= 1) { update(); _stepAccumulator -= 1; }
+  }
   updateCamera();
   render();
   if (game._paused) drawPauseOverlay();
