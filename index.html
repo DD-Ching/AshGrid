@@ -817,6 +817,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
         <button data-diff="defensive"    class="diff-btn">防御<span>谨慎</span></button>
         <button data-diff="sharpshooter" class="diff-btn">枪神<span>卡点</span></button>
         <button data-diff="cqb"          class="diff-btn">冲锋<span>近战</span></button>
+        <button data-diff="tactical"     class="diff-btn">战术<span>压制·掩护</span></button>
       </div>
     </div>
     <div class="difficulty-row">
@@ -1308,6 +1309,7 @@ const I18N = {
   '#nnLobby [data-diff="defensive"]':    { zh: '防御<span>谨慎</span>',     en: 'GUARD<span>cautious</span>' },
   '#nnLobby [data-diff="sharpshooter"]': { zh: '枪神<span>卡点</span>',     en: 'SHARP<span>angle hold</span>' },
   '#nnLobby [data-diff="cqb"]':          { zh: '冲锋<span>近战</span>',      en: 'RUSH<span>CQB</span>' },
+  '#nnLobby [data-diff="tactical"]':     { zh: '战术<span>压制·掩护</span>', en: 'TAC<span>suppress · cover</span>' },
   '#nnLobby .difficulty-row:has([data-weapon]) .difficulty-label': { zh: '武器 WEAPON', en: 'WEAPON' },
   '#nnLobby [data-weapon="SMG"]':     { zh: '冲锋<span>近战·快</span>',     en: 'SMG<span>close · fast</span>' },
   '#nnLobby [data-weapon="RIFLE"]':   { zh: '步枪<span>平衡</span>',         en: 'RIFLE<span>balanced</span>' },
@@ -4069,9 +4071,9 @@ document.querySelectorAll('#nnLobby .weap-btn').forEach(btn => {
 // language flip immediately reflects in dropdowns + objective panel without
 // a manual rebuild. The legacy keys (easy/medium/hard/evolved) are kept so
 // old saved lineup state still resolves to a label.
-const _DIFF_LABELS_ZH = { elite: '全能', warrior: '进攻', defensive: '防御', sharpshooter: '枪神', cqb: '冲锋',
+const _DIFF_LABELS_ZH = { elite: '全能', warrior: '进攻', defensive: '防御', sharpshooter: '枪神', cqb: '冲锋', tactical: '战术',
                           easy: '简单', medium: '中等', hard: '困难', evolved: '进化' };
-const _DIFF_LABELS_EN = { elite: 'ELITE', warrior: 'WARRIOR', defensive: 'GUARD', sharpshooter: 'SHARP', cqb: 'RUSH',
+const _DIFF_LABELS_EN = { elite: 'ELITE', warrior: 'WARRIOR', defensive: 'GUARD', sharpshooter: 'SHARP', cqb: 'RUSH', tactical: 'TAC',
                           easy: 'EASY', medium: 'MEDIUM', hard: 'HARD', evolved: 'EVOLVED' };
 const _WPN_LABELS_ZH  = { SMG:'冲锋', RIFLE:'步枪', LMG:'机枪', SNIPER:'狙击', SHOTGUN:'霰弹', ROCKET:'火箭' };
 const _WPN_LABELS_EN  = { SMG:'SMG', RIFLE:'RIFLE', LMG:'LMG', SNIPER:'SNIPER', SHOTGUN:'SHOTGUN', ROCKET:'ROCKET' };
@@ -5541,6 +5543,7 @@ const NN = {
     warrior:      'ai_arena/onnx/model_warrior.onnx',
     sharpshooter: 'ai_arena/onnx/model_sharpshooter.onnx',
     cqb:          'ai_arena/onnx/model_cqb.onnx',
+    tactical:     'ai_arena/onnx/model_tactical.onnx',
   },
   modelPath: 'ai_arena/onnx/model.onnx',  // legacy fallback
   // Constants must match the Python combat_env exactly

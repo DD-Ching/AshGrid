@@ -71,6 +71,13 @@ SQUAD_SIZE            = 3
 NN_FIRE_CD            = 8
 NN_AIM_LERP           = 0.30
 
+# Tactical mechanics — added 2026-05-06 to support suppression-fire +
+# reload-aware behaviour. Defaults match the deployed JS rifle so the
+# trained model encounters the same constraint at game time.
+NN_MAG_SIZE           = 30          # rounds per magazine
+NN_RELOAD_FRAMES      = 80          # ticks to swap (~1.33s at 60 TPS)
+SUPPRESS_DIST_THRESH  = 60.0        # bullet near-miss radius for suppression credit
+
 VIEW_RANGE  = 720.0           # NN's fixed vision range
 VIEW_HALF   = math.pi * 0.78 / 2   # 70° half-angle (140° cone)
 
@@ -126,6 +133,19 @@ class Curriculum:
     coef_alive:      float = 0.005
     coef_team_lead:  float = 0.001
     coef_episode_win: float = 50.0
+
+    # Tactical shaping (default 0 → backward-compat, no effect on legacy
+    # notebooks). Set positive values in a continuation notebook to teach:
+    #   suppression fire (shoot without LoS-locked target → bullet passes
+    #     close to a visible enemy = pressure)
+    #   safe-reload (during reload, agent should be LoS-blocked from all
+    #     visible enemies = +reward; exposed = -penalty)
+    #   cover-fire (firing while a friendly is advancing toward an enemy
+    #     and within X units of you = +reward)
+    coef_suppress:        float = 0.0
+    coef_safe_reload:     float = 0.0
+    coef_exposed_reload:  float = 0.0
+    coef_cover_fire:      float = 0.0
 
     # "Fear-death" mode: dead units STAY dead and the episode terminates as
     # soon as one team is fully wiped. Combined with high coef_death this
@@ -503,6 +523,17 @@ class Unit:
     last_y: float = 0.0
     vel_x: float = 0.0
     vel_y: float = 0.0
+    # Ammo / reload state. mag = current rounds; reload_cd = frames left on
+    # the swap (0 = not reloading). Auto-reload kicks in when mag drops to 0.
+    mag: int = 30
+    reload_cd: int = 0
+    # Tracks how many "suppression-credit" bullets passed near an enemy
+    # this tick — used by the new tactical reward shaping.
+    suppression_credit: float = 0.0
+    # Set when this unit fired in the agent's facing direction this tick
+    # without a LoS-locked target. Lets cover-fire reward see "is friendly
+    # actively shooting right now?" without re-scanning bullets.
+    fired_this_tick: bool = False
 
 
 @dataclass
@@ -636,6 +667,8 @@ class CombatEnv:
                     u.x = u.spawn_x
                     u.y = u.spawn_y
                     u.fire_cd = 0
+                    u.mag = NN_MAG_SIZE
+                    u.reload_cd = 0
 
         agent_offset = agent_team * self.squad_size
         opp_offset   = opp_team   * self.squad_size
@@ -813,6 +846,7 @@ class CombatEnv:
     def _apply_action(self, unit: Unit, action: int, my_idx: int):
         move_dir = action // 2
         fire = action % 2
+        unit.fired_this_tick = False     # cleared each tick before fire branch
 
         dx, dy = MOVE_DIRS[move_dir]
         if dx != 0 or dy != 0:
@@ -832,7 +866,15 @@ class CombatEnv:
         unit.x = max(20, min(self.world_w - 20, unit.x))
         unit.y = max(20, min(self.world_h - 20, unit.y))
 
-        if fire and unit.fire_cd <= 0:
+        # Reload tick — ammo restores when reload_cd hits 0
+        if unit.reload_cd > 0:
+            unit.reload_cd -= 1
+            if unit.reload_cd == 0:
+                unit.mag = NN_MAG_SIZE
+            # Reloading agents can't fire; skip the rest of fire logic
+            return
+
+        if fire and unit.fire_cd <= 0 and unit.mag > 0:
             target = self._nearest_visible_enemy(unit)
             if target is not None and not line_blocked(
                     unit.x, unit.y, target.x, target.y, self.walls):
@@ -861,10 +903,41 @@ class CombatEnv:
                     shooter_idx=my_idx,
                 ))
                 unit.fire_cd = NN_FIRE_CD
+                unit.mag -= 1
+                unit.fired_this_tick = True
                 unit.last_seen_tx = target.x
                 unit.last_seen_ty = target.y
                 unit.last_seen_tick = self.tick
                 self.last_sound = (unit.x, unit.y, 0, unit.team)
+            else:
+                # SUPPRESSION FIRE — no LoS-locked target visible. Shoot
+                # in the agent's current facing direction (or toward the
+                # last_seen position if recent). Same bullet stats; the
+                # reward shaping decides whether this round earns credit.
+                if unit.last_seen_tick > 0 and self.tick - unit.last_seen_tick < 60:
+                    aim = math.atan2(unit.last_seen_ty - unit.y,
+                                     unit.last_seen_tx - unit.x)
+                else:
+                    aim = unit.angle
+                aim += (random.random() - 0.5) * 0.08
+                self.bullets.append(Bullet(
+                    x=unit.x + math.cos(aim) * 16,
+                    y=unit.y + math.sin(aim) * 16,
+                    vx=math.cos(aim) * BULLET_SPEED,
+                    vy=math.sin(aim) * BULLET_SPEED,
+                    life=BULLET_LIFE,
+                    damage=BULLET_DAMAGE,
+                    team=unit.team,
+                    shooter_idx=my_idx,
+                ))
+                unit.fire_cd = NN_FIRE_CD
+                unit.mag -= 1
+                unit.fired_this_tick = True
+                self.last_sound = (unit.x, unit.y, 0, unit.team)
+
+        # Auto-reload when mag empties
+        if unit.mag <= 0 and unit.reload_cd <= 0:
+            unit.reload_cd = NN_RELOAD_FRAMES
 
     def _nearest_visible_enemy(self, me: Unit) -> Optional[Unit]:
         best, best_d = None, float('inf')
@@ -902,6 +975,20 @@ class CombatEnv:
                     continue
                 if (b.x - u.x) ** 2 + (b.y - u.y) ** 2 < PLAYER_RADIUS ** 2:
                     hit_unit = u; break
+            # Suppression credit — bullet didn't kill but it passed close
+            # to an enemy. Counted ONCE per bullet (set life *= 0 marker).
+            # The shooter's per-tick credit accumulator gets a +1 bump,
+            # which the reward shaping multiplies by coef_suppress.
+            if hit_unit is None and 0 <= b.shooter_idx < len(self.units):
+                shooter = self.units[b.shooter_idx]
+                if not getattr(b, '_suppress_counted', False):
+                    for u in self.units:
+                        if not u.alive or u.team == b.team:
+                            continue
+                        if (b.x - u.x) ** 2 + (b.y - u.y) ** 2 < SUPPRESS_DIST_THRESH ** 2:
+                            shooter.suppression_credit += 1.0
+                            b._suppress_counted = True
+                            break
             if hit_unit is not None:
                 applied = min(b.damage, hit_unit.hp)
                 hit_unit.hp -= b.damage
@@ -953,6 +1040,55 @@ class CombatEnv:
                     diff = abs(diff)
                     if diff < math.pi / 6:   # within 30° of facing
                         r += c.coef_aimcone
+
+        # Tactical shaping (default 0 → off). Each term is gated on its own
+        # coef so a continuation notebook can opt in to one or all of them.
+        if unit.alive:
+            # Suppression — bullets passing within SUPPRESS_DIST_THRESH of
+            # an enemy this tick. Credit is set in _update_bullets.
+            if c.coef_suppress > 0 and unit.suppression_credit > 0:
+                r += c.coef_suppress * unit.suppression_credit
+            # Reload-aware: while reloading, +reward if LoS-blocked from
+            # all visible enemies; -penalty if any enemy can see us.
+            if unit.reload_cd > 0 and (c.coef_safe_reload > 0 or c.coef_exposed_reload > 0):
+                exposed = False
+                for o in self.units:
+                    if o is unit or not o.alive or o.team == unit.team:
+                        continue
+                    if self._is_visible(o, unit):    # enemy o sees unit
+                        exposed = True; break
+                if exposed:
+                    r -= c.coef_exposed_reload
+                else:
+                    r += c.coef_safe_reload
+            # Cover fire: this unit is firing right now AND a friendly is
+            # close-by (≤220u) and visibly closer to an enemy than this
+            # unit (advancing). Encourages "shoot to support a push".
+            if c.coef_cover_fire > 0 and unit.fired_this_tick:
+                for o in self.units:
+                    if o is unit or not o.alive or o.team != unit.team:
+                        continue
+                    d_friend = math.hypot(o.x - unit.x, o.y - unit.y)
+                    if d_friend > 220:
+                        continue
+                    # Find a visible enemy
+                    enemy_target = None
+                    for e in self.units:
+                        if not e.alive or e.team == unit.team:
+                            continue
+                        if self._is_visible(unit, e):
+                            enemy_target = e; break
+                    if enemy_target is None:
+                        continue
+                    d_unit = math.hypot(enemy_target.x - unit.x, enemy_target.y - unit.y)
+                    d_o    = math.hypot(enemy_target.x - o.x,    enemy_target.y - o.y)
+                    if d_o < d_unit - 30:    # friendly is meaningfully closer
+                        r += c.coef_cover_fire
+                        break
+
+        # Reset per-tick credit accumulators
+        unit.suppression_credit = 0.0
+        unit.fired_this_tick = False
 
         return r
 
