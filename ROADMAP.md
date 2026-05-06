@@ -30,9 +30,19 @@
 ## 階段 3:Stub 接點(我寫好,你補帳號)
 - [x] AdMob rewarded-ad interface — 746ed8d(stub `requestRewardedAd(id, cb)`)
 - [x] Firebase 排行榜接口 — 746ed8d(stub `uploadSurvivalRun(run)`)
-- [x] 地圖編輯器 — 下一個 commit(主選單 EDITOR 按鈕 + 60u 格網工具)
+- [x] 地圖編輯器 — 254788d / ddd356c(60u 格網 + 雙方 spawn)
+- [x] 多槽位地圖編輯器(3 free,看廣告解鎖到 5)— 651bde4 / d9d419e
 
 **階段 3 完成 ✅**
+
+## 階段 3b:AdMob 觸發點(就緒待 SDK)
+- [x] survival_revive — 844d42e(死亡看廣告續命)
+- [x] editor_extra_slots — d9d419e(地圖編輯器槽位 +2)
+- [x] build_phase_extend — 8425560(蓋碉堡 +2 cover +5s)
+- [ ] cosmetic_skin(待設計外觀系統)
+- [ ] survival_skip_wave(備用,跳過下一波)
+
+每個 trigger 都用 `requestRewardedAd('reward_id', cb)`。當你給我 AdMob ad unit ID,只要把 stub 換成真 SDK,所有 trigger 立刻生效。
 
 ## 階段 4:🔑 你動作清單
 
