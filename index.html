@@ -2070,7 +2070,7 @@ function addBuilding(x, y, w, h, color, opts={}) {
   buildings.push({ x, y, w, h, color: color || COLORS.gray, shadow: opts.shadow !== false, accent: !!opts.accent, kind: opts.kind || 'building' });
 }
 function addLowCover(x, y, w, h, color, opts={}) {
-  lowCovers.push({ x, y, w, h, color: color || COLORS.lightGray, kind: opts.kind || 'cover' });
+  lowCovers.push({ x, y, w, h, color: color || COLORS.lightGray, kind: opts.kind || 'cover', canopy: !!opts.canopy });
 }
 function addOverhead(x, y, w, h, color, opts={}) {
   overheads.push({ x, y, w, h, color: color || COLORS.black, kind: opts.kind || 'catwalk' });
@@ -2953,6 +2953,36 @@ const NN_MAP_VARIANTS = [
     spawn: { blue: { x: 250, y: 600 }, red: { x: 950, y: 600 } },
     modes: ['sniper'],
   },
+
+  // Forest 森林: dense low-cover tree clumps. The UAV is a sensor in every
+  // other map but here the canopy blocks aerial vision — combat is ground-
+  // only. Hand-placed clusters with sightline lanes between them so the map
+  // doesn't degenerate into pure CQB.
+  { id: 'forest', name: '森林 FOREST',
+    walls: () => {
+      const out = [];
+      const trees = [
+        // West thicket
+        [180, 220], [240, 280], [200, 360], [280, 420], [220, 500], [310, 580],
+        // North thicket
+        [380, 200], [460, 260], [540, 220], [620, 280], [700, 230], [780, 290], [860, 240],
+        // East thicket
+        [880, 380], [820, 440], [900, 520], [840, 600], [890, 700],
+        // South thicket
+        [380, 760], [460, 820], [540, 780], [620, 840], [700, 800], [780, 860], [860, 820],
+        // Mid scattered (broken sightlines)
+        [420, 460], [560, 540], [680, 480], [500, 660], [620, 700],
+      ];
+      for (const [tx, ty] of trees) {
+        // 50×50 canopy block, marked so UAV vision is blocked when target is inside
+        out.push({ x: tx, y: ty, w: 50, h: 50, kind: 'cover', canopy: true });
+      }
+      return out;
+    },
+    spawn: { blue: { x: 200, y: 600 }, red: { x: 1000, y: 600 } },
+    modes: ['dm', 'survival'],
+    forest: true,    // marker for UAV-disable + minimap green tint
+  },
 ];
 
 // Mode-aware variant pool. Variants without an explicit `modes` array
@@ -2982,13 +3012,15 @@ function buildNNArenaVariant(idx) {
     const x = NN_ARENA.x0 + w.x;
     const y = NN_ARENA.y0 + w.y;
     if (w.kind === 'cover') {
-      addLowCover(x, y, w.w, w.h, w.color || COLORS.creamDark, { kind: 'crate' });
+      addLowCover(x, y, w.w, w.h, w.color || (w.canopy ? '#3F4A3A' : COLORS.creamDark),
+                  { kind: w.canopy ? 'tree' : 'crate', canopy: !!w.canopy });
     } else {
       addBuilding(x, y, w.w, w.h, w.color || COLORS.gray, { accent: !!w.accent });
     }
   }
   buildCoverPoints();
   game._nnVariantId = v.id;
+  game._nnVariantForest = !!v.forest;
   return v;
 }
 
@@ -5430,9 +5462,20 @@ function isVisibleToFriendly(x, y) {
         && lineOfSight(a.x, a.y, x, y)) return true;
   }
   // Recon drone — 360° circular vision, sees over walls (it's flying high).
+  // EXCEPT: if the target is currently inside a forest canopy block, the
+  // tree cover blocks aerial vision — combat there has to be ground-only.
   if (drone.deployed) {
     const dx = x - drone.x, dy = y - drone.y;
-    if (dx*dx + dy*dy < drone.visionRadius * drone.visionRadius) return true;
+    if (dx*dx + dy*dy < drone.visionRadius * drone.visionRadius) {
+      let blockedByCanopy = false;
+      for (const lc of lowCovers) {
+        if (!lc.canopy) continue;
+        if (x > lc.x && x < lc.x + lc.w && y > lc.y && y < lc.y + lc.h) {
+          blockedByCanopy = true; break;
+        }
+      }
+      if (!blockedByCanopy) return true;
+    }
   }
   // FPV kamikaze drone — narrow 150° forward cone (it's a fast strike asset,
   // not a recon platform) at 600u range. Sees over walls like the UAV does.
