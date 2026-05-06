@@ -1317,14 +1317,31 @@ function updateAirstrikes() {
 // Build mode toggle state. Picks one of STRUCTURE_ORDER and shows a
 // preview at cursor. While in build mode, mouse-click places; build
 // mode auto-disables on Esc / right-click.
-const buildMode = { active: false, kind: 'wall' };
+const buildMode = { active: false, radialOpen: false, kind: 'wall' };
+// Three-state build flow: OFF → RADIAL_OPEN → PLACING. B walks the cycle
+// forward; Esc bails out anywhere. Activating from OFF opens the radial
+// straight away so the user can pick a module without an extra click.
 function toggleBuildMode() {
   if (game._nnGameMode !== 'defense') {
     showSwapToast(T('仅防御模式可建造', 'Build available in Defense mode only'));
     return;
   }
-  buildMode.active = !buildMode.active;
-  // Drop any in-flight wall drag so it doesn't leak into the next session.
+  if (!buildMode.active) {
+    buildMode.active = true;
+    buildMode.radialOpen = true;
+  } else if (buildMode.radialOpen) {
+    // Radial already open → another B closes it (keep placing mode armed)
+    buildMode.radialOpen = false;
+  } else {
+    // Already placing → reopen radial to switch module
+    buildMode.radialOpen = true;
+  }
+  buildMode._dragStart = null;
+  buildMode._dragEnd   = null;
+}
+function exitBuildMode() {
+  buildMode.active = false;
+  buildMode.radialOpen = false;
   buildMode._dragStart = null;
   buildMode._dragEnd   = null;
 }
@@ -2083,6 +2100,12 @@ window.addEventListener('keydown', e => {
   // again from inside the pause overlay resumes; the overlay has a separate
   // "退出主菜单 / EXIT TO MENU" button for actually leaving the match.
   if ((e.key === 'Escape' || k === 'p') && game.state === 'playing') {
+    // Esc inside the radial / build mode bails out without pausing the round.
+    if (e.key === 'Escape' && buildMode.active) {
+      exitBuildMode();
+      e.preventDefault();
+      return;
+    }
     togglePause();
     return;
   }
@@ -2095,12 +2118,13 @@ window.addEventListener('keydown', e => {
     else if (k === 'r') startReload();
     else if (k === 'g') throwGrenade();
     else if (k === 'b') toggleBuildMode();
-    // 1-9 + 0 cycle through structure types while in build mode (Defense).
-    // 0 maps to slot 10 (last). Pawn-swap fallback only runs OUTSIDE build mode.
+    // 1-9 + 0 = power-user shortcut to pick a module. Works whether the
+    // radial is open (closes it) or in placing mode (just swaps kind).
+    // Pawn-swap fallback below only runs OUTSIDE build mode.
     else if (buildMode.active && ((e.key >= '1' && e.key <= '9') || e.key === '0')) {
       const idx = e.key === '0' ? 9 : (parseInt(e.key) - 1);
       if (STRUCTURE_ORDER[idx]) buildMode.kind = STRUCTURE_ORDER[idx];
-      // Cancel any in-flight wall line if the user picks a different module
+      buildMode.radialOpen = false;
       buildMode._dragStart = null;
       buildMode._dragEnd   = null;
       e.preventDefault();
@@ -2639,20 +2663,29 @@ window.addEventListener('mousedown', e => {
     e.preventDefault();
     return;
   }
-  // Build mode (Defense): left-click places the selected structure at the
-  // snapped 60u cell under the cursor. For wall, mousedown only records the
-  // anchor + places the first cell; mouseup walks the line. For non-wall
-  // structures the legacy single-tap-place path runs.
+  // Build mode (Defense): radial-open vs placing-mode click handlers.
   if (buildMode.active && game.state === 'playing' && !game._paused) {
+    if (buildMode.radialOpen) {
+      // Click inside the radial picks the highlighted wedge. Outside the
+      // radial closes it without changing selection (acts as a soft cancel).
+      const picked = _radialKindUnderCursor(e.clientX, e.clientY);
+      if (picked) {
+        buildMode.kind = picked;
+        buildMode.radialOpen = false;
+        showSwapToast(`${T('已选', 'Selected')}: ${STRUCTURE_DEFS[picked].label()}`);
+      } else {
+        // Click on the dead zone or outside ring → just close
+        buildMode.radialOpen = false;
+      }
+      e.preventDefault();
+      return;
+    }
+    // Placing mode (radial closed): drop a structure at the snapped cell.
     const wp = screenToWorld(e.clientX, e.clientY);
     const SNAP = 60;
     const gx = Math.round(wp.x / SNAP) * SNAP;
     const gy = Math.round(wp.y / SNAP) * SNAP;
     if (buildMode.kind === 'wall') {
-      // Drag-to-line wall placement (mirrors the editor). mouseup commits
-      // every cell along Bresenham(start, end). Single-click still places
-      // one wall because mouseup runs with start === end → no-op + the
-      // initial cell already went down here.
       buildMode._dragStart = { gx, gy };
       buildMode._dragEnd   = { gx, gy };
       placeStructure('wall', gx, gy);
@@ -6624,54 +6657,158 @@ MISSION_FACTORIES.nnDefense = function(mapDef) {
   };
 };
 
-// Defense build shop — bottom-of-screen strip listing all 6 structures with
-// hotkey + cost. Highlights the active structure when buildMode is on.
+// ---- Defense build UI (radial menu + status pill) ----
+// Replaces the old bottom strip. Layout:
+//   • Status pill (always-on): bottom-center, shows current structure + cost
+//     and the B / Esc / Shift+click hint. Compact two-line.
+//   • Radial menu (when buildMode.radialOpen): screen-centered ring of 10
+//     wedges, each rendering icon + label + cost. Mouse direction highlights
+//     the wedge the click would pick.
+const RADIAL_R_INNER = 70;
+const RADIAL_R_OUTER = 200;
+function _radialGeom() {
+  return { cx: W() / 2, cy: H() / 2,
+           rIn: RADIAL_R_INNER, rOut: RADIAL_R_OUTER };
+}
+function _radialKindUnderCursor(sx, sy) {
+  const g = _radialGeom();
+  const dx = sx - g.cx, dy = sy - g.cy;
+  const d = Math.hypot(dx, dy);
+  if (d < g.rIn || d > g.rOut + 30) return null;   // dead-zone or outside
+  // Wedges are evenly spaced; first wedge centered at -π/2 (top), going CW.
+  const N = STRUCTURE_ORDER.length;
+  const step = (Math.PI * 2) / N;
+  let theta = Math.atan2(dy, dx) + Math.PI / 2;     // shift so 0 = up
+  if (theta < 0) theta += Math.PI * 2;
+  const idx = Math.floor((theta + step / 2) / step) % N;
+  return STRUCTURE_ORDER[idx];
+}
+
 function drawDefenseShop() {
   if (game._nnGameMode !== 'defense') return;
-  const cw = W();
-  const itemW = Math.min(96, Math.floor((cw - 80) / STRUCTURE_ORDER.length) - 6);
-  const itemH = 44, gap = 4;
-  const totalW = STRUCTURE_ORDER.length * itemW + (STRUCTURE_ORDER.length - 1) * gap;
-  const startX = cw / 2 - totalW / 2;
-  const y = H() - 84;
+  // Status pill — always shown while in defense mode (compact, non-cluttered)
+  drawDefenseStatusPill();
+  // Radial menu — only when explicitly open
+  if (buildMode.active && buildMode.radialOpen) drawBuildRadial();
+}
+
+function drawDefenseStatusPill() {
+  const def = STRUCTURE_DEFS[buildMode.kind];
+  if (!def) return;
+  const can = canAffordStructure(buildMode.kind);
+  const W_ = W(), H_ = H();
+  const pillW = 240, pillH = 38;
+  const x = W_ / 2 - pillW / 2;
+  const y = H_ - pillH - 16;
   ctx.save();
-  for (let i = 0; i < STRUCTURE_ORDER.length; i++) {
+  ctx.fillStyle = buildMode.active ? 'rgba(200, 38, 28, 0.92)' : 'rgba(20, 18, 24, 0.85)';
+  ctx.fillRect(x, y, pillW, pillH);
+  ctx.strokeStyle = COLORS.cream;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, pillW, pillH);
+  // Label + cost
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`${def.label()}`, x + 12, y + 16);
+  ctx.font = '9px monospace';
+  ctx.fillStyle = can ? '#FFD24A' : COLORS.gray;
+  ctx.fillText(`${def.cost}⚡`, x + 12, y + 30);
+  // Hint right-aligned
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(buildMode.active
+    ? T('B 切换 · Esc 退出 · 左键放置', 'B = switch · Esc = exit · L-click place')
+    : T('B = 建造 · Shift+点击 = 空袭', 'B = build · Shift+click = airstrike'),
+    x + pillW - 12, y + 16);
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = buildMode.active ? COLORS.cream : COLORS.gray;
+  ctx.fillText(buildMode.radialOpen
+    ? T('选择模块', 'Pick a module')
+    : (buildMode.active
+        ? T('放置中', 'Placing')
+        : T('待命', 'Idle')),
+    x + pillW - 12, y + 30);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+// 10-wedge radial picker. Click on a wedge → buildMode.kind = that kind +
+// close the radial. Mouse direction picks the highlighted wedge live; the
+// dead zone in the center cancels (click → close without change).
+function drawBuildRadial() {
+  const g = _radialGeom();
+  const N = STRUCTURE_ORDER.length;
+  const step = (Math.PI * 2) / N;
+  // Hit-test current cursor for highlight
+  const hovered = _radialKindUnderCursor(mouse.x, mouse.y);
+
+  ctx.save();
+  // Backdrop
+  ctx.fillStyle = 'rgba(20, 18, 24, 0.55)';
+  ctx.fillRect(0, 0, W(), H());
+
+  // Wedges
+  for (let i = 0; i < N; i++) {
     const kind = STRUCTURE_ORDER[i];
     const def = STRUCTURE_DEFS[kind];
-    const x = startX + i * (itemW + gap);
-    const isActive = buildMode.active && buildMode.kind === kind;
     const can = canAffordStructure(kind);
-    ctx.fillStyle = isActive ? COLORS.red : 'rgba(20, 18, 24, 0.85)';
-    ctx.fillRect(x, y, itemW, itemH);
-    ctx.strokeStyle = can ? COLORS.cream : COLORS.gray;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(x, y, itemW, itemH);
-    ctx.fillStyle = isActive ? COLORS.cream : (can ? COLORS.cream : COLORS.gray);
-    ctx.font = 'bold 10px sans-serif';
+    const wedgeStart = -Math.PI / 2 + (i - 0.5) * step;
+    const wedgeEnd   = -Math.PI / 2 + (i + 0.5) * step;
+    const isHover = hovered === kind;
+    // Slice fill
+    ctx.beginPath();
+    ctx.moveTo(g.cx + Math.cos(wedgeStart) * g.rIn, g.cy + Math.sin(wedgeStart) * g.rIn);
+    ctx.arc(g.cx, g.cy, g.rIn, wedgeStart, wedgeEnd, false);
+    ctx.lineTo(g.cx + Math.cos(wedgeEnd) * g.rOut, g.cy + Math.sin(wedgeEnd) * g.rOut);
+    ctx.arc(g.cx, g.cy, g.rOut, wedgeEnd, wedgeStart, true);
+    ctx.closePath();
+    ctx.fillStyle = isHover
+      ? 'rgba(200, 38, 28, 0.85)'
+      : (can ? 'rgba(40, 38, 44, 0.92)' : 'rgba(40, 38, 44, 0.55)');
+    ctx.fill();
+    ctx.strokeStyle = COLORS.cream;
+    ctx.lineWidth = isHover ? 2 : 1;
+    ctx.stroke();
+
+    // Label position — middle of wedge along radial
+    const mid = -Math.PI / 2 + i * step;
+    const lr = (g.rIn + g.rOut) / 2;
+    const lx = g.cx + Math.cos(mid) * lr;
+    const ly = g.cy + Math.sin(mid) * lr;
+    // Module name
+    ctx.fillStyle = isHover ? COLORS.cream : (can ? COLORS.cream : COLORS.gray);
+    ctx.font = isHover ? 'bold 13px sans-serif' : 'bold 11px sans-serif';
     ctx.textAlign = 'center';
-    const slotKey = i < 9 ? (i + 1) : '0';
-    ctx.fillText(`[${slotKey}] ${def.label()}`, x + itemW / 2, y + 16);
-    ctx.font = '9px monospace';
-    ctx.fillStyle = isActive ? COLORS.cream : (can ? '#FFD24A' : COLORS.gray);
-    ctx.fillText(`${def.cost}⚡`, x + itemW / 2, y + 32);
+    ctx.fillText(def.label(), lx, ly - 4);
+    // Cost
+    ctx.font = '10px monospace';
+    ctx.fillStyle = isHover ? COLORS.cream : (can ? '#FFD24A' : COLORS.gray);
+    ctx.fillText(`${def.cost}⚡`, lx, ly + 12);
     ctx.textAlign = 'left';
   }
-  // Build-mode hint top-right of strip
-  if (buildMode.active) {
-    ctx.fillStyle = COLORS.red;
-    ctx.font = 'bold 10px sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(T('建造中 · 左键放置 · B 取消',
-                   'BUILDING · L-click to place · B to cancel'), cw - 16, y - 6);
-    ctx.textAlign = 'left';
-  } else {
-    ctx.fillStyle = COLORS.gray;
-    ctx.font = '10px sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(T('B = 建造模式 · Shift+点击 = 空袭',
-                   'B = build mode · Shift+click = airstrike'), cw - 16, y - 6);
-    ctx.textAlign = 'left';
-  }
+
+  // Center dead-zone: shows current energy + close hint
+  ctx.fillStyle = 'rgba(20, 18, 24, 0.92)';
+  ctx.beginPath();
+  ctx.arc(g.cx, g.cy, g.rIn - 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = COLORS.cream;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = '#FFD24A';
+  ctx.font = 'bold 18px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${Math.floor(game._energy || 0)}⚡`, g.cx, g.cy - 2);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = '9px sans-serif';
+  ctx.fillText(T('能源', 'ENERGY'), g.cx, g.cy + 14);
+  ctx.font = '8px sans-serif';
+  ctx.fillStyle = COLORS.gray;
+  ctx.fillText(T('B / Esc 关闭', 'B / Esc close'), g.cx, g.cy + 28);
+  ctx.textAlign = 'left';
   ctx.restore();
 }
 
@@ -8900,8 +9037,10 @@ function render() {
   renderStructures();
   renderSmokeClouds();
   renderAirstrikes();
-  // Build-mode placement preview (only when active)
-  if (buildMode.active && game.state === 'playing' && !game._paused) renderBuildPreview();
+  // Build-mode placement preview — only while in placing mode (not while
+  // the radial picker is on top of the world).
+  if (buildMode.active && !buildMode.radialOpen
+      && game.state === 'playing' && !game._paused) renderBuildPreview();
 
   ctx.restore();
 
