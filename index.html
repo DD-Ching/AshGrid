@@ -62,8 +62,11 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 .start-screen {
   background: var(--cream);
   padding: 4vh 6vw;
-  position: relative;
-  overflow: hidden;
+  /* Stay fixed across the whole viewport — without this the rule
+     dropped to 'position: relative' which only covered content height
+     and let the in-game canvas HUD bleed through at the bottom. */
+  position: fixed; inset: 0;
+  overflow: auto;
 }
 .start-bg {
   position: absolute; inset: 0;
@@ -735,7 +738,10 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 .lang-toggle .on { color: var(--red); }
 body.lang-en .lang-toggle .on { color: var(--black); }
 .lobby-card { position: relative; }
-#start { position: relative; }
+/* Was 'position: relative' which beat the .start-screen 'fixed' rule on
+   ID specificity — that left a strip at the bottom where the in-game
+   canvas HUD bled through. Keep fixed so the cream covers the viewport. */
+#start { position: fixed; inset: 0; }
 .footer-bar {
   display: flex; justify-content: space-between;
   font-size: 10px; letter-spacing: 3px; color: var(--gray);
