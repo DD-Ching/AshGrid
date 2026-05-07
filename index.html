@@ -4139,8 +4139,14 @@ window.addEventListener('keydown', e => {
       try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (err) {}
       showMessage(`AIM-ASSIST · ${player._aimAssist ? T('开启', 'ON') : T('关闭', 'OFF')}`, 60);
     }
-    // 1-4 in NN mode: pawn-swap to that team-0 slot (1 = self, 2-4 = allies).
-    // 1-6 in campaign: dev jump to mission N (only when not in NN mode).
+    // Number keys: in COMMAND mode (TAB), 1-7 issue squad orders. Outside
+    // command mode, 1-4 still pawn-swap (NN mode) or jump-mission (campaign).
+    else if (e.key >= '1' && e.key <= '7' && game.mode === 'command' && game._nnMode) {
+      const orderById = { '1':'rally', '2':'spread', '3':'attack', '4':'defend',
+                          '5':'protect', '6':'suppress', '7':'retreat' };
+      const id = orderById[e.key];
+      if (id) issueSquadOrder(id);
+    }
     else if (e.key >= '1' && e.key <= '6') {
       if (game._nnMode) {
         const allyIdx = parseInt(e.key) - 2;   // '2' → ally[0], etc.
@@ -6872,6 +6878,128 @@ function nnUnitOverlapsBuilding(unit, radius) {
   return false;
 }
 
+// ============ SQUAD COMMANDS ============
+// Player issues high-level orders (RALLY / SPREAD / ATTACK / DEFEND / PROTECT
+// / SUPPRESS / RETREAT) and allies bias their movement + fire toward the
+// order for ~8 seconds. Orders post-process the NN's chosen action — the
+// model still picks fire-vs-hold and the rough motion, we just nudge the
+// move direction toward the order's intent. After the order expires, NN
+// takes back over completely.
+const SQUAD_ORDER_DURATION = 8 * 60;      // 8 seconds of biased behaviour
+const SQUAD_ORDERS = {
+  rally:    { id: 'rally',    key: '1', zh: '集合',  en: 'RALLY',    radio_zh: '靠攏',   radio_en: 'On me' },
+  spread:   { id: 'spread',   key: '2', zh: '散開',  en: 'SPREAD',   radio_zh: '展開',   radio_en: 'Spread out' },
+  attack:   { id: 'attack',   key: '3', zh: '進攻',  en: 'ATTACK',   radio_zh: '推進',   radio_en: 'Push them' },
+  defend:   { id: 'defend',   key: '4', zh: '防禦',  en: 'DEFEND',   radio_zh: '據點',   radio_en: 'Hold position' },
+  protect:  { id: 'protect',  key: '5', zh: '護衛',  en: 'PROTECT',  radio_zh: '貼我',   radio_en: 'Protect me' },
+  suppress: { id: 'suppress', key: '6', zh: '壓制',  en: 'SUPPRESS', radio_zh: '火力',   radio_en: 'Suppress' },
+  retreat:  { id: 'retreat',  key: '7', zh: '撤退',  en: 'RETREAT',  radio_zh: '後撤',   radio_en: 'Fall back' },
+};
+function issueSquadOrder(id) {
+  const def = SQUAD_ORDERS[id];
+  if (!def) return;
+  game._squadOrder = { id: def.id, expiresAt: game.time + SQUAD_ORDER_DURATION };
+  const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
+  const label = (lang === 'zh') ? def.zh : def.en;
+  const radio = (lang === 'zh') ? def.radio_zh : def.radio_en;
+  if (typeof showSwapToast === 'function') showSwapToast(`▶ ${label}`);
+  if (typeof showRadioToast === 'function') showRadioToast('CMD', `"${radio}"`);
+  if (typeof playRadioBeep === 'function') playRadioBeep(880, 0.12);
+}
+function _squadOrderActive() {
+  return game._squadOrder && game.time < game._squadOrder.expiresAt;
+}
+// Map a continuous direction (dx, dy) to one of the 9 NN move-dir slots.
+// Mirrors Python's combat_env._vector_to_movedir.
+function _vectorToMoveDir(dx, dy) {
+  if (Math.abs(dx) < 0.2 && Math.abs(dy) < 0.2) return 0;
+  const angle = Math.atan2(dy, dx);
+  const dirs = [
+    [1, -Math.PI / 2],          // N
+    [2, -Math.PI / 4],          // NE
+    [3, 0],                     // E
+    [4, Math.PI / 4],           // SE
+    [5, Math.PI / 2],           // S
+    [6, 3 * Math.PI / 4],       // SW
+    [7, Math.PI],               // W
+    [8, -3 * Math.PI / 4],      // NW
+  ];
+  let best = 1, bestDiff = Math.PI;
+  for (const [d, a] of dirs) {
+    let diff = ((angle - a + Math.PI) % (2 * Math.PI)) - Math.PI;
+    if (diff < -Math.PI) diff += 2 * Math.PI;
+    diff = Math.abs(diff);
+    if (diff < bestDiff) { bestDiff = diff; best = d; }
+  }
+  return best;
+}
+// Compute the order-biased move direction for a friendly unit. Returns
+// `null` if the order doesn't dictate movement (e.g. SUPPRESS holds).
+function _squadOrderMoveDirFor(unit, friendlies, enemies, orderId) {
+  const tx = (a, b) => a - b;
+  if (orderId === 'rally') {
+    const dx = player.x - unit.x, dy = player.y - unit.y;
+    if (Math.hypot(dx, dy) < 100) return 0;          // close enough → idle
+    return _vectorToMoveDir(dx, dy);
+  }
+  if (orderId === 'spread') {
+    // Move away from nearest other friendly
+    let nearest = null, bd = Infinity;
+    for (const f of friendlies) {
+      if (f === unit || !f || !f.alive) continue;
+      const d = Math.hypot(f.x - unit.x, f.y - unit.y);
+      if (d < bd) { bd = d; nearest = f; }
+    }
+    if (!nearest || bd > 220) return null;          // already spread out
+    return _vectorToMoveDir(unit.x - nearest.x, unit.y - nearest.y);
+  }
+  if (orderId === 'attack') {
+    // Push toward nearest enemy (visible or last-seen)
+    let nearest = null, bd = Infinity;
+    for (const e of enemies) {
+      if (!e || !e.alive) continue;
+      const d = Math.hypot(e.x - unit.x, e.y - unit.y);
+      if (d < bd) { bd = d; nearest = e; }
+    }
+    if (!nearest) return null;
+    if (bd < 180) return null;                      // close enough; let NN engage
+    return _vectorToMoveDir(nearest.x - unit.x, nearest.y - unit.y);
+  }
+  if (orderId === 'defend') {
+    // Move to nearest cover point if not already at one
+    if (typeof coverPoints === 'undefined' || !coverPoints.length) return 0;
+    let nearest = null, bd = Infinity;
+    for (const cp of coverPoints) {
+      const d = Math.hypot(cp.x - unit.x, cp.y - unit.y);
+      if (d < bd) { bd = d; nearest = cp; }
+    }
+    if (!nearest || bd < 30) return 0;              // at cover → hold
+    return _vectorToMoveDir(nearest.x - unit.x, nearest.y - unit.y);
+  }
+  if (orderId === 'protect') {
+    // Orbit ~80u from player, on a slot determined by ally index
+    const idx = Math.max(0, friendlies.indexOf(unit));
+    const angle = (idx / Math.max(1, friendlies.length - 1)) * Math.PI * 2;
+    const desiredX = player.x + Math.cos(angle) * 80;
+    const desiredY = player.y + Math.sin(angle) * 80;
+    const dx = desiredX - unit.x, dy = desiredY - unit.y;
+    if (Math.hypot(dx, dy) < 30) return 0;
+    return _vectorToMoveDir(dx, dy);
+  }
+  if (orderId === 'suppress') {
+    return 0;                                       // hold position; fire forced below
+  }
+  if (orderId === 'retreat') {
+    // Move toward unit's spawn position
+    const sx = unit.spawnX != null ? unit.spawnX : (typeof NN_ARENA !== 'undefined' ? NN_ARENA.x0 + 200 : unit.x);
+    const sy = unit.spawnY != null ? unit.spawnY : unit.y;
+    const dx = sx - unit.x, dy = sy - unit.y;
+    if (Math.hypot(dx, dy) < 60) return 0;
+    return _vectorToMoveDir(dx, dy);
+  }
+  return null;
+}
+
 // Apply a discrete action (0..17) to a unit. Mirrors combat_env._apply_action,
 // but also handles "stuck on wall" — the trained model sometimes confidently
 // picks a direction that's blocked by a wall, so we slide along the wall and
@@ -6881,7 +7009,19 @@ function nnApplyAction(unit, action, friendlies, enemies) {
   const r = unit.radius || 14;
   const speed = NN.PLAYER_SPEED;
   let moveDir = action >> 1;        // 0..8
-  const fire = action & 1;          // 0|1
+  let fire = action & 1;            // 0|1
+
+  // Squad order override — only allies (units that share friendlies with the
+  // human player). We post-process the NN's chosen action: bias movement
+  // toward the order, force fire on SUPPRESS, leave fire/no-fire for NN.
+  if (_squadOrderActive() && friendlies && friendlies.indexOf(player) >= 0 && unit !== player) {
+    const orderId = game._squadOrder.id;
+    const orderDir = _squadOrderMoveDirFor(unit, friendlies, enemies, orderId);
+    if (orderDir != null) moveDir = orderDir;
+    if (orderId === 'suppress') fire = 1;             // always fire while suppressing
+    if (orderId === 'attack')   fire = action & 1;    // keep NN's fire bit
+    if (orderId === 'retreat')  fire = 0;             // don't shoot while breaking contact
+  }
 
   // Stuck breaker: if this unit has been stuck (<2u progress) for >=20 ticks
   // while NN keeps trying to move, override with a random non-blocked dir.
@@ -14868,7 +15008,7 @@ function renderDroneOverlay() {
 }
 
 function renderCommandOverlay() {
-  // Strategic overlay
+  // Strategic overlay (left side)
   ctx.fillStyle = 'rgba(232, 228, 216, 0.94)';
   ctx.fillRect(20, H()/2 - 60, 240, 120);
   ctx.strokeStyle = COLORS.black;
@@ -14881,14 +15021,65 @@ function renderCommandOverlay() {
   ctx.fillText(T('指挥视角 COMMAND VIEW', 'COMMAND VIEW'), 32, H()/2 - 40);
   ctx.fillRect(32, H()/2 - 36, 40, 1);
   ctx.font = 'bold 12px monospace';
+  const allyCount = allies.filter(a => a && a.alive).length;
   ctx.fillText(`SECTOR    7G`, 32, H()/2 - 14);
-  ctx.fillText(`UNITS     1 ALLY`, 32, H()/2 + 4);
+  ctx.fillText(`UNITS     ${allyCount} ALLY`, 32, H()/2 + 4);
   ctx.fillStyle = COLORS.red;
   const dt = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
   ctx.fillText(`THREATS   ${dt}`, 32, H()/2 + 22);
   ctx.fillStyle = COLORS.gray;
   ctx.font = '10px sans-serif';
   ctx.fillText(T('TAB · 返回战术视角', 'TAB · BACK TO TACTICAL'), 32, H()/2 + 44);
+
+  // Squad-orders strip (bottom of screen) — shows the 7 numbered slots,
+  // highlights the active order, and pulses while the order is in effect.
+  const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
+  const ids = ['rally','spread','attack','defend','protect','suppress','retreat'];
+  const activeId = (_squadOrderActive() ? game._squadOrder.id : null);
+  const activeRemain = activeId
+    ? Math.max(0, (game._squadOrder.expiresAt - game.time) / SQUAD_ORDER_DURATION)
+    : 0;
+  const slotW = 110, slotH = 52, gap = 6;
+  const totalW = ids.length * slotW + (ids.length - 1) * gap;
+  const baseX = (W() - totalW) / 2;
+  const y = H() - slotH - 24;
+  ctx.save();
+  // Heading
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(lang === 'zh' ? '隊伍指令 · 1-7 下令' : 'SQUAD ORDERS · 1-7 to issue', W()/2, y - 8);
+  for (let i = 0; i < ids.length; i++) {
+    const def = SQUAD_ORDERS[ids[i]];
+    const x = baseX + i * (slotW + gap);
+    const isActive = (def.id === activeId);
+    // Background
+    ctx.fillStyle = isActive ? COLORS.red : 'rgba(20, 18, 24, 0.85)';
+    ctx.fillRect(x, y, slotW, slotH);
+    ctx.strokeStyle = isActive ? COLORS.cream : 'rgba(232,228,216,0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x, y, slotW, slotH);
+    // Active progress bar (fills from right to left as order expires)
+    if (isActive) {
+      ctx.fillStyle = 'rgba(232,228,216,0.25)';
+      ctx.fillRect(x, y + slotH - 3, slotW * activeRemain, 3);
+    }
+    // Hotkey badge
+    ctx.fillStyle = isActive ? COLORS.cream : COLORS.gray;
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(def.key, x + 8, y + 14);
+    // Label
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText((lang === 'zh') ? def.zh : def.en, x + slotW/2, y + 26);
+    // Sub-label radio
+    ctx.fillStyle = isActive ? COLORS.cream : 'rgba(232,228,216,0.55)';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText(`"${(lang === 'zh') ? def.radio_zh : def.radio_en}"`, x + slotW/2, y + 42);
+  }
+  ctx.restore();
 }
 
 // ============ PAUSE ============
