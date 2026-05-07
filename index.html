@@ -9693,20 +9693,37 @@ MISSION_FACTORIES.nnConvoy = function(mapDef) {
       }
       for (const a of allies) { if (!a.alive) a._respawnAt = null; }
 
-      // UGV movement — slows if reds are close (within 220u)
+      // UGV movement — actually requires escort. Three gates:
+      //   1. Friendly within ESCORT_RADIUS (else UGV halts entirely — without
+      //      this you could just AFK and watch the UGV roll to the goal)
+      //   2. Slows if any red is within 220u (suppression bites)
+      //   3. UGV also slows if it took damage in the last 90 ticks (so
+      //      ignoring incoming fire has a movement cost)
+      const ESCORT_RADIUS = 240;
+      let escorted = false;
+      if (player.alive && Math.hypot(player.x - ugv.x, player.y - ugv.y) < ESCORT_RADIUS) escorted = true;
+      else for (const a of allies) {
+        if (a && a.alive && Math.hypot(a.x - ugv.x, a.y - ugv.y) < ESCORT_RADIUS) { escorted = true; break; }
+      }
       let nearRed = false;
       for (const e of enemies) {
         if (!e.alive) continue;
         if (Math.hypot(e.x - ugv.x, e.y - ugv.y) < 220) { nearRed = true; break; }
       }
-      const sp = nearRed ? ugv.speed * 0.35 : ugv.speed;
+      const recentlyHit = (ugv._lastHitAt != null) && (game.time - ugv._lastHitAt < 90);
+      let sp = ugv.speed;
+      if (!escorted) sp = 0;                 // no friendly nearby → freeze
+      else if (nearRed) sp *= 0.35;
+      else if (recentlyHit) sp *= 0.55;
       ugv.x += sp;
+      ugv._escorted = escorted;              // expose for HUD render
 
       // UGV takes damage from red bullets near it
       for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
         if (Math.hypot(b.x - ugv.x, b.y - ugv.y) < ugv.radius) {
           ugv.hp -= b.damage;
+          ugv._lastHitAt = game.time;
           enemyBullets.splice(i, 1);
         }
       }
