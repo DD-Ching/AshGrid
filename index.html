@@ -1284,6 +1284,23 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 </div>
 
 <!-- Map editor: thin toolbar at top, canvas remains visible below -->
+<!-- NN model loading overlay — visible while ort.InferenceSession.create()
+     is in flight. Without this the screen goes blank during the 0.5-2s
+     model load on the first match (every brain after that is cached). -->
+<div id="nnLoadingOverlay" style="display:none; position:fixed; inset:0; z-index:200; background:rgba(26,26,26,0.96); align-items:center; justify-content:center; flex-direction:column; gap:24px; pointer-events:auto;">
+  <div style="display:flex; align-items:center; gap:14px; color:var(--cream); font:bold 11px monospace; letter-spacing:6px;">
+    <span style="display:inline-block; width:10px; height:10px; background:var(--red); animation: nn-pulse 0.8s ease-in-out infinite;"></span>
+    <span id="nnLoadingLabel">LOADING NEURAL NETWORK</span>
+  </div>
+  <div style="width:280px; height:2px; background:rgba(232,228,216,0.18); position:relative; overflow:hidden;">
+    <div style="position:absolute; left:0; top:0; height:100%; width:35%; background:var(--red); animation: nn-slide 1.4s ease-in-out infinite;"></div>
+  </div>
+  <div style="color:var(--gray); font:10px monospace; letter-spacing:2px;">PPO INFERENCE · ONNX RUNTIME WEB</div>
+</div>
+<style>
+  @keyframes nn-pulse { 0%,100%{opacity:0.3;} 50%{opacity:1;} }
+  @keyframes nn-slide { 0%{transform:translateX(-100%);} 100%{transform:translateX(380%);} }
+</style>
 <div class="overlay editor-overlay hidden" id="editor">
   <div class="editor-toolbar">
     <span class="editor-title">編輯器 / EDITOR</span>
@@ -5293,8 +5310,18 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   for (let i = 1; i < blueSize; i++) allDiffs.add(slotDiff('blue', i));
   for (let i = 0; i < redSize;  i++) allDiffs.add(slotDiff('red',  i));
   const tierLabel = (DIFF_LABELS[difficulty] || T('全能', 'ELITE'));
-  showMessage(`${T('载入神经网络', 'Loading NN')} · ${[...allDiffs].length === 1 ? tierLabel : T('多脑混合', 'mixed brains')}...`, 60);
+  // Loading overlay: visible while we wait for ort.InferenceSession.create.
+  // Cached brains return synchronously and the overlay just blinks once.
+  const loadingEl = document.getElementById('nnLoadingOverlay');
+  const loadingLabel = document.getElementById('nnLoadingLabel');
+  if (loadingEl) {
+    if (loadingLabel) loadingLabel.textContent = (typeof getLang === 'function' && getLang() === 'zh')
+      ? `载入神经网络 · ${[...allDiffs].length === 1 ? tierLabel : '多脑混合'}`
+      : `LOADING NN · ${[...allDiffs].length === 1 ? String(tierLabel).toUpperCase() : 'MIXED BRAINS'}`;
+    loadingEl.style.display = 'flex';
+  }
   const ok = await nnLoadAll([...allDiffs]);
+  if (loadingEl) loadingEl.style.display = 'none';
   if (!ok) {
     showMessage(T('NN 载入失败 · 退回普通对抗', 'NN load failed · fallback to vanilla'), 180);
     return startSkirmish();
