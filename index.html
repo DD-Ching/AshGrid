@@ -1676,7 +1676,10 @@ function getUnlockedAchievements() {
 // Per-match unlock tracker — cleared at match start, surfaced on the
 // match-end result card so the player sees what they earned this round.
 let _matchAchievementUnlocks = [];
-function _resetMatchAchievementUnlocks() { _matchAchievementUnlocks = []; }
+function _resetMatchAchievementUnlocks() {
+  _matchAchievementUnlocks = [];
+  if (typeof _lastMatchUnlocks !== 'undefined') _lastMatchUnlocks = [];
+}
 
 function unlockAchievement(id) {
   const set = getUnlockedAchievements();
@@ -8096,13 +8099,71 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         })[game._nnGameMode] || T('对抗', 'DEATHMATCH');
         ctx.fillText(`${T('模式', 'Mode')} ${modeLabel}`, cx, y + 140);
         ctx.textAlign = 'left';
-        // Achievements unlocked this match — small chip row below the card
-        drawMatchUnlockStrip(cx, y + ch + 14, cw);
+        // Tier-unlock callout (modes/styles/weapons unlocked this match) +
+        // achievement strip below it. Tier-unlock first because it's the
+        // bigger reward moment.
+        const tierH = drawMatchTierUnlockStrip(cx, y + ch + 14, cw);
+        drawMatchUnlockStrip(cx, y + ch + 14 + tierH, cw);
         ctx.restore();
       }
     },
   };
 };
+
+// Renders a big "TIER UNLOCK" callout when a match crosses one of the
+// progression thresholds. Sits above the achievement strip so the player
+// sees it first — that's the moment that makes the gating feel rewarding
+// instead of arbitrary. Returns the y-offset consumed so the caller can
+// stack the achievement strip below it.
+function drawMatchTierUnlockStrip(cx, y, maxW) {
+  if (!_lastMatchUnlocks || _lastMatchUnlocks.length === 0) return 0;
+  const lang = (typeof getLang === 'function') ? getLang() : 'en';
+  const heading = (lang === 'zh') ? '✓ 解鎖' : '✓ UNLOCKED';
+  ctx.save();
+  // Card: red on cream with the same drop-shadow vibe as the match-end card
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'center';
+  const items = _lastMatchUnlocks.map(u => (lang === 'zh') ? u.zh : u.key.toUpperCase());
+  const padX = 14, gap = 8;
+  const itemWidths = items.map(t => ctx.measureText(t).width + padX * 2);
+  // Lay out, wrapping at maxW
+  let line = []; let lineW = 0;
+  const lines = [];
+  for (let i = 0; i < items.length; i++) {
+    const w = itemWidths[i] + gap;
+    if (lineW + w > maxW && line.length > 0) {
+      lines.push({ items: line, w: lineW - gap });
+      line = []; lineW = 0;
+    }
+    line.push({ title: items[i], w: itemWidths[i] });
+    lineW += w;
+  }
+  if (line.length > 0) lines.push({ items: line, w: lineW - gap });
+  // Heading
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(heading, cx, y + 12);
+  // Pills
+  const pillH = 22;
+  let py = y + 22;
+  for (const ln of lines) {
+    let lx = cx - ln.w / 2;
+    for (const it of ln.items) {
+      // Drop shadow
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(lx + 3, py + 3, it.w, pillH);
+      ctx.fillStyle = COLORS.red;
+      ctx.fillRect(lx, py, it.w, pillH);
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText(it.title, lx + it.w / 2, py + 15);
+      lx += it.w + gap;
+    }
+    py += pillH + 6;
+  }
+  ctx.restore();
+  return py - y + 8;
+}
 
 // Renders a horizontal chip row underneath the match-end card listing every
 // achievement the player unlocked THIS match. Each chip is "ACHV · TITLE"
@@ -8171,12 +8232,53 @@ function getGlobalStats() {
 function saveGlobalStats(s) {
   try { localStorage.setItem(STATS_KEY, JSON.stringify(s)); } catch (e) {}
 }
+// Stash the things that crossed an unlock threshold THIS match. Read by the
+// end-of-match overlay (drawMatchTierUnlockStrip), cleared at next match
+// start. Empty if the player didn't tier-up this match.
+let _lastMatchUnlocks = [];
+function _computeTierUnlocks(prevTier, nextTier) {
+  if (nextTier <= prevTier) return [];
+  const unlocked = [];
+  const NAME = {
+    survival: { zh: '生存 / SURVIVAL',  cat: 'mode'    },
+    defense:  { zh: '防御 / DEFENSE',   cat: 'mode'    },
+    helo:     { zh: '撤离 / HELO',      cat: 'mode'    },
+    convoy:   { zh: '护送 / CONVOY',    cat: 'mode'    },
+    duel:     { zh: '单挑 / DUEL',      cat: 'mode'    },
+    sniper:   { zh: '狙击 / SNIPER',    cat: 'mode'    },
+    warrior:  { zh: 'WARRIOR 风格',     cat: 'style'   },
+    defensive:{ zh: 'GUARD 风格',       cat: 'style'   },
+    sharpshooter: { zh: 'SHARP 风格',   cat: 'style'   },
+    cqb:      { zh: 'RUSH 风格',        cat: 'style'   },
+    tactical: { zh: 'TAC 风格',         cat: 'style'   },
+    SMG:      { zh: 'SMG 武器',         cat: 'weapon'  },
+    SHOTGUN:  { zh: 'SHOTGUN 武器',     cat: 'weapon'  },
+    LMG:      { zh: 'LMG 武器',         cat: 'weapon'  },
+    SNIPER:   { zh: 'SNIPER 武器',      cat: 'weapon'  },
+    ROCKET:   { zh: 'ROCKET 武器',      cat: 'weapon'  },
+    wolf:     { zh: 'WOLF 机体',        cat: 'chassis' },
+    heavy:    { zh: 'HEAVY 机体',       cat: 'chassis' },
+    editor:   { zh: '地图编辑器 / MAP EDITOR', cat: 'tool' },
+  };
+  const TABLES = [MODE_UNLOCK_TIER, STYLE_UNLOCK_TIER, WEAPON_UNLOCK_TIER, CHASSIS_UNLOCK_TIER];
+  for (const t of TABLES) {
+    for (const [k, tier] of Object.entries(t)) {
+      if (tier > prevTier && tier <= nextTier && NAME[k]) unlocked.push({ key: k, ...NAME[k] });
+    }
+  }
+  // Editor crosses the gate at tier 4 only — same as DUEL/SNIPER/HEAVY.
+  if (prevTier < 4 && nextTier >= 4) unlocked.push({ key: 'editor', ...NAME.editor });
+  return unlocked;
+}
 function bumpMatchPlayed() {
+  const prevTier = getUnlockTier();
   const s = getGlobalStats();
   s.matchesPlayed++;
   s.totalKills += game.killCount || 0;
   saveGlobalStats(s);
   refreshStartStatsLine();
+  const nextTier = getUnlockTier();
+  _lastMatchUnlocks = _computeTierUnlocks(prevTier, nextTier);
   // Day++ on every completed match — feeds the "DAY N" chip + sets up
   // future per-day flavor missions / unlocks.
   if (typeof bumpDayNum === 'function') bumpDayNum();
