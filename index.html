@@ -3639,6 +3639,28 @@ function playRadioBeep(freq = 1320, vol = 0.18) {
   o.start(); o.stop(ctx.currentTime + 0.18);
 }
 
+// Tier-unlock chord — ascending triad (C5 / E5 / G5) with a soft sine
+// timbre + short attack and a longer release. Distinct from the harsh
+// radio square-wave beep so "you unlocked something" feels rewarding,
+// not warning-ish. Fires once at bumpMatchPlayed when a tier crosses.
+function playUnlockChord() {
+  if (!AUDIO.ctx || AUDIO.muted) return;
+  const ctx = AUDIO.ctx;
+  const NOTES = [523.25, 659.25, 783.99];   // C5, E5, G5
+  NOTES.forEach((freq, i) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    const start = ctx.currentTime + i * 0.10;
+    g.gain.value = 0;
+    g.gain.linearRampToValueAtTime(0.18, start + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, start + 0.55);
+    o.connect(g); g.connect(AUDIO.master);
+    o.start(start); o.stop(start + 0.6);
+  });
+}
+
 // Heartbeat — kick-drum-ish low thud + a soft second pump. Played on a
 // loop with rate scaling with low-HP severity. update() schedules these
 // based on the player's HP%.
@@ -8279,6 +8301,9 @@ function bumpMatchPlayed() {
   refreshStartStatsLine();
   const nextTier = getUnlockTier();
   _lastMatchUnlocks = _computeTierUnlocks(prevTier, nextTier);
+  if (_lastMatchUnlocks.length > 0 && typeof playUnlockChord === 'function') {
+    playUnlockChord();
+  }
   // Day++ on every completed match — feeds the "DAY N" chip + sets up
   // future per-day flavor missions / unlocks.
   if (typeof bumpDayNum === 'function') bumpDayNum();
