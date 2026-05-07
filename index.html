@@ -1697,16 +1697,32 @@ function unlockAchievement(id) {
     showRadioToast((lang === 'zh') ? '成就解鎖' : 'ACHIEVEMENT', title, 4500);
   }
 }
+// Achievements that depend on locked features. Hidden until the underlying
+// feature unlocks — otherwise the modal lists goals the player can't even
+// start working on, which reads as messy.
+const ACHIEVEMENT_TIER_GATE = {
+  wave5:        1,   // SURVIVAL
+  wave10:       1,   // SURVIVAL
+  build_50:     2,   // DEFENSE (build phase)
+  beacon_kill:  2,   // DEFENSE (enemy spawn beacon)
+  rocket_kill:  4,   // ROCKET weapon
+  tactical_win: 4,   // HEAVY chassis
+};
 function buildAchievementsModal() {
   const body = document.getElementById('achvBody');
   if (!body) return;
   const lang = (typeof getLang === 'function') ? getLang() : 'en';
   const unlocked = getUnlockedAchievements();
-  const total = ACHIEVEMENTS.length, done = unlocked.size;
+  const tier = (typeof getUnlockTier === 'function') ? getUnlockTier() : 4;
+  const visible = ACHIEVEMENTS.filter(a => {
+    const need = ACHIEVEMENT_TIER_GATE[a.id];
+    return need == null || need <= tier || (typeof isAllUnlocked === 'function' && isAllUnlocked());
+  });
+  const total = visible.length, done = visible.filter(a => unlocked.has(a.id)).length;
   body.innerHTML = '';
   const grid = document.createElement('div');
   grid.className = 'achv-grid-v2';
-  ACHIEVEMENTS.forEach((a, i) => {
+  visible.forEach((a, i) => {
     const isUnlocked = unlocked.has(a.id);
     const idx = String(i + 1).padStart(2, '0');
     const title = (lang === 'zh') ? a.title_zh : a.title_en;
@@ -1787,9 +1803,18 @@ function buildDossierModal() {
   const last = recovered[recovered.length - 1] || LOG_ENTRIES[0];
   const taglineTitle = last ? ((lang === 'zh') ? last.title_zh : last.title_en) : '';
   const taglineDay   = last ? `DAY ${last.day}` : '';
-  // Achievements progress
-  const totalAchv = ACHIEVEMENTS.length;
-  const doneAchv  = getUnlockedAchievements().size;
+  // Achievements progress — denominator drops when achievements are still
+  // tier-gated, so the progress bar reads "3 / 6" instead of "3 / 12" while
+  // half the achievements aren't applicable yet.
+  const _achvTier = (typeof getUnlockTier === 'function') ? getUnlockTier() : 4;
+  const _achvVisible = ACHIEVEMENTS.filter(a => {
+    const need = ACHIEVEMENT_TIER_GATE && ACHIEVEMENT_TIER_GATE[a.id];
+    return need == null || need <= _achvTier ||
+           (typeof isAllUnlocked === 'function' && isAllUnlocked());
+  });
+  const _achvUnlocked = getUnlockedAchievements();
+  const totalAchv = _achvVisible.length;
+  const doneAchv  = _achvVisible.filter(a => _achvUnlocked.has(a.id)).length;
   // Log progress
   const totalLog  = LOG_ENTRIES.length;
   const recoveredLog = recovered.length;
