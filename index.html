@@ -1316,10 +1316,13 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     <button id="edClearBtn" class="ed-action">清空</button>
     <button id="edSaveBtn"  class="ed-action">存档</button>
     <select id="edTestMode" class="ed-action" style="padding: 5px 8px;">
-      <option value="dm">对抗</option>
-      <option value="survival">生存</option>
-      <option value="duel">单挑</option>
-      <option value="sniper">狙击</option>
+      <option value="dm">对抗 DM</option>
+      <option value="survival">生存 SURV</option>
+      <option value="defense">防御 DEF</option>
+      <option value="helo">撤离 HELO</option>
+      <option value="convoy">护送 CONVOY</option>
+      <option value="duel">单挑 DUEL</option>
+      <option value="sniper">狙击 SNIPER</option>
     </select>
     <button id="edTestBtn"  class="ed-action active">测试 ▶</button>
     <button id="edExitBtn"  class="ed-action">退出</button>
@@ -4197,12 +4200,27 @@ function setUnlockedSlotCount(n) {
   try { localStorage.setItem('ag.editorSlots', String(clamped)); } catch (e) {}
   return clamped;
 }
-const editor = { tool: 'cover', spawn: { blue: null, red: null }, slot: 0,
+// Spawn data shape: editor.spawn.blue and .red are arrays of {x,y} cells in
+// arena-local coords. Empty array = no override (game uses default). When
+// the player places a blueSpawn cell, it APPENDS — so a custom map can have
+// 8 spawns per side and the game cycles through them in placement order
+// for both initial squad layout AND respawns.
+const editor = { tool: 'cover', spawn: { blue: [], red: [] }, slot: 0,
   // Drag-to-line state. _dragStart is set on mousedown over wall/cover/tree/
   // erase; _dragEnd updates on mousemove. mouseup walks Bresenham from start
   // to end and places at every cell. A single click (start === end) places
   // a single cell — so legacy click-tap still works.
   _dragStart: null, _dragEnd: null };
+
+// Normalize a saved spawn entry. Legacy slots (and the FIXED_MAPS table)
+// have spawn.blue as a single {x,y}; new slots have arrays. Always return
+// an array so iteration code stays uniform.
+function _normalizeSpawnList(spawn) {
+  if (!spawn) return [];
+  if (Array.isArray(spawn)) return spawn.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number');
+  if (typeof spawn.x === 'number' && typeof spawn.y === 'number') return [{ x: spawn.x, y: spawn.y }];
+  return [];
+}
 const EDITOR_BLOCK = 60;     // all placements snap to 60u grid
 
 // Returns [{cx, cy}] cell coords (multiples of `step`) along the Bresenham
@@ -4259,7 +4277,15 @@ function getActiveSlotData() {
 }
 function getAnyNonEmptyMap() {
   const d = loadCustomMaps();
-  const filled = d.slots.filter(s => s && Array.isArray(s.walls) && s.walls.length > 0);
+  // A slot counts as filled if it has walls OR custom spawns — placing
+  // only spawn anchors is a valid map (e.g. arena variants).
+  const filled = d.slots.filter(s => {
+    if (!s) return false;
+    const wallsLen = Array.isArray(s.walls) ? s.walls.length : 0;
+    const sb = s.spawn && _normalizeSpawnList(s.spawn.blue).length;
+    const sr = s.spawn && _normalizeSpawnList(s.spawn.red).length;
+    return wallsLen > 0 || sb > 0 || sr > 0;
+  });
   if (filled.length === 0) return null;
   return filled[Math.floor(Math.random() * filled.length)];
 }
@@ -4278,7 +4304,7 @@ function openEditor() {
   allies.length = 0;
   bullets.length = 0;
   enemyBullets.length = 0;
-  editor.spawn = { blue: null, red: null };
+  editor.spawn = { blue: [], red: [] };
   // Restore the active slot's saved data into the editor canvas
   const data = loadCustomMaps();
   editor.slot = data.active || 0;
@@ -4294,8 +4320,8 @@ function openEditor() {
     }
   }
   if (slot && slot.spawn) {
-    editor.spawn.blue = slot.spawn.blue || null;
-    editor.spawn.red  = slot.spawn.red  || null;
+    editor.spawn.blue = _normalizeSpawnList(slot.spawn.blue);
+    editor.spawn.red  = _normalizeSpawnList(slot.spawn.red);
   }
   rebuildEditorSlotUI();
 }
@@ -4361,12 +4387,20 @@ function _editorCellAtScreen(screenX, screenY) {
 // single-click case and as the inner step of the line-fill loop.
 function _editorPlaceCell(gx, gy) {
   const wx = NN_ARENA.x0 + gx, wy = NN_ARENA.y0 + gy;
+  const localCx = gx + EDITOR_BLOCK / 2, localCy = gy + EDITOR_BLOCK / 2;
   if (editor.tool === 'blueSpawn') {
-    editor.spawn.blue = { x: gx + EDITOR_BLOCK / 2, y: gy + EDITOR_BLOCK / 2 };
+    // Append to array if not already present (allow multiple spawn points).
+    if (!Array.isArray(editor.spawn.blue)) editor.spawn.blue = [];
+    if (!editor.spawn.blue.some(p => p.x === localCx && p.y === localCy)) {
+      editor.spawn.blue.push({ x: localCx, y: localCy });
+    }
     return;
   }
   if (editor.tool === 'redSpawn') {
-    editor.spawn.red = { x: gx + EDITOR_BLOCK / 2, y: gy + EDITOR_BLOCK / 2 };
+    if (!Array.isArray(editor.spawn.red)) editor.spawn.red = [];
+    if (!editor.spawn.red.some(p => p.x === localCx && p.y === localCy)) {
+      editor.spawn.red.push({ x: localCx, y: localCy });
+    }
     return;
   }
   if (editor.tool === 'erase') {
@@ -4374,9 +4408,14 @@ function _editorPlaceCell(gx, gy) {
     if (i >= 0) { lowCovers.splice(i, 1); return; }
     i = buildings.findIndex(b => b.x === wx && b.y === wy);
     if (i >= 0) { buildings.splice(i, 1); return; }
-    const localCx = gx + EDITOR_BLOCK / 2, localCy = gy + EDITOR_BLOCK / 2;
-    if (editor.spawn.blue && editor.spawn.blue.x === localCx && editor.spawn.blue.y === localCy) editor.spawn.blue = null;
-    if (editor.spawn.red  && editor.spawn.red.x  === localCx && editor.spawn.red.y  === localCy) editor.spawn.red  = null;
+    if (Array.isArray(editor.spawn.blue)) {
+      const bi = editor.spawn.blue.findIndex(p => p.x === localCx && p.y === localCy);
+      if (bi >= 0) { editor.spawn.blue.splice(bi, 1); return; }
+    }
+    if (Array.isArray(editor.spawn.red)) {
+      const ri = editor.spawn.red.findIndex(p => p.x === localCx && p.y === localCy);
+      if (ri >= 0) { editor.spawn.red.splice(ri, 1); return; }
+    }
     return;
   }
   // Wall / cover / tree: replace whatever's in the cell
@@ -4424,10 +4463,12 @@ function editorSerialize() {
                  w: lc.w, h: lc.h, kind: 'cover', canopy: !!lc.canopy });
   }
   const out = { walls };
-  if (editor.spawn.blue || editor.spawn.red) {
+  const blue = Array.isArray(editor.spawn.blue) ? editor.spawn.blue : [];
+  const red  = Array.isArray(editor.spawn.red)  ? editor.spawn.red  : [];
+  if (blue.length || red.length) {
     out.spawn = {};
-    if (editor.spawn.blue) out.spawn.blue = editor.spawn.blue;
-    if (editor.spawn.red)  out.spawn.red  = editor.spawn.red;
+    if (blue.length) out.spawn.blue = blue.slice();
+    if (red.length)  out.spawn.red  = red.slice();
   }
   return out;
 }
@@ -4445,17 +4486,19 @@ function editorSave() {
   saveCustomMaps(all);
   // Legacy mirror for the custom-variant getter
   try { localStorage.setItem('ag.customMap', JSON.stringify(data)); } catch (e) {}
-  const sp = (data.spawn?.blue ? 1 : 0) + (data.spawn?.red ? 1 : 0);
+  const blueCount = Array.isArray(data.spawn?.blue) ? data.spawn.blue.length : (data.spawn?.blue ? 1 : 0);
+  const redCount  = Array.isArray(data.spawn?.red)  ? data.spawn.red.length  : (data.spawn?.red  ? 1 : 0);
   showSwapToast(T(
-    `槽 ${editor.slot + 1} · ${data.walls.length} 块 · ${sp} 出生`,
-    `Slot ${editor.slot + 1} · ${data.walls.length} blocks · ${sp} spawns`
+    `槽 ${editor.slot + 1} · ${data.walls.length} 块 · ${blueCount}藍/${redCount}紅 出生`,
+    `Slot ${editor.slot + 1} · ${data.walls.length} blocks · ${blueCount}B/${redCount}R spawns`
   ));
   // Refresh slot selector check marks
   const sel = document.getElementById('edSlotSelect');
   if (sel) {
     Array.from(sel.options).forEach((opt, i) => {
-      const filled = all.slots[i].walls.length > 0 ? '✓' : '';
-      opt.textContent = `${all.slots[i].name} ${filled}`;
+      const s = all.slots[i];
+      const filled = (s && Array.isArray(s.walls) && s.walls.length > 0) ? '✓' : '';
+      opt.textContent = `${(s && s.name) || `Slot ${i+1}`} ${filled}`;
     });
   }
 }
@@ -4470,7 +4513,7 @@ function editorSwitchSlot(idx) {
   // Reload the new slot's content
   buildings.length = 0;
   lowCovers.length = 0;
-  editor.spawn = { blue: null, red: null };
+  editor.spawn = { blue: [], red: [] };
   const slot = all.slots[idx];
   if (slot && slot.walls) {
     for (const w of slot.walls) {
@@ -4483,8 +4526,8 @@ function editorSwitchSlot(idx) {
     }
   }
   if (slot && slot.spawn) {
-    editor.spawn.blue = slot.spawn.blue || null;
-    editor.spawn.red  = slot.spawn.red  || null;
+    editor.spawn.blue = _normalizeSpawnList(slot.spawn.blue);
+    editor.spawn.red  = _normalizeSpawnList(slot.spawn.red);
   }
   // Mirror legacy key to current slot for the custom variant
   try {
@@ -4494,7 +4537,7 @@ function editorSwitchSlot(idx) {
 function editorClear() {
   buildings.length = 0;
   lowCovers.length = 0;
-  editor.spawn = { blue: null, red: null };
+  editor.spawn = { blue: [], red: [] };
 }
 function editorTest() {
   editorSave();
@@ -5395,31 +5438,55 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   showMessage(`${T('地图', 'Map')}: ${mapName(variant)}`, 120);
   playSfx('match_start');
 
-  // Team spawn anchors — variants may override per-team (custom user maps
-  // can specify only one side; the missing side falls back to default).
+  // Team spawn anchors — variants may override per-team. Each side has a
+  // LIST of spawn points (custom maps can place 8 per side); placement and
+  // respawn both cycle through the list in order. Single-spawn legacy data
+  // is normalized to a 1-element array.
   const sp = variant.spawn;
-  game._nnSpawnBlue = (sp && sp.blue)
-    ? { x: NN_ARENA.x0 + sp.blue.x, y: NN_ARENA.y0 + sp.blue.y }
-    : { x: NN_ARENA.x0 + 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
-  game._nnSpawnRed  = (sp && sp.red)
-    ? { x: NN_ARENA.x0 + sp.red.x,  y: NN_ARENA.y0 + sp.red.y }
-    : { x: NN_ARENA.x0 + NN_ARENA.w - 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 };
+  const blueList = _normalizeSpawnList(sp && sp.blue).map(p => ({
+    x: NN_ARENA.x0 + p.x, y: NN_ARENA.y0 + p.y,
+  }));
+  const redList = _normalizeSpawnList(sp && sp.red).map(p => ({
+    x: NN_ARENA.x0 + p.x, y: NN_ARENA.y0 + p.y,
+  }));
+  if (blueList.length === 0) blueList.push({ x: NN_ARENA.x0 + 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 });
+  if (redList.length === 0)  redList.push({ x: NN_ARENA.x0 + NN_ARENA.w - 200, y: NN_ARENA.y0 + NN_ARENA.h / 2 });
+  game._nnSpawnBlueList = blueList;
+  game._nnSpawnRedList  = redList;
+  game._nnSpawnBlueIdx  = 0;        // cycles on every respawn
+  game._nnSpawnRedIdx   = 0;
+  // Backward-compat: keep _nnSpawnBlue / _nnSpawnRed as the FIRST spawn so
+  // existing code that reads .x/.y directly (e.g. mission factories) still
+  // works. The new respawn path uses the list.
+  game._nnSpawnBlue = blueList[0];
+  game._nnSpawnRed  = redList[0];
 
   // Player counts as ONE blue (slot 0). Spawn (blueSize - 1) NN allies in slots 1..N.
   // Indoor variants cluster around the anchor (rooms are small); outdoor uses
   // the full arena-height vertical spread.
+  // Multi-spawn maps assign each unit to spawn[i % blueList.length] so a 4-spawn
+  // map with 8 allies puts 2 at each marker.
   const tightSpawn = !!sp;
   const allySpacing = NN_ARENA.h / (blueSize + 1);
-  const allySpawnY = (i) => tightSpawn
-    ? game._nnSpawnBlue.y + (i - (blueSize - 1) / 2) * 50
-    : NN_ARENA.y0 + allySpacing * (i + 1);
+  // For each ally i (0-indexed), pick its spawn anchor by cycling
+  const _blueAnchorFor = (i) => blueList[(i + 1) % blueList.length];
+  const allySpawnY = (i) => {
+    if (blueList.length > 1) return _blueAnchorFor(i - 1).y;
+    return tightSpawn
+      ? game._nnSpawnBlue.y + (i - (blueSize - 1) / 2) * 50
+      : NN_ARENA.y0 + allySpacing * (i + 1);
+  };
+  const _allySpawnX = (i) => {
+    if (blueList.length > 1) return _blueAnchorFor(i - 1).x;
+    return game._nnSpawnBlue.x;
+  };
   for (let i = 0; i < blueSize - 1; i++) {
     const slotIdx = i + 1;   // ally i fills slot i+1 (slot 0 = player)
     const wid = slotWpn('blue', slotIdx);
     const ally = {
       callsign: ['BRAVO', 'CHARLIE', 'DELTA', 'ECHO', 'FOXTROT', 'GOLF', 'HOTEL', 'INDIA'][i] || ('U' + i),
       offsetX: -110, offsetY: 60,
-      x: game._nnSpawnBlue.x,
+      x: _allySpawnX(i + 1),
       y: allySpawnY(i + 1),
       angle: 0, gunAngle: 0, gunRecoil: 0, swayPhase: Math.random() * Math.PI*2,
       hp: 80, maxHp: 80,
@@ -5441,13 +5508,18 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
 
   // Enemy team: redSize NN-driven enemies (slots 0..N-1 of red)
   const enemySpacing = NN_ARENA.h / (redSize + 1);
-  const enemySpawnY = (i) => tightSpawn
-    ? game._nnSpawnRed.y + (i - (redSize - 1) / 2) * 50
-    : NN_ARENA.y0 + enemySpacing * (i + 1);
+  const _redAnchorFor = (i) => redList[i % redList.length];
+  const enemySpawnY = (i) => {
+    if (redList.length > 1) return _redAnchorFor(i).y;
+    return tightSpawn
+      ? game._nnSpawnRed.y + (i - (redSize - 1) / 2) * 50
+      : NN_ARENA.y0 + enemySpacing * (i + 1);
+  };
+  const _enemySpawnX = (i) => (redList.length > 1) ? _redAnchorFor(i).x : game._nnSpawnRed.x;
   for (let i = 0; i < redSize; i++) {
     const wid = slotWpn('red', i);
     const enemy = {
-      x: game._nnSpawnRed.x,
+      x: _enemySpawnX(i),
       y: enemySpawnY(i),
       hp: 50, maxHp: 50, angle: Math.PI,
       fireCd: 0, fireRate: 50, radius: 13,
@@ -8211,6 +8283,21 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       const _spY = (cy) => Math.max(NN_ARENA.y0 + SP_PAD,
                                      Math.min(NN_ARENA.y0 + NN_ARENA.h - SP_PAD, cy));
       // Process respawns
+      // Cycle helpers — next spawn point in placement order. game._nnSpawnBlueIdx
+      // bumps every time someone respawns, so a 4-marker map sends respawn 1 to
+      // marker 1, respawn 2 to marker 2, etc. (wraps around).
+      const _nextBlueSpawn = () => {
+        const list = game._nnSpawnBlueList || [game._nnSpawnBlue];
+        const sp = list[game._nnSpawnBlueIdx % list.length];
+        game._nnSpawnBlueIdx = (game._nnSpawnBlueIdx + 1) % list.length;
+        return sp;
+      };
+      const _nextRedSpawn = () => {
+        const list = game._nnSpawnRedList || [game._nnSpawnRed];
+        const sp = list[game._nnSpawnRedIdx % list.length];
+        game._nnSpawnRedIdx = (game._nnSpawnRedIdx + 1) % list.length;
+        return sp;
+      };
       if (!player.alive && player._respawnAt != null && game.time >= player._respawnAt) {
         player.alive = true;
         player.hp = player.maxHp;
@@ -8220,8 +8307,9 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         } else {
           player.ammo = player.maxAmmo;
         }
-        player.x = _spX(game._nnSpawnBlue.x);
-        player.y = _spY(game._nnSpawnBlue.y + (Math.random() - 0.5) * 60);
+        const psp = _nextBlueSpawn();
+        player.x = _spX(psp.x);
+        player.y = _spY(psp.y + (Math.random() - 0.5) * 60);
         player._respawnAt = null;
         player.gunRecoil = 0;
         player.reloading = false;
@@ -8232,8 +8320,9 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         if (!a.alive && a._respawnAt != null && game.time >= a._respawnAt) {
           a.alive = true;
           a.hp = a.maxHp;
-          a.x = _spX(game._nnSpawnBlue.x);
-          a.y = _spY(game._nnSpawnBlue.y + (Math.random() - 0.5) * 200);
+          const asp = _nextBlueSpawn();
+          a.x = _spX(asp.x);
+          a.y = _spY(asp.y + (Math.random() - 0.5) * 60);
           a._respawnAt = null;
           a._nnFireCd = 0; a._nnRecentDmg = 0;
           a._invulnUntil = game.time + SPAWN_INVULN_TICKS;
@@ -8244,8 +8333,9 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         if (!e.alive && e._respawnAt != null && game.time >= e._respawnAt) {
           e.alive = true;
           e.hp = e.maxHp;
-          e.x = _spX(game._nnSpawnRed.x);
-          e.y = _spY(game._nnSpawnRed.y + (Math.random() - 0.5) * 200);
+          const esp = _nextRedSpawn();
+          e.x = _spX(esp.x);
+          e.y = _spY(esp.y + (Math.random() - 0.5) * 60);
           e._respawnAt = null;
           e._nnFireCd = 0; e._nnRecentDmg = 0;
           e._invulnUntil = game.time + SPAWN_INVULN_TICKS;
@@ -12666,8 +12756,10 @@ function renderEditorOverlay() {
     ctx.lineTo(NN_ARENA.x0 + NN_ARENA.w,     NN_ARENA.y0 + gy);
     ctx.stroke();
   }
-  // Existing spawn markers — drawn underneath the cursor preview
-  const drawSpawnMarker = (sp, color, label) => {
+  // Spawn markers — number each one so the placement order is visible.
+  // The game uses that order for both initial squad placement and respawn
+  // cycling, so the editor surfaces it explicitly.
+  const drawSpawnMarker = (sp, color, label, idx) => {
     if (!sp) return;
     const wx = NN_ARENA.x0 + sp.x, wy = NN_ARENA.y0 + sp.y;
     ctx.globalAlpha = 0.85;
@@ -12679,14 +12771,16 @@ function renderEditorOverlay() {
     ctx.lineWidth = 3;
     ctx.stroke();
     ctx.fillStyle = COLORS.cream;
-    ctx.font = 'bold 18px sans-serif';
+    ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(label, wx, wy + 6);
+    ctx.fillText(`${label}${idx + 1}`, wx, wy + 4);
     ctx.textAlign = 'left';
     ctx.globalAlpha = 1;
   };
-  drawSpawnMarker(editor.spawn.blue, '#1A1A1A', T('蓝', 'B'));
-  drawSpawnMarker(editor.spawn.red,  COLORS.red, T('红', 'R'));
+  const blueList = Array.isArray(editor.spawn.blue) ? editor.spawn.blue : [];
+  const redList  = Array.isArray(editor.spawn.red)  ? editor.spawn.red  : [];
+  blueList.forEach((sp, i) => drawSpawnMarker(sp, '#1A1A1A', T('蓝', 'B'), i));
+  redList.forEach((sp, i)  => drawSpawnMarker(sp, COLORS.red,    T('红', 'R'), i));
 
   // Drag-line preview — when the user is mid-drag, ghost out every cell that
   // mouseup would commit. Lets them aim a wall before letting go.
