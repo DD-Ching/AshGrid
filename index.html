@@ -1348,6 +1348,37 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 </div>
 
 <script>
+// ============ URL FLAGS ============
+// ?reset=1   — wipe ag.* localStorage and reload clean (lets a terminal
+//              `open http://…?reset=1` reset progress without diving into
+//              DevTools). Strips ?reset from the URL on the redirect so
+//              refreshing won't reset again. ?reset=stats keeps unlockAll
+//              and operator name; ?reset=hard nukes everything.
+(function () {
+  const sp = new URLSearchParams(location.search);
+  const r = sp.get('reset');
+  if (!r) return;
+  try {
+    if (r === 'stats') {
+      localStorage.removeItem('ag.stats');
+      localStorage.removeItem('ag.dayNum');
+      localStorage.removeItem('ag.survivalScores');
+      localStorage.removeItem('ag.defenseScores');
+      localStorage.removeItem('ag.achievements');
+      localStorage.removeItem('ag.lobbyConfig');
+    } else {
+      // Wipe every ag.* key — full fresh-launch
+      for (const k of Object.keys(localStorage)) {
+        if (k.startsWith('ag.')) localStorage.removeItem(k);
+      }
+    }
+  } catch (e) {}
+  // Redirect without the flag so a refresh won't loop the reset
+  const url = new URL(location.href);
+  url.search = '';
+  url.hash = '';
+  location.replace(url.toString());
+})();
 // ============ DEATH RECAP ============
 // On player death, capture the kill context + flag the renderer to draw a
 // full-screen "OPERATOR DOWN" overlay for ~2.5s (auto-dismiss). The overlay
