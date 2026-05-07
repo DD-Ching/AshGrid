@@ -1329,6 +1329,31 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   </div>
 </div>
 
+<!-- NN match-end card. Shown via showNNEndCard(...) when a skirmish
+     finishes. Two clear actions: PLAY AGAIN (restart same mode) or
+     LOBBY (back to main menu). No auto-return — the player decides. -->
+<div id="nnEndCard" style="display:none; position:fixed; inset:0; z-index:180; background:rgba(26,26,26,0.92); align-items:center; justify-content:center;">
+  <div style="background:var(--cream); width:480px; max-width:92vw; box-shadow: 8px 8px 0 var(--black); position:relative;">
+    <div id="nnEndAccent" style="position:absolute; top:-8px; right:24px; width:80px; height:8px; background:var(--red);"></div>
+    <div style="padding: 28px 32px 20px; border-bottom: 2px solid var(--black);">
+      <div id="nnEndTag" style="font:bold 11px monospace; letter-spacing:5px; color:var(--red); margin-bottom: 8px;">— MATCH RESULT —</div>
+      <div id="nnEndTitle" style="font:bold 36px sans-serif; letter-spacing:5px; color:var(--black);">VICTORY</div>
+      <div id="nnEndSubtitle" style="font:11px monospace; color:var(--gray); margin-top:6px; letter-spacing:2px;">DEATHMATCH · OPERATOR 0451</div>
+    </div>
+    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 18px 32px; border-bottom: 2px solid var(--black);">
+      <div><div id="nnEndKills"  style="font:bold 26px sans-serif; color:var(--red);">0</div>   <div style="font:9px monospace; letter-spacing:2px; color:var(--gray);">KILLS</div></div>
+      <div><div id="nnEndScore"  style="font:bold 26px sans-serif; color:var(--black);">0–0</div><div style="font:9px monospace; letter-spacing:2px; color:var(--gray);">SCORELINE</div></div>
+      <div><div id="nnEndTime"   style="font:bold 26px sans-serif; color:var(--black);">0:00</div><div style="font:9px monospace; letter-spacing:2px; color:var(--gray);">TIME</div></div>
+      <div><div id="nnEndGrade"  style="font:bold 30px sans-serif; color:var(--red);">A</div>    <div style="font:9px monospace; letter-spacing:2px; color:var(--gray);">GRADE</div></div>
+    </div>
+    <div id="nnEndUnlocks" style="padding: 0 32px;"></div>
+    <div style="padding: 18px 32px 24px; display:flex; gap:12px;">
+      <button id="nnEndAgainBtn" class="start-btn" style="flex:1; background:var(--red); color:var(--cream); font-size:14px; letter-spacing:4px; padding:14px;">PLAY AGAIN ▶</button>
+      <button id="nnEndLobbyBtn" class="start-btn" style="flex:1; background:var(--black); color:var(--cream); font-size:14px; letter-spacing:4px; padding:14px;">LOBBY</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay end-screen hidden" id="end">
   <svg class="end-bg" viewBox="0 0 100 100" preserveAspectRatio="none">
     <polygon points="0,0 30,0 0,40" fill="#1A1A1A"/>
@@ -7447,12 +7472,13 @@ function updateMission() {
 }
 
 function onMissionSuccess() {
-  // NN deathmatch: return to NN lobby instead of campaign progression
+  // NN match: bump stats + open the persistent HTML end-card. No banner
+  // (the canvas already drew MATCH RESULT during the 4s latch) and no
+  // auto-return — the player decides PLAY AGAIN vs LOBBY.
   if (game._nnMode) {
-    bumpMatchPlayed();   // track NN win
-    showMessage(T(`BLUE 获胜！`, `BLUE WINS!`), 220);
+    bumpMatchPlayed();
     playSfx('match_win');
-    setTimeout(() => returnToNNLobby(), 2000);
+    showNNEndCard('win');
     return;
   }
   game.score += 800;
@@ -7465,13 +7491,13 @@ function onMissionSuccess() {
 // Allies and the player respawn full HP, the same map+objective is re-initialised.
 // On the third failure of the same mission, the campaign ends.
 function onMissionFailed() {
-  // NN deathmatch: return to NN lobby instead of retry/end-game
+  // NN match: same flow as success — open the HTML end-card with the
+  // appropriate result.
   if (game._nnMode) {
-    bumpMatchPlayed();   // track every NN match end (loss path)
+    bumpMatchPlayed();
     const tied = mission && mission.teamKills && mission.teamKills[0] === mission.teamKills[1];
-    showMessage(tied ? T(`平手`, `DRAW`) : T(`RED 获胜`, `RED WINS`), 220);
     playSfx(tied ? 'match_start' : 'match_loss');
-    setTimeout(() => returnToNNLobby(), 2000);
+    showNNEndCard(tied ? 'draw' : 'loss');
     return;
   }
   game.missionRetries = (game.missionRetries || 0) + 1;
@@ -7496,6 +7522,119 @@ function returnToNNLobby() {
   mission = null;
   const lobby = document.getElementById('nnLobby');
   if (lobby) lobby.classList.remove('hidden');
+  // Also surface the start screen so the player can switch modes / leave.
+  // returnToNNLobby is now reachable directly from the end-card LOBBY
+  // button, so we want the main lobby visible on top.
+  document.getElementById('start')?.classList.remove('hidden');
+  document.getElementById('nnEndCard') && (document.getElementById('nnEndCard').style.display = 'none');
+}
+
+// Populate + show the NN match-end card. Result = 'win' | 'loss' | 'draw'.
+// Pulls stats off `mission` (kills, scoreline, time, mode); shows tier
+// unlocks if the bumpMatchPlayed call crossed a threshold this match.
+// PLAY AGAIN restarts the same mode immediately; LOBBY returns to menu.
+function showNNEndCard(result) {
+  const card = document.getElementById('nnEndCard');
+  if (!card) return;
+  const lang = (typeof getLang === 'function') ? getLang() : 'en';
+  const titleEl = document.getElementById('nnEndTitle');
+  const tagEl   = document.getElementById('nnEndTag');
+  const accent  = document.getElementById('nnEndAccent');
+  const subEl   = document.getElementById('nnEndSubtitle');
+  const killsEl = document.getElementById('nnEndKills');
+  const scoreEl = document.getElementById('nnEndScore');
+  const timeEl  = document.getElementById('nnEndTime');
+  const gradeEl = document.getElementById('nnEndGrade');
+  const unlocksEl = document.getElementById('nnEndUnlocks');
+  // Result text + accent colour
+  if (titleEl) {
+    titleEl.textContent = result === 'win' ? (lang === 'zh' ? '胜利 · VICTORY' : 'VICTORY')
+                       : result === 'loss' ? (lang === 'zh' ? '失败 · DEFEAT' : 'DEFEAT')
+                                          : (lang === 'zh' ? '平手 · DRAW' : 'DRAW');
+    titleEl.style.color = result === 'win' ? 'var(--red)' : (result === 'loss' ? 'var(--black)' : 'var(--gray)');
+  }
+  if (tagEl) tagEl.textContent = lang === 'zh' ? '— 对局结算 —' : '— MATCH RESULT —';
+  if (accent) accent.style.background = result === 'win' ? 'var(--red)' : 'var(--black)';
+  // Subtitle: mode + operator name
+  const modeLabel = ({
+    dm: 'DEATHMATCH', survival: 'SURVIVAL', defense: 'DEFENSE',
+    helo: 'HELO EXTRACT', convoy: 'CONVOY', duel: 'DUEL', sniper: 'SNIPER',
+  })[game._nnGameMode] || 'SKIRMISH';
+  const opName = (typeof getOperatorName === 'function') ? getOperatorName() : '0451';
+  if (subEl) subEl.textContent = `${modeLabel} · OPERATOR ${opName}`;
+  // Stats
+  const kills = game.killCount || 0;
+  const tk = mission && mission.teamKills;
+  const scoreline = tk ? `${tk[0]}–${tk[1]}` : `${kills}`;
+  const startT = (mission && mission.startFrame) || 0;
+  const sec = Math.floor((game.time - startT) / 60);
+  if (killsEl) killsEl.textContent = String(kills);
+  if (scoreEl) scoreEl.textContent = scoreline;
+  if (timeEl)  timeEl.textContent  = `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`;
+  // Grade — same heuristic as the canvas card. WIN gets 0.6 base, scaled
+  // by margin + carry; loss starts at 0.15.
+  let s;
+  if (tk) {
+    const margin = (tk[0] - tk[1]);
+    const winS = result === 'win' ? 0.6 : (result === 'draw' ? 0.4 : 0.15);
+    const marginS = Math.max(-0.3, Math.min(0.3, margin / 12));
+    const totalKills = tk[0] + tk[1];
+    const carryS = totalKills > 0 ? 0.1 * (kills / totalKills) : 0;
+    s = Math.max(0, Math.min(1, winS + marginS + carryS));
+  } else {
+    s = result === 'win' ? 0.7 : 0.3;
+  }
+  const grade = (typeof gradeFromScore === 'function') ? gradeFromScore(s) : { letter: 'B', color: '#888' };
+  if (gradeEl) {
+    gradeEl.textContent = grade.letter;
+    gradeEl.style.color = (grade.letter === 'S' || grade.letter === 'A') ? 'var(--red)' : 'var(--black)';
+  }
+  // Unlocks (tier-cross + achievement chips)
+  if (unlocksEl) {
+    let html = '';
+    const tierUnlocks = (typeof _lastMatchUnlocks !== 'undefined') ? _lastMatchUnlocks : [];
+    const achvUnlocks = (typeof _matchAchievementUnlocks !== 'undefined') ? _matchAchievementUnlocks : [];
+    if (tierUnlocks.length > 0) {
+      html += `<div style="padding: 14px 0 8px; border-bottom: 2px solid var(--cream-dark);">`;
+      html += `<div style="font:bold 9px monospace; letter-spacing:3px; color:var(--red); margin-bottom:8px;">✓ ${lang === 'zh' ? '解锁' : 'UNLOCKED'}</div>`;
+      html += `<div style="display:flex; flex-wrap:wrap; gap:6px;">`;
+      for (const u of tierUnlocks) {
+        const label = (lang === 'zh' && u.zh) ? u.zh : (u.key || '').toUpperCase();
+        html += `<span style="background:var(--red); color:var(--cream); padding:5px 12px; font:bold 11px sans-serif;">${label}</span>`;
+      }
+      html += `</div></div>`;
+    }
+    if (achvUnlocks.length > 0) {
+      html += `<div style="padding: 14px 0 8px;">`;
+      html += `<div style="font:bold 9px monospace; letter-spacing:3px; color:var(--black); margin-bottom:8px;">★ ${lang === 'zh' ? '本场成就' : 'ACHIEVEMENTS THIS MATCH'}</div>`;
+      html += `<div style="display:flex; flex-wrap:wrap; gap:6px;">`;
+      for (const a of achvUnlocks) {
+        const label = (lang === 'zh') ? (a.title_zh || a.id) : (a.title_en || a.id);
+        html += `<span style="background:var(--black); color:var(--cream); padding:5px 12px; font:bold 11px sans-serif;">${label}</span>`;
+      }
+      html += `</div></div>`;
+    }
+    unlocksEl.innerHTML = html;
+  }
+  // Wire buttons every show — replace handlers each time so they capture
+  // the current game._nnGameMode in their closure.
+  const againBtn = document.getElementById('nnEndAgainBtn');
+  const lobbyBtn = document.getElementById('nnEndLobbyBtn');
+  const lastMode = game._nnGameMode || 'dm';
+  if (againBtn) againBtn.onclick = () => {
+    card.style.display = 'none';
+    // Re-fire the current skirmish with the same lobby settings
+    if (typeof startNNSkirmish === 'function' && typeof _lobby !== 'undefined') {
+      startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty, _lobby.weapon, null, lastMode);
+    } else {
+      returnToNNLobby();
+    }
+  };
+  if (lobbyBtn) lobbyBtn.onclick = () => {
+    card.style.display = 'none';
+    returnToNNLobby();
+  };
+  card.style.display = 'flex';
 }
 
 function retryCurrentMission() {
@@ -14375,8 +14514,12 @@ function renderHUD() {
     ctx.textAlign = 'left';
   }
 
-  // Mission objective panel + off-screen compass
-  if (mission && mission.renderHUD) mission.renderHUD();
+  // Mission objective panel + off-screen compass. Suppress when the HTML
+  // end-card is up — the canvas-drawn MATCH RESULT block would otherwise
+  // overlap the HTML overlay (the user reported '兩個視窗會重疊').
+  const _endCard = document.getElementById('nnEndCard');
+  const _endCardVisible = _endCard && _endCard.style.display === 'flex';
+  if (mission && mission.renderHUD && !_endCardVisible) mission.renderHUD();
   if (mission && (game.mode === 'tactical' || game.mode === 'command')) drawObjectiveCompass();
 
   // ----- Compact bottom command bar: HP + Ammo + UAV in one slim row -----
