@@ -2424,6 +2424,52 @@ function _scheduleFirstMatchToasts() {
   try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
 }
 
+// ============ STAGE HINTS ============
+// Per-feature one-shot hints. Each fires on a specific gameplay event
+// the first time it happens, then never again (tracked in
+// ag.hintsSeen). Distinct from the time-based first-match radio
+// chatter above — these are tied to what the player actually did, so
+// the right tip surfaces at the right moment instead of on a fixed
+// timer the player may have already moved past.
+function _hintsSeen() {
+  try { return new Set(JSON.parse(localStorage.getItem('ag.hintsSeen') || '[]')); }
+  catch (e) { return new Set(); }
+}
+function _markHintSeen(id) {
+  const s = _hintsSeen();
+  s.add(id);
+  try { localStorage.setItem('ag.hintsSeen', JSON.stringify([...s])); } catch (e) {}
+}
+const STAGE_HINTS = {
+  basic_controls:  { zh: 'WASD 移動 · 按住滑鼠射擊 · R 換彈',
+                     en: 'WASD move · hold mouse to fire · R reload' },
+  swap_weapon:     { zh: '✓ 首擊 — 按 X 切換主/副武器',
+                     en: '✓ FIRST KILL — Press X to swap primary/secondary' },
+  low_hp:          { zh: '血量低 — 找掩體、R 換彈',
+                     en: 'Low HP — find cover, hold R to reload' },
+  pawn_swap:       { zh: '隊友倒下 — 按 1-4 接管最近的隊友身體',
+                     en: 'Ally down — press 1-4 to take over their body' },
+  tab_command:     { zh: 'TAB 進指揮視角 · 1-7 下令(集合/進攻/壓制…)',
+                     en: 'TAB → command view · 1-7 issue orders (rally/attack/suppress…)' },
+  build_mode:      { zh: 'B 開建造輪盤 · 16 模塊邊建邊打',
+                     en: 'B opens the build radial · 16 modules to plant on the fly' },
+  rocket_walls:    { zh: '火箭炮可炸開牆體 · 強行開路',
+                     en: 'Rocket destroys walls — punch your own corridor' },
+  unlock_survival: { zh: '★ 解鎖 SURVIVAL — 守住每一波,隊友死了不復活',
+                     en: '★ SURVIVAL unlocked — hold waves, teammates stay dead' },
+  unlock_defense:  { zh: '★ 解鎖 DEFENSE — 邊建造邊抵禦,16 模塊任選',
+                     en: '★ DEFENSE unlocked — build while you fight, 16 modules' },
+};
+function showStageHint(id) {
+  const def = STAGE_HINTS[id];
+  if (!def) return;
+  if (_hintsSeen().has(id)) return;
+  _markHintSeen(id);
+  const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
+  if (typeof showRadioToast === 'function') showRadioToast('TIP', def[lang] || def.en);
+  else if (typeof showSwapToast === 'function') showSwapToast(def[lang] || def.en);
+}
+
 // ============ I18N ============
 // Lobby/start-screen language toggle. Source-of-truth Chinese is preserved in
 // the HTML; this table provides the English alternates. setLang(lang) walks
@@ -8999,6 +9045,13 @@ function bumpMatchPlayed() {
   if (_lastMatchUnlocks.length > 0 && typeof playUnlockChord === 'function') {
     playUnlockChord();
   }
+  // Stage hints tied to tier crosses — fire AFTER the chord so the
+  // 'how to use it' tip lands while the player is still looking at
+  // the unlock callout.
+  if (typeof showStageHint === 'function') {
+    if (prevTier < 1 && nextTier >= 1) setTimeout(() => showStageHint('unlock_survival'), 1200);
+    if (prevTier < 2 && nextTier >= 2) setTimeout(() => showStageHint('unlock_defense'),  1800);
+  }
   // Day++ on every completed match — feeds the "DAY N" chip + sets up
   // future per-day flavor missions / unlocks.
   if (typeof bumpDayNum === 'function') bumpDayNum();
@@ -11597,6 +11650,16 @@ function updateSoundEvents() {
 function update() {
   if (game.state !== 'playing') return;
   game.time++;
+
+  // Stage hints — checked each frame, but each fires at most once.
+  // showStageHint() early-exits if the id is already in ag.hintsSeen.
+  if (game.time === 60) showStageHint('basic_controls');                // ~1s into match
+  if ((game.killCount || 0) >= 1) showStageHint('swap_weapon');
+  if (player.alive && player.hp > 0 && player.hp < player.maxHp * 0.30) showStageHint('low_hp');
+  if (game._nnMode && allies && allies.some(a => a && !a.alive)) showStageHint('pawn_swap');
+  if ((player._killStreak || 0) >= 3) showStageHint('tab_command');
+  if (game._nnGameMode === 'defense') showStageHint('build_mode');
+  if (playerWeapon && playerWeapon.isRocket) showStageHint('rocket_walls');
 
   // Per-unit velocity tracking — used for lead aim. Per-frame deltas are
   // noisy (jitter from collision pushes, brief stops), so we also keep an
