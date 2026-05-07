@@ -1123,6 +1123,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <button class="footer-link" id="achievementsBtn">✦ RECORDS</button>
       <button class="footer-link" id="replayIntroBtn">▶ INTRO</button>
       <button class="footer-link" id="controlsBtn">? CONTROLS</button>
+      <button class="footer-link" id="settingsBtn">⚙ SETTINGS</button>
     </div>
 
     <!-- Controls drawer — collapsed by default. The user opens it from
@@ -1180,6 +1181,75 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     <div class="modal-body" id="achvBody"></div>
   </div>
 </div>
+
+<!-- Settings modal — real toggles for audio / aim-assist / tutorial mode,
+     plus a 'Coming Soon' section with locked rows so the menu has a
+     'progression beyond shipped features' feel without overpromising. -->
+<div class="modal-overlay" id="settingsModal" hidden>
+  <div class="modal-card">
+    <div class="modal-tag">
+      <span id="settingsModalTitle">設定 / SETTINGS</span>
+      <button class="modal-close" id="settingsCloseBtn">CLOSE</button>
+    </div>
+    <div class="modal-body" id="settingsBody" style="padding: 24px 32px;">
+      <!-- AUDIO section -->
+      <div class="settings-sect">
+        <div class="settings-h">▾ AUDIO</div>
+        <div class="settings-row" id="settingsMute">
+          <span class="settings-label" id="settingsMuteLabel">Mute · 靜音</span>
+          <span class="settings-toggle" id="settingsMuteToggle">OFF</span>
+        </div>
+      </div>
+      <!-- GAMEPLAY -->
+      <div class="settings-sect">
+        <div class="settings-h">▾ GAMEPLAY</div>
+        <div class="settings-row" id="settingsAimAssist">
+          <span class="settings-label" id="settingsAimAssistLabel">Aim Assist · 自動瞄準</span>
+          <span class="settings-toggle" id="settingsAimAssistToggle">ON</span>
+        </div>
+        <div class="settings-row" id="settingsTutorial">
+          <span class="settings-label" id="settingsTutorialLabel">Tutorial mode · 階段式解鎖</span>
+          <span class="settings-toggle" id="settingsTutorialToggle">OFF</span>
+        </div>
+      </div>
+      <!-- COMING SOON — locked rows so the player feels there's more on
+           the horizon without us shipping vapor. Click any of these to
+           show a small toast 'unlock with X'. -->
+      <div class="settings-sect settings-locked">
+        <div class="settings-h">⌛ COMING SOON</div>
+        <div class="settings-row settings-row-locked" data-coming="cloud">
+          <span class="settings-label">Cloud Save · 雲端存檔</span>
+          <span class="settings-lock">🔒 Firebase</span>
+        </div>
+        <div class="settings-row settings-row-locked" data-coming="skin">
+          <span class="settings-label">Cosmetic Skin · 機體皮膚</span>
+          <span class="settings-lock">🔒 Tier 4</span>
+        </div>
+        <div class="settings-row settings-row-locked" data-coming="multiplayer">
+          <span class="settings-label">Co-op Multiplayer · 線上連線</span>
+          <span class="settings-lock">🔒 WebRTC</span>
+        </div>
+        <div class="settings-row settings-row-locked" data-coming="seasons">
+          <span class="settings-label">Seasonal Ranks · 賽季排名</span>
+          <span class="settings-lock">🔒 Cloud</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+  .settings-sect { margin-bottom: 18px; }
+  .settings-h { font: bold 10px monospace; letter-spacing: 4px; color: var(--red); margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--cream-dark); }
+  .settings-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 4px; cursor: pointer; border-bottom: 1px solid rgba(0,0,0,0.05); transition: background 0.1s; }
+  .settings-row:hover { background: rgba(200,38,28,0.06); }
+  .settings-label { font: 13px sans-serif; letter-spacing: 1px; color: var(--black); }
+  .settings-toggle { font: bold 10px monospace; letter-spacing: 3px; padding: 4px 10px; background: var(--black); color: var(--cream); }
+  .settings-toggle.on { background: var(--red); }
+  .settings-row-locked { opacity: 0.4; cursor: not-allowed; }
+  .settings-row-locked:hover { background: transparent; }
+  .settings-lock { font: bold 9px monospace; letter-spacing: 2px; color: var(--gray); }
+  .settings-locked .settings-h { color: var(--gray); }
+</style>
 
 <!-- First-time tutorial — shown once on first lobby entry -->
 <div class="overlay nn-lobby hidden" id="tutorial">
@@ -2385,6 +2455,11 @@ const I18N = {
   '#achievementsBtn':                { zh: '✦ 戰績 RECORDS', en: '✦ RECORDS' },
   '#replayIntroBtn':                 { zh: '▶ 開場 INTRO', en: '▶ INTRO' },
   '#controlsBtn':                    { zh: '? 操作', en: '? CONTROLS' },
+  '#settingsBtn':                    { zh: '⚙ 設定', en: '⚙ SETTINGS' },
+  '#settingsModalTitle':             { zh: '設定 / SETTINGS', en: 'SETTINGS' },
+  '#settingsMuteLabel':              { zh: '靜音 · Mute', en: 'Mute · 靜音' },
+  '#settingsAimAssistLabel':         { zh: '自動瞄準 · Aim Assist', en: 'Aim Assist · 自動瞄準' },
+  '#settingsTutorialLabel':          { zh: '階段式解鎖 · Tutorial mode', en: 'Tutorial mode · 階段式解鎖' },
   // Controls drawer (collapsed by default; opens via #controlsBtn)
   '#controlsDrawer .ctrl-item:nth-of-type(1) span:last-child': { zh: '移動 / 飛行', en: 'Move / fly' },
   '#controlsDrawer .ctrl-item:nth-of-type(2) span:last-child': { zh: '瞄準 / 射擊', en: 'Aim / fire' },
@@ -4731,6 +4806,56 @@ if (_controlsBtn) _controlsBtn.onclick = () => {
   const open = drawer.style.display !== 'none';
   drawer.style.display = open ? 'none' : '';
 };
+// Settings modal — real toggles + locked-coming-soon rows
+const _settingsBtn   = document.getElementById('settingsBtn');
+const _settingsModal = document.getElementById('settingsModal');
+const _settingsClose = document.getElementById('settingsCloseBtn');
+function _refreshSettingsToggles() {
+  const muteToggle    = document.getElementById('settingsMuteToggle');
+  const aimToggle     = document.getElementById('settingsAimAssistToggle');
+  const tutorialToggle= document.getElementById('settingsTutorialToggle');
+  const muted = (typeof AUDIO !== 'undefined') ? !!AUDIO.muted : false;
+  const aim   = !!player._aimAssist;
+  const tutorialOn = (typeof isAllUnlocked === 'function') ? !isAllUnlocked() : false;
+  if (muteToggle)     { muteToggle.textContent = muted ? 'ON' : 'OFF';     muteToggle.classList.toggle('on', muted); }
+  if (aimToggle)      { aimToggle.textContent  = aim   ? 'ON' : 'OFF';     aimToggle.classList.toggle('on', aim); }
+  if (tutorialToggle) { tutorialToggle.textContent = tutorialOn ? 'ON' : 'OFF'; tutorialToggle.classList.toggle('on', tutorialOn); }
+}
+if (_settingsBtn) _settingsBtn.onclick = () => {
+  if (_settingsModal) {
+    _refreshSettingsToggles();
+    _settingsModal.removeAttribute('hidden');
+  }
+};
+if (_settingsClose) _settingsClose.onclick = () => _settingsModal && _settingsModal.setAttribute('hidden', '');
+if (_settingsModal) _settingsModal.onclick = (e) => { if (e.target === _settingsModal) _settingsModal.setAttribute('hidden', ''); };
+const _settingsMute   = document.getElementById('settingsMute');
+const _settingsAim    = document.getElementById('settingsAimAssist');
+const _settingsTutorial = document.getElementById('settingsTutorial');
+if (_settingsMute) _settingsMute.onclick = () => {
+  if (typeof setAudioMuted === 'function') setAudioMuted(!AUDIO.muted);
+  _refreshSettingsToggles();
+};
+if (_settingsAim) _settingsAim.onclick = () => {
+  player._aimAssist = !player._aimAssist;
+  try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (e) {}
+  _refreshSettingsToggles();
+};
+if (_settingsTutorial) _settingsTutorial.onclick = () => {
+  // Toggle: tutorial ON means ag.unlockAll === '0' (gating opt-in)
+  const cur = (typeof isAllUnlocked === 'function') ? isAllUnlocked() : true;
+  if (typeof setUnlockAll === 'function') setUnlockAll(cur ? false : true);  // flip
+  _refreshSettingsToggles();
+};
+// Locked rows — toast "coming soon" with the gate name
+document.querySelectorAll('#settingsModal .settings-row-locked').forEach(row => {
+  row.onclick = () => {
+    const gate = row.querySelector('.settings-lock');
+    const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
+    const msg = (lang === 'zh' ? '即將推出 · ' : 'Coming soon · ') + (gate ? gate.textContent : '');
+    if (typeof showSwapToast === 'function') showSwapToast(msg);
+  };
+});
 const _campaignBtn = document.getElementById('campaignBtn');
 if (_campaignBtn) _campaignBtn.onclick = () => {
   // Hide both lobbies before kicking the campaign — startGame() only hides
@@ -7966,7 +8091,7 @@ MISSION_FACTORIES.escort = function(mapDef) {
       const pct = ugv.alive ? Math.floor((1 - Math.hypot(dest.x - ugv.x, dest.y - ugv.y)/totalDist) * 100) : 0;
       drawObjectivePanel([
         `UGV   ${ugv.alive ? ugv.hp + '/' + ugv.maxHp : T('已损毁', 'DESTROYED')}`,
-        `进度  ${pct}%   剩 ${dist}m`,
+        `${T('进度', 'PROGRESS')}  ${pct}%   ${T('剩', 'REM')} ${dist}m`,
       ]);
     },
   };
@@ -8058,7 +8183,7 @@ MISSION_FACTORIES.capture = function(mapDef) {
       const lines = zones.map(z => {
         const pct = Math.round(z.capture);
         const tag = z.owner === 'friendly' ? T('已占领', 'HELD') : z.owner === 'hostile' ? T('敌占', 'HOSTILE') : `${pct > 0 ? '+' : ''}${pct}%`;
-        return `节点 ${z.id}   ${tag}`;
+        return `${T('节点', 'NODE')} ${z.id}   ${tag}`;
       });
       drawObjectivePanel(lines);
     },
@@ -8126,8 +8251,8 @@ MISSION_FACTORIES.destroyHive = function(mapDef) {
     },
     renderHUD() {
       drawObjectivePanel([
-        `蜂巢 HP   ${Math.max(0, hive.hp)} / ${hive.maxHp}`,
-        hive.alive ? `状态  存活 · 持续生成 FPV` : `状态  已摧毁`,
+        `${T('蜂巢 HP', 'HIVE HP')}   ${Math.max(0, hive.hp)} / ${hive.maxHp}`,
+        hive.alive ? T('状态  存活 · 持续生成 FPV', 'STATUS  ALIVE · SPAWNING FPV') : T('状态  已摧毁', 'STATUS  DESTROYED'),
       ]);
     },
   };
@@ -8211,9 +8336,9 @@ MISSION_FACTORIES.recover = function(mapDef) {
     },
     renderHUD() {
       const lines = !blackBox.pickedUp
-        ? [`目标   抵达黑盒（红色脉冲）`]
-        : [`携带中  返回撤离区`,
-           `距离   ${Math.hypot(player.x - extraction.x, player.y - extraction.y).toFixed(0)}u`];
+        ? [T('目标   抵达黑盒（红色脉冲）', 'OBJECTIVE   REACH BLACK BOX (RED PULSE)')]
+        : [T('携带中  返回撤离区', 'CARRYING  RETURN TO EXTRACTION'),
+           `${T('距离', 'DIST')}   ${Math.hypot(player.x - extraction.x, player.y - extraction.y).toFixed(0)}u`];
       drawObjectivePanel(lines);
     },
   };
@@ -8316,9 +8441,9 @@ MISSION_FACTORIES.heavyInsert = function(mapDef) {
     renderHUD() {
       const lines = [`UGV   ${heavy.alive ? heavy.hp + '/' + heavy.maxHp : T('已损毁', 'DESTROYED')}`];
       if (heavy.arrivedAt) {
-        lines.push(`破障   ${Math.floor(heavy.breachProgress / heavy.breachDuration * 100)}%`);
+        lines.push(`${T('破障', 'BREACH')}   ${Math.floor(heavy.breachProgress / heavy.breachDuration * 100)}%`);
       } else if (heavy.alive) {
-        lines.push(`距离   ${Math.hypot(target.x - heavy.x, target.y - heavy.y).toFixed(0)}u`);
+        lines.push(`${T('距离', 'DIST')}   ${Math.hypot(target.x - heavy.x, target.y - heavy.y).toFixed(0)}u`);
       }
       drawObjectivePanel(lines);
     },
@@ -8337,7 +8462,7 @@ MISSION_FACTORIES.hold = function(mapDef) {
   return {
     title: '坚守最后中继站',
     titleEn: 'HOLD THE RELAY',
-    objective: `守住中继站 90 秒不失守`,
+    objective: T('守住中继站 90 秒不失守', 'Hold the relay for 90 seconds'),
     relay, duration,
     get elapsed() { return elapsed; },
     update() {
@@ -8392,8 +8517,8 @@ MISSION_FACTORIES.hold = function(mapDef) {
     renderHUD() {
       const remaining = Math.max(0, Math.ceil((duration - elapsed) / 60));
       drawObjectivePanel([
-        `倒计时   ${remaining}s`,
-        `中继 HP   ${Math.max(0, relay.hp)}/${relay.maxHp}`,
+        `${T('倒计时', 'TIME')}   ${remaining}s`,
+        `${T('中继 HP', 'RELAY HP')}   ${Math.max(0, relay.hp)}/${relay.maxHp}`,
       ]);
     },
   };
