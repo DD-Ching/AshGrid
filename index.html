@@ -9209,6 +9209,14 @@ function drawDefenseShop() {
   // Status pill + radial render in every NN mode now that build works
   // anywhere. Pill stays minimal so non-defense modes aren't cluttered.
   if (!game._nnMode) return;
+  // Tier-gate: hide the build hint until DEFENSE is unlocked (tier 2).
+  // Building still works at any tier — but the HUD stays clean for new
+  // players until the feature is on their radar. Always show in defense
+  // mode itself (which is gated to tier 2 anyway, so this is a no-op
+  // unless someone forces it via _nnGameMode).
+  const tier = (typeof getUnlockTier === 'function') ? getUnlockTier() : 4;
+  const inDefense = game._nnGameMode === 'defense';
+  if (tier < 2 && !inDefense && !(typeof isAllUnlocked === 'function' && isAllUnlocked())) return;
   game._buildShopDrawnThisFrame = true;
   // Status pill — always shown while in defense mode (compact, non-cluttered)
   drawDefenseStatusPill();
