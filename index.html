@@ -3608,6 +3608,40 @@ function applyWeaponToPlayer(w) {
   player._spentToZero = false;
 }
 
+// Mid-match weapon swap: primary (lobby pick) ↔ secondary (RIFLE fallback).
+// Press X to toggle. Each weapon keeps its own ammo state so the player
+// can save the rocket and pop back to RIFLE for a long fight, then flip
+// when a wall or grouped enemy shows up.
+function swapPlayerWeapon() {
+  if (!playerWeapon || game.state !== 'playing' || game._paused) return;
+  if (player.reloading) return;                  // can't swap mid-reload
+  // Stash current weapon's ammo
+  const cur = playerWeapon;
+  player._weaponSlots = player._weaponSlots || {};
+  player._weaponSlots[cur.name || cur.blurb || 'cur'] = {
+    weapon: cur,
+    ammo: player.ammo,
+    reserve: player.reserve,
+  };
+  // Pick the other slot. If only one weapon recorded, fall back to RIFLE.
+  let next = null;
+  for (const k of Object.keys(player._weaponSlots)) {
+    if (k !== (cur.name || cur.blurb || 'cur')) { next = player._weaponSlots[k]; break; }
+  }
+  if (!next) {
+    next = { weapon: WEAPONS.RIFLE, ammo: WEAPONS.RIFLE.magSize, reserve: WEAPONS.RIFLE.reserveStart };
+  }
+  applyWeaponToPlayer(next.weapon);
+  player.ammo = next.ammo;
+  player.reserve = next.reserve;
+  if (typeof showSwapToast === 'function') {
+    const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
+    const wname = next.weapon.name || (lang === 'zh' ? '副武器' : 'SECONDARY');
+    showSwapToast(`${lang === 'zh' ? '切換 ▶ ' : 'SWITCH ▶ '}${wname}`);
+  }
+  if (typeof playRadioBeep === 'function') playRadioBeep(620, 0.1);
+}
+
 // Weapons NN units can spawn with. Same trade-offs as player picks.
 const NN_WEAPON_POOL = ['SMG', 'RIFLE', 'LMG', 'SNIPER', 'SHOTGUN'];
 function pickRandomNNWeaponId() {
@@ -4192,6 +4226,7 @@ window.addEventListener('keydown', e => {
     else if (k === 'r') startReload();
     else if (k === 'g') throwGrenade();
     else if (k === 'b') toggleBuildMode();
+    else if (k === 'x') swapPlayerWeapon();
     // 1-9 + 0 = power-user shortcut to pick a module. Works whether the
     // radial is open (closes it) or in placing mode (just swaps kind).
     // Pawn-swap fallback below only runs OUTSIDE build mode.
@@ -5756,14 +5791,26 @@ function clearWorld() {
   coverPoints.length = 0;
 }
 
+// Cover/wall HP per material. Different feel + different rocket counts:
+//   wood crate:  60   (1 RPG hit + AOE = gone)
+//   tree:        70   (canopy LoS-blocker, falls quickly)
+//   sandbag:    140
+//   bunker:     200
+//   concrete:   300   (shrugs off 1 RPG, dies on 2)
+const COVER_HP_BY_KIND = {
+  crate: 80, tree: 70, sandbag: 140,
+  cover: 120, low: 120,
+  bunker: 200, wall: 220, concrete: 300,
+  building: 220,
+};
 function addBuilding(x, y, w, h, color, opts={}) {
-  // hp/maxHp are populated so defense mode can damage the cover. Other modes
-  // keep them ignored (no bullet decrements them outside defense logic).
-  const hp = opts.hp != null ? opts.hp : 220;
+  const baseHp = COVER_HP_BY_KIND[opts.kind || 'building'] || 220;
+  const hp = opts.hp != null ? opts.hp : baseHp;
   buildings.push({ x, y, w, h, color: color || COLORS.gray, shadow: opts.shadow !== false, accent: !!opts.accent, kind: opts.kind || 'building', hp, maxHp: hp });
 }
 function addLowCover(x, y, w, h, color, opts={}) {
-  const hp = opts.hp != null ? opts.hp : 100;
+  const baseHp = COVER_HP_BY_KIND[opts.kind || 'cover'] || 100;
+  const hp = opts.hp != null ? opts.hp : baseHp;
   lowCovers.push({ x, y, w, h, color: color || COLORS.lightGray, kind: opts.kind || 'cover', canopy: !!opts.canopy, hp, maxHp: hp });
 }
 function addOverhead(x, y, w, h, color, opts={}) {
@@ -11808,26 +11855,27 @@ function detonateRocket(b) {
       if (dist < r) s.hp -= splashDmg * structMul;
     }
   }
-  // Arena buildings + lowCovers — destructible only in defense mode
-  if (game._nnGameMode === 'defense') {
-    for (let bi = buildings.length - 1; bi >= 0; bi--) {
-      const bd = buildings[bi];
-      const cx = bd.x + bd.w / 2, cy = bd.y + bd.h / 2;
-      if (Math.hypot(cx - b.x, cy - b.y) < r + Math.max(bd.w, bd.h) / 2) {
-        if (bd.hp != null) {
-          bd.hp -= splashDmg * structMul;
-          if (bd.hp <= 0) { createExplosion(cx, cy, 'small'); buildings.splice(bi, 1); }
-        }
+  // Arena buildings + lowCovers are now destructible in EVERY NN mode
+  // (the previous '_nnGameMode === defense'-only gate hid this from the
+  // user — rockets felt useless in DM/SURV/HELO/CONVOY because nothing
+  // changed on impact).
+  for (let bi = buildings.length - 1; bi >= 0; bi--) {
+    const bd = buildings[bi];
+    const cx = bd.x + bd.w / 2, cy = bd.y + bd.h / 2;
+    if (Math.hypot(cx - b.x, cy - b.y) < r + Math.max(bd.w, bd.h) / 2) {
+      if (bd.hp != null) {
+        bd.hp -= splashDmg * structMul;
+        if (bd.hp <= 0) { createExplosion(cx, cy, 'small'); buildings.splice(bi, 1); }
       }
     }
-    for (let li = lowCovers.length - 1; li >= 0; li--) {
-      const lc = lowCovers[li];
-      const cx = lc.x + lc.w / 2, cy = lc.y + lc.h / 2;
-      if (Math.hypot(cx - b.x, cy - b.y) < r + Math.max(lc.w, lc.h) / 2) {
-        if (lc.hp != null) {
-          lc.hp -= splashDmg * structMul;
-          if (lc.hp <= 0) { createExplosion(cx, cy, 'small'); lowCovers.splice(li, 1); }
-        }
+  }
+  for (let li = lowCovers.length - 1; li >= 0; li--) {
+    const lc = lowCovers[li];
+    const cx = lc.x + lc.w / 2, cy = lc.y + lc.h / 2;
+    if (Math.hypot(cx - b.x, cy - b.y) < r + Math.max(lc.w, lc.h) / 2) {
+      if (lc.hp != null) {
+        lc.hp -= splashDmg * structMul;
+        if (lc.hp <= 0) { createExplosion(cx, cy, 'small'); lowCovers.splice(li, 1); }
       }
     }
   }
