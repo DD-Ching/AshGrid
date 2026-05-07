@@ -1349,11 +1349,14 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 
 <script>
 // ============ URL FLAGS ============
-// ?reset=1   — wipe ag.* localStorage and reload clean (lets a terminal
-//              `open http://…?reset=1` reset progress without diving into
-//              DevTools). Strips ?reset from the URL on the redirect so
-//              refreshing won't reset again. ?reset=stats keeps unlockAll
-//              and operator name; ?reset=hard nukes everything.
+// ?reset=1        — wipe ag.* localStorage and reload clean (default: full
+//                   unlocked, the veteran experience).
+// ?reset=stats    — keep ag.unlockAll + ag.operatorName, wipe matches/day/
+//                   leaderboards/achievements/lobby config.
+// ?reset=tutorial — wipe AND opt into gated tutorial mode (only DM at the
+//                   start, things unlock per match). The 'opt-in' bit is
+//                   ag.unlockAll === '0'.
+// In every case the redirect strips the flag so refreshing won't loop.
 (function () {
   const sp = new URLSearchParams(location.search);
   const r = sp.get('reset');
@@ -1366,8 +1369,14 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       localStorage.removeItem('ag.defenseScores');
       localStorage.removeItem('ag.achievements');
       localStorage.removeItem('ag.lobbyConfig');
+    } else if (r === 'tutorial') {
+      for (const k of Object.keys(localStorage)) {
+        if (k.startsWith('ag.')) localStorage.removeItem(k);
+      }
+      localStorage.setItem('ag.unlockAll', '0');   // opt IN to tutorial gating
     } else {
-      // Wipe every ag.* key — full fresh-launch
+      // Wipe every ag.* key — full fresh-launch (which now defaults to all
+      // unlocked since unlockAll defaults to true).
       for (const k of Object.keys(localStorage)) {
         if (k.startsWith('ag.')) localStorage.removeItem(k);
       }
@@ -8703,13 +8712,17 @@ const NEXT_UNLOCK_LABEL = {
   3: { zh: '撤离 + 护送', en: 'HELO + CONVOY' },
   4: { zh: '单挑 + 狙击', en: 'DUEL + SNIPER' },
 };
+// Default: everything unlocked. The progressive tutorial-style gating
+// is opt-IN via ag.unlockAll === '0'. This was opt-OUT originally
+// ('not set' = gated) but in practice that hid too much for veteran
+// players who'd cleared their state.
 function isAllUnlocked() {
-  try { return localStorage.getItem('ag.unlockAll') === '1'; } catch (e) { return false; }
+  try { return localStorage.getItem('ag.unlockAll') !== '0'; } catch (e) { return true; }
 }
 function setUnlockAll(val) {
   try {
     if (val) localStorage.setItem('ag.unlockAll', '1');
-    else     localStorage.removeItem('ag.unlockAll');
+    else     localStorage.setItem('ag.unlockAll', '0');   // explicit opt-IN to gating
   } catch (e) {}
   applyUnlockGating();
 }
