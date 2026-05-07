@@ -1117,6 +1117,8 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 
     <div class="footer-bar">
       <span><span class="day-chip" id="dayChip">DAY 14</span><span id="startStatsLine">SECTOR 7G · UNIT 0451</span><button class="footer-link" id="dossierBtn">DOSSIER</button><button class="footer-link" id="logBtn">LOG <span class="badge" id="logBadge" hidden>1</span></button><button class="footer-link" id="achievementsBtn">RECORDS</button><button class="replay-intro" id="replayIntroBtn">▶ INTRO</button></span>
+      <span id="nextUnlockHint" style="margin-right:8px; opacity:0.65; letter-spacing:1px;"></span>
+      <button class="footer-link" id="unlockAllBtn" style="display:none; margin-right:18px;">SKIP ALL ▶</button>
       <span>建议 1080p+ 全屏体验</span>
     </div>
   </div>
@@ -1858,6 +1860,14 @@ function buildDossierModal() {
 
 // Wire footer buttons + modal close. Called by _wireIntro since both run at boot.
 function _wireFooterModals() {
+  const unlockBtn = document.getElementById('unlockAllBtn');
+  if (unlockBtn) unlockBtn.onclick = () => {
+    const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
+    const ok = window.confirm(lang === 'zh'
+      ? '解鎖所有模式 + 地圖編輯器? 之後就不會再有教程式解鎖。'
+      : 'Unlock every mode + the editor right now? The tutorial-style progression will be off after this.');
+    if (ok) setUnlockAll(true);
+  };
   const logBtn = document.getElementById('logBtn');
   const logClose = document.getElementById('logCloseBtn');
   const logModal = document.getElementById('logModal');
@@ -2398,6 +2408,7 @@ function setLang(lang) {
         ? (lang === 'en' ? 'CUSTOM LINEUP ▲' : '自定义阵容 ▲')
         : (lang === 'en' ? 'DEFAULT (all same) ▼' : '默认（全队同设置） ▼');
     }
+    if (typeof applyUnlockGating === 'function') applyUnlockGating();
   } catch (e) {}
 }
 // Wire up language toggle buttons (delegated, fires regardless of which copy was clicked)
@@ -4990,6 +5001,7 @@ if (_nnBtn) {
     } else {
       document.getElementById('nnLobby').classList.remove('hidden');
     }
+    if (typeof applyUnlockGating === 'function') applyUnlockGating();
     document.getElementById('blueSizeLabel').textContent = _lobby.blue;
     document.getElementById('redSizeLabel').textContent  = _lobby.red;
     // Sync active highlights to current _lobby state (restored from localStorage)
@@ -8187,6 +8199,126 @@ function refreshStartStatsLine() {
     el.textContent = `已 ${s.matchesPlayed} 局 · 击杀 ${s.totalKills}` +
       (s.bestSurvivalWave > 0 ? ` · 生存最佳 W${s.bestSurvivalWave}` : '');
   }
+  applyUnlockGating();
+}
+
+// ============ PROGRESSIVE UNLOCK ============
+// Hide modes / features the player hasn't earned yet. The goal is a clean
+// first-launch surface: only DEATHMATCH visible. Each finished match steps
+// the tier up, revealing the next mode bucket. Power-users hit "skip" in
+// the intro to set ag.unlockAll=1 and bypass gating entirely.
+const MODE_UNLOCK_TIER = {
+  dm: 0,         // always
+  survival: 1,   // after first match
+  defense:  2,   // after 3 matches
+  helo:     3,   // after 5 matches
+  convoy:   3,   // after 5 matches
+  duel:     4,   // after 7 matches
+  sniper:   4,   // after 7 matches
+};
+const STYLE_UNLOCK_TIER = {
+  elite: 0, warrior: 1, defensive: 2, sharpshooter: 3, cqb: 3, tactical: 4,
+};
+const WEAPON_UNLOCK_TIER = {
+  RIFLE: 0, SMG: 1, SHOTGUN: 2, LMG: 3, SNIPER: 3, ROCKET: 4,
+};
+const CHASSIS_UNLOCK_TIER = {
+  humanoid: 0, wolf: 2, heavy: 4,
+};
+const TIER_THRESHOLDS = [0, 1, 3, 5, 7];   // matchesPlayed needed for tiers 0-4
+const NEXT_UNLOCK_LABEL = {
+  1: { zh: '生存', en: 'SURVIVAL' },
+  2: { zh: '防御', en: 'DEFENSE' },
+  3: { zh: '撤离 + 护送', en: 'HELO + CONVOY' },
+  4: { zh: '单挑 + 狙击', en: 'DUEL + SNIPER' },
+};
+function isAllUnlocked() {
+  try { return localStorage.getItem('ag.unlockAll') === '1'; } catch (e) { return false; }
+}
+function setUnlockAll(val) {
+  try {
+    if (val) localStorage.setItem('ag.unlockAll', '1');
+    else     localStorage.removeItem('ag.unlockAll');
+  } catch (e) {}
+  applyUnlockGating();
+}
+function getUnlockTier() {
+  if (isAllUnlocked()) return TIER_THRESHOLDS.length - 1;
+  const played = getGlobalStats().matchesPlayed | 0;
+  let tier = 0;
+  for (let i = 0; i < TIER_THRESHOLDS.length; i++) {
+    if (played >= TIER_THRESHOLDS[i]) tier = i;
+  }
+  return tier;
+}
+function isModeUnlocked(mode) {
+  if (isAllUnlocked()) return true;
+  const tier = MODE_UNLOCK_TIER[mode];
+  return tier == null || tier <= getUnlockTier();
+}
+function _isItemUnlocked(table, key) {
+  if (isAllUnlocked()) return true;
+  const tier = table[key];
+  return tier == null || tier <= getUnlockTier();
+}
+function applyUnlockGating() {
+  const tier = getUnlockTier();
+  // If the persisted lobby pick is now gated, fall back to dm so the picker
+  // doesn't open with no visible "active" highlight.
+  if (typeof _lobby !== 'undefined' && !isModeUnlocked(_lobby.mode)) {
+    _lobby.mode = 'dm';
+  }
+  // Lobby info-strip cards (start screen). Cards are .mission elements,
+  // ordered to match MODE_UNLOCK_TIER below.
+  const STRIP_ORDER = ['dm', 'survival', 'defense', 'helo', 'convoy', 'duel', 'sniper'];
+  const cards = document.querySelectorAll('.missions-grid .mission');
+  cards.forEach((card, i) => {
+    const mode = STRIP_ORDER[i];
+    card.style.display = isModeUnlocked(mode) ? '' : 'none';
+  });
+  // COMBAT SETUP picker mode buttons
+  document.querySelectorAll('#nnLobby [data-mode]').forEach(btn => {
+    btn.style.display = isModeUnlocked(btn.dataset.mode) ? '' : 'none';
+  });
+  // STYLE / WEAPON / CHASSIS — same progressive reveal so first-match
+  // setup is just (DM × ELITE × RIFLE × HUMAN). Snap saved picks back to
+  // the default if the persisted choice is now gated.
+  if (typeof _lobby !== 'undefined') {
+    if (!_isItemUnlocked(STYLE_UNLOCK_TIER,   _lobby.difficulty)) _lobby.difficulty = 'elite';
+    if (!_isItemUnlocked(WEAPON_UNLOCK_TIER,  _lobby.weapon))     _lobby.weapon     = 'RIFLE';
+    if (!_isItemUnlocked(CHASSIS_UNLOCK_TIER, _lobby.chassis))    _lobby.chassis    = 'humanoid';
+  }
+  document.querySelectorAll('#nnLobby [data-diff]').forEach(btn => {
+    btn.style.display = _isItemUnlocked(STYLE_UNLOCK_TIER, btn.dataset.diff) ? '' : 'none';
+  });
+  document.querySelectorAll('#nnLobby [data-weapon]').forEach(btn => {
+    btn.style.display = _isItemUnlocked(WEAPON_UNLOCK_TIER, btn.dataset.weapon) ? '' : 'none';
+  });
+  document.querySelectorAll('#nnLobby [data-chassis]').forEach(btn => {
+    btn.style.display = _isItemUnlocked(CHASSIS_UNLOCK_TIER, btn.dataset.chassis) ? '' : 'none';
+  });
+  // Map editor — gate to tier 4 (advanced)
+  const editorBtn = document.getElementById('editorBtn');
+  if (editorBtn) editorBtn.style.display = (tier >= 4 || isAllUnlocked()) ? '' : 'none';
+  // "Next unlock" hint chip + "skip" button
+  const hint = document.getElementById('nextUnlockHint');
+  const skipBtn = document.getElementById('unlockAllBtn');
+  const next = tier + 1;
+  const allDone = isAllUnlocked() || next >= TIER_THRESHOLDS.length;
+  if (hint) {
+    if (allDone) {
+      hint.style.display = 'none';
+    } else {
+      const need = TIER_THRESHOLDS[next] - (getGlobalStats().matchesPlayed | 0);
+      const label = NEXT_UNLOCK_LABEL[next];
+      const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
+      hint.style.display = '';
+      hint.textContent = (lang === 'zh')
+        ? `下一個解鎖: ${label.zh} · 再 ${need} 局`
+        : `NEXT UNLOCK: ${label.en} · ${need} more match${need === 1 ? '' : 'es'}`;
+    }
+  }
+  if (skipBtn) skipBtn.style.display = allDone ? 'none' : '';
 }
 // Initial render once DOM is ready (this script runs at end of body so it's safe)
 if (typeof document !== 'undefined') refreshStartStatsLine();
