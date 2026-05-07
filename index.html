@@ -188,6 +188,12 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   z-index: -1;
 }
 .start-btn:hover { transform: translate(4px, -4px); background: var(--red-bright); }
+.primary-card:hover { transform: translate(-3px, -3px); box-shadow: 9px 9px 0 var(--black) !important; }
+.primary-card-black:hover { box-shadow: 9px 9px 0 var(--red) !important; }
+.primary-card:active { transform: translate(2px, 2px); box-shadow: 4px 4px 0 var(--black) !important; }
+@media (max-width: 720px) {
+  #primaryCards { grid-template-columns: 1fr !important; }
+}
 /* Language toggle button — small chip top-right of cards/screens. Click to flip
    between 中文 and English. Persisted in localStorage as ag.lang. */
 /* ============ FOOTER LINKS / MODALS ============ */
@@ -1087,40 +1093,51 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <div class="tagline">FUTURE BATTLEFIELD — DEEP / PERSISTENT / UNMANNED</div>
     </div>
 
-    <div class="controls-grid">
+    <!-- Two-card hero. SKIRMISH = quick PvAI with the COMBAT SETUP picker
+         opening behind it; CAMPAIGN = sequential story missions. Each
+         card is the entire click target so the menu reads at a glance. -->
+    <div id="primaryCards" style="display:grid; grid-template-columns:1fr 1fr; gap:14px; max-width:780px;">
+      <button id="nnBtn" class="primary-card primary-card-red" type="button" style="background:var(--red); color:var(--cream); border:none; padding:26px 28px; text-align:left; cursor:pointer; box-shadow:6px 6px 0 var(--black); transition:transform .12s, box-shadow .12s;">
+        <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7;">A1 · QUICK PLAY</div>
+        <div style="font:bold 28px sans-serif; letter-spacing:5px; margin-top:6px;">遭遇戰 SKIRMISH ▶</div>
+        <div id="skirmishHint" style="font:11px monospace; letter-spacing:1.5px; opacity:0.85; margin-top:10px;">PvAI · 7 modes · NN both teams · pick lineup</div>
+      </button>
+      <button id="campaignBtn" class="primary-card primary-card-black" type="button" style="background:var(--black); color:var(--cream); border:none; padding:26px 28px; text-align:left; cursor:pointer; box-shadow:6px 6px 0 var(--red); transition:transform .12s, box-shadow .12s;">
+        <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7;">A2 · STORY</div>
+        <div style="font:bold 28px sans-serif; letter-spacing:5px; margin-top:6px;">戰役 CAMPAIGN</div>
+        <div id="campaignHint" style="font:11px monospace; letter-spacing:1.5px; opacity:0.85; margin-top:10px;">6 hand-crafted missions · escort · breach · hive · relay</div>
+      </button>
+    </div>
+
+    <!-- Utility row — secondary actions get less weight -->
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:4px;">
+      <button class="footer-link" id="editorBtn">▦ MAP EDITOR</button>
+      <button class="footer-link" id="dossierBtn">⌂ DOSSIER</button>
+      <button class="footer-link" id="logBtn">≡ LOG <span class="badge" id="logBadge" hidden>1</span></button>
+      <button class="footer-link" id="achievementsBtn">✦ RECORDS</button>
+      <button class="footer-link" id="replayIntroBtn">▶ INTRO</button>
+      <button class="footer-link" id="controlsBtn">? CONTROLS</button>
+    </div>
+
+    <!-- Controls drawer — collapsed by default. The user opens it from
+         the '? CONTROLS' link above when they want a refresher; new
+         players don't have to scan a wall of keys on every visit. -->
+    <div class="controls-grid" id="controlsDrawer" style="display:none;">
       <div class="ctrl-item"><span class="ctrl-key">WASD</span><span>移动 / 飞行</span></div>
       <div class="ctrl-item"><span class="ctrl-key">鼠标</span><span>瞄准 / 射击</span></div>
       <div class="ctrl-item"><span class="ctrl-key">R</span><span>装填弹药</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">Q</span><span>无人机侦察 UAV</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">X</span><span>切换武器</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">Q</span><span>UAV 侦察</span></div>
       <div class="ctrl-item"><span class="ctrl-key">E</span><span>FPV 自杀无人机</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">TAB</span><span>战术指挥 RTS</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">G</span><span>投掷手雷</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">B</span><span>建造模式</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">TAB</span><span>战术指挥 + 1-7 下令</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">1-4</span><span>接管隊友 (NN 模式)</span></div>
     </div>
-
-    <div class="missions">
-      <div class="missions-tag">模式 / GAME MODES</div>
-      <div class="missions-grid">
-        <div class="mission"><span class="mission-num">01</span><div class="mission-body"><div class="mission-name">对抗 · DEATHMATCH</div><div class="mission-rhythm">蓝队 vs 红队 · 自由配阵 · 全地图</div></div></div>
-        <div class="mission"><span class="mission-num">02</span><div class="mission-body"><div class="mission-name">生存 · SURVIVAL</div><div class="mission-rhythm">守住每一波 · 队友死了不复活 · 撑越久越强</div></div></div>
-        <div class="mission"><span class="mission-num">03</span><div class="mission-body"><div class="mission-name">防御 · DEFENSE</div><div class="mission-rhythm">蓋牆 / 砲塔 / 特斯拉 / EMP · 16 模塊邊建邊打</div></div></div>
-        <div class="mission"><span class="mission-num">04</span><div class="mission-body"><div class="mission-name">直升机 · HELO EXTRACT</div><div class="mission-rhythm">全队撑到 LZ · 无人机扫尾 · 一波接一波</div></div></div>
-        <div class="mission"><span class="mission-num">05</span><div class="mission-body"><div class="mission-name">护送 · CONVOY</div><div class="mission-rhythm">UGV 走廊推进 · 路过敌人会扫射</div></div></div>
-        <div class="mission"><span class="mission-num">06</span><div class="mission-body"><div class="mission-name">单挑 · DUEL 1v1</div><div class="mission-rhythm">没队友 · 没无人机 · 纯走位 + 枪法</div></div></div>
-        <div class="mission"><span class="mission-num">07</span><div class="mission-body"><div class="mission-name">狙击 · SNIPER ONLY</div><div class="mission-rhythm">全员一击致命 · 长视野 · 卡角拉锯</div></div></div>
-      </div>
-    </div>
-
-    <div style="display:flex; gap:12px; align-items:center; flex-wrap: wrap;">
-      <button class="start-btn" id="nnBtn" style="background: var(--red); font-size: 22px; letter-spacing: 6px; padding: 22px 56px;">遭遇戰 SKIRMISH ▶</button>
-      <button class="start-btn" id="campaignBtn" style="background: var(--black); font-size: 16px; letter-spacing: 5px; padding: 18px 36px;">戰役 CAMPAIGN</button>
-      <button class="start-btn" id="editorBtn" style="background: var(--black); font-size: 14px; letter-spacing: 4px; padding: 14px 24px;">地图编辑器 EDITOR</button>
-    </div>
-
 
     <div class="footer-bar">
-      <span><span class="day-chip" id="dayChip">DAY 14</span><span id="startStatsLine">SECTOR 7G · UNIT 0451</span><button class="footer-link" id="dossierBtn">DOSSIER</button><button class="footer-link" id="logBtn">LOG <span class="badge" id="logBadge" hidden>1</span></button><button class="footer-link" id="achievementsBtn">RECORDS</button><button class="replay-intro" id="replayIntroBtn">▶ INTRO</button></span>
-      <span id="nextUnlockHint" style="margin-right:8px; opacity:0.65; letter-spacing:1px;"></span>
-      <button class="footer-link" id="unlockAllBtn" style="display:none; margin-right:18px;">SKIP ALL ▶</button>
-      <span>建议 1080p+ 全屏体验</span>
+      <span><span class="day-chip" id="dayChip">DAY 14</span><span id="startStatsLine">SECTOR 7G · UNIT 0451</span></span>
+      <span><span id="nextUnlockHint" style="margin-right:8px; opacity:0.55; letter-spacing:1px; font-size:10px;"></span><button class="footer-link" id="unlockAllBtn" style="display:none; margin-right:14px;">SKIP ALL ▶</button><span style="opacity:0.55; font-size:10px;">建议 1080p+ 全屏体验</span></span>
     </div>
   </div>
 </div>
@@ -2347,32 +2364,33 @@ const I18N = {
   '#start .subtitle':       { zh: '深度 · 持久 · 无人化', en: 'DEEP · PERSISTENT · UNMANNED' },
   '#start .tagline':        { zh: '神经网络驱动 · 双方共用同一 PPO 模型',
                               en: 'NN-DRIVEN · BOTH TEAMS SHARE A SINGLE PPO MODEL' },
-  '#start .ctrl-item:nth-of-type(1) span:last-child': { zh: '移动 / 飞行', en: 'Move / fly' },
-  '#start .ctrl-item:nth-of-type(2) span:last-child': { zh: '瞄准 / 射击', en: 'Aim / fire' },
-  '#start .ctrl-item:nth-of-type(2) .ctrl-key':       { zh: '鼠标', en: 'Mouse' },
-  '#start .ctrl-item:nth-of-type(3) span:last-child': { zh: '装填弹药', en: 'Reload' },
-  '#start .ctrl-item:nth-of-type(4) span:last-child': { zh: '无人机侦察 UAV', en: 'UAV recon' },
-  '#start .ctrl-item:nth-of-type(5) span:last-child': { zh: 'FPV 自杀无人机', en: 'FPV kamikaze' },
-  '#start .ctrl-item:nth-of-type(6) span:last-child': { zh: '战术指挥 RTS', en: 'RTS command' },
-  '#start .missions-tag':   { zh: '模式 / GAME MODES', en: 'GAME MODES' },
-  '#start .mission:nth-of-type(1) .mission-name':   { zh: '对抗 · DEATHMATCH', en: 'DEATHMATCH' },
-  '#start .mission:nth-of-type(1) .mission-rhythm': { zh: '蓝队 vs 红队 · 自由配阵 · 全地图', en: 'Blue vs Red · custom lineup · all maps' },
-  '#start .mission:nth-of-type(2) .mission-name':   { zh: '生存 · SURVIVAL', en: 'SURVIVAL' },
-  '#start .mission:nth-of-type(2) .mission-rhythm': { zh: '守住每一波 · 队友死了不复活 · 撑越久越强', en: 'Hold each wave · teammates stay dead · scale up' },
-  '#start .mission:nth-of-type(3) .mission-name':   { zh: '防御 · DEFENSE', en: 'DEFENSE' },
-  '#start .mission:nth-of-type(3) .mission-rhythm': { zh: '蓋牆 / 砲塔 / 特斯拉 / EMP · 16 模塊邊建邊打', en: 'Walls · turrets · tesla · EMP · 16 modules, build while you fight' },
-  '#start .mission:nth-of-type(4) .mission-name':   { zh: '直升机 · HELO EXTRACT', en: 'HELO EXTRACT' },
-  '#start .mission:nth-of-type(4) .mission-rhythm': { zh: '全队撑到 LZ · 无人机扫尾 · 一波接一波', en: 'Hold to the LZ · drones inbound · wave after wave' },
-  '#start .mission:nth-of-type(5) .mission-name':   { zh: '护送 · CONVOY', en: 'CONVOY' },
-  '#start .mission:nth-of-type(5) .mission-rhythm': { zh: 'UGV 走廊推进 · 路过敌人会扫射', en: 'UGV pushes the corridor · ambushes shoot through' },
-  '#start .mission:nth-of-type(6) .mission-name':   { zh: '单挑 · DUEL 1v1', en: 'DUEL 1v1' },
-  '#start .mission:nth-of-type(6) .mission-rhythm': { zh: '没队友 · 没无人机 · 纯走位 + 枪法', en: 'No teammates · no drones · pure aim + footwork' },
-  '#start .mission:nth-of-type(7) .mission-name':   { zh: '狙击 · SNIPER ONLY', en: 'SNIPER ONLY' },
-  '#start .mission:nth-of-type(7) .mission-rhythm': { zh: '全员一击致命 · 长视野 · 卡角拉锯', en: 'One-shot kill · long sight · angle hold' },
-  '#nnBtn':       { zh: '遭遇戰 SKIRMISH ▶', en: 'SKIRMISH ▶' },
-  '#campaignBtn': { zh: '戰役 CAMPAIGN',       en: 'CAMPAIGN' },
-  '#editorBtn':   { zh: '地图编辑器 EDITOR', en: 'MAP EDITOR' },
-  '#start .footer-bar > span:last-child': { zh: '建议 1080p+ 全屏体验', en: '1080p+ fullscreen recommended' },
+  // ---- Primary cards ----
+  // The two big SKIRMISH / CAMPAIGN buttons have nested spans (eyebrow,
+  // big label, hint), so we i18n each inner element separately rather
+  // than replacing the whole button's innerHTML.
+  '#nnBtn > div:nth-child(1)':       { zh: 'A1 · 快速對戰', en: 'A1 · QUICK PLAY' },
+  '#nnBtn > div:nth-child(2)':       { zh: '遭遇戰 SKIRMISH ▶', en: 'SKIRMISH ▶' },
+  '#skirmishHint':                   { zh: 'PvAI · 7 種模式 · 雙方都用 NN · 自選陣容', en: 'PvAI · 7 modes · NN both teams · pick lineup' },
+  '#campaignBtn > div:nth-child(1)': { zh: 'A2 · 故事', en: 'A2 · STORY' },
+  '#campaignBtn > div:nth-child(2)': { zh: '戰役 CAMPAIGN', en: 'CAMPAIGN' },
+  '#campaignHint':                   { zh: '6 個手工關卡 · 護送 · 突破 · 蜂巢 · 中繼', en: '6 hand-crafted missions · escort · breach · hive · relay' },
+  '#editorBtn':                      { zh: '▦ 地圖編輯器', en: '▦ MAP EDITOR' },
+  '#dossierBtn':                     { zh: '⌂ 檔案 DOSSIER', en: '⌂ DOSSIER' },
+  '#achievementsBtn':                { zh: '✦ 戰績 RECORDS', en: '✦ RECORDS' },
+  '#replayIntroBtn':                 { zh: '▶ 開場 INTRO', en: '▶ INTRO' },
+  '#controlsBtn':                    { zh: '? 操作', en: '? CONTROLS' },
+  // Controls drawer (collapsed by default; opens via #controlsBtn)
+  '#controlsDrawer .ctrl-item:nth-of-type(1) span:last-child': { zh: '移動 / 飛行', en: 'Move / fly' },
+  '#controlsDrawer .ctrl-item:nth-of-type(2) span:last-child': { zh: '瞄準 / 射擊', en: 'Aim / fire' },
+  '#controlsDrawer .ctrl-item:nth-of-type(2) .ctrl-key':       { zh: '鼠標', en: 'Mouse' },
+  '#controlsDrawer .ctrl-item:nth-of-type(3) span:last-child': { zh: '裝填彈藥', en: 'Reload' },
+  '#controlsDrawer .ctrl-item:nth-of-type(4) span:last-child': { zh: '切換武器', en: 'Swap weapon' },
+  '#controlsDrawer .ctrl-item:nth-of-type(5) span:last-child': { zh: 'UAV 偵察', en: 'UAV recon' },
+  '#controlsDrawer .ctrl-item:nth-of-type(6) span:last-child': { zh: 'FPV 自殺無人機', en: 'FPV kamikaze' },
+  '#controlsDrawer .ctrl-item:nth-of-type(7) span:last-child': { zh: '投擲手雷', en: 'Throw grenade' },
+  '#controlsDrawer .ctrl-item:nth-of-type(8) span:last-child': { zh: '建造模式', en: 'Build mode' },
+  '#controlsDrawer .ctrl-item:nth-of-type(9) span:last-child': { zh: '戰術指揮 + 1-7 下令', en: 'Command view + 1-7 orders' },
+  '#controlsDrawer .ctrl-item:nth-of-type(10) span:last-child': { zh: '接管隊友 (NN 模式)', en: 'Pawn-swap (NN mode)' },
 
   // ---- Tutorial card ----
   '#tutorial .lobby-tag':   { zh: '首次提示 · QUICK BRIEFING', en: 'QUICK BRIEFING' },
@@ -4700,6 +4718,13 @@ if (_edSlotSel) _edSlotSel.onchange = () => {
 };
 const _editorBtn = document.getElementById('editorBtn');
 if (_editorBtn) _editorBtn.onclick = openEditor;
+const _controlsBtn = document.getElementById('controlsBtn');
+if (_controlsBtn) _controlsBtn.onclick = () => {
+  const drawer = document.getElementById('controlsDrawer');
+  if (!drawer) return;
+  const open = drawer.style.display !== 'none';
+  drawer.style.display = open ? 'none' : '';
+};
 const _campaignBtn = document.getElementById('campaignBtn');
 if (_campaignBtn) _campaignBtn.onclick = () => {
   // Hide both lobbies before kicking the campaign — startGame() only hides
@@ -8938,14 +8963,9 @@ function applyUnlockGating() {
   if (typeof _lobby !== 'undefined' && !isModeUnlocked(_lobby.mode)) {
     _lobby.mode = 'dm';
   }
-  // Lobby info-strip cards (start screen). Cards are .mission elements,
-  // ordered to match MODE_UNLOCK_TIER below.
-  const STRIP_ORDER = ['dm', 'survival', 'defense', 'helo', 'convoy', 'duel', 'sniper'];
-  const cards = document.querySelectorAll('.missions-grid .mission');
-  cards.forEach((card, i) => {
-    const mode = STRIP_ORDER[i];
-    card.style.display = isModeUnlocked(mode) ? '' : 'none';
-  });
+  // The lobby info-strip used to live here as 7 .mission cards; the
+  // refactored two-card hero (SKIRMISH / CAMPAIGN) drops it. Mode-tier
+  // gating still applies inside the COMBAT SETUP picker below.
   // COMBAT SETUP picker mode buttons
   document.querySelectorAll('#nnLobby [data-mode]').forEach(btn => {
     btn.style.display = isModeUnlocked(btn.dataset.mode) ? '' : 'none';
