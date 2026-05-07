@@ -6636,6 +6636,11 @@ const NN = {
 // (used by the lineup editor — different units fight with different brains).
 NN.sessions = {};
 
+// In-flight load promises so concurrent callers (e.g. 8 units booting at the
+// same time and each calling nnLoadModel('defensive')) share one create()
+// instead of stampeding the WASM runtime with 8 parallel loads of the same
+// .onnx blob. Without this we saw the model load + log 8x at match start.
+NN.loading = NN.loading || {};
 async function nnLoadModel(difficulty = 'hard') {
   // Fast-path: already cached
   if (NN.sessions[difficulty]) {
@@ -6644,28 +6649,38 @@ async function nnLoadModel(difficulty = 'hard') {
     NN.difficulty = difficulty;
     return true;
   }
+  // Dedup in-flight loads — return the already-pending promise
+  if (NN.loading[difficulty]) {
+    return NN.loading[difficulty];
+  }
   if (typeof ort === 'undefined') {
     NN.error = 'onnxruntime-web not loaded';
     console.warn(NN.error);
     return false;
   }
   const path = NN.modelPaths[difficulty] || NN.modelPath;
-  try {
-    const sess = await ort.InferenceSession.create(path, {
-      executionProviders: ['wasm'],
-      graphOptimizationLevel: 'all',
-    });
-    NN.sessions[difficulty] = sess;
-    NN.session = sess;
-    NN.loaded = true;
-    NN.difficulty = difficulty;
-    console.log('NN model loaded:', path, '(difficulty:', difficulty + ')');
-    return true;
-  } catch (e) {
-    NN.error = String(e);
-    console.error('NN load failed:', e);
-    return false;
-  }
+  const promise = (async () => {
+    try {
+      const sess = await ort.InferenceSession.create(path, {
+        executionProviders: ['wasm'],
+        graphOptimizationLevel: 'all',
+      });
+      NN.sessions[difficulty] = sess;
+      NN.session = sess;
+      NN.loaded = true;
+      NN.difficulty = difficulty;
+      console.log('NN model loaded:', path, '(difficulty:', difficulty + ')');
+      return true;
+    } catch (e) {
+      NN.error = String(e);
+      console.error('NN load failed:', e);
+      return false;
+    } finally {
+      delete NN.loading[difficulty];
+    }
+  })();
+  NN.loading[difficulty] = promise;
+  return promise;
 }
 
 // Pre-load multiple difficulties in parallel — used by the lineup editor when
