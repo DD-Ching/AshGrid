@@ -1391,6 +1391,9 @@ function renderDeathRecap() {
   ctx.font = 'bold 56px sans-serif';
   ctx.fillStyle = COLORS.cream;
   ctx.fillText(_r('操作員陣亡', 'OPERATOR DOWN'), W_ / 2, H_ / 2 - 50);
+  ctx.font = 'bold 11px monospace';
+  ctx.fillStyle = `rgba(232, 228, 216, ${0.75 * fade})`;
+  ctx.fillText(_r(`代號 · ${getOperatorName()}`, `CALLSIGN · ${getOperatorName()}`), W_ / 2, H_ / 2 - 22);
   // Killer info card
   const cw = 360, ch = 120;
   const cx = W_ / 2, cy = H_ / 2 + 30;
@@ -1788,7 +1791,7 @@ function buildDossierModal() {
       <div class="dossier-portrait">${_dossierPortraitSvg(chassis)}</div>
       <div>
         <div class="dossier-id">UNIT 0451 // SECTOR 7G</div>
-        <div class="dossier-name">${(lang === 'zh') ? '操作員 · 零四五一' : 'OPERATOR 0451'}</div>
+        <div class="dossier-name" id="dossierOperatorName" title="${(lang === 'zh') ? '點擊更改代號' : 'Click to change callsign'}">${(lang === 'zh') ? '操作員 · ' : 'OPERATOR '}${getOperatorName()}</div>
         <div class="dossier-tagline">"${taglineTitle}" — ${taglineDay}</div>
         <div class="dossier-meta">
           <span><b>${(lang === 'zh') ? '機體' : 'CHASSIS'}</b>${chassisLabel}</span>
@@ -1833,6 +1836,21 @@ function buildDossierModal() {
     `<span class="achv-tag-main">${(lang === 'zh') ? '操作員檔案' : 'OPERATOR DOSSIER'}</span>` +
     `<span class="achv-tag-sub">${(lang === 'zh') ? '服役紀錄' : 'SERVICE RECORD'} //</span>` +
     `<span class="achv-tag-counter">DAY <b>${dayN}</b></span>`;
+  const nameEl = document.getElementById('dossierOperatorName');
+  if (nameEl) {
+    nameEl.style.cursor = 'pointer';
+    nameEl.onclick = () => {
+      const cur = getOperatorName();
+      const next = window.prompt(
+        (lang === 'zh') ? '輸入新代號 (字母/數字 ≤12)' : 'New callsign (A–Z 0–9, ≤12)',
+        cur
+      );
+      if (next != null) {
+        setOperatorName(next);
+        buildDossierModal();
+      }
+    };
+  }
 }
 
 // Wire footer buttons + modal close. Called by _wireIntro since both run at boot.
@@ -8190,9 +8208,10 @@ function requestRewardedAd(rewardId, cb) {
 function shareSurvivalRun({ wave, kills, style }) {
   const styleLabel = (DIFF_LABELS && DIFF_LABELS[style]) || style || 'elite';
   const url = location.href.split('?')[0].split('#')[0];
+  const op = getOperatorName();
   const text = T(
-    `AshGrid · 撑过 ${wave} 波 · 击杀 ${kills} · 风格 ${styleLabel}`,
-    `AshGrid · Wave ${wave} · ${kills} kills · ${styleLabel}`
+    `AshGrid · 操作員 ${op} · 撑过 ${wave} 波 · 击杀 ${kills} · 风格 ${styleLabel}`,
+    `AshGrid · OPERATOR ${op} · Wave ${wave} · ${kills} kills · ${styleLabel}`
   );
   const shareData = { title: 'AshGrid · Tactical Sim', text, url };
   if (navigator.share) {
@@ -8228,6 +8247,17 @@ function uploadSurvivalRun(run) {
 const SURVIVAL_KEY = 'ag.survivalScores';
 const DEFENSE_KEY  = 'ag.defenseScores';
 const SURVIVAL_MAX = 10;
+const OPERATOR_NAME_KEY = 'ag.operatorName';
+function getOperatorName() {
+  try { return (localStorage.getItem(OPERATOR_NAME_KEY) || '0451').slice(0, 12); }
+  catch (e) { return '0451'; }
+}
+function setOperatorName(name) {
+  const clean = String(name || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 12);
+  if (!clean) return getOperatorName();
+  try { localStorage.setItem(OPERATOR_NAME_KEY, clean); } catch (e) {}
+  return clean;
+}
 function getSurvivalScores() {
   try { return JSON.parse(localStorage.getItem(SURVIVAL_KEY) || '[]'); }
   catch (e) { return []; }
