@@ -6630,7 +6630,13 @@ const NN = {
     warrior:      'ai_arena/onnx/model_warrior.onnx',
     sharpshooter: 'ai_arena/onnx/model_sharpshooter.onnx',
     cqb:          'ai_arena/onnx/model_cqb.onnx',
-    tactical:     'ai_arena/onnx/model_tactical.onnx',
+    // Tactical model collapsed during PPO training — top action is always 5
+    // (move NE + fire) at p≈1.0 regardless of enemy direction. The model
+    // doesn't intercept because it doesn't even orient toward enemies. Fall
+    // back to elite until a retrained model_tactical.onnx ships. Picker
+    // still shows TAC so the unlock UX doesn't regress, just behind the
+    // elite weights.
+    tactical:     'ai_arena/onnx/model_elite.onnx',
   },
   modelPath: 'ai_arena/onnx/model.onnx',  // legacy fallback
   // Constants must match the Python combat_env exactly
