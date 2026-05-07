@@ -1163,7 +1163,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     <button class="lang-toggle" data-lang-toggle><span class="seg on" data-seg="zh">中</span>/<span class="seg" data-seg="en">EN</span></button>
     <div class="lobby-tag">首次提示 · QUICK BRIEFING</div>
     <h2 style="font-size: 26px; letter-spacing: 4px;">操作 · CORE</h2>
-    <div class="lobby-sub">三件事先記住,剩下打就懂。</div>
+    <div class="lobby-sub">先記住這幾個鍵,剩下打就懂。</div>
     <div style="display:flex; flex-direction:column; gap:14px; padding: 14px 0; border-top: 2px solid var(--black); border-bottom: 1px solid var(--black);">
       <div style="display:flex; gap:14px; align-items:flex-start;">
         <div style="background:var(--red); color:var(--cream); padding:6px 12px; min-width:84px; text-align:center; font-weight:800; letter-spacing:3px; font-size:14px;">V</div>
@@ -1172,7 +1172,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
           <div style="color:var(--gray);">按 V 切換。鎖定後子彈自動射擊、射擊預判、無視抖動。手機默認開啟,右上 V 按鈕。</div>
         </div>
       </div>
-      <div style="display:flex; gap:14px; align-items:flex-start;">
+      <div id="tutorialPawnSwapRow" style="display:flex; gap:14px; align-items:flex-start;">
         <div style="background:var(--black); color:var(--cream); padding:6px 12px; min-width:84px; text-align:center; font-weight:800; letter-spacing:3px; font-size:14px;">1-4</div>
         <div style="font-size:12px; line-height:1.6;">
           <div style="font-weight:800; color:var(--black);">接管隊友 PAWN-SWAP</div>
@@ -2265,7 +2265,7 @@ const I18N = {
   // ---- Tutorial card ----
   '#tutorial .lobby-tag':   { zh: '首次提示 · QUICK BRIEFING', en: 'QUICK BRIEFING' },
   '#tutorial h2':           { zh: '操作 · CORE', en: 'CORE CONTROLS' },
-  '#tutorial .lobby-sub':   { zh: '三件事先記住,剩下打就懂。', en: 'Three things to remember — the rest is muscle memory.' },
+  '#tutorial .lobby-sub':   { zh: '先記住這幾個鍵,剩下打就懂。', en: 'A handful of keys — the rest is muscle memory.' },
   '#tutorial > .lobby-card > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1)':
     { zh: '自動瞄準 AIM-ASSIST', en: 'AIM-ASSIST' },
   '#tutorial > .lobby-card > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2)':
@@ -8424,6 +8424,12 @@ function applyUnlockGating() {
   document.querySelectorAll('#nnLobby [data-chassis]').forEach(btn => {
     btn.style.display = _isItemUnlocked(CHASSIS_UNLOCK_TIER, btn.dataset.chassis) ? '' : 'none';
   });
+  // First-launch tutorial card: hide the pawn-swap row at tier 0. Default
+  // tier-0 lineup is blue=1 vs red=3, so there's nobody to swap to and the
+  // row reads as confusing fluff. Reappears once SURVIVAL (which guarantees
+  // teammates) unlocks at tier 1.
+  const pawnRow = document.getElementById('tutorialPawnSwapRow');
+  if (pawnRow) pawnRow.style.display = (tier >= 1 || isAllUnlocked()) ? '' : 'none';
   // Map editor — gate to tier 4 (advanced)
   const editorBtn = document.getElementById('editorBtn');
   if (editorBtn) editorBtn.style.display = (tier >= 4 || isAllUnlocked()) ? '' : 'none';
