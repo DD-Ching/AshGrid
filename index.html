@@ -11259,8 +11259,9 @@ function lineOfSight(x1, y1, x2, y2) {
 // Footprint tracker — every N ticks while a unit is moving in defense mode,
 // drop a fading print at its position. Player can see ALL prints (incl.
 // enemies') for tactical recon. Enemies don't react to them — purely UX.
+// Was previously gated to defense mode only — now fires in every NN mode
+// (and campaign) because the player asked '以前不是還有足跡嗎'.
 function emitFootprint(unit) {
-  if (game._nnGameMode !== 'defense') return;
   game._footprints = game._footprints || [];
   game._footprints.push({
     x: unit.x, y: unit.y,
@@ -11268,8 +11269,8 @@ function emitFootprint(unit) {
     team: unit.team || 0,
     life: 240, maxLife: 240,
   });
-  // Cap to 200 to stop unbounded growth in long matches
-  if (game._footprints.length > 200) game._footprints.shift();
+  // Cap to 240 to stop unbounded growth in long matches; oldest evicts first.
+  if (game._footprints.length > 240) game._footprints.shift();
 }
 
 function pushOutOfBuildings(ent, radius) {
@@ -11654,6 +11655,22 @@ function update() {
   if (game.state !== 'playing') return;
   game.time++;
 
+  // Footprint emission for allies + enemies — once every 30 ticks, drop a
+  // print at each living unit's position if they actually moved this tick.
+  // Player gets its own emit in the WASD block; this covers NN units.
+  if (game.time % 30 === 0) {
+    for (const a of allies) {
+      if (a && a.alive && (Math.abs(a._velX || 0) + Math.abs(a._velY || 0)) > 0.6) {
+        emitFootprint(a);
+      }
+    }
+    for (const e of enemies) {
+      if (e && e.alive && (Math.abs(e._velX || 0) + Math.abs(e._velY || 0)) > 0.6) {
+        emitFootprint(e);
+      }
+    }
+  }
+
   // Stage hints — checked each frame, but each fires at most once.
   // showStageHint() early-exits if the id is already in ag.hintsSeen.
   if (game.time === 60) showStageHint('basic_controls');                // ~1s into match
@@ -11796,8 +11813,8 @@ function updatePlayer() {
     player.x += mx * player.speed * speedMul;
     player.y += my * player.speed * speedMul;
     player.walkPhase += 0.22 * speedMul;
-    // Footprint trail (defense mode only) — every ~30 ticks while moving
-    if (game._nnGameMode === 'defense' && game.time % 30 === 0) emitFootprint(player);
+    // Footprint trail — every ~30 ticks while moving (any NN / campaign mode)
+    if (game.time % 30 === 0) emitFootprint(player);
   }
   pushOutOfBuildings(player, player.radius);
   // In NN mode, confine the player to the NN_ARENA box (the red border) so
