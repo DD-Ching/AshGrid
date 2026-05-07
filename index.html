@@ -1101,8 +1101,11 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <div class="missions-grid">
         <div class="mission"><span class="mission-num">01</span><div class="mission-body"><div class="mission-name">对抗 · DEATHMATCH</div><div class="mission-rhythm">蓝队 vs 红队 · 自由配阵 · 全地图</div></div></div>
         <div class="mission"><span class="mission-num">02</span><div class="mission-body"><div class="mission-name">生存 · SURVIVAL</div><div class="mission-rhythm">守住每一波 · 队友死了不复活 · 撑越久越强</div></div></div>
-        <div class="mission"><span class="mission-num">03</span><div class="mission-body"><div class="mission-name">单挑 · DUEL 1v1</div><div class="mission-rhythm">没队友 · 没无人机 · 纯走位 + 枪法</div></div></div>
-        <div class="mission"><span class="mission-num">04</span><div class="mission-body"><div class="mission-name">狙击 · SNIPER ONLY</div><div class="mission-rhythm">全员一击致命 · 长视野 · 卡角拉锯</div></div></div>
+        <div class="mission"><span class="mission-num">03</span><div class="mission-body"><div class="mission-name">防御 · DEFENSE</div><div class="mission-rhythm">蓋牆 / 砲塔 / 特斯拉 / EMP · 16 模塊邊建邊打</div></div></div>
+        <div class="mission"><span class="mission-num">04</span><div class="mission-body"><div class="mission-name">直升机 · HELO EXTRACT</div><div class="mission-rhythm">全队撑到 LZ · 无人机扫尾 · 一波接一波</div></div></div>
+        <div class="mission"><span class="mission-num">05</span><div class="mission-body"><div class="mission-name">护送 · CONVOY</div><div class="mission-rhythm">UGV 走廊推进 · 路过敌人会扫射</div></div></div>
+        <div class="mission"><span class="mission-num">06</span><div class="mission-body"><div class="mission-name">单挑 · DUEL 1v1</div><div class="mission-rhythm">没队友 · 没无人机 · 纯走位 + 枪法</div></div></div>
+        <div class="mission"><span class="mission-num">07</span><div class="mission-body"><div class="mission-name">狙击 · SNIPER ONLY</div><div class="mission-rhythm">全员一击致命 · 长视野 · 卡角拉锯</div></div></div>
       </div>
     </div>
 
@@ -2232,10 +2235,16 @@ const I18N = {
   '#start .mission:nth-of-type(1) .mission-rhythm': { zh: '蓝队 vs 红队 · 自由配阵 · 全地图', en: 'Blue vs Red · custom lineup · all maps' },
   '#start .mission:nth-of-type(2) .mission-name':   { zh: '生存 · SURVIVAL', en: 'SURVIVAL' },
   '#start .mission:nth-of-type(2) .mission-rhythm': { zh: '守住每一波 · 队友死了不复活 · 撑越久越强', en: 'Hold each wave · teammates stay dead · scale up' },
-  '#start .mission:nth-of-type(3) .mission-name':   { zh: '单挑 · DUEL 1v1', en: 'DUEL 1v1' },
-  '#start .mission:nth-of-type(3) .mission-rhythm': { zh: '没队友 · 没无人机 · 纯走位 + 枪法', en: 'No teammates · no drones · pure aim + footwork' },
-  '#start .mission:nth-of-type(4) .mission-name':   { zh: '狙击 · SNIPER ONLY', en: 'SNIPER ONLY' },
-  '#start .mission:nth-of-type(4) .mission-rhythm': { zh: '全员一击致命 · 长视野 · 卡角拉锯', en: 'One-shot kill · long sight · angle hold' },
+  '#start .mission:nth-of-type(3) .mission-name':   { zh: '防御 · DEFENSE', en: 'DEFENSE' },
+  '#start .mission:nth-of-type(3) .mission-rhythm': { zh: '蓋牆 / 砲塔 / 特斯拉 / EMP · 16 模塊邊建邊打', en: 'Walls · turrets · tesla · EMP · 16 modules, build while you fight' },
+  '#start .mission:nth-of-type(4) .mission-name':   { zh: '直升机 · HELO EXTRACT', en: 'HELO EXTRACT' },
+  '#start .mission:nth-of-type(4) .mission-rhythm': { zh: '全队撑到 LZ · 无人机扫尾 · 一波接一波', en: 'Hold to the LZ · drones inbound · wave after wave' },
+  '#start .mission:nth-of-type(5) .mission-name':   { zh: '护送 · CONVOY', en: 'CONVOY' },
+  '#start .mission:nth-of-type(5) .mission-rhythm': { zh: 'UGV 走廊推进 · 路过敌人会扫射', en: 'UGV pushes the corridor · ambushes shoot through' },
+  '#start .mission:nth-of-type(6) .mission-name':   { zh: '单挑 · DUEL 1v1', en: 'DUEL 1v1' },
+  '#start .mission:nth-of-type(6) .mission-rhythm': { zh: '没队友 · 没无人机 · 纯走位 + 枪法', en: 'No teammates · no drones · pure aim + footwork' },
+  '#start .mission:nth-of-type(7) .mission-name':   { zh: '狙击 · SNIPER ONLY', en: 'SNIPER ONLY' },
+  '#start .mission:nth-of-type(7) .mission-rhythm': { zh: '全员一击致命 · 长视野 · 卡角拉锯', en: 'One-shot kill · long sight · angle hold' },
   '#nnBtn':       { zh: '进入对抗 ENTER COMBAT ▶', en: 'ENTER COMBAT ▶' },
   '#editorBtn':   { zh: '地图编辑器 EDITOR', en: 'MAP EDITOR' },
   '#start .footer-bar > span:last-child': { zh: '建议 1080p+ 全屏体验', en: '1080p+ fullscreen recommended' },
@@ -14311,7 +14320,8 @@ function renderHUDOverlays() {
   // also include the mission objective so the player has a brief in their face.
   if (game.message) {
     ctx.save();
-    const alpha = Math.min(1, game.messageTime / 30);
+    let alpha = Math.min(1, game.messageTime / 30);
+    if (buildMode && buildMode.radialOpen) alpha *= 0.18;   // don't cover the build radial
     ctx.globalAlpha = alpha;
     const showObj = mission && mission.objective && game.messageTime > 60;
     const msgW = Math.max(520, game.message.length * 18);
