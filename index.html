@@ -2907,16 +2907,21 @@ const STRUCTURE_DEFS = {
   turret: {
     cost: 100, hp: 80, size: 50, blocks: false, blocksLOS: false,
     range: 380, fireCd: 60, dmg: 25,
+    needsPower: true,           // dies if no generator can reach it
+    ammoPerShot: 3,             // each shot drains game._energy by this much
     label: () => T('自动炮塔', 'TURRET'),
   },
   generator: {
     cost: 80, hp: 50, size: 50, blocks: false, blocksLOS: false,
     energyPerSec: 1.0,
+    powerSource: true,          // emits power; powerR = how far power radiates
+    powerR: 200,
     label: () => T('能源', 'GEN'),
   },
   camera: {
     cost: 60, hp: 40, size: 40, blocks: false, blocksLOS: false,
     visionR: 360,
+    needsPower: true,           // unpowered = no vision feed
     label: () => T('监视器', 'CAM'),
   },
   bot: {
@@ -2927,6 +2932,7 @@ const STRUCTURE_DEFS = {
   terminal: {
     cost: 200, hp: 60, size: 50, blocks: false, blocksLOS: false,
     airstrikeCd: 1800,    // 30s between airstrikes
+    needsPower: true,
     label: () => T('终端', 'TERM'),
   },
   // Mine: invisible (to enemies; faint to player) — detonates when an enemy
@@ -2967,6 +2973,8 @@ const STRUCTURE_DEFS = {
   tesla: {
     cost: 140, hp: 70, size: 38, blocks: false, blocksLOS: false,
     range: 300, fireCd: 90, dmg: 30, chainR: 110, chainDmg: [22, 16, 10], chainMax: 3,
+    needsPower: true,
+    ammoPerShot: 5,
     label: () => T('特斯拉', 'TESLA'),
   },
   // EMP pylon: every emitCd ticks, stuns all enemies in pulseR for stunTicks
@@ -2975,6 +2983,8 @@ const STRUCTURE_DEFS = {
   emp: {
     cost: 130, hp: 60, size: 36, blocks: false, blocksLOS: false,
     emitCd: 240, pulseR: 220, stunTicks: 180,
+    needsPower: true,
+    ammoPerShot: 8,
     label: () => T('EMP', 'EMP'),
   },
   // Med station: every healCd ticks heals each ally in radius healR for
@@ -2983,6 +2993,7 @@ const STRUCTURE_DEFS = {
   medstation: {
     cost: 100, hp: 50, size: 32, blocks: false, blocksLOS: false,
     healCd: 60, healR: 200, healAmt: 4,
+    needsPower: true,
     label: () => T('医疗站', 'MED'),
   },
   // Drone bay: every spawnCd, launches a mini autonomous FPV drone that
@@ -2991,6 +3002,7 @@ const STRUCTURE_DEFS = {
   dronebay: {
     cost: 200, hp: 80, size: 38, blocks: false, blocksLOS: false,
     spawnCd: 360, droneHp: 30, droneSpeed: 5, droneDmg: 40, droneBlastR: 60,
+    needsPower: true,
     label: () => T('蜂群', 'DRONES'),
   },
 };
@@ -3059,8 +3071,70 @@ function placeStructure(kind, wx, wy) {
   return true;
 }
 
+// ============ POWER GRID ============
+// Generators emit power within powerR (default 200u). Wall-lines act as
+// conductors — power propagates along touching wall-line endpoints.
+// Modules with needsPower=true require a route back to a generator
+// (either directly inside genR, or via a chain of wall-lines).
+// Recomputed twice per second (every 30 ticks) — graph BFS over the
+// current set of structures + walls.
+function _wallEndpoints(w) {
+  return [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }];
+}
+function _wallsTouch(a, b) {
+  const r = (a.thickness + b.thickness) / 2 + 4;
+  for (const pa of _wallEndpoints(a)) for (const pb of _wallEndpoints(b)) {
+    if (Math.hypot(pa.x - pb.x, pa.y - pb.y) <= r) return true;
+  }
+  return false;
+}
+function _wallNearPoint(w, px, py, padBeyondLine) {
+  const r = _segPointDist(px, py, w.x1, w.y1, w.x2, w.y2);
+  return r.dist <= w.thickness / 2 + padBeyondLine;
+}
+function recomputePowerGrid() {
+  const structs = game._structures || [];
+  for (const s of structs) s._powered = false;
+  for (const w of wallLines)  w._powered = false;
+  const gens = structs.filter(s => s.kind === 'generator' && s.hp > 0);
+  if (gens.length === 0) return;
+  const liveWalls = wallLines.filter(w => w.hp > 0);
+  const queue = [];
+  for (const g of gens) {
+    const R = STRUCTURE_DEFS.generator.powerR || 200;
+    g._powered = true;
+    for (const w of liveWalls) {
+      if (w._powered) continue;
+      const r = _segPointDist(g.x, g.y, w.x1, w.y1, w.x2, w.y2);
+      if (r.dist <= R) { w._powered = true; queue.push(w); }
+    }
+  }
+  while (queue.length) {
+    const w = queue.shift();
+    for (const w2 of liveWalls) {
+      if (w2._powered) continue;
+      if (_wallsTouch(w, w2)) { w2._powered = true; queue.push(w2); }
+    }
+  }
+  const WIRE_REACH = 60;
+  for (const s of structs) {
+    if (s.kind === 'generator' || s.hp <= 0) continue;
+    if (!STRUCTURE_DEFS[s.kind]?.needsPower) { s._powered = true; continue; }
+    for (const g of gens) {
+      const R = STRUCTURE_DEFS.generator.powerR || 200;
+      if (Math.hypot(g.x - s.x, g.y - s.y) <= R) { s._powered = true; break; }
+    }
+    if (s._powered) continue;
+    for (const w of liveWalls) {
+      if (!w._powered) continue;
+      if (_wallNearPoint(w, s.x, s.y, WIRE_REACH)) { s._powered = true; break; }
+    }
+  }
+}
+
 function updateStructures() {
   if (!game._structures) return;
+  if (game.time % 30 === 0) recomputePowerGrid();
   for (let i = game._structures.length - 1; i >= 0; i--) {
     const s = game._structures[i];
     const def = STRUCTURE_DEFS[s.kind];
@@ -3071,11 +3145,14 @@ function updateStructures() {
       game._structures.splice(i, 1);
       continue;
     }
+    // Power gate — needsPower modules without a route to a generator
+    // sit dormant this frame. Passive modules (mine/sensor/smoke) ignore.
+    if (def.needsPower && !s._powered) continue;
     // Generator: tick energy
     if (s.kind === 'generator') {
       game._energy = Math.min(999, (game._energy || 0) + (def.energyPerSec / 60));
     }
-    // Turret: scan + fire
+    // Turret: scan + fire (also drains game._energy as ammo)
     if (s.kind === 'turret') {
       if (s.fireCd > 0) s.fireCd--;
       if (s.fireCd <= 0) {
@@ -3085,7 +3162,9 @@ function updateStructures() {
           const d = Math.hypot(e.x - s.x, e.y - s.y);
           if (d < bestD && lineOfSight(s.x, s.y, e.x, e.y)) { best = e; bestD = d; }
         }
-        if (best) {
+        const ammoCost = def.ammoPerShot || 3;
+        if (best && (game._energy || 0) >= ammoCost) {
+          game._energy -= ammoCost;
           const a = Math.atan2(best.y - s.y, best.x - s.x);
           s.gunAngle = a;
           // Spawn a bullet from the turret
@@ -3181,7 +3260,8 @@ function updateStructures() {
     if (s.kind === 'emp') {
       if (s.emitCd === undefined) s.emitCd = 90;
       if (s.emitCd > 0) s.emitCd--;
-      if (s.emitCd <= 0) {
+      const ammoCost = def.ammoPerShot || 8;
+      if (s.emitCd <= 0 && (game._energy || 0) >= ammoCost) {
         let stunned = 0;
         for (const e of enemies) {
           if (!e.alive) continue;
@@ -3191,6 +3271,7 @@ function updateStructures() {
           }
         }
         if (stunned > 0) {
+          game._energy -= ammoCost;
           game._empPulses = game._empPulses || [];
           game._empPulses.push({ x: s.x, y: s.y, r: def.pulseR, life: 30, maxLife: 30 });
           playSfx('reload', { vol: 0.4, src: { x: s.x, y: s.y } });
@@ -3219,7 +3300,8 @@ function updateStructures() {
     // segment in game._teslaBolts (rendered + faded for ~12 ticks).
     if (s.kind === 'tesla') {
       if (s.fireCd > 0) s.fireCd--;
-      if (s.fireCd <= 0) {
+      const teslaAmmo = def.ammoPerShot || 5;
+      if (s.fireCd <= 0 && (game._energy || 0) >= teslaAmmo) {
         let primary = null, primaryD = def.range;
         for (const e of enemies) {
           if (!e.alive) continue;
@@ -3228,6 +3310,7 @@ function updateStructures() {
           if (d < primaryD && lineOfSight(s.x, s.y, e.x, e.y)) { primary = e; primaryD = d; }
         }
         if (primary) {
+          game._energy -= teslaAmmo;
           game._teslaBolts = game._teslaBolts || [];
           // Primary zap
           primary.hp -= def.dmg;
@@ -13026,6 +13109,10 @@ function renderStructures() {
   for (const s of game._structures) {
     const def = STRUCTURE_DEFS[s.kind]; if (!def) continue;
     const r = def.size / 2;
+    // Unpowered modules drop opacity to 0.45 so the player can scan
+    // the field at a glance and see which assets aren't connected.
+    const isOff = def.needsPower && !s._powered;
+    ctx.globalAlpha = isOff ? 0.45 : 1.0;
     // Body
     if (s.kind === 'cover') {
       // Half-height cover — drawn as a shorter rectangle so the player can
@@ -13302,6 +13389,17 @@ function renderStructures() {
       ctx.fillStyle = s.hp / s.maxHp > 0.4 ? '#3FE63F' : COLORS.red;
       ctx.fillRect(bx, by, bw * s.hp / s.maxHp, bh);
     }
+    // 'NO POWER' indicator — small monospace red chip above unpowered
+    // modules so the player can quickly find the orphaned ones.
+    if (def.needsPower && !s._powered) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = COLORS.red;
+      ctx.font = 'bold 8px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('⚡ NO PWR', s.x, s.y - r - 14);
+      ctx.textAlign = 'left';
+    }
+    ctx.globalAlpha = 1;
   }
   ctx.restore();
 }
@@ -13841,7 +13939,8 @@ function renderWorld() {
   // Wall lines — drawn as stroked vector segments. Drop-shadow first
   // (offset SE by 4u, dim cream), then the body in `color`. HP-damaged
   // walls fade toward black-on-cream so the player can read 'this one
-  // is about to break' at a glance.
+  // is about to break' at a glance. Powered walls get a faint red core
+  // pulse so the player can read the live conductor at a glance.
   for (const w of wallLines) {
     if (w.hp <= 0) continue;
     const dmg = w.maxHp ? (1 - w.hp / w.maxHp) : 0;
@@ -13853,6 +13952,16 @@ function renderWorld() {
     // body
     ctx.strokeStyle = w.color;
     ctx.beginPath(); ctx.moveTo(w.x1, w.y1); ctx.lineTo(w.x2, w.y2); ctx.stroke();
+    // Power conductor core — thin red stripe down the middle when energised.
+    // Pulses at 1.4 Hz so the wire is alive-looking, not just a gradient.
+    if (w._powered) {
+      const pulse = 0.5 + Math.sin(game.time * 0.09) * 0.5;
+      ctx.strokeStyle = COLORS.red;
+      ctx.globalAlpha = 0.35 + 0.45 * pulse;
+      ctx.lineWidth = Math.max(2, w.thickness * 0.18);
+      ctx.beginPath(); ctx.moveTo(w.x1, w.y1); ctx.lineTo(w.x2, w.y2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
     // damage cracks — diagonal hatch when dmg > 0.4
     if (dmg > 0.4) {
       ctx.strokeStyle = COLORS.black;
