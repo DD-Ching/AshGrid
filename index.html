@@ -1640,67 +1640,67 @@ function renderDeathRecap() {
   if (!_deathRecap.active) return;
   const elapsed = game.time - _deathRecap.startTick;
   if (elapsed >= _deathRecap.durationTicks) { _deathRecap.active = false; return; }
-  // Re-arm if the player swapped to a live ally — recap stays for the full
-  // window since the player may want to read it before keeping playing.
   const t = elapsed / _deathRecap.durationTicks;
-  // Fade in / out (first + last 15% of duration)
   const fade = t < 0.15 ? (t / 0.15) : (t > 0.85 ? (1 - t) / 0.15 : 1);
 
+  // Top strip + bottom hint instead of a full-screen blocker. The world
+  // stays visible underneath so pawn-swap (1-4) can target a live ally
+  // without the player guessing where everyone is. User: '不應該直接擋住
+  // 介面,不然的話我在切換它自動切換人員的時候會不會直接擋住,沒有辦法玩'.
   const W_ = W(), H_ = H();
   ctx.save();
-  // Backdrop
-  ctx.fillStyle = `rgba(20, 8, 8, ${0.78 * fade})`;
-  ctx.fillRect(0, 0, W_, H_);
-  // CRT scanlines — 2px stripes alternating opacity
-  ctx.fillStyle = `rgba(0, 0, 0, ${0.20 * fade})`;
-  for (let y = 0; y < H_; y += 4) ctx.fillRect(0, y, W_, 2);
-  // Subtle red flicker at the top
-  if ((game.time & 6) < 3) {
-    ctx.fillStyle = `rgba(200, 38, 28, ${0.10 * fade})`;
-    ctx.fillRect(0, 0, W_, 30);
-    ctx.fillRect(0, H_ - 30, W_, 30);
-  }
-  // Header — OPERATOR DOWN big
   ctx.globalAlpha = fade;
+
+  // ---- Top strip: black bar with red accent rail + key data ----
+  const stripH = 64;
+  ctx.fillStyle = `rgba(20, 8, 8, 0.92)`;
+  ctx.fillRect(0, 0, W_, stripH);
   ctx.fillStyle = COLORS.red;
-  ctx.font = 'bold 11px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText(_r('連結中斷 // SIGNAL LOST', 'NEURAL LINK SEVERED // SIGNAL LOST'), W_ / 2, H_ / 2 - 100);
-  ctx.font = 'bold 56px sans-serif';
+  ctx.fillRect(0, stripH - 4, W_, 4);
+  // CRT scanlines on the strip only
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.20)';
+  for (let y = 0; y < stripH; y += 4) ctx.fillRect(0, y, W_, 2);
+  // Subtle red flicker corner
+  if ((game.time & 6) < 3) {
+    ctx.fillStyle = `rgba(200, 38, 28, 0.18)`;
+    ctx.fillRect(0, 0, W_, 4);
+  }
+  // 'SIGNAL LOST' eyebrow
+  ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(_r('連結中斷 // SIGNAL LOST', 'NEURAL LINK SEVERED // SIGNAL LOST'), 24, 18);
+  // OPERATOR DOWN big
   ctx.fillStyle = COLORS.cream;
-  ctx.fillText(_r('操作員陣亡', 'OPERATOR DOWN'), W_ / 2, H_ / 2 - 50);
-  ctx.font = 'bold 11px monospace';
-  ctx.fillStyle = `rgba(232, 228, 216, ${0.75 * fade})`;
-  ctx.fillText(_r(`代號 · ${getOperatorName()}`, `CALLSIGN · ${getOperatorName()}`), W_ / 2, H_ / 2 - 22);
-  // Killer info card
-  const cw = 360, ch = 120;
-  const cx = W_ / 2, cy = H_ / 2 + 30;
-  const x = cx - cw / 2, y = cy - ch / 2;
-  ctx.fillStyle = `rgba(232, 228, 216, ${0.95 * fade})`;
-  ctx.fillRect(x, y, cw, ch);
-  ctx.strokeStyle = COLORS.red; ctx.lineWidth = 3;
-  ctx.strokeRect(x, y, cw, ch);
-  // Red corner tab
-  ctx.fillStyle = COLORS.red;
-  ctx.fillRect(x + cw - 70, y - 4, 70, 8);
-  // Tag
-  ctx.font = 'bold 10px sans-serif';
-  ctx.fillStyle = COLORS.red;
-  ctx.fillText(_r('擊殺者 / KILLED BY', 'KILLED BY'), cx, y + 22);
-  // Callsign — big
   ctx.font = 'bold 28px sans-serif';
-  ctx.fillStyle = COLORS.black;
-  ctx.fillText(_deathRecap.killerCallsign, cx, y + 60);
-  // Weapon + distance
-  ctx.font = '12px monospace';
-  ctx.fillStyle = COLORS.gray;
+  ctx.fillText(_r('操作員陣亡', 'OPERATOR DOWN'), 24, 48);
+  // Killer card on the right side of the strip
   const dist = Math.round(_deathRecap.distance);
   const weaponStr = _deathRecap.killerWeapon ? `${_deathRecap.killerWeapon} · ` : '';
-  ctx.fillText(`${weaponStr}${dist}u ${_r('距離', 'distance')}`, cx, y + 84);
-  // Hint to dismiss
-  ctx.font = 'bold 10px sans-serif';
-  ctx.fillStyle = `rgba(232, 228, 216, ${0.6 * fade})`;
-  ctx.fillText(_r('按 1-4 接管隊友 · 點擊跳過', 'PRESS 1-4 TO SWAP · CLICK TO SKIP'), cx, y + ch + 20);
+  const killerLine = `${_r('被', 'BY')} ${_deathRecap.killerCallsign} · ${weaponStr}${dist}u`;
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = COLORS.cream;
+  ctx.fillText(killerLine, W_ - 24, 28);
+  ctx.font = 'bold 9px monospace';
+  ctx.fillStyle = COLORS.red;
+  ctx.fillText(_r('代號 · ' + getOperatorName(), 'CALLSIGN · ' + getOperatorName()), W_ - 24, 46);
+
+  // ---- Bottom hint bar — strong red CTA telling the player WHAT TO DO ----
+  // Pulses so it draws the eye, can't be missed mid-firefight. Bigger text
+  // (16px bold) per user feedback '下面這個文字組線內容要更強勢一點'.
+  const pulse = 0.7 + 0.3 * Math.sin(game.time * 0.18);
+  const hintH = 56;
+  ctx.fillStyle = `rgba(200, 38, 28, ${0.85 * pulse})`;
+  ctx.fillRect(0, H_ - hintH, W_, hintH);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(
+    _r('▼ 按 1-4 接管隊友身體 · 操作員不會等死 ▼',
+       '▼ PRESS 1-4 TO TAKE OVER A TEAMMATE · YOU DON\'T SIT OUT ▼'),
+    W_ / 2, H_ - hintH / 2 + 6,
+  );
   ctx.textAlign = 'left';
   ctx.restore();
 }
@@ -3801,10 +3801,10 @@ const WEAPONS = {
             soundProfile: { peakFreq: 320, decay: 4,  bassFreq: 70,  bassDur: 0.20, volMul: 1.40 },
             blurb: '一枪秒·单发' },
   SHOTGUN:{ name: 'SG / 霰弹', follow: 0.16, swayAmp: 0.028, swayFreq: 0.07, movePenalty: 0.022,
-            recoilPerShot: 0.40, recoilDecay: 0.78, spread: 0.30,
-            fireCd: 30, damage: 18, bulletSpeed: 16, bulletLife: 24, soundIntensity: 1600,
-            magSize: 6,  reserveStart: 30,  speedMul: 0.95, auto: false, reloadFrames: 110,
-            pellets: 7,
+            recoilPerShot: 0.40, recoilDecay: 0.78, spread: 0.22,
+            fireCd: 30, damage: 18, bulletSpeed: 16, bulletLife: 38, soundIntensity: 1600,
+            magSize: 8,  reserveStart: 40,  speedMul: 0.95, auto: false, reloadFrames: 110,
+            pellets: 11,
             soundProfile: { peakFreq: 410, decay: 7,  bassFreq: 80,  bassDur: 0.11, volMul: 1.30 },
             blurb: '近战毁灭·散布' },
   // ROCKET LAUNCHER — slow projectile, big AOE on impact, 2× structure dmg.
@@ -4408,7 +4408,22 @@ function playPositionalSound(sx, sy, intensity, kind = 'shot', isSelf = false, p
 
 // Generic synthesized SFX (hit/death/respawn/reload/whiz/countdown).
 // Lighter weight than playPositionalSound — single oscillator + envelope.
+// Per-name SFX cooldowns — kill_confirm in particular was stacking
+// 5+ overlapping bandpass sweeps during a streak, which the user
+// reported as 'too loud, uncomfortable'. 8-frame floor keeps the
+// kill register punchy without piling up.
+const _SFX_COOLDOWN = { kill_confirm: 8 };
+const _sfxLastTick = {};
+function _sfxAllowed(name) {
+  const cd = _SFX_COOLDOWN[name];
+  if (!cd) return true;
+  const now = (game && game.time) || 0;
+  if ((now - (_sfxLastTick[name] || -9999)) < cd) return false;
+  _sfxLastTick[name] = now;
+  return true;
+}
 function playSfx(name, opts = {}) {
+  if (!_sfxAllowed(name)) return;
   if (!AUDIO.enabled || !AUDIO.unlocked) return;
   audioInit();
   if (!AUDIO.ctx) return;
@@ -12261,11 +12276,17 @@ function update() {
   // Narrative + audio ticks (cheap, frame-rate-bound — no network IO)
   _tickHeartbeat();
   _tickDynamicRadio();
-  // Camera shake decays linearly over the active window — the longer you've
-  // gone, the smaller the jitter.
+  // Camera shake decays exponentially. Old code clamped the multiplier to
+  // 0.85-1.0 which made shake linger forever during a kill-streak (every
+  // kill re-triggered shakeUntil). Floor lowered to 0.7 + a hard cap on
+  // shakeMag so retriggers can't snowball past 8u of jitter no matter
+  // how many concurrent events fire.
   if (game.time < game.shakeUntil) {
-    const remaining = (game.shakeUntil - game.time) / 12;
-    game.shakeMag *= Math.max(0.85, Math.min(1, remaining));
+    const remaining = (game.shakeUntil - game.time) / 18;
+    game.shakeMag *= Math.max(0.7, Math.min(1, remaining));
+    if (game.shakeMag > 8) game.shakeMag = 8;
+  } else {
+    game.shakeMag = 0;
   }
   // Slow-mo restore — once the window ends, snap back to 1×.
   if (game._timeScale < 1 && game.time >= game._slowMoUntil) {
