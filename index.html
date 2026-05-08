@@ -47,7 +47,16 @@ html, body {
   overflow: hidden;
   background: var(--cream);
   font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Helvetica Neue", sans-serif;
-  cursor: none;
+  /* OS cursor stays visible at all times. Earlier this was 'cursor: none'
+     with a canvas-drawn red reticle filling in during gameplay — but the
+     reticle only renders inside renderHUD, so any state where the HUD
+     skipped (between modes, brief end-card transitions, post-death before
+     the recap strip lands) made the cursor disappear entirely. User report:
+     '游標永遠不該消失'. The canvas reticle still draws on top during
+     gameplay as the aim indicator; the OS cursor underneath is a safety
+     net — slightly redundant on hover but worth it for predictability.
+     Overlays + buttons override below as usual (default / pointer). */
+  cursor: default;
   color: var(--black);
 }
 canvas { display: block; position: fixed; top: 0; left: 0; }
@@ -16924,8 +16933,9 @@ function drawPauseOverlay() {
   game._pauseMuteRect   = { x: muteX,   y: barY, w: muteW,   h: 28 };
   game._pauseExitRect   = { x: exitX,   y: barY, w: exitW,   h: 28 };
 
-  // Custom cursor on top of the overlay — body has cursor:none so without
-  // this the user couldn't see what they're aiming at to click resume / exit.
+  // Stylized cursor drawn on top of the pause overlay. The OS cursor is now
+  // visible globally (body cursor: default), so this is purely cosmetic —
+  // the red ring + crosshair sells the "system halted" pause aesthetic.
   ctx.save();
   ctx.lineWidth = 2;
   ctx.strokeStyle = COLORS.red;
