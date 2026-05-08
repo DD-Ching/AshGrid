@@ -4534,7 +4534,10 @@ function _normalizeSpawnList(spawn) {
   if (typeof spawn.x === 'number' && typeof spawn.y === 'number') return [{ x: spawn.x, y: spawn.y }];
   return [];
 }
-const EDITOR_BLOCK = 60;     // all placements snap to 60u grid
+const EDITOR_BLOCK = 60;     // cover/tree/spawn snap to 60u grid
+const EDITOR_WALL_STEP = 18; // walls draw at a finer step so vector lines
+                             // (point-A → point-B) read as a clean ~18u-thick
+                             // line rather than the chunky 60u block grid
 
 // Returns [{cx, cy}] cell coords (multiples of `step`) along the Bresenham
 // line from cell A to cell B. Used by drag-to-line wall drawing.
@@ -4689,10 +4692,13 @@ function closeEditor() {
 function _editorCellAtScreen(screenX, screenY) {
   const wp = screenToWorld(screenX, screenY);
   const localX = wp.x - NN_ARENA.x0, localY = wp.y - NN_ARENA.y0;
-  const gx = Math.floor(localX / EDITOR_BLOCK) * EDITOR_BLOCK;
-  const gy = Math.floor(localY / EDITOR_BLOCK) * EDITOR_BLOCK;
-  if (gx < 0 || gy < 0 || gx + EDITOR_BLOCK > NN_ARENA.w || gy + EDITOR_BLOCK > NN_ARENA.h) return null;
-  return { gx, gy, wx: NN_ARENA.x0 + gx, wy: NN_ARENA.y0 + gy };
+  // Wall tool uses a finer 18u snap so vector lines render thin/clean;
+  // cover/tree/spawn keep the chunky 60u grid for crate/canopy aesthetics.
+  const tile = (editor.tool === 'wall') ? EDITOR_WALL_STEP : EDITOR_BLOCK;
+  const gx = Math.floor(localX / tile) * tile;
+  const gy = Math.floor(localY / tile) * tile;
+  if (gx < 0 || gy < 0 || gx + tile > NN_ARENA.w || gy + tile > NN_ARENA.h) return null;
+  return { gx, gy, wx: NN_ARENA.x0 + gx, wy: NN_ARENA.y0 + gy, tile };
 }
 
 // Places (or erases) at a single cell. Spawn tools always go through here —
@@ -4732,16 +4738,17 @@ function _editorPlaceCell(gx, gy) {
     return;
   }
   // Wall / cover / tree: replace whatever's in the cell
+  const tile = (editor.tool === 'wall') ? EDITOR_WALL_STEP : EDITOR_BLOCK;
   const lci = lowCovers.findIndex(lc => lc.x === wx && lc.y === wy);
   if (lci >= 0) lowCovers.splice(lci, 1);
   const bi = buildings.findIndex(b => b.x === wx && b.y === wy);
   if (bi >= 0) buildings.splice(bi, 1);
   if (editor.tool === 'wall') {
-    addBuilding(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, COLORS.gray);
+    addBuilding(wx, wy, tile, tile, COLORS.gray);
   } else if (editor.tool === 'cover') {
-    addLowCover(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, COLORS.creamDark, { kind: 'crate' });
+    addLowCover(wx, wy, tile, tile, COLORS.creamDark, { kind: 'crate' });
   } else if (editor.tool === 'tree') {
-    addLowCover(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK, '#3F4A3A', { kind: 'tree', canopy: true });
+    addLowCover(wx, wy, tile, tile, '#3F4A3A', { kind: 'tree', canopy: true });
   }
 }
 
@@ -4762,7 +4769,8 @@ function _editorPlaceLine(startGX, startGY, endGX, endGY) {
     _editorPlaceCell(endGX, endGY);
     return;
   }
-  const cells = _editorLineCells(startGX, startGY, endGX, endGY);
+  const step = (editor.tool === 'wall') ? EDITOR_WALL_STEP : EDITOR_BLOCK;
+  const cells = _editorLineCells(startGX, startGY, endGX, endGY, step);
   for (const c of cells) _editorPlaceCell(c.cx, c.cy);
 }
 function editorSerialize() {
@@ -13489,9 +13497,11 @@ function renderEditorOverlay() {
       && editor.tool !== 'blueSpawn' && editor.tool !== 'redSpawn'
       && (editor._dragStart.gx !== editor._dragEnd.gx
           || editor._dragStart.gy !== editor._dragEnd.gy)) {
+    const tile = (editor.tool === 'wall') ? EDITOR_WALL_STEP : EDITOR_BLOCK;
     const cells = _editorLineCells(
       editor._dragStart.gx, editor._dragStart.gy,
-      editor._dragEnd.gx,   editor._dragEnd.gy
+      editor._dragEnd.gx,   editor._dragEnd.gy,
+      tile
     );
     const ghostFill = editor.tool === 'wall'  ? COLORS.gray
                     : editor.tool === 'tree'  ? '#3F4A3A'
@@ -13503,19 +13513,33 @@ function renderEditorOverlay() {
     for (const c of cells) {
       const wx = NN_ARENA.x0 + c.cx, wy = NN_ARENA.y0 + c.cy;
       if (wx < NN_ARENA.x0 || wy < NN_ARENA.y0) continue;
-      if (wx + EDITOR_BLOCK > NN_ARENA.x0 + NN_ARENA.w) continue;
-      if (wy + EDITOR_BLOCK > NN_ARENA.y0 + NN_ARENA.h) continue;
-      ctx.fillRect(wx, wy, EDITOR_BLOCK, EDITOR_BLOCK);
+      if (wx + tile > NN_ARENA.x0 + NN_ARENA.w) continue;
+      if (wy + tile > NN_ARENA.y0 + NN_ARENA.h) continue;
+      ctx.fillRect(wx, wy, tile, tile);
     }
     ctx.globalAlpha = 0.9;
     ctx.strokeStyle = COLORS.red;
     ctx.lineWidth = 2;
+    const ax = NN_ARENA.x0 + editor._dragStart.gx + tile / 2;
+    const ay = NN_ARENA.y0 + editor._dragStart.gy + tile / 2;
+    const bx = NN_ARENA.x0 + editor._dragEnd.gx   + tile / 2;
+    const by = NN_ARENA.y0 + editor._dragEnd.gy   + tile / 2;
     ctx.beginPath();
-    ctx.moveTo(NN_ARENA.x0 + editor._dragStart.gx + EDITOR_BLOCK / 2,
-               NN_ARENA.y0 + editor._dragStart.gy + EDITOR_BLOCK / 2);
-    ctx.lineTo(NN_ARENA.x0 + editor._dragEnd.gx   + EDITOR_BLOCK / 2,
-               NN_ARENA.y0 + editor._dragEnd.gy   + EDITOR_BLOCK / 2);
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
     ctx.stroke();
+    // Live length readout — small chip near the endpoint
+    const len = Math.hypot(bx - ax, by - ay);
+    const angleDeg = Math.round(Math.atan2(by - ay, bx - ax) * 180 / Math.PI);
+    const lblX = bx + 14, lblY = by - 10;
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = COLORS.black;
+    const txt = `${Math.round(len)}u · ${angleDeg}°`;
+    ctx.font = 'bold 11px monospace';
+    const tw = ctx.measureText(txt).width;
+    ctx.fillRect(lblX - 6, lblY - 12, tw + 12, 18);
+    ctx.fillStyle = COLORS.cream;
+    ctx.fillText(txt, lblX, lblY + 1);
     ctx.restore();
   }
 
