@@ -8650,6 +8650,28 @@ function initMission(missionDef, mapDef) {
   mission.id     = missionDef.id;
   mission.status = 'active';
   mission.startFrame = game.time;
+  // Mission-specific player spawn override — generateWorld puts the player
+  // at the map's general spawn (e.g. far west of the reactor for room to
+  // walk in), but defense-flavoured missions like 'hold' want the player
+  // AT the objective so the 90 s clock isn't half-spent walking. User
+  // report: '我还是被卡在地图外面' for the relay mission. Allies follow
+  // suit so the squad doesn't end up 1100 u behind.
+  if (mission.playerSpawn) {
+    player.x = mission.playerSpawn.x;
+    player.y = mission.playerSpawn.y;
+    player._lastX = player.x; player._lastY = player.y;
+    player._velX = 0; player._velY = 0;
+    if (typeof spawnAllies === 'function') spawnAllies();
+  }
+  // Mission can pre-place friendly structures (e.g. relay defense gives the
+  // player a generator + medstation already wired up — feels like defending
+  // a real outpost, not a bare crystal in the middle of nowhere).
+  if (mission.setupStructures) {
+    if (typeof game._structures === 'undefined' || !game._structures) game._structures = [];
+    if (typeof game._energy === 'undefined') game._energy = 100;
+    mission.setupStructures();
+    if (typeof recomputePowerGrid === 'function') recomputePowerGrid();
+  }
 }
 
 function updateMission() {
@@ -9497,12 +9519,35 @@ MISSION_FACTORIES.hold = function(mapDef) {
   };
   const duration = 90 * 60; // 90 sec at 60fps
   let elapsed = 0;
-  let waveTimer = 60;
+  let waveTimer = 90; // brief grace period before first wave
   return {
     title: '坚守最后中继站',
     titleEn: 'HOLD THE RELAY',
     objective: T('守住中继站 90 秒不失守', 'Hold the relay for 90 seconds'),
     relay, duration,
+    // Spawn player + squad AT the relay, not 1100 u west on the map's default
+    // spawn (which made the first 7-8 s of a 90 s mission a walk-in).
+    playerSpawn: { x: relay.x - 60, y: relay.y + 150 },
+    // Pre-place a generator + medstation flanking the relay so it reads as
+    // a working outpost (not a bare antenna). Both are friendly structures
+    // owned by team 0 — recomputePowerGrid will wire the medstation off the
+    // generator's 200 u radius. User asked '不是還有麼麼醫院嗎' — yes,
+    // there is now.
+    setupStructures() {
+      const G_OFFSET = 90;
+      // Generator south-west of the relay
+      game._structures.push({
+        kind: 'generator', x: relay.x - G_OFFSET, y: relay.y + G_OFFSET,
+        hp: STRUCTURE_DEFS.generator.hp, maxHp: STRUCTURE_DEFS.generator.hp,
+        team: 0, _powered: true,
+      });
+      // Medstation south-east of the relay (within generator's powerR=200)
+      game._structures.push({
+        kind: 'medstation', x: relay.x + G_OFFSET, y: relay.y + G_OFFSET,
+        hp: STRUCTURE_DEFS.medstation.hp, maxHp: STRUCTURE_DEFS.medstation.hp,
+        team: 0, healCd: STRUCTURE_DEFS.medstation.healCd, _powered: false,
+      });
+    },
     get elapsed() { return elapsed; },
     update() {
       elapsed++;
