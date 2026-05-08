@@ -1157,6 +1157,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <div class="ctrl-item"><span class="ctrl-key">B</span><span>建造模式</span></div>
       <div class="ctrl-item"><span class="ctrl-key">TAB</span><span>战术指挥 + 1-7 下令</span></div>
       <div class="ctrl-item"><span class="ctrl-key">1-4</span><span>接管隊友 (NN 模式)</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">H</span><span>回到出生點 (卡關時)</span></div>
     </div>
 
     <div class="footer-bar">
@@ -2949,6 +2950,7 @@ const I18N = {
   '#controlsDrawer .ctrl-item:nth-of-type(8) span:last-child': { zh: '建造模式', en: 'Build mode' },
   '#controlsDrawer .ctrl-item:nth-of-type(9) span:last-child': { zh: '戰術指揮 + 1-7 下令', en: 'Command view + 1-7 orders' },
   '#controlsDrawer .ctrl-item:nth-of-type(10) span:last-child': { zh: '接管隊友 (NN 模式)', en: 'Pawn-swap (NN mode)' },
+  '#controlsDrawer .ctrl-item:nth-of-type(11) span:last-child': { zh: '回到出生點 (卡關時)', en: 'Recall to spawn (if stuck)' },
 
   // ---- Tutorial card ----
   '#tutorial .lobby-tag':   { zh: '首次提示 · QUICK BRIEFING', en: 'QUICK BRIEFING' },
@@ -5005,6 +5007,34 @@ window.addEventListener('keydown', e => {
   if (game.state === 'playing') {
     if (k === 'q') toggleDrone();
     else if (k === 'e') launchFPV();
+    else if (k === 'h') {
+      // Recall to spawn — defensive escape hatch. If the player ends up
+      // outside the playable area (wandered into the void corner of
+      // WORLD, got pushed through a wall, weird respawn placement…),
+      // pressing H teleports them back to the active map's spawn point
+      // so the run isn't soft-locked. Same shape in NN / campaign / skirmish:
+      //   campaign      → currentMap.playerSpawn
+      //   NN skirmish   → game._nnSpawnBlue (wherever blue spawned this match)
+      //   editor/menu   → ignored (state guard above already excludes them)
+      // User report: '戰役模式 我被卡在地圖外了...中繼站'.
+      let sx = null, sy = null;
+      if (game._nnMode && game._nnSpawnBlue) {
+        sx = game._nnSpawnBlue.x; sy = game._nnSpawnBlue.y;
+      } else if (typeof currentMap !== 'undefined' && currentMap && currentMap.playerSpawn) {
+        sx = currentMap.playerSpawn.x; sy = currentMap.playerSpawn.y;
+      } else {
+        sx = WORLD.w / 2; sy = WORLD.h / 2;
+      }
+      if (player.alive) {
+        player.x = sx; player.y = sy;
+        player._velX = 0; player._velY = 0;
+        player._invulnUntil = game.time + 60;
+        if (typeof showSwapToast === 'function') {
+          showSwapToast(T('▶ 回到出生點', '▶ RECALL TO SPAWN'));
+        }
+        if (typeof playRadioBeep === 'function') playRadioBeep(990, 0.10);
+      }
+    }
     else if (k === 'tab') {
       e.preventDefault();
       // Toggle COMMAND ↔ TACTICAL. Earlier this was silent — user
