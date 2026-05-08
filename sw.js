@@ -1,10 +1,18 @@
 // AshGrid service worker — basic offline shell.
-// Cache index.html + ONNX models + icons on install. On fetch, prefer cache
-// for game assets, fall through to network for everything else.
-const CACHE = 'ashgrid-v1';
+// Strategy split:
+//   index.html / manifest        → NETWORK-FIRST (so the user always
+//                                  sees the latest version after we
+//                                  push; falls back to cache only
+//                                  when offline)
+//   ONNX models / icons / wasm   → CACHE-FIRST (those rarely change
+//                                  and are the bulk of bandwidth)
+//
+// Cache version is the install timestamp suffix so every new build
+// gets a fresh cache and old caches are evicted on activate. If you
+// add files to ASSETS, bump the suffix or the precache will not run
+// (skipWaiting + clients.claim makes the new SW take over instantly).
+const CACHE = 'ashgrid-v2-2026-05-08';
 const ASSETS = [
-  './',
-  './index.html',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -36,18 +44,36 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  // Same-origin GET only — pass cross-origin (e.g. CDN ort wasm) through.
   if (url.origin !== location.origin || e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request).then(
-      (hit) => hit || fetch(e.request).then((res) => {
-        // Lazily cache new same-origin assets we serve.
+  // Network-first for HTML / manifest / sw.js itself — guarantees fresh
+  // app shell on every reload while we still ship a working offline mode.
+  const isHTML = url.pathname === '/' ||
+                 url.pathname.endsWith('/') ||
+                 url.pathname.endsWith('.html') ||
+                 url.pathname.endsWith('.webmanifest') ||
+                 url.pathname.endsWith('sw.js');
+  if (isHTML) {
+    e.respondWith(
+      fetch(e.request).then((res) => {
         if (res && res.ok) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy));
         }
         return res;
-      }).catch(() => caches.match('./index.html'))
+      }).catch(() => caches.match(e.request).then((hit) => hit || caches.match('./index.html')))
+    );
+    return;
+  }
+  // Cache-first for everything else (ONNX, icons, sounds)
+  e.respondWith(
+    caches.match(e.request).then(
+      (hit) => hit || fetch(e.request).then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy));
+        }
+        return res;
+      })
     )
   );
 });
