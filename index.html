@@ -4627,6 +4627,12 @@ function openEditor() {
   const slot = data.slots[editor.slot];
   if (slot && Array.isArray(slot.walls)) {
     for (const w of slot.walls) {
+      if (w.kind === 'wallLine') {
+        addWallLine(NN_ARENA.x0 + w.x1, NN_ARENA.y0 + w.y1,
+                    NN_ARENA.x0 + w.x2, NN_ARENA.y0 + w.y2,
+                    { thickness: w.thickness || 18 });
+        continue;
+      }
       const x = NN_ARENA.x0 + w.x, y = NN_ARENA.y0 + w.y;
       if (w.kind === 'cover') {
         addLowCover(x, y, w.w, w.h, w.canopy ? '#3F4A3A' : COLORS.creamDark, { kind: w.canopy ? 'tree' : 'crate', canopy: !!w.canopy });
@@ -4727,6 +4733,18 @@ function _editorPlaceCell(gx, gy) {
     if (i >= 0) { lowCovers.splice(i, 1); return; }
     i = buildings.findIndex(b => b.x === wx && b.y === wy);
     if (i >= 0) { buildings.splice(i, 1); return; }
+    // Wall-line erase: pick the wall whose capsule the cursor sits in.
+    // Cursor centre is `localCx/localCy` (in arena-local coords).
+    const cursorWX = NN_ARENA.x0 + localCx;
+    const cursorWY = NN_ARENA.y0 + localCy;
+    for (let wi = wallLines.length - 1; wi >= 0; wi--) {
+      const w = wallLines[wi];
+      const r = _segPointDist(cursorWX, cursorWY, w.x1, w.y1, w.x2, w.y2);
+      if (r.dist <= w.thickness / 2 + 8) {
+        wallLines.splice(wi, 1);
+        return;
+      }
+    }
     if (Array.isArray(editor.spawn.blue)) {
       const bi = editor.spawn.blue.findIndex(p => p.x === localCx && p.y === localCy);
       if (bi >= 0) { editor.spawn.blue.splice(bi, 1); return; }
@@ -4737,15 +4755,17 @@ function _editorPlaceCell(gx, gy) {
     }
     return;
   }
-  // Wall / cover / tree: replace whatever's in the cell
-  const tile = (editor.tool === 'wall') ? EDITOR_WALL_STEP : EDITOR_BLOCK;
+  // Wall / cover / tree: replace whatever's in the cell.
+  // Wall tool DOES NOT place tiles per cell anymore — _editorPlaceLine is
+  // intercepted at mouseup to commit a single vector wallLine instead.
+  // Cover/tree still rasterise per cell (chunky aesthetic).
+  const tile = EDITOR_BLOCK;
+  if (editor.tool === 'wall') return;
   const lci = lowCovers.findIndex(lc => lc.x === wx && lc.y === wy);
   if (lci >= 0) lowCovers.splice(lci, 1);
   const bi = buildings.findIndex(b => b.x === wx && b.y === wy);
   if (bi >= 0) buildings.splice(bi, 1);
-  if (editor.tool === 'wall') {
-    addBuilding(wx, wy, tile, tile, COLORS.gray);
-  } else if (editor.tool === 'cover') {
+  if (editor.tool === 'cover') {
     addLowCover(wx, wy, tile, tile, COLORS.creamDark, { kind: 'crate' });
   } else if (editor.tool === 'tree') {
     addLowCover(wx, wy, tile, tile, '#3F4A3A', { kind: 'tree', canopy: true });
@@ -4769,7 +4789,19 @@ function _editorPlaceLine(startGX, startGY, endGX, endGY) {
     _editorPlaceCell(endGX, endGY);
     return;
   }
-  const step = (editor.tool === 'wall') ? EDITOR_WALL_STEP : EDITOR_BLOCK;
+  // Wall tool: commit a single vector line segment. Cover/tree still
+  // rasterise into 60u chunks (the crate-grid look is desired there).
+  if (editor.tool === 'wall') {
+    const x1 = NN_ARENA.x0 + startGX + EDITOR_WALL_STEP / 2;
+    const y1 = NN_ARENA.y0 + startGY + EDITOR_WALL_STEP / 2;
+    const x2 = NN_ARENA.x0 + endGX   + EDITOR_WALL_STEP / 2;
+    const y2 = NN_ARENA.y0 + endGY   + EDITOR_WALL_STEP / 2;
+    if (Math.hypot(x2 - x1, y2 - y1) > 2) {
+      addWallLine(x1, y1, x2, y2, { thickness: 18 });
+    }
+    return;
+  }
+  const step = EDITOR_BLOCK;
   const cells = _editorLineCells(startGX, startGY, endGX, endGY, step);
   for (const c of cells) _editorPlaceCell(c.cx, c.cy);
 }
@@ -4778,6 +4810,14 @@ function editorSerialize() {
   for (const b of buildings) {
     walls.push({ x: b.x - NN_ARENA.x0, y: b.y - NN_ARENA.y0,
                  w: b.w, h: b.h, kind: 'building' });
+  }
+  for (const w of wallLines) {
+    walls.push({
+      kind: 'wallLine',
+      x1: w.x1 - NN_ARENA.x0, y1: w.y1 - NN_ARENA.y0,
+      x2: w.x2 - NN_ARENA.x0, y2: w.y2 - NN_ARENA.y0,
+      thickness: w.thickness,
+    });
   }
   for (const lc of lowCovers) {
     walls.push({ x: lc.x - NN_ARENA.x0, y: lc.y - NN_ARENA.y0,
@@ -4833,11 +4873,18 @@ function editorSwitchSlot(idx) {
   saveCustomMaps(all);
   // Reload the new slot's content
   buildings.length = 0;
+  wallLines.length = 0;
   lowCovers.length = 0;
   editor.spawn = { blue: [], red: [] };
   const slot = all.slots[idx];
   if (slot && slot.walls) {
     for (const w of slot.walls) {
+      if (w.kind === 'wallLine') {
+        addWallLine(NN_ARENA.x0 + w.x1, NN_ARENA.y0 + w.y1,
+                    NN_ARENA.x0 + w.x2, NN_ARENA.y0 + w.y2,
+                    { thickness: w.thickness || 18 });
+        continue;
+      }
       const x = NN_ARENA.x0 + w.x, y = NN_ARENA.y0 + w.y;
       if (w.kind === 'cover') {
         addLowCover(x, y, w.w, w.h, w.canopy ? '#3F4A3A' : COLORS.creamDark, { kind: w.canopy ? 'tree' : 'crate', canopy: !!w.canopy });
@@ -4857,6 +4904,7 @@ function editorSwitchSlot(idx) {
 }
 function editorClear() {
   buildings.length = 0;
+  wallLines.length = 0;
   lowCovers.length = 0;
   editor.spawn = { blue: [], red: [] };
 }
@@ -6172,6 +6220,7 @@ const coverPoints = []; // generated per map; {x, y, ownerCx, ownerCy} — soldi
 
 function clearWorld() {
   buildings.length = 0;
+  wallLines.length = 0;
   lowCovers.length = 0;
   overheads.length = 0;
   routes.length = 0;
@@ -6198,6 +6247,53 @@ function addBuilding(x, y, w, h, color, opts={}) {
   const baseHp = COVER_HP_BY_KIND[opts.kind || 'building'] || 220;
   const hp = opts.hp != null ? opts.hp : baseHp;
   buildings.push({ x, y, w, h, color: color || COLORS.gray, shadow: opts.shadow !== false, accent: !!opts.accent, kind: opts.kind || 'building', hp, maxHp: hp });
+}
+
+// ============ WALL LINES (true vector geometry) ============
+// Walls placed via point-A → point-B drag are stored as line segments,
+// not rasterised into 18u tiles. Render = stroke. Collision = signed
+// distance from point/segment to the line (inflated by thickness/2 +
+// entity radius). LoS = segment-segment intersect. The editor and the
+// in-game build-mode both produce these; legacy 60u FIXED_MAPS rooms
+// still use the rectangular `buildings` table unchanged.
+const wallLines = [];
+function addWallLine(x1, y1, x2, y2, opts={}) {
+  const thickness = opts.thickness != null ? opts.thickness : 18;
+  const baseHp    = COVER_HP_BY_KIND[opts.kind || 'building'] || 220;
+  const hp        = opts.hp != null ? opts.hp : baseHp;
+  wallLines.push({
+    x1, y1, x2, y2, thickness,
+    kind: opts.kind || 'building',
+    color: opts.color || COLORS.gray,
+    hp, maxHp: hp,
+    blocksLOS: opts.blocksLOS !== false,
+  });
+}
+function _segPointDist(px, py, x1, y1, x2, y2) {
+  // Returns closest distance + the projected point on the segment (clamped
+  // 0..1). Used by collision (entity vs wall) and bullet hits.
+  const dx = x2 - x1, dy = y2 - y1;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 0.0001) {
+    return { dist: Math.hypot(px - x1, py - y1), cx: x1, cy: y1, t: 0 };
+  }
+  let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+  if (t < 0) t = 0; else if (t > 1) t = 1;
+  const cx = x1 + t * dx, cy = y1 + t * dy;
+  return { dist: Math.hypot(px - cx, py - cy), cx, cy, t };
+}
+function _segSegHits(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2) {
+  const d = (ax2 - ax1) * (by2 - by1) - (ay2 - ay1) * (bx2 - bx1);
+  if (Math.abs(d) < 1e-9) return false;       // parallel
+  const ta = ((bx1 - ax1) * (by2 - by1) - (by1 - ay1) * (bx2 - bx1)) / d;
+  const tb = ((bx1 - ax1) * (ay2 - ay1) - (by1 - ay1) * (ax2 - ax1)) / d;
+  return ta >= 0 && ta <= 1 && tb >= 0 && tb <= 1;
+}
+// Inflate a line segment by `pad` and test if a point sits inside the capsule.
+// Capsule = segment + a half-circle on each end + a rectangle along the body.
+function _pointInCapsule(px, py, x1, y1, x2, y2, pad) {
+  const r = _segPointDist(px, py, x1, y1, x2, y2);
+  return r.dist <= pad;
 }
 function addLowCover(x, y, w, h, color, opts={}) {
   const baseHp = COVER_HP_BY_KIND[opts.kind || 'cover'] || 100;
@@ -7459,6 +7555,13 @@ function nnUnitOverlapsBuilding(unit, radius) {
   for (const b of buildings) {
     if (unit.x > b.x - radius && unit.x < b.x+b.w+radius &&
         unit.y > b.y - radius && unit.y < b.y+b.h+radius) return true;
+  }
+  // Wall-lines: capsule overlap test
+  for (const w of wallLines) {
+    if (w.hp <= 0) continue;
+    const pad = w.thickness / 2 + radius;
+    const r = _segPointDist(unit.x, unit.y, w.x1, w.y1, w.x2, w.y2);
+    if (r.dist < pad) return true;
   }
   return false;
 }
@@ -11449,6 +11552,13 @@ function isVisibleToFriendly(x, y) {
 
 // ============ AI ============
 function lineOfSight(x1, y1, x2, y2) {
+  // Wall-line LoS — exact segment-segment intersect, no marching needed.
+  if (wallLines.length) {
+    for (const w of wallLines) {
+      if (!w.blocksLOS || w.hp <= 0) continue;
+      if (_segSegHits(x1, y1, x2, y2, w.x1, w.y1, w.x2, w.y2)) return false;
+    }
+  }
   const steps = 28;
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
@@ -11510,6 +11620,20 @@ function pushOutOfBuildings(ent, radius) {
       const overlapY = (b.h/2 + radius) - Math.abs(ddy);
       if (overlapX < overlapY) ent.x += ddx > 0 ? overlapX : -overlapX;
       else ent.y += ddy > 0 ? overlapY : -overlapY;
+    }
+  }
+  // Wall-line push-out: project the entity onto each segment, push it
+  // perpendicular if it overlaps the capsule (segment ± thickness/2).
+  for (const w of wallLines) {
+    if (w.hp <= 0) continue;
+    const pad = w.thickness / 2 + radius;
+    const r = _segPointDist(ent.x, ent.y, w.x1, w.y1, w.x2, w.y2);
+    if (r.dist < pad) {
+      const dx = ent.x - r.cx, dy = ent.y - r.cy;
+      const d = Math.hypot(dx, dy) || 1;
+      const push = pad - r.dist;
+      ent.x += (dx / d) * push;
+      ent.y += (dy / d) * push;
     }
   }
 }
@@ -12488,6 +12612,22 @@ function updateBullets() {
         hit = true; break;
       }
     }
+    // Wall-line bullet collision — capsule check (segment + thickness/2).
+    if (!hit) for (let li = 0; li < wallLines.length; li++) {
+      const w = wallLines[li];
+      if (w.hp <= 0) continue;
+      const r = _segPointDist(b.x, b.y, w.x1, w.y1, w.x2, w.y2);
+      if (r.dist <= w.thickness / 2) {
+        if (w.hp != null) {
+          w.hp -= b.damage || 12;
+          if (w.hp <= 0) {
+            createExplosion(r.cx, r.cy, 'small');
+            wallLines.splice(li, 1);
+          }
+        }
+        hit = true; break;
+      }
+    }
     if (!hit) for (let li = 0; li < lowCovers.length; li++) {
       const lc = lowCovers[li];
       if (b.x > lc.x && b.x < lc.x+lc.w && b.y > lc.y && b.y < lc.y+lc.h) {
@@ -12643,6 +12783,22 @@ function updateBullets() {
           if (bd.hp <= 0) {
             createExplosion(bd.x + bd.w/2, bd.y + bd.h/2, 'small');
             buildings.splice(bi, 1);
+          }
+        }
+        hit = true; break;
+      }
+    }
+    // Wall-line bullet collision — capsule check (segment + thickness/2).
+    if (!hit) for (let li = 0; li < wallLines.length; li++) {
+      const w = wallLines[li];
+      if (w.hp <= 0) continue;
+      const r = _segPointDist(b.x, b.y, w.x1, w.y1, w.x2, w.y2);
+      if (r.dist <= w.thickness / 2) {
+        if (w.hp != null) {
+          w.hp -= b.damage || 12;
+          if (w.hp <= 0) {
+            createExplosion(r.cx, r.cy, 'small');
+            wallLines.splice(li, 1);
           }
         }
         hit = true; break;
@@ -13491,44 +13647,53 @@ function renderEditorOverlay() {
   blueList.forEach((sp, i) => drawSpawnMarker(sp, '#1A1A1A', T('蓝', 'B'), i));
   redList.forEach((sp, i)  => drawSpawnMarker(sp, COLORS.red,    T('红', 'R'), i));
 
-  // Drag-line preview — when the user is mid-drag, ghost out every cell that
-  // mouseup would commit. Lets them aim a wall before letting go.
+  // Drag-line preview — wall tool ghosts a single thick stroked line,
+  // cover/tree/erase still ghost the per-cell rasterised path.
   if (editor._dragStart && editor._dragEnd
       && editor.tool !== 'blueSpawn' && editor.tool !== 'redSpawn'
       && (editor._dragStart.gx !== editor._dragEnd.gx
           || editor._dragStart.gy !== editor._dragEnd.gy)) {
-    const tile = (editor.tool === 'wall') ? EDITOR_WALL_STEP : EDITOR_BLOCK;
-    const cells = _editorLineCells(
-      editor._dragStart.gx, editor._dragStart.gy,
-      editor._dragEnd.gx,   editor._dragEnd.gy,
-      tile
-    );
-    const ghostFill = editor.tool === 'wall'  ? COLORS.gray
-                    : editor.tool === 'tree'  ? '#3F4A3A'
-                    : editor.tool === 'erase' ? COLORS.red
-                                              : COLORS.creamDark;
+    const tile = EDITOR_BLOCK;
+    const ax = NN_ARENA.x0 + editor._dragStart.gx + (editor.tool === 'wall' ? EDITOR_WALL_STEP : tile) / 2;
+    const ay = NN_ARENA.y0 + editor._dragStart.gy + (editor.tool === 'wall' ? EDITOR_WALL_STEP : tile) / 2;
+    const bx = NN_ARENA.x0 + editor._dragEnd.gx   + (editor.tool === 'wall' ? EDITOR_WALL_STEP : tile) / 2;
+    const by = NN_ARENA.y0 + editor._dragEnd.gy   + (editor.tool === 'wall' ? EDITOR_WALL_STEP : tile) / 2;
     ctx.save();
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = ghostFill;
-    for (const c of cells) {
-      const wx = NN_ARENA.x0 + c.cx, wy = NN_ARENA.y0 + c.cy;
-      if (wx < NN_ARENA.x0 || wy < NN_ARENA.y0) continue;
-      if (wx + tile > NN_ARENA.x0 + NN_ARENA.w) continue;
-      if (wy + tile > NN_ARENA.y0 + NN_ARENA.h) continue;
-      ctx.fillRect(wx, wy, tile, tile);
+    if (editor.tool === 'wall') {
+      // Single stroked ghost line — exactly what mouseup will commit.
+      ctx.globalAlpha = 0.45;
+      ctx.strokeStyle = COLORS.gray;
+      ctx.lineWidth = 18;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.lineCap = 'butt';
+    } else {
+      const cells = _editorLineCells(
+        editor._dragStart.gx, editor._dragStart.gy,
+        editor._dragEnd.gx,   editor._dragEnd.gy,
+        tile
+      );
+      const ghostFill = editor.tool === 'tree'  ? '#3F4A3A'
+                      : editor.tool === 'erase' ? COLORS.red
+                                                : COLORS.creamDark;
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = ghostFill;
+      for (const c of cells) {
+        const wx = NN_ARENA.x0 + c.cx, wy = NN_ARENA.y0 + c.cy;
+        if (wx < NN_ARENA.x0 || wy < NN_ARENA.y0) continue;
+        if (wx + tile > NN_ARENA.x0 + NN_ARENA.w) continue;
+        if (wy + tile > NN_ARENA.y0 + NN_ARENA.h) continue;
+        ctx.fillRect(wx, wy, tile, tile);
+      }
     }
+    // Endpoint markers + dashed centre line (helps eyeball alignment)
     ctx.globalAlpha = 0.9;
     ctx.strokeStyle = COLORS.red;
-    ctx.lineWidth = 2;
-    const ax = NN_ARENA.x0 + editor._dragStart.gx + tile / 2;
-    const ay = NN_ARENA.y0 + editor._dragStart.gy + tile / 2;
-    const bx = NN_ARENA.x0 + editor._dragEnd.gx   + tile / 2;
-    const by = NN_ARENA.y0 + editor._dragEnd.gy   + tile / 2;
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(bx, by);
-    ctx.stroke();
-    // Live length readout — small chip near the endpoint
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    ctx.setLineDash([]);
+    // Live length + angle readout
     const len = Math.hypot(bx - ax, by - ay);
     const angleDeg = Math.round(Math.atan2(by - ay, bx - ax) * 180 / Math.PI);
     const lblX = bx + 14, lblY = by - 10;
@@ -13672,6 +13837,46 @@ function renderWorld() {
     }
     ctx.globalAlpha = 1;
   }
+
+  // Wall lines — drawn as stroked vector segments. Drop-shadow first
+  // (offset SE by 4u, dim cream), then the body in `color`. HP-damaged
+  // walls fade toward black-on-cream so the player can read 'this one
+  // is about to break' at a glance.
+  for (const w of wallLines) {
+    if (w.hp <= 0) continue;
+    const dmg = w.maxHp ? (1 - w.hp / w.maxHp) : 0;
+    // shadow
+    ctx.strokeStyle = COLORS.creamDark;
+    ctx.lineWidth = w.thickness;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(w.x1 + 4, w.y1 + 4); ctx.lineTo(w.x2 + 4, w.y2 + 4); ctx.stroke();
+    // body
+    ctx.strokeStyle = w.color;
+    ctx.beginPath(); ctx.moveTo(w.x1, w.y1); ctx.lineTo(w.x2, w.y2); ctx.stroke();
+    // damage cracks — diagonal hatch when dmg > 0.4
+    if (dmg > 0.4) {
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = dmg * 0.5;
+      const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+      const ux = (w.x2 - w.x1) / len, uy = (w.y2 - w.y1) / len;
+      const nx = -uy, ny = ux;
+      const half = w.thickness / 2 - 1;
+      const segs = Math.max(2, Math.floor(len / 30));
+      for (let s = 1; s < segs; s++) {
+        const t = s / segs;
+        const cx = w.x1 + (w.x2 - w.x1) * t;
+        const cy = w.y1 + (w.y2 - w.y1) * t;
+        ctx.beginPath();
+        ctx.moveTo(cx + nx * half * 0.6, cy + ny * half * 0.6);
+        ctx.lineTo(cx - nx * half * 0.6, cy - ny * half * 0.6);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = 1;
 
   // Low covers (waist-high — between buildings & units in z-order)
   drawLowCovers();
