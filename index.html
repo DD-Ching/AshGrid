@@ -1104,12 +1104,18 @@ body.lang-en .lang-toggle .on { color: var(--black); }
          card is the entire click target so the menu reads at a glance. -->
     <div id="primaryCards" style="display:grid; grid-template-columns:1fr 1fr; gap:14px; max-width:780px;">
       <button id="nnBtn" class="primary-card primary-card-red" type="button" style="background:var(--red); color:var(--cream); border:none; padding:26px 28px; text-align:left; cursor:pointer; box-shadow:6px 6px 0 var(--black); transition:transform .12s, box-shadow .12s;">
-        <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7;">A1 · QUICK PLAY</div>
+        <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7; display:flex; justify-content:space-between; align-items:center;">
+          <span>A1 · QUICK PLAY</span>
+          <span style="font:bold 9px monospace; letter-spacing:2px; padding:2px 6px; background:rgba(232,228,216,0.18);">[1]</span>
+        </div>
         <div style="font:bold 28px sans-serif; letter-spacing:5px; margin-top:6px;">遭遇戰 SKIRMISH ▶</div>
         <div id="skirmishHint" style="font:11px monospace; letter-spacing:1.5px; opacity:0.85; margin-top:10px;">PvAI · 7 modes · NN both teams · pick lineup</div>
       </button>
       <button id="campaignBtn" class="primary-card primary-card-black" type="button" style="background:var(--black); color:var(--cream); border:none; padding:26px 28px; text-align:left; cursor:pointer; box-shadow:6px 6px 0 var(--red); transition:transform .12s, box-shadow .12s;">
-        <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7;">A2 · STORY</div>
+        <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7; display:flex; justify-content:space-between; align-items:center;">
+          <span>A2 · STORY</span>
+          <span style="font:bold 9px monospace; letter-spacing:2px; padding:2px 6px; background:rgba(232,228,216,0.18);">[2]</span>
+        </div>
         <div style="font:bold 28px sans-serif; letter-spacing:5px; margin-top:6px;">戰役 CAMPAIGN</div>
         <div id="campaignHint" style="font:11px monospace; letter-spacing:1.5px; opacity:0.85; margin-top:10px;">6 hand-crafted missions · escort · breach · hive · relay</div>
       </button>
@@ -2551,12 +2557,12 @@ const I18N = {
   // The two big SKIRMISH / CAMPAIGN buttons have nested spans (eyebrow,
   // big label, hint), so we i18n each inner element separately rather
   // than replacing the whole button's innerHTML.
-  '#nnBtn > div:nth-child(1)':       { zh: 'A1 · 快速對戰', en: 'A1 · QUICK PLAY' },
-  '#nnBtn > div:nth-child(2)':       { zh: '遭遇戰 SKIRMISH ▶', en: 'SKIRMISH ▶' },
-  '#skirmishHint':                   { zh: 'PvAI · 7 種模式 · 雙方都用 NN · 自選陣容', en: 'PvAI · 7 modes · NN both teams · pick lineup' },
-  '#campaignBtn > div:nth-child(1)': { zh: 'A2 · 故事', en: 'A2 · STORY' },
-  '#campaignBtn > div:nth-child(2)': { zh: '戰役 CAMPAIGN', en: 'CAMPAIGN' },
-  '#campaignHint':                   { zh: '6 個手工關卡 · 護送 · 突破 · 蜂巢 · 中繼', en: '6 hand-crafted missions · escort · breach · hive · relay' },
+  '#nnBtn > div:nth-child(1) > span:first-child':       { zh: 'A1 · 快速對戰', en: 'A1 · QUICK PLAY' },
+  '#nnBtn > div:nth-child(2)':                          { zh: '遭遇戰 SKIRMISH ▶', en: 'SKIRMISH ▶' },
+  '#skirmishHint':                                      { zh: 'PvAI · 7 種模式 · 雙方都用 NN · 自選陣容', en: 'PvAI · 7 modes · NN both teams · pick lineup' },
+  '#campaignBtn > div:nth-child(1) > span:first-child': { zh: 'A2 · 故事', en: 'A2 · STORY' },
+  '#campaignBtn > div:nth-child(2)':                    { zh: '戰役 CAMPAIGN', en: 'CAMPAIGN' },
+  '#campaignHint':                                      { zh: '6 個手工關卡 · 護送 · 突破 · 蜂巢 · 中繼', en: '6 hand-crafted missions · escort · breach · hive · relay' },
   '#editorBtn':                      { zh: '▦ 地圖編輯器', en: '▦ MAP EDITOR' },
   '#dossierBtn':                     { zh: '⌂ 檔案 DOSSIER', en: '⌂ DOSSIER' },
   '#achievementsBtn':                { zh: '✦ 戰績 RECORDS', en: '✦ RECORDS' },
@@ -5055,6 +5061,31 @@ if (_campaignBtn) _campaignBtn.onclick = () => {
   document.getElementById('tutorial')?.classList.add('hidden');
   startGame();
 };
+// Lobby keyboard shortcuts — only fire when the start screen is visible
+// AND no modal is open. 1/2/3 trigger the three primary cards so a
+// keyboard-first player can pop a match without touching the mouse.
+document.addEventListener('keydown', (e) => {
+  if (game.state !== 'menu' && game.state !== undefined) return;
+  const startVisible = document.getElementById('start') && !document.getElementById('start').classList.contains('hidden');
+  if (!startVisible) return;
+  // Skip if any modal is open (DOSSIER / LOG / RECORDS / SETTINGS / DEV / lobby)
+  const modalOpen = document.querySelector('.modal-overlay:not([hidden])') ||
+                    !document.getElementById('nnLobby').classList.contains('hidden');
+  if (modalOpen) return;
+  // Skip if the user is typing in an input
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (e.key === '1') {
+    e.preventDefault();
+    document.getElementById('nnBtn')?.click();
+  } else if (e.key === '2') {
+    const btn = document.getElementById('campaignBtn');
+    if (btn && btn.offsetWidth > 0) { e.preventDefault(); btn.click(); }
+  } else if (e.key === '3') {
+    const btn = document.getElementById('editorBtn');
+    if (btn && btn.offsetWidth > 0) { e.preventDefault(); btn.click(); }
+  }
+});
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 window.addEventListener('mousemove', e => {
   mouse.x = e.clientX; mouse.y = e.clientY;
@@ -15911,16 +15942,20 @@ function drawPauseOverlay() {
     ]],
     [T('装备 GEAR', 'GEAR'), [
       ['R',     T('装填弹药', 'Reload')],
+      ['X',     T('切换主/副武器', 'Swap weapon')],
       ['G',     T('投掷手雷', 'Throw grenade')],
       ['Q',     T('UAV 无人机', 'UAV recon')],
       ['E',     T('FPV 自杀无人机', 'FPV kamikaze')],
+      ['B',     T('建造模式 BUILD', 'Build mode')],
     ]],
-    [T('视角 VIEW', 'VIEW'), [
-      ['Tab',   T('战术指挥 COMMAND', 'Command view')],
+    [T('指挥 COMMAND', 'COMMAND'), [
+      ['Tab',   T('战术指挥视角', 'Command view')],
+      ['1-7',   T('指挥下令 (集合/进攻/掩护…)', 'Squad orders (rally/attack/cover…)')],
+      ['1-4',   T('接管队友 (非指挥时)', 'Pawn-swap (outside command view)')],
     ]],
     [T('系统 SYSTEM', 'SYSTEM'), [
       ['Esc/P', T('暂停 / 继续', 'Pause / resume')],
-      ['1-4',   T('NN 模式接管队友', 'Pawn-swap teammate')],
+      ['Enter', T('结算后再来一场', 'Replay after match end')],
       [T('退出', 'Exit'), T('从下方按钮回主菜单', 'Use button below')],
     ]],
   ];
