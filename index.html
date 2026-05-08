@@ -3092,6 +3092,78 @@ function _wallNearPoint(w, px, py, padBeyondLine) {
   const r = _segPointDist(px, py, w.x1, w.y1, w.x2, w.y2);
   return r.dist <= w.thickness / 2 + padBeyondLine;
 }
+// ============ MODULE UPGRADES ============
+// Each placed module has `tier` 1..3. Higher tiers cost energy + visibly
+// boost stats (more HP, more dmg, lower cooldown). Pressing U near a
+// placed module triggers `upgradeNearestModule()` which picks the
+// closest one within 80u and bumps it if the player can afford it.
+const UPGRADE_TIERS = {
+  // tier index → { cost (% of base), hpMul, dmgMul, fireCdMul, label }
+  // Base entry tier=1 is implicit (1.0 across the board, no cost).
+  2: { costPct: 0.6, hpMul: 1.5, dmgMul: 1.5, fireCdMul: 0.85, label: 'II' },
+  3: { costPct: 1.2, hpMul: 2.0, dmgMul: 2.0, fireCdMul: 0.70, label: 'III' },
+};
+function _moduleStat(s, key) {
+  const def = STRUCTURE_DEFS[s.kind];
+  if (!def) return 0;
+  // 'maxHp' reads from def.hp (definitions store base hp, not maxHp)
+  const base = key === 'maxHp' ? def.hp : def[key];
+  const t = s.tier || 1;
+  if (t === 1) return base;
+  const mul = UPGRADE_TIERS[t];
+  if (!mul) return base;
+  if (key === 'dmg' || key === 'chainDmg') return Array.isArray(base) ? base.map(d => d * mul.dmgMul) : base * mul.dmgMul;
+  if (key === 'fireCd' || key === 'emitCd' || key === 'healCd' || key === 'spawnCd') return Math.round(base * mul.fireCdMul);
+  if (key === 'maxHp') return Math.round(base * mul.hpMul);
+  return base;
+}
+function _moduleUpgradeCost(s) {
+  const def = STRUCTURE_DEFS[s.kind];
+  if (!def) return Infinity;
+  const next = (s.tier || 1) + 1;
+  const tier = UPGRADE_TIERS[next];
+  if (!tier) return Infinity;          // already at max
+  return Math.round(def.cost * tier.costPct);
+}
+function upgradeNearestModule() {
+  if (!game._structures || game._structures.length === 0) return false;
+  const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
+  // Pick nearest non-passive module within 80u of the player
+  let best = null, bestD = 80;
+  for (const s of game._structures) {
+    if (s.hp <= 0) continue;
+    if (s.kind === 'mine' || s.kind === 'tripmine' || s.kind === 'cover' ||
+        s.kind === 'wall' || s.kind === 'bunker') continue;   // passive / structural skip
+    const d = Math.hypot(s.x - player.x, s.y - player.y);
+    if (d < bestD) { best = s; bestD = d; }
+  }
+  if (!best) {
+    showSwapToast(lang === 'zh' ? '附近沒有可升級的模塊' : 'No upgradable module nearby');
+    return false;
+  }
+  const next = (best.tier || 1) + 1;
+  const cost = _moduleUpgradeCost(best);
+  if (!isFinite(cost)) {
+    showSwapToast(lang === 'zh' ? '模塊已達 III 級' : 'Module at max tier');
+    return false;
+  }
+  if ((game._energy || 0) < cost) {
+    showSwapToast(lang === 'zh' ? `能源不足 (需 ${cost}⚡)` : `Need ${cost}⚡`);
+    return false;
+  }
+  game._energy -= cost;
+  best.tier = next;
+  // Bump current HP by the same ratio so an upgraded module isn't half-dead
+  const newMaxHp = _moduleStat(best, 'maxHp') || best.maxHp;
+  const ratio = best.maxHp ? best.hp / best.maxHp : 1;
+  best.maxHp = newMaxHp;
+  best.hp = Math.round(newMaxHp * ratio);
+  const def = STRUCTURE_DEFS[best.kind];
+  showSwapToast(`${def.label()} → ${UPGRADE_TIERS[next].label}  -${cost}⚡`);
+  if (typeof playRadioBeep === 'function') playRadioBeep(990, 0.12);
+  return true;
+}
+
 function recomputePowerGrid() {
   const structs = game._structures || [];
   for (const s of structs) s._powered = false;
@@ -3167,14 +3239,14 @@ function updateStructures() {
           game._energy -= ammoCost;
           const a = Math.atan2(best.y - s.y, best.x - s.x);
           s.gunAngle = a;
-          // Spawn a bullet from the turret
+          // Spawn a bullet from the turret — damage scales with tier
           bullets.push({
             x: s.x + Math.cos(a) * 18, y: s.y + Math.sin(a) * 18,
             vx: Math.cos(a) * 18, vy: Math.sin(a) * 18,
-            life: 36, dmg: def.dmg, team: 0,
+            life: 36, dmg: _moduleStat(s, 'dmg'), team: 0,
             fromTurret: true, fromUnit: null, weaponName: T('炮塔', 'turret'),
           });
-          s.fireCd = def.fireCd;
+          s.fireCd = _moduleStat(s, 'fireCd');
           playSfx('shoot', { vol: 0.3, src: { x: s.x, y: s.y } });
         }
       }
@@ -3311,10 +3383,12 @@ function updateStructures() {
         }
         if (primary) {
           game._energy -= teslaAmmo;
+          const teslaDmg = _moduleStat(s, 'dmg');
+          const teslaCdNew = _moduleStat(s, 'fireCd');
           game._teslaBolts = game._teslaBolts || [];
-          // Primary zap
-          primary.hp -= def.dmg;
-          spawnDamagePopup(primary.x, primary.y - 14, def.dmg, primary.hp <= 0);
+          // Primary zap — damage scales with tier
+          primary.hp -= teslaDmg;
+          spawnDamagePopup(primary.x, primary.y - 14, teslaDmg, primary.hp <= 0);
           if (primary.hp <= 0 && primary.alive) {
             primary.alive = false; game.score += 100; game.killCount++;
             createExplosion(primary.x, primary.y, 'small');
@@ -3342,7 +3416,7 @@ function updateStructures() {
             hit.add(next);
             prev = next;
           }
-          s.fireCd = def.fireCd;
+          s.fireCd = teslaCdNew;
           playSfx('shoot', { vol: 0.4, src: { x: s.x, y: s.y } });
         }
       }
@@ -4523,6 +4597,7 @@ window.addEventListener('keydown', e => {
     else if (k === 'g') throwGrenade();
     else if (k === 'b') toggleBuildMode();
     else if (k === 'x') swapPlayerWeapon();
+    else if (k === 'u') upgradeNearestModule();
     // 1-9 + 0 = power-user shortcut to pick a module. Works whether the
     // radial is open (closes it) or in placing mode (just swaps kind).
     // Pawn-swap fallback below only runs OUTSIDE build mode.
@@ -13399,6 +13474,21 @@ function renderStructures() {
       ctx.fillText('⚡ NO PWR', s.x, s.y - r - 14);
       ctx.textAlign = 'left';
     }
+    // Tier badge — Roman numeral II / III stamped at upper-right of the
+    // module. Tier 1 (default) is implicit (no badge).
+    if ((s.tier || 1) > 1) {
+      const t = s.tier;
+      const tier = UPGRADE_TIERS[t];
+      ctx.globalAlpha = 1;
+      const bx = s.x + r * 0.7, by = s.y - r * 0.9;
+      ctx.fillStyle = COLORS.red;
+      ctx.fillRect(bx - 8, by - 7, 16, 14);
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(tier ? tier.label : 'II', bx, by + 3);
+      ctx.textAlign = 'left';
+    }
     ctx.globalAlpha = 1;
   }
   ctx.restore();
@@ -16290,6 +16380,7 @@ function drawPauseOverlay() {
       ['Q',     T('UAV 无人机', 'UAV recon')],
       ['E',     T('FPV 自杀无人机', 'FPV kamikaze')],
       ['B',     T('建造模式 BUILD', 'Build mode')],
+      ['U',     T('升级附近模块', 'Upgrade nearby module')],
     ]],
     [T('指挥 COMMAND', 'COMMAND'), [
       ['Tab',   T('战术指挥视角', 'Command view')],
