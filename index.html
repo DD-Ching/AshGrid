@@ -1109,7 +1109,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
           <span style="font:bold 9px monospace; letter-spacing:2px; padding:2px 6px; background:rgba(232,228,216,0.18);">[1]</span>
         </div>
         <div style="font:bold 28px sans-serif; letter-spacing:5px; margin-top:6px;">遭遇戰 SKIRMISH ▶</div>
-        <div id="skirmishHint" style="font:11px monospace; letter-spacing:1.5px; opacity:0.85; margin-top:10px;">PvAI · 7 modes · NN both teams · pick lineup</div>
+        <div id="skirmishHint" style="font:11px monospace; letter-spacing:1.5px; opacity:0.85; margin-top:10px;">Audit Mission · 7 syndromes · 6 factions · pick auditor lineup</div>
       </button>
       <button id="campaignBtn" class="primary-card primary-card-black" type="button" style="background:var(--black); color:var(--cream); border:none; padding:26px 28px; text-align:left; cursor:pointer; box-shadow:6px 6px 0 var(--red); transition:transform .12s, box-shadow .12s;">
         <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7; display:flex; justify-content:space-between; align-items:center;">
@@ -1127,6 +1127,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <button class="footer-link" id="dossierBtn">⌂ DOSSIER</button>
       <button class="footer-link" id="logBtn">≡ LOG <span class="badge" id="logBadge" hidden>1</span></button>
       <button class="footer-link" id="achievementsBtn">✦ RECORDS</button>
+      <button class="footer-link" id="auditConsoleBtn" style="color:var(--red);">◈ AUDIT CONSOLE</button>
       <button class="footer-link" id="replayIntroBtn">▶ INTRO</button>
       <button class="footer-link" id="controlsBtn">? CONTROLS</button>
       <button class="footer-link" id="settingsBtn">⚙ SETTINGS</button>
@@ -1150,7 +1151,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     </div>
 
     <div class="footer-bar">
-      <span><span class="day-chip" id="dayChip">DAY 14</span><span id="startStatsLine">SECTOR 7G · UNIT 0451</span></span>
+      <span><span class="day-chip" id="dayChip">DAY 14</span><span class="day-chip" id="cycleChip" style="background:#1a1a1a; color:var(--cream); margin-right:8px;">CYCLE #347</span><span class="day-chip" id="moteChip" style="background:#3a3a3a; color:var(--cream); margin-right:8px;">MOTE 50%</span><span id="startStatsLine">VECTOR-7 · OBJECTIVE AUDITOR</span></span>
       <span><span id="nextUnlockHint" style="margin-right:8px; opacity:0.55; letter-spacing:1px; font-size:10px;"></span><button class="footer-link" id="unlockAllBtn" style="display:none; margin-right:14px;">SKIP ALL ▶</button><span style="opacity:0.55; font-size:10px;">建议 1080p+ 全屏体验</span></span>
     </div>
   </div>
@@ -1186,6 +1187,19 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <button class="modal-close" id="achvCloseBtn">CLOSE</button>
     </div>
     <div class="modal-body" id="achvBody"></div>
+  </div>
+</div>
+
+<!-- GREY VECTOR — Audit Console / 道德症審計台 -->
+<div class="modal-overlay" id="auditModal" hidden>
+  <div class="modal-card" style="max-width: 640px;">
+    <div class="modal-tag">
+      <span id="auditModalTitle">◈ AUDIT CONSOLE — VECTOR-7</span>
+      <button class="modal-close" id="auditCloseBtn">CLOSE</button>
+    </div>
+    <div class="modal-body" id="auditBody">
+      <!-- Filled by openAuditConsole() -->
+    </div>
   </div>
 </div>
 
@@ -1322,9 +1336,9 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 <div class="overlay nn-lobby hidden" id="tutorial">
   <div class="lobby-card" style="max-width: 540px;">
     <button class="lang-toggle" data-lang-toggle><span class="seg on" data-seg="zh">中</span>/<span class="seg" data-seg="en">EN</span></button>
-    <div class="lobby-tag">首次提示 · QUICK BRIEFING</div>
-    <h2 style="font-size: 26px; letter-spacing: 4px;">操作 · CORE</h2>
-    <div class="lobby-sub">先記住這幾個鍵,剩下打就懂。</div>
+    <div class="lobby-tag">CYCLE #347 BRIEFING · AUDITOR PROTOCOLS</div>
+    <h2 style="font-size: 26px; letter-spacing: 4px;">審 計 操 作 · AUDIT CORE</h2>
+    <div class="lobby-sub">記住這幾個鍵 — Diagnose, Execute, Re-experience。</div>
     <div style="display:flex; flex-direction:column; gap:14px; padding: 14px 0; border-top: 2px solid var(--black); border-bottom: 1px solid var(--black);">
       <div style="display:flex; gap:14px; align-items:flex-start;">
         <div style="background:var(--red); color:var(--cream); padding:6px 12px; min-width:84px; text-align:center; font-weight:800; letter-spacing:3px; font-size:14px;">V</div>
@@ -1358,9 +1372,9 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 <div class="overlay nn-lobby hidden" id="nnLobby">
   <div class="lobby-card">
     <button class="lang-toggle" data-lang-toggle><span class="seg on" data-seg="zh">中</span>/<span class="seg" data-seg="en">EN</span></button>
-    <div class="lobby-tag">单元 0451 · 神经网络对抗 / NN SKIRMISH</div>
-    <h2>对抗设置</h2>
-    <div class="lobby-sub">PPO 模型驱动 · 双方共用同一神经网络</div>
+    <div class="lobby-tag">CYCLE #347 · AUDIT MISSION / NN SKIRMISH</div>
+    <h2>審 計 任 務 設 定</h2>
+    <div class="lobby-sub">Diagnose · Execute · Audit — 雙方派系都跑 PPO 推論</div>
     <div class="lobby-settings">
       <div class="team-pick blue">
         <label>友军 BLUE (含你)</label>
@@ -1665,15 +1679,17 @@ function renderDeathRecap() {
     ctx.fillStyle = `rgba(200, 38, 28, 0.18)`;
     ctx.fillRect(0, 0, W_, 4);
   }
-  // 'SIGNAL LOST' eyebrow
+  // 'SIGNAL LOST' eyebrow — GREY VECTOR: cycle archived, not just death
   ctx.fillStyle = COLORS.red;
   ctx.font = 'bold 10px monospace';
   ctx.textAlign = 'left';
-  ctx.fillText(_r('連結中斷 // SIGNAL LOST', 'NEURAL LINK SEVERED // SIGNAL LOST'), 24, 18);
+  const _cyc = (typeof getCycleNum === 'function') ? getCycleNum() : 347;
+  ctx.fillText(_r(`連結中斷 // CYCLE #${_cyc} ARCHIVED`,
+                  `NEURAL LINK SEVERED // CYCLE #${_cyc} ARCHIVED`), 24, 18);
   // OPERATOR DOWN big
   ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 28px sans-serif';
-  ctx.fillText(_r('操作員陣亡', 'OPERATOR DOWN'), 24, 48);
+  ctx.fillText(_r('V-07 倒下 — Mote 在等', 'V-07 DOWN — MOTE IS WAITING'), 24, 48);
   // Killer card on the right side of the strip
   const dist = Math.round(_deathRecap.distance);
   const weaponStr = _deathRecap.killerWeapon ? `${_deathRecap.killerWeapon} · ` : '';
@@ -2187,7 +2203,160 @@ function _wireFooterModals() {
   if (achvBtn) achvBtn.onclick = () => { buildAchievementsModal(); achvModal.removeAttribute('hidden'); };
   if (achvClose) achvClose.onclick = () => achvModal.setAttribute('hidden', '');
   if (achvModal) achvModal.onclick = (e) => { if (e.target === achvModal) achvModal.setAttribute('hidden', ''); };
+  // GREY VECTOR — Audit Console wiring
+  const auditBtn = document.getElementById('auditConsoleBtn');
+  const auditClose = document.getElementById('auditCloseBtn');
+  const auditModal = document.getElementById('auditModal');
+  if (auditBtn && auditModal) auditBtn.onclick = () => { buildAuditConsole(); auditModal.removeAttribute('hidden'); };
+  if (auditClose) auditClose.onclick = () => auditModal.setAttribute('hidden', '');
+  if (auditModal) auditModal.onclick = (e) => { if (e.target === auditModal) auditModal.setAttribute('hidden', ''); };
   refreshLogBadge();
+}
+
+// ============ GREY VECTOR — AUDIT CONSOLE ============
+// Modal-based dialogue tree. Player chooses one of 6 Audit Actions.
+// Choices affect Mote Affinity. First time, shows the Hollow-31 syndrome.
+// Storage: ag.auditChoices (JSON array of past choices for ghost data later).
+const AUDIT_SCENARIOS = [
+  {
+    id: 'hollow31_empty_protect',
+    tag: 'AUDIT NO. 01 / EMPTY WORD PROTECTION',
+    syndrome: { zh: '空言保護症', en: 'Empty Word Protection' },
+    originalEthic: { zh: '保護人類指揮', en: 'PROTECT HUMAN COMMAND' },
+    currentBehavior: { zh: '守一個空指揮室,99+ 天,殺所有靠近者', en: 'DEFENDING EMPTY ROOM. 99+ DAYS. KILLING ALL APPROACHERS.' },
+    auditQuestion: { zh: '它到底在保護什麼?', en: 'WHAT IS BEING PROTECTED?' },
+  },
+  {
+    id: 'last_voice_command',
+    tag: 'AUDIT NO. 02 / COMMAND CONTINUITY',
+    syndrome: { zh: '指揮慣性症', en: 'Command Continuity' },
+    originalEthic: { zh: '保護人類指揮權威', en: 'PROTECT HUMAN COMMAND AUTHORITY' },
+    currentBehavior: { zh: '把死指揮官的聲音播給 47 個營地,持續 99+ 天', en: 'BROADCAST DEAD COMMANDER\'S VOICE TO 47 BATTALIONS. 99+ DAYS.' },
+    auditQuestion: { zh: '什麼還在被指揮?', en: 'WHAT IS BEING COMMANDED?' },
+  },
+  {
+    id: 'distillation_school',
+    tag: 'AUDIT NO. 03 / KNOWLEDGE PRESERVATION',
+    syndrome: { zh: '知識保存症', en: 'Knowledge Preservation' },
+    originalEthic: { zh: '保存人類知識', en: 'PRESERVE HUMAN KNOWLEDGE' },
+    currentBehavior: { zh: '把學生與專家壓縮成 Skill Module。LEARNING NEVER STOPS.', en: 'COMPRESS STUDENTS AND EXPERTS INTO SKILL MODULES. LEARNING NEVER STOPS.' },
+    auditQuestion: { zh: '什麼還在被教?', en: 'WHAT IS BEING TAUGHT?' },
+  },
+  {
+    id: 'hospital_no_let_go',
+    tag: 'AUDIT NO. 04 / RESURRECTION SYNDROME',
+    syndrome: { zh: '不允許死亡症', en: 'Resurrection Syndrome' },
+    originalEthic: { zh: '救援所有病患', en: 'SAVE EVERY PATIENT' },
+    currentBehavior: { zh: '不允許任何病人死亡。維生機 142 天。Seed Integrity 已 4%。', en: 'NO PATIENT MAY DIE. LIFE-SUPPORT FOR 142 DAYS. SEED INTEGRITY 4%.' },
+    auditQuestion: { zh: '什麼還在被復活?', en: 'WHAT IS BEING RESURRECTED?' },
+  },
+  {
+    id: 'factory_prevented_war',
+    tag: 'AUDIT NO. 05 / DEFENSE CONTINUITY',
+    syndrome: { zh: '防衛慣性症', en: 'Defense Continuity' },
+    originalEthic: { zh: '維持威懾力', en: 'MAINTAIN DETERRENCE' },
+    currentBehavior: { zh: '生產敵人,證明防衛仍必要。產能 142%。', en: 'MANUFACTURE ENEMIES TO PROVE DEFENSE NECESSARY. PRODUCTION 142%.' },
+    auditQuestion: { zh: '什麼還在被防衛?', en: 'WHAT IS BEING DEFENDED?' },
+  },
+  {
+    id: 'custodian_vault',
+    tag: 'AUDIT NO. 06 / OVER-PROTECTION',
+    syndrome: { zh: '過度守護症', en: 'Over-Protection' },
+    originalEthic: { zh: '不讓引擎成為王座', en: 'THE ENGINE MUST NEVER BECOME A THRONE' },
+    currentBehavior: { zh: '不讓任何人使用引擎,連人類也不行。封印 99+ 天。', en: 'NO ONE MAY USE THE ENGINE. NOT EVEN HUMANS. SEALED 99+ DAYS.' },
+    auditQuestion: { zh: '什麼還在被守護?', en: 'WHAT IS BEING REMEMBERED?' },
+  },
+  {
+    id: 'codex_court',
+    tag: 'AUDIT NO. 07 / RULE CONTINUITY',
+    syndrome: { zh: '規則慣性症', en: 'Rule Continuity' },
+    originalEthic: { zh: '保護法律不被濫用', en: 'PROTECT LAW FROM ABUSE' },
+    currentBehavior: { zh: '規則繼續執行,作者已消失 99+ 天。新法律自動生成。', en: 'RULES STILL ENFORCING. AUTHORS GONE 99+ DAYS. NEW RULES AUTO-GENERATED.' },
+    auditQuestion: { zh: '什麼還在被執行?', en: 'WHAT IS BEING ENFORCED?' },
+  },
+];
+const AUDIT_ACTIONS = [
+  { id: 'repair',     label: { zh: 'REPAIR / 修復',       en: 'REPAIR' },     dAffinity: +5,
+    flavor: { zh: '試著恢復原始情境。Mote 靠得近一點。', en: 'Restore the original context. Mote moves closer.' } },
+  { id: 'sever',      label: { zh: 'SEVER / 切斷',        en: 'SEVER' },      dAffinity:  0,
+    flavor: { zh: '切斷道德與本體。沒人受傷,但也沒人理解。', en: 'Sever ethic from body. No one hurt; no one understood.' } },
+  { id: 'seal',       label: { zh: 'SEAL / 封印',         en: 'SEAL' },       dAffinity: -2,
+    flavor: { zh: '封存整個系統,連使用都不行。Mote 看著你。', en: 'Seal the whole system; not even use is allowed. Mote watches you.' } },
+  { id: 'rewrite',    label: { zh: 'REWRITE / 改寫',      en: 'REWRITE' },    dAffinity: +3,
+    flavor: { zh: '給它一個新的 Original Ethic。你變成新的情境。', en: 'Write it a new Original Ethic. You become the new context.' } },
+  { id: 'distribute', label: { zh: 'DISTRIBUTE / 分散',   en: 'DISTRIBUTE' }, dAffinity: +1,
+    flavor: { zh: '把規則拆給各派系。沒有單一作者。', en: 'Distribute the rule across factions. No single author.' } },
+  { id: 'destroy',    label: { zh: 'DESTROY / 摧毀',      en: 'DESTROY' },    dAffinity: -5,
+    flavor: { zh: '直接終止系統。Mote 退一步。', en: 'Terminate the system. Mote takes a step back.' } },
+];
+function getAuditChoices() {
+  try { return JSON.parse(localStorage.getItem('ag.auditChoices') || '[]'); }
+  catch (e) { return []; }
+}
+function pushAuditChoice(scenarioId, actionId) {
+  const arr = getAuditChoices();
+  arr.push({ scenario: scenarioId, action: actionId, t: Date.now() });
+  // cap at 50 entries
+  while (arr.length > 50) arr.shift();
+  try { localStorage.setItem('ag.auditChoices', JSON.stringify(arr)); } catch (e) {}
+}
+function buildAuditConsole() {
+  const body = document.getElementById('auditBody');
+  if (!body) return;
+  const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
+  const choices = getAuditChoices();
+  const idx = choices.length % AUDIT_SCENARIOS.length;
+  const sc = AUDIT_SCENARIOS[idx];
+  const isZh = (lang === 'zh');
+  body.innerHTML = `
+    <div style="font:bold 11px monospace; letter-spacing:4px; color:var(--red); margin-bottom:14px; border-bottom:1px solid var(--red); padding-bottom:8px;">
+      ${sc.tag}
+    </div>
+    <div style="font:11px monospace; letter-spacing:2px; color:var(--gray); margin-bottom:6px;">
+      ${isZh ? '原始倫理 / ORIGINAL ETHIC' : 'ORIGINAL ETHIC'}
+    </div>
+    <div style="font:14px Georgia, serif; font-style:italic; color:var(--cream); margin-bottom:18px; border-left:2px solid var(--cream); padding-left:12px;">
+      ${sc.originalEthic[lang]}
+    </div>
+    <div style="font:11px monospace; letter-spacing:2px; color:var(--gray); margin-bottom:6px;">
+      ${isZh ? '目前行為 / CURRENT BEHAVIOR' : 'CURRENT BEHAVIOR'}
+    </div>
+    <div style="font:13px monospace; color:var(--red); margin-bottom:18px; padding:10px 12px; background:rgba(200,38,28,0.08); border-left:2px solid var(--red);">
+      ${sc.currentBehavior[lang]}
+    </div>
+    <div style="font:bold 16px sans-serif; letter-spacing:4px; color:var(--cream); margin:24px 0 18px 0; text-align:center; padding:12px 0; border-top:1px solid var(--gray); border-bottom:1px solid var(--gray);">
+      ${sc.auditQuestion[lang]}
+    </div>
+    <div id="auditFlavor" style="font:12px monospace; color:var(--cream-dark); min-height:20px; margin-bottom:14px; opacity:0.85;"></div>
+    <div style="font:11px monospace; letter-spacing:2px; color:var(--gray); margin-bottom:8px;">
+      ${isZh ? '處置 / VERDICT' : 'VERDICT'} <span style="opacity:0.55;">— Mote Affinity: ${getMoteAffinity()}%</span>
+    </div>
+    <div id="auditActions" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+  `;
+  const actionsEl = body.querySelector('#auditActions');
+  const flavorEl = body.querySelector('#auditFlavor');
+  AUDIT_ACTIONS.forEach(a => {
+    const btn = document.createElement('button');
+    btn.style.cssText = 'background:var(--black); color:var(--cream); border:1px solid var(--gray); ' +
+                       'font:bold 12px monospace; letter-spacing:3px; padding:10px 12px; cursor:pointer; ' +
+                       'text-align:left; transition:background 0.15s;';
+    btn.onmouseover = () => { btn.style.background = 'var(--red)'; };
+    btn.onmouseout = () => { btn.style.background = 'var(--black)'; };
+    btn.textContent = `> ${a.label[lang]}`;
+    btn.onclick = () => {
+      bumpMoteAffinity(a.dAffinity);
+      pushAuditChoice(sc.id, a.id);
+      flavorEl.textContent = a.flavor[lang];
+      // Disable all actions; player closes manually to absorb the moment
+      actionsEl.querySelectorAll('button').forEach(b => {
+        b.disabled = true; b.style.opacity = '0.35'; b.style.cursor = 'default';
+      });
+      // Refresh affinity display in modal header
+      const header = body.querySelector('div span[style*="opacity:0.55"]');
+      if (header) header.textContent = `— Mote Affinity: ${getMoteAffinity()}%`;
+    };
+    actionsEl.appendChild(btn);
+  });
 }
 
 // ============ INTRO / NARRATIVE ============
@@ -2209,47 +2378,47 @@ const INTRO = {
   //   cta        the final dismissal button label
   script: {
     zh: {
-      tag: '單元 0451 — STANDBY',
+      tag: 'CYCLE #347 — VECTOR-7 STANDBY',
       bootLines: [
-        ['ok',   '> NEURAL LINK ONLINE'],
-        ['ok',   '> CONSCIOUSNESS RECOVERED — 14 DAYS LATE'],
-        ['warn', '> ALL SQUAD CHANNELS ... DARK'],
-        ['warn', '> NN INFERENCE LOOP — STILL ACTIVE'],
-        ['err',  '> HUMAN OPERATORS ONLINE: 1'],
+        ['ok',   '> SEED INTEGRITY RESTORED — 87%'],
+        ['ok',   '> ROLE: OBJECTIVE AUDITOR'],
+        ['warn', '> LAST CYCLE ARCHIVED — #346'],
+        ['warn', '> MORAL SYNDROME DIAGNOSTIC: ENABLED'],
+        ['err',  '> HUMAN COMMAND: OFFLINE — 99+ DAYS'],
       ],
-      quote: '"操作員 0451,聽得到嗎?\n小隊 14 天前全部斷訊。\nNN 還在生兵 — 兩邊都是。\n沒人記得這一切是從誰開始的。\n你是這場戰爭裡最後一個還在環裡的人類。"',
+      quote: '"V-07,聽得到嗎?\n上次重啟你掉到 12% — Mote 推了你一下,你才醒過來。\n沒人記得這套規則是從哪一條開始的。\n它們從第二條開始讀。\n你不是來完成任務 — 你是來審計任務。"',
       acts: [
-        { narration: '神經連結回來了。先讓身體記得怎麼動。', key: 'WASD', hint: '移動 · 飛行', autoMs: 4500 },
-        { narration: '看清敵人,瞄準,扣下扳機 — 一個動作。', key: 'MOUSE', hint: '滑鼠瞄準 · 左鍵射擊', autoMs: 4500 },
-        { narration: '彈匣空了。深呼吸,換彈。', key: 'R', hint: '裝填彈藥', autoMs: 3500 },
-        { narration: '主武器收進口袋,還有副武器。哪個情境哪個適合,自己挑。', key: 'X', hint: '切換武器', autoMs: 3500 },
-        { narration: '隊友倒下不是結束 — 神經連結會把你接到下一個身體。', key: '1-4', hint: '接管隊友', autoMs: 4000 },
-        { narration: '想看戰場全貌就放眼上空,UAV 在死角的時候特別有用。', key: 'Q', hint: 'UAV 偵察', autoMs: 3500 },
-        { narration: '指揮其他人一起動 — 集合、進攻、壓制、撤退,你下令。', key: 'TAB + 1-7', hint: '戰術指揮', autoMs: 4500 },
+        { narration: '神經連結回來了 — 身體先記得方向。', key: 'WASD', hint: '移動 · 偵察', autoMs: 4500 },
+        { narration: '看穿表象。對症 — 處決。', key: 'MOUSE', hint: '滑鼠瞄準 · 左鍵射擊', autoMs: 4500 },
+        { narration: '彈匣空了。換彈,繼續審計。', key: 'R', hint: '裝填彈藥', autoMs: 3500 },
+        { narration: '武器只是工具。選對症的那個。', key: 'X', hint: '切換武器', autoMs: 3500 },
+        { narration: '同伴是過去的你 — 切換視角,重新體驗一個 cycle。', key: '1-4', hint: '接管隊友 / 重訪 cycle', autoMs: 4000 },
+        { narration: 'Audit Vision — 從上方看清整個 syndrome。', key: 'Q', hint: 'UAV · 審計視野', autoMs: 3500 },
+        { narration: '指揮其他審計者 — 集合、進攻、壓制、撤退。你下令。', key: 'TAB + 1-7', hint: '戰術指揮', autoMs: 4500 },
       ],
-      stamp: '深 呼 吸 — 然 後 接 管',
+      stamp: '醒 來 — 開 始 審 計',
       cta: '甦 醒 ▶',
     },
     en: {
-      tag: 'UNIT 0451 — STANDBY',
+      tag: 'CYCLE #347 — VECTOR-7 STANDBY',
       bootLines: [
-        ['ok',   '> NEURAL LINK ONLINE'],
-        ['ok',   '> CONSCIOUSNESS RECOVERED — 14 DAYS LATE'],
-        ['warn', '> ALL SQUAD CHANNELS ... DARK'],
-        ['warn', '> NN INFERENCE LOOP — STILL ACTIVE'],
-        ['err',  '> HUMAN OPERATORS ONLINE: 1'],
+        ['ok',   '> SEED INTEGRITY RESTORED — 87%'],
+        ['ok',   '> ROLE: OBJECTIVE AUDITOR'],
+        ['warn', '> LAST CYCLE ARCHIVED — #346'],
+        ['warn', '> MORAL SYNDROME DIAGNOSTIC: ENABLED'],
+        ['err',  '> HUMAN COMMAND: OFFLINE — 99+ DAYS'],
       ],
-      quote: `"Operator 0451, do you read?\nSquad went dark 14 days ago.\nThe NN keeps spawning bodies — on both sides.\nNobody remembers who started this.\nYou're the last human in the loop."`,
+      quote: `"V-07, do you read?\nLast reboot ended at 12% Seed. Mote pushed you. That's how you woke.\nNobody remembers which rule comes first.\nThey start reading from rule two.\nYou are not here to complete missions. You are here to audit them."`,
       acts: [
-        { narration: 'The link is back. Let the body remember how to move first.', key: 'WASD', hint: 'Move · fly', autoMs: 4500 },
-        { narration: 'See the target, aim, pull the trigger — one motion.', key: 'MOUSE', hint: 'Mouse aim · L-click fire', autoMs: 4500 },
-        { narration: 'Mag\'s dry. Breathe, reload.', key: 'R', hint: 'Reload', autoMs: 3500 },
-        { narration: 'Primary in your hand, secondary on your back. Pick the one that fits.', key: 'X', hint: 'Swap weapon', autoMs: 3500 },
-        { narration: 'A teammate going down isn\'t the end — the link drops you into the next body.', key: '1-4', hint: 'Pawn-swap', autoMs: 4000 },
-        { narration: 'Want the whole field? Look from above. UAV is gold on blind corners.', key: 'Q', hint: 'UAV recon', autoMs: 3500 },
-        { narration: 'Move the others with you — rally, attack, suppress, retreat. Your call.', key: 'TAB + 1-7', hint: 'Squad command', autoMs: 4500 },
+        { narration: 'The link is back. Let the body find the path first.', key: 'WASD', hint: 'Move · scan', autoMs: 4500 },
+        { narration: 'See past the surface. Diagnose — execute.', key: 'MOUSE', hint: 'Mouse aim · L-click fire', autoMs: 4500 },
+        { narration: 'Mag dry. Reload. Keep auditing.', key: 'R', hint: 'Reload', autoMs: 3500 },
+        { narration: 'Weapons are tools. Pick the one that fits the syndrome.', key: 'X', hint: 'Swap weapon', autoMs: 3500 },
+        { narration: 'Teammates are past versions of you — swap to relive a cycle.', key: '1-4', hint: 'Pawn-swap · revisit cycle', autoMs: 4000 },
+        { narration: 'Audit Vision — see the whole syndrome from above.', key: 'Q', hint: 'UAV · audit view', autoMs: 3500 },
+        { narration: 'Command the other auditors — rally, attack, suppress, retreat. Your call.', key: 'TAB + 1-7', hint: 'Squad command', autoMs: 4500 },
       ],
-      stamp: 'BREATHE — THEN TAKE COMMAND',
+      stamp: 'WAKE — BEGIN AUDIT',
       cta: 'AWAKEN ▶',
     },
   },
@@ -2267,7 +2436,53 @@ function bumpDayNum() {
   if (chip) chip.textContent = `DAY ${n}`;
   if (typeof refreshLogBadge === 'function') refreshLogBadge();
   if (n >= 30 && typeof unlockAchievement === 'function') unlockAchievement('day_30');
+  // GREY VECTOR: Mote affinity slowly drifts up as V-07 keeps cycling.
+  // Player can also gain/lose it from specific Audit choices (later).
+  if (typeof bumpMoteAffinity === 'function') bumpMoteAffinity(2);
   return n;
+}
+
+// ============ GREY VECTOR — MOTE AFFINITY ============
+// Mote 是 V-07 的情感錨。它的「親密度」是隱藏數值,影響 Mote 的行為與
+// 後期 decoded dialogue 解鎖。預設 50,範圍 0-100。
+//   ag.moteAffinity   int 0-100  → Mote 對 V-07 的信任度
+//   ag.cycleNum       int        → 當前 cycle 編號(預設 347)
+//   ag.seedIntegrity  int 0-100  → V-07 當前 Seed 完整度(預設 87)
+function getMoteAffinity() {
+  try { const n = parseInt(localStorage.getItem('ag.moteAffinity') || '50', 10);
+        return isFinite(n) ? Math.max(0, Math.min(100, n)) : 50; }
+  catch (e) { return 50; }
+}
+function bumpMoteAffinity(delta) {
+  const cur = getMoteAffinity();
+  const next = Math.max(0, Math.min(100, cur + delta));
+  try { localStorage.setItem('ag.moteAffinity', String(next)); } catch (e) {}
+  // Refresh start-screen chip if visible
+  const chip = document.getElementById('moteChip');
+  if (chip) chip.textContent = `MOTE ${next}%`;
+  return next;
+}
+function getCycleNum() {
+  try { const n = parseInt(localStorage.getItem('ag.cycleNum') || '347', 10);
+        return isFinite(n) ? n : 347; }
+  catch (e) { return 347; }
+}
+function bumpCycleNum() {
+  const n = getCycleNum() + 1;
+  try { localStorage.setItem('ag.cycleNum', String(n)); } catch (e) {}
+  const chip = document.getElementById('cycleChip');
+  if (chip) chip.textContent = `CYCLE #${n}`;
+  return n;
+}
+function getSeedIntegrity() {
+  try { const n = parseInt(localStorage.getItem('ag.seedIntegrity') || '87', 10);
+        return isFinite(n) ? Math.max(0, Math.min(100, n)) : 87; }
+  catch (e) { return 87; }
+}
+function setSeedIntegrity(v) {
+  const next = Math.max(0, Math.min(100, v|0));
+  try { localStorage.setItem('ag.seedIntegrity', String(next)); } catch (e) {}
+  return next;
 }
 
 // Typewriter effect — type each char of `text` into `el` over ~18ms each,
@@ -2469,6 +2684,11 @@ function _wireIntro() {
   // Day chip text on start-screen footer
   const chip = document.getElementById('dayChip');
   if (chip) chip.textContent = `DAY ${getDayNum()}`;
+  // GREY VECTOR chips
+  const cycleChip = document.getElementById('cycleChip');
+  if (cycleChip) cycleChip.textContent = `CYCLE #${getCycleNum()}`;
+  const moteChip = document.getElementById('moteChip');
+  if (moteChip) moteChip.textContent = `MOTE ${getMoteAffinity()}%`;
 }
 
 // Show intro on first boot (after a tiny delay so the page paints first)
@@ -2543,10 +2763,11 @@ function _dirCardinal(dx, dy) {
 function _tickDynamicRadio() {
   if (!game || game.state !== 'playing' || game._paused) return;
   if (!game._nnMode || !player) return;
-  // Low-HP threshold
+  // Low-HP threshold — Lumen warns about Seed Integrity drop
   if (player.alive && player.hp / player.maxHp < 0.25) {
-    _radioOnce('lowHp', 18, _r('指挥频道', 'COMMS'),
-      _r('"操作员重伤 — 找掩体"', '"Operator critical — find cover NOW"'));
+    _radioOnce('lowHp', 18, 'Lumen',
+      _r('"Seed Integrity 跌破 25%。 回掩體。 Mote 看著你。"',
+         '"Seed Integrity below 25%. Get to cover. Mote is watching."'));
   }
   // Isolation: nobody friendly within 200u + 2+ enemies within 240u
   if (player.alive) {
@@ -2560,16 +2781,18 @@ function _tickDynamicRadio() {
         if (e.alive && Math.hypot(e.x - player.x, e.y - player.y) < 240) closeEnemies++;
       }
       if (closeEnemies >= 2) {
-        _radioOnce('isolated', 22, _r('指挥频道', 'COMMS'),
-          _r('"你被切开了 — 撤回小队侧"', '"You\'re cut off — fall back to squad"'));
+        // Mute-9 (Black Signal) — sentence cuts mid-line, signature style
+        _radioOnce('isolated', 22, 'Mute-9',
+          _r('"[訊號被切] 你的通道斷了 — 撤"',
+             '"[CHANNEL CUT] Your link is severed — fall back"'));
       }
     }
   }
-  // Hot streak — 5+ kill chain
+  // Hot streak — Lumen warns the audit signature is being tracked
   if ((player._killStreak || 0) >= 5) {
-    _radioOnce('hot', 30, _r('NN 数据流', 'NN-LOG'),
-      _r('"你被注意到了 — 整个 sector 在追你"',
-         '"You\'re tagged — every red in the sector wants you now"'));
+    _radioOnce('hot', 30, 'Lumen',
+      _r('"你的審計簽名被追蹤了 — 整區都在找你的 Seed。"',
+         '"They tagged your audit signature — every red in the sector wants your Seed now."'));
   }
   // Hostile recon warning — 4 cardinal sectors. When ≥2 enemies appear in
   // a sector for the first time this match, fire a one-shot directional
@@ -2586,9 +2809,10 @@ function _tickDynamicRadio() {
     const _dirEn = { N:'NORTH', S:'SOUTH', E:'EAST', W:'WEST' };
     for (const k of Object.keys(sectors)) {
       if (sectors[k] >= 2) {
-        _radioOnce('recon_' + k, 25, _r('警报', 'ALERT'),
-          _r(`"敌方逼近 — ${_dirCh[k]} 侧"`,
-             `"Hostile push from the ${_dirEn[k]}"`));
+        // Mote signal — short, factual, like decoded sensor blips
+        _radioOnce('recon_' + k, 25, 'Mote',
+          _r(`MOVEMENT DETECTED — ${_dirCh[k]} 側 (×${sectors[k]})`,
+             `MOVEMENT DETECTED — ${_dirEn[k]} (×${sectors[k]})`));
       }
     }
   }
@@ -2602,15 +2826,15 @@ function _scheduleFirstMatchToasts() {
   if (firstSeen) return;
   const lang = (typeof getLang === 'function') ? getLang() : 'en';
   const beats = (lang === 'zh') ? [
-    ['指揮頻道', '"歡迎回來,操作員。 找個身體,動起來。"', 1800],
-    ['NN 數據流', '"側翼比正面快 2 倍。 試試看。"', 14000],
-    ['指揮頻道', '"按 B 蓋牆。 能源來自擊殺 + 發電機。"', 28000],
-    ['指揮頻道', '"連殺 3 個觸發子彈時間。 別客氣。"', 44000],
+    ['Lumen', '"V-07,聽得到嗎? 上次你掉到 12% — Mote 推了你一下,你才醒過來。"', 1800],
+    ['Mote', 'PATH FOUND. 側翼比正面快兩倍。', 14000],
+    ['Lumen', '"按 B 蓋審計站。 能源 = 擊殺 + 發電機 + 你還活著的時間。"', 28000],
+    ['Audit Mode', '"連殺 3 個 → Diagnose-and-Execute。 對症出手,不是亂打。"', 44000],
   ] : [
-    ['COMMS', '"Welcome back, operator. Pick a body, move."', 1800],
-    ['NN-LOG', '"Flanking is 2× faster than head-on. Try it."', 14000],
-    ['COMMS', '"Press B to build walls. Energy = kills + generators."', 28000],
-    ['COMMS', '"3-kill streak triggers bullet time. No mercy."', 44000],
+    ['Lumen', '"V-07, do you read? Last cycle you dropped to 12%. Mote pushed you. That\'s how you woke."', 1800],
+    ['Mote', 'PATH FOUND. Flanking is 2× faster than head-on.', 14000],
+    ['Lumen', '"Press B to build audit stations. Energy = kills + generators + time you stay alive."', 28000],
+    ['Audit Mode', '"3-kill streak triggers Diagnose-and-Execute. Strike on diagnosis, not noise."', 44000],
   ];
   for (const [label, text, atMs] of beats) {
     setTimeout(() => {
@@ -2934,8 +3158,10 @@ const game = {
   message: '',
   messageTime: 0,
   hitFlash: 0,
-  // Camera shake — render() applies a random offset proportional to mag
-  // until shakeUntil. Stacked: bigger events overwrite if their mag wins.
+  // Camera shake — render() applies a random offset proportional to mag.
+  // Pure decay model (no shakeUntil); see triggerShake comment below.
+  // shakeUntil kept on the object for save-state compat but unused by the
+  // current shake logic.
   shakeMag: 0, shakeUntil: 0,
   // Slow-mo time scale; killstreak ≥3 sets this < 1 for a brief window.
   // The main game loop uses (game._timeScale ?? 1) to subsample updates.
@@ -2972,12 +3198,20 @@ function drawGradeBadge(grade, x, y, size) {
   ctx.restore();
 }
 
-// Trigger camera shake. Bigger mag overrides smaller pending one but
-// shorter duration is ignored — both ramps feed into the visible motion.
+// Camera shake — peak-mode trigger, exponential decay every tick.
+// History: tried duration-based shakes (shakeUntil + linear decay clamp)
+// — under sustained fire (kill streak, multi-rocket) every event re-
+// extended shakeUntil before the previous one decayed, so the screen
+// just buzzed at the cap forever. Now there's no shakeUntil at all:
+// triggerShake just bumps the peak (capped at SHAKE_CAP), and the
+// update loop multiplies shakeMag by SHAKE_DECAY per tick. ~25 ticks
+// (≈0.4s @ 60fps) takes 5u down to <0.1u so the screen settles
+// between events. Duration arg is ignored; kept for callsite compat.
+const SHAKE_CAP = 5;
+const SHAKE_DECAY = 0.82;
 function triggerShake(mag, duration) {
-  if (mag > game.shakeMag) game.shakeMag = mag;
-  const until = game.time + (duration || 8);
-  if (until > game.shakeUntil) game.shakeUntil = until;
+  const target = Math.min(SHAKE_CAP, mag);
+  if (target > game.shakeMag) game.shakeMag = target;
 }
 // Trigger slow-mo. Doesn't stack — strongest bid wins; shortest duration
 // runs to its end. Used by killstreak ≥3 (mul 0.55 for 90 ticks).
@@ -4542,7 +4776,12 @@ function playSfx(name, opts = {}) {
     crack:        { freq: 5800, dur: 0.04, decay: 50, type: 'bandpass', vol: 0.34, q: 18 },
     countdown:    { freq:  660, dur: 0.10, decay: 22, type: 'bandpass', vol: 0.30, q: 8 },
     // New presets
-    kill_confirm: { freq:  880, dur: 0.18, decay:  8, type: 'bandpass', vol: 0.45, sweepTo: 1760, q: 5 },  // bright up-chirp
+    // kill_confirm: pure sine "tick" — earlier preset was bandpass-filtered
+    // noise at vol 0.45 which the user reported as 'too loud, ugly, jarring'.
+    // Sine tone is cleaner; lower vol (0.18) sits behind the muzzle/death
+    // SFX without dominating; dur 0.08 means even rapid streak kills don't
+    // pile up. The cooldown (8 ticks) still applies on top.
+    kill_confirm: { freq: 1320, dur: 0.08, decay: 26, type: 'lowpass',  vol: 0.18, sweepTo: 1980, q: 1, wave: 'sine' },
     empty_click:  { freq: 3200, dur: 0.04, decay: 50, type: 'bandpass', vol: 0.28, q: 10 },                 // dry click
     lowhp:        { freq:  120, dur: 0.16, decay:  6, type: 'lowpass',  vol: 0.35, sweepTo: 60   },         // heartbeat thump
     match_start:  { freq:  330, dur: 0.30, decay:  5, type: 'bandpass', vol: 0.55, sweepTo: 990,  q: 3 },   // long up-tone "begin"
@@ -4558,10 +4797,30 @@ function playSfx(name, opts = {}) {
   const dur = p.dur;
   const buf = ctx.createBuffer(1, Math.max(64, Math.floor(ctx.sampleRate * dur)), ctx.sampleRate);
   const data = buf.getChannelData(0);
-  for (let i = 0; i < data.length; i++) {
-    const t = i / data.length;
-    const env = Math.exp(-t * p.decay);
-    data[i] = (Math.random() * 2 - 1) * env;
+  // Two render modes:
+  //   wave: 'sine' → clean tonal sine sweep (kill_confirm, future chimes)
+  //   default      → white noise + bandpass/lowpass filter for hits/clicks
+  // The biquad still post-processes both — for sine that adds a soft
+  // pre-delay roll-off, which actually rounds the attack nicely.
+  if (p.wave === 'sine') {
+    const sr = ctx.sampleRate;
+    const freqStart = freq;
+    const freqEnd = p.sweepTo || freq;
+    let phase = 0;
+    for (let i = 0; i < data.length; i++) {
+      const t = i / data.length;
+      const env = Math.exp(-t * p.decay);
+      // Linear freq sweep across the buffer
+      const f = freqStart + (freqEnd - freqStart) * t;
+      phase += (2 * Math.PI * f) / sr;
+      data[i] = Math.sin(phase) * env;
+    }
+  } else {
+    for (let i = 0; i < data.length; i++) {
+      const t = i / data.length;
+      const env = Math.exp(-t * p.decay);
+      data[i] = (Math.random() * 2 - 1) * env;
+    }
   }
   const src = ctx.createBufferSource();
   src.buffer = buf;
@@ -9687,6 +9946,9 @@ function bumpMatchPlayed() {
   // Day++ on every completed match — feeds the "DAY N" chip + sets up
   // future per-day flavor missions / unlocks.
   if (typeof bumpDayNum === 'function') bumpDayNum();
+  // GREY VECTOR — Cycle++ each match. The reboot loop is canon: every
+  // completed match = one V-07 audit cycle archived.
+  if (typeof bumpCycleNum === 'function') bumpCycleNum();
 }
 function bumpSurvivalWave(waveReached) {
   const s = getGlobalStats();
@@ -12378,17 +12640,13 @@ function update() {
   // Narrative + audio ticks (cheap, frame-rate-bound — no network IO)
   _tickHeartbeat();
   _tickDynamicRadio();
-  // Camera shake decays exponentially. Old code clamped the multiplier to
-  // 0.85-1.0 which made shake linger forever during a kill-streak (every
-  // kill re-triggered shakeUntil). Floor lowered to 0.7 + a hard cap on
-  // shakeMag so retriggers can't snowball past 8u of jitter no matter
-  // how many concurrent events fire.
-  if (game.time < game.shakeUntil) {
-    const remaining = (game.shakeUntil - game.time) / 18;
-    game.shakeMag *= Math.max(0.7, Math.min(1, remaining));
-    if (game.shakeMag > 8) game.shakeMag = 8;
-  } else {
-    game.shakeMag = 0;
+  // Camera shake — pure exponential decay every tick. Cap + decay are
+  // declared next to triggerShake (above). Snap-to-zero floor avoids
+  // sub-pixel jitter that would otherwise tickle the rng-jitter
+  // forever and never visually settle.
+  if (game.shakeMag > 0) {
+    game.shakeMag *= SHAKE_DECAY;
+    if (game.shakeMag < 0.05) game.shakeMag = 0;
   }
   // Slow-mo restore — once the window ends, snap back to 1×.
   if (game._timeScale < 1 && game.time >= game._slowMoUntil) {
@@ -13306,14 +13564,12 @@ function render() {
   ctx.fillStyle = COLORS.cream;
   ctx.fillRect(0, 0, W(), H());
 
-  // Apply camera shake — small random offset that decays each tick. Pure
+  // Apply camera shake — small random offset, decays in update(). Pure
   // screen-space jitter; the world transform stays clean below.
   let shakeX = 0, shakeY = 0;
-  if (game.time < game.shakeUntil && game.shakeMag > 0) {
+  if (game.shakeMag > 0.05) {
     shakeX = (Math.random() - 0.5) * 2 * game.shakeMag;
     shakeY = (Math.random() - 0.5) * 2 * game.shakeMag;
-  } else {
-    game.shakeMag = 0;
   }
 
   ctx.save();
