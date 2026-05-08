@@ -2197,9 +2197,16 @@ function _wireFooterModals() {
 //   ag.dayNum      int  → "DAY N" — increments on every match completion
 //   ag.firstMatch  '1'  → first match has happened (turn off story toasts)
 const INTRO = {
-  // Two-language script — picked at intro time based on getLang().
-  // Tag, the boot-block lines, the quote lines, and the final stamp render
-  // in sequence with their own typewriter pacing.
+  // Two-language multi-act script. Each language has:
+  //   tag        eyebrow line (shown for the entire intro)
+  //   bootLines  the original NEURAL LINK ONLINE boot rolldown
+  //   quote      the operator-call quote
+  //   acts       [{narration, key?, hint?, autoMs?}] — guided beats that
+  //              follow the quote. `key` is the keyboard prompt the player
+  //              should press; if omitted, advance is purely autoMs/click.
+  //              hint is the rendered chip caption (e.g. 'MOVE  WASD').
+  //   stamp      the closing line
+  //   cta        the final dismissal button label
   script: {
     zh: {
       tag: '單元 0451 — STANDBY',
@@ -2211,6 +2218,15 @@ const INTRO = {
         ['err',  '> HUMAN OPERATORS ONLINE: 1'],
       ],
       quote: '"操作員 0451,聽得到嗎?\n小隊 14 天前全部斷訊。\nNN 還在生兵 — 兩邊都是。\n沒人記得這一切是從誰開始的。\n你是這場戰爭裡最後一個還在環裡的人類。"',
+      acts: [
+        { narration: '神經連結回來了。先讓身體記得怎麼動。', key: 'WASD', hint: '移動 · 飛行', autoMs: 4500 },
+        { narration: '看清敵人,瞄準,扣下扳機 — 一個動作。', key: 'MOUSE', hint: '滑鼠瞄準 · 左鍵射擊', autoMs: 4500 },
+        { narration: '彈匣空了。深呼吸,換彈。', key: 'R', hint: '裝填彈藥', autoMs: 3500 },
+        { narration: '主武器收進口袋,還有副武器。哪個情境哪個適合,自己挑。', key: 'X', hint: '切換武器', autoMs: 3500 },
+        { narration: '隊友倒下不是結束 — 神經連結會把你接到下一個身體。', key: '1-4', hint: '接管隊友', autoMs: 4000 },
+        { narration: '想看戰場全貌就放眼上空,UAV 在死角的時候特別有用。', key: 'Q', hint: 'UAV 偵察', autoMs: 3500 },
+        { narration: '指揮其他人一起動 — 集合、進攻、壓制、撤退,你下令。', key: 'TAB + 1-7', hint: '戰術指揮', autoMs: 4500 },
+      ],
       stamp: '深 呼 吸 — 然 後 接 管',
       cta: '甦 醒 ▶',
     },
@@ -2224,6 +2240,15 @@ const INTRO = {
         ['err',  '> HUMAN OPERATORS ONLINE: 1'],
       ],
       quote: `"Operator 0451, do you read?\nSquad went dark 14 days ago.\nThe NN keeps spawning bodies — on both sides.\nNobody remembers who started this.\nYou're the last human in the loop."`,
+      acts: [
+        { narration: 'The link is back. Let the body remember how to move first.', key: 'WASD', hint: 'Move · fly', autoMs: 4500 },
+        { narration: 'See the target, aim, pull the trigger — one motion.', key: 'MOUSE', hint: 'Mouse aim · L-click fire', autoMs: 4500 },
+        { narration: 'Mag\'s dry. Breathe, reload.', key: 'R', hint: 'Reload', autoMs: 3500 },
+        { narration: 'Primary in your hand, secondary on your back. Pick the one that fits.', key: 'X', hint: 'Swap weapon', autoMs: 3500 },
+        { narration: 'A teammate going down isn\'t the end — the link drops you into the next body.', key: '1-4', hint: 'Pawn-swap', autoMs: 4000 },
+        { narration: 'Want the whole field? Look from above. UAV is gold on blind corners.', key: 'Q', hint: 'UAV recon', autoMs: 3500 },
+        { narration: 'Move the others with you — rally, attack, suppress, retreat. Your call.', key: 'TAB + 1-7', hint: 'Squad command', autoMs: 4500 },
+      ],
       stamp: 'BREATHE — THEN TAKE COMMAND',
       cta: 'AWAKEN ▶',
     },
@@ -2280,6 +2305,45 @@ function _wait(ms) {
   });
 }
 
+// Wait for any of `keys` to be pressed (case-insensitive against single
+// characters; symbolic keys like 'TAB', '1-4' compare against e.key).
+// Resolves on press OR when timeoutMs elapses, whichever first. Mouse
+// click on the intro overlay also resolves (acts as "skip this beat").
+function _waitForKeyOrTimeout(keyHint, timeoutMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('keydown', onKey);
+      const intro = document.getElementById('intro');
+      intro && intro.removeEventListener('click', onClick);
+      resolve();
+    };
+    const onKey = (e) => {
+      if (_introSkipFlag) { finish(); return; }
+      const k = (e.key || '').toLowerCase();
+      const hint = (keyHint || '').toLowerCase();
+      // Match: any letter mentioned in the hint, plus 1-4 if hint
+      // contains '1-4', plus tab if hint contains 'tab'.
+      const matches =
+        (hint.includes('wasd') && 'wasd'.includes(k)) ||
+        (hint.includes('mouse')) ||                       // any key works as proxy
+        (hint === 'r' && k === 'r') ||
+        (hint === 'x' && k === 'x') ||
+        (hint === 'q' && k === 'q') ||
+        (hint.includes('1-4') && /^[1-4]$/.test(k)) ||
+        (hint.includes('tab') && k === 'tab');
+      if (matches) { e.preventDefault(); finish(); }
+    };
+    const onClick = () => finish();
+    window.addEventListener('keydown', onKey);
+    const intro = document.getElementById('intro');
+    intro && intro.addEventListener('click', onClick);
+    if (timeoutMs > 0) setTimeout(finish, timeoutMs);
+  });
+}
+
 async function playIntroSequence() {
   const intro = document.getElementById('intro');
   if (!intro) return;
@@ -2305,10 +2369,13 @@ async function playIntroSequence() {
   ctaEl.hidden = true;
   ctaEl.textContent = s.cta;
 
-  // 0.6s breath after the red flash, before boot text starts
+  // Make sure any ghost key prompt from a previous run is gone
+  let promptEl = document.getElementById('introKeyPrompt');
+  if (promptEl) promptEl.remove();
+
   await _wait(700);
 
-  // Boot lines — one by one, brief gap between
+  // Boot lines — typed one by one
   for (let i = 0; i < s.bootLines.length; i++) {
     const [klass, txt] = s.bootLines[i];
     await _introType(blockEl, txt, 14, klass);
@@ -2322,6 +2389,41 @@ async function playIntroSequence() {
   await _introType(quoteEl, s.quote, 26);
 
   await _wait(500);
+
+  // ---- Multi-act guided onboarding ----
+  // Each act adds a narration line + a keyboard-key chip. The player can
+  // either press the key (advances early) OR wait for the autoMs timer.
+  // Skip flag (set by clicking the overlay's CTA) shortcuts the entire
+  // remaining sequence.
+  if (Array.isArray(s.acts) && s.acts.length > 0) {
+    // Insert a key-prompt slot below the quote
+    promptEl = document.createElement('div');
+    promptEl.id = 'introKeyPrompt';
+    promptEl.style.cssText =
+      'margin-top: 22px; display: flex; align-items: center; gap: 14px; ' +
+      'min-height: 40px; opacity: 0; transition: opacity 0.3s;';
+    quoteEl.parentNode.insertBefore(promptEl, quoteEl.nextSibling);
+    for (const act of s.acts) {
+      if (_introSkipFlag) break;
+      // Type the narration into the quote element (additional line)
+      quoteEl.innerHTML += '\n\n';
+      await _introType(quoteEl, act.narration, 22);
+      // Build the key chip
+      promptEl.innerHTML =
+        `<span style="background:var(--red); color:var(--cream); ` +
+        `font:bold 14px monospace; padding:8px 14px; letter-spacing:3px;">` +
+        `${act.key}</span>` +
+        `<span style="color:var(--cream); font:11px monospace; ` +
+        `letter-spacing:2px; opacity:0.7;">${act.hint}</span>`;
+      promptEl.style.opacity = '1';
+      // Wait for the player or the timeout
+      await _waitForKeyOrTimeout(act.key, act.autoMs || 3500);
+      // Fade the prompt before the next act starts
+      promptEl.style.opacity = '0';
+      await _wait(200);
+    }
+    promptEl.remove();
+  }
 
   // Stamp + CTA
   stampEl.textContent = s.stamp;
