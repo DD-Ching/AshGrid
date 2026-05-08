@@ -8015,19 +8015,57 @@ function showNNEndCard(result) {
   const againBtn = document.getElementById('nnEndAgainBtn');
   const lobbyBtn = document.getElementById('nnEndLobbyBtn');
   const lastMode = game._nnGameMode || 'dm';
-  if (againBtn) againBtn.onclick = () => {
+  const playAgain = () => {
     card.style.display = 'none';
-    // Re-fire the current skirmish with the same lobby settings
     if (typeof startNNSkirmish === 'function' && typeof _lobby !== 'undefined') {
       startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty, _lobby.weapon, null, lastMode);
     } else {
       returnToNNLobby();
     }
   };
-  if (lobbyBtn) lobbyBtn.onclick = () => {
+  const backToLobby = () => {
     card.style.display = 'none';
     returnToNNLobby();
   };
+  if (againBtn) againBtn.onclick = playAgain;
+  if (lobbyBtn) lobbyBtn.onclick = backToLobby;
+  // Keyboard shortcuts while the end-card is up:
+  //   ENTER / SPACE  → play again (default action — matches the red CTA)
+  //   ESC            → back to lobby
+  // Bound to document so it fires regardless of which element has focus.
+  // We unbind on dismissal so leaving the card doesn't leak the listener.
+  if (showNNEndCard._keyHandler) {
+    document.removeEventListener('keydown', showNNEndCard._keyHandler);
+  }
+  showNNEndCard._keyHandler = (e) => {
+    if (card.style.display !== 'flex') return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      document.removeEventListener('keydown', showNNEndCard._keyHandler);
+      showNNEndCard._keyHandler = null;
+      playAgain();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      document.removeEventListener('keydown', showNNEndCard._keyHandler);
+      showNNEndCard._keyHandler = null;
+      backToLobby();
+    }
+  };
+  document.addEventListener('keydown', showNNEndCard._keyHandler);
+  // Also surface the shortcut hints in the buttons themselves (subtle,
+  // small monospace appended) so the player learns them without a tooltip.
+  if (againBtn && !againBtn._labeled) {
+    const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
+    againBtn.innerHTML = (lang === 'zh' ? '再玩 ▶' : 'PLAY AGAIN ▶') +
+                         '<span style="font:9px monospace; opacity:0.7; margin-left:6px;">[ENTER]</span>';
+    againBtn._labeled = true;
+  }
+  if (lobbyBtn && !lobbyBtn._labeled) {
+    const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
+    lobbyBtn.innerHTML = (lang === 'zh' ? '回大廳' : 'LOBBY') +
+                         '<span style="font:9px monospace; opacity:0.7; margin-left:6px;">[ESC]</span>';
+    lobbyBtn._labeled = true;
+  }
   card.style.display = 'flex';
 }
 
