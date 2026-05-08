@@ -16219,6 +16219,41 @@ function drawMinimapPanel(mx, my, mw, mh) {
       ctx.fillRect(wx(lm.x) - w/2, wy(lm.y) - h/2, w, h);
     }
   }
+  // Mission objectives — drawn BEFORE allies/player so they sit visually
+  // 'under' the moving units. Yellow ring = active objective. Without this
+  // the minimap had no indication of where the relay / hive / UGV / capture
+  // zones live, so players got disoriented (user report: '中繼站遊戲中心
+  // 卻是在地圖外'). The objective lives at world center but is invisible
+  // on the minimap unless we draw it explicitly.
+  if (typeof collectMissionWaypoints === 'function') {
+    const waypoints = collectMissionWaypoints();
+    for (const wp of waypoints) {
+      const dx = wx(wp.x), dy = wy(wp.y);
+      // Pulse so it's visually distinct from buildings/landmarks
+      const pulse = 0.6 + 0.4 * Math.sin(game.time * 0.08);
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = wp.color || COLORS.red;
+      ctx.beginPath();
+      ctx.arc(dx, dy, 5, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(dx, dy, 5, 0, Math.PI*2);
+      ctx.stroke();
+      // Outer glow ring (always visible, no pulse)
+      ctx.strokeStyle = wp.color || COLORS.red;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.arc(dx, dy, 9, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+  }
   // Allies (cream squares)
   for (const a of allies) {
     if (!a.alive) continue;
