@@ -1161,7 +1161,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 
     <div class="footer-bar">
       <span><span class="day-chip" id="dayChip">DAY 14</span><span class="day-chip" id="cycleChip" style="background:#1a1a1a; color:var(--cream); margin-right:8px;">CYCLE #347</span><span class="day-chip" id="moteChip" style="background:#3a3a3a; color:var(--cream); margin-right:8px;">MOTE 50%</span><span id="startStatsLine">VECTOR-7 · OBJECTIVE AUDITOR</span></span>
-      <span><span id="nextUnlockHint" style="margin-right:8px; opacity:0.55; letter-spacing:1px; font-size:10px;"></span><button class="footer-link" id="unlockAllBtn" style="display:none; margin-right:14px;">SKIP ALL ▶</button><span style="opacity:0.55; font-size:10px;">建议 1080p+ 全屏体验</span></span>
+      <span><span id="nextUnlockHint" style="margin-right:8px; opacity:0.55; letter-spacing:1px; font-size:10px;"></span><button class="footer-link" id="unlockAllBtn" style="display:none; margin-right:14px;">SKIP ALL ▶</button><span id="resHint" style="opacity:0.55; font-size:10px;">建议 1080p+ 全屏体验</span></span>
     </div>
   </div>
 </div>
@@ -2922,6 +2922,7 @@ const I18N = {
   '#nnBtn > div:nth-child(1) > span:first-child':       { zh: 'A1 · 快速對戰', en: 'A1 · QUICK PLAY' },
   '#nnBtn > div:nth-child(2)':                          { zh: '遭遇戰 SKIRMISH ▶', en: 'SKIRMISH ▶' },
   '#skirmishHint':                                      { zh: 'PvAI · 7 種模式 · 雙方都用 NN · 自選陣容', en: 'PvAI · 7 modes · NN both teams · pick lineup' },
+  '#resHint':                                           { zh: '建議 1080p+ 全屏體驗', en: '1080p+ fullscreen recommended' },
   '#campaignBtn > div:nth-child(1) > span:first-child': { zh: 'A2 · 故事', en: 'A2 · STORY' },
   '#campaignBtn > div:nth-child(2)':                    { zh: '戰役 CAMPAIGN', en: 'CAMPAIGN' },
   '#campaignHint':                                      { zh: '6 個手工關卡 · 護送 · 突破 · 蜂巢 · 中繼', en: '6 hand-crafted missions · escort · breach · hive · relay' },
@@ -5055,7 +5056,23 @@ window.addEventListener('keydown', e => {
     else if (e.key >= '1' && e.key <= '6') {
       if (game._nnMode) {
         const allyIdx = parseInt(e.key) - 2;   // '2' → ally[0], etc.
-        if (allyIdx >= 0 && allyIdx < allies.length) swapPlayerToAlly(allyIdx);
+        if (allyIdx >= 0 && allyIdx < allies.length) {
+          swapPlayerToAlly(allyIdx);
+        } else if (e.key === '1') {
+          // '1' is reserved for self in this layout (2→ally[0], 3→ally[1]…),
+          // so a bare '1' would otherwise silently no-op. Surface a one-line
+          // hint so the player learns the TAB+1 squad-order path instead of
+          // assuming the keys are broken. ('按下tab 123無反饋' report.)
+          if (typeof showSwapToast === 'function') {
+            showSwapToast(T('1 = 自己 · 按 TAB 後 1 → 集合', '1 = SELF · press TAB then 1 to RALLY'));
+          }
+        } else if (allyIdx >= allies.length) {
+          // Index past the end of the lineup — no such ally slot. Tell them
+          // instead of silently dropping the keypress.
+          if (typeof showSwapToast === 'function') {
+            showSwapToast(T(`沒有 ${e.key} 號隊友`, `No ally in slot ${e.key}`));
+          }
+        }
       } else {
         const idx = parseInt(e.key);
         if (idx <= MISSIONS.length) {
