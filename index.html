@@ -5004,7 +5004,24 @@ window.addEventListener('keydown', e => {
   if (game.state === 'playing') {
     if (k === 'q') toggleDrone();
     else if (k === 'e') launchFPV();
-    else if (k === 'tab') { e.preventDefault(); game.mode = (game.mode === 'command') ? 'tactical' : 'command'; }
+    else if (k === 'tab') {
+      e.preventDefault();
+      // Toggle COMMAND ↔ TACTICAL. Earlier this was silent — user
+      // pressed TAB and the mode swapped, the squad strip drew at
+      // the bottom of the screen, but with no toast/beep many users
+      // didn't realise anything happened. Now we surface a toast +
+      // a beep so the mode change is unambiguous.
+      game.mode = (game.mode === 'command') ? 'tactical' : 'command';
+      const inCmd = (game.mode === 'command');
+      if (typeof showSwapToast === 'function') {
+        showSwapToast(inCmd
+          ? T('▶ 指令模式 · 1-7 下令', '▶ COMMAND MODE · 1-7 to order')
+          : T('◀ 戰術視角', '◀ TACTICAL VIEW'));
+      }
+      if (typeof playRadioBeep === 'function') {
+        playRadioBeep(inCmd ? 1320 : 660, 0.10);
+      }
+    }
     else if (k === 'r') startReload();
     else if (k === 'g') throwGrenade();
     else if (k === 'b') toggleBuildMode();
@@ -8269,10 +8286,14 @@ function nnApplyAction(unit, action, friendlies, enemies) {
   let moveDir = action >> 1;        // 0..8
   let fire = action & 1;            // 0|1
 
-  // Squad order override — only allies (units that share friendlies with the
-  // human player). We post-process the NN's chosen action: bias movement
-  // toward the order, force fire on SUPPRESS, leave fire/no-fire for NN.
-  if (_squadOrderActive() && friendlies && friendlies.indexOf(player) >= 0 && unit !== player) {
+  // Squad order override — only player-team NN allies. Old check was
+  // `friendlies.indexOf(player) >= 0` which looked right but the player
+  // is NEVER pushed to `allies` (allies = NN companions only, player is
+  // its own slot), so the check ALWAYS returned false → squad orders
+  // were dead code, allies ignored every TAB+1-7 input. User report:
+  // '隊友無隨指令行動'. Fix: directly test whether unit is in the
+  // global `allies` array.
+  if (_squadOrderActive() && allies.indexOf(unit) >= 0 && unit !== player) {
     const orderId = game._squadOrder.id;
     const orderDir = _squadOrderMoveDirFor(unit, friendlies, enemies, orderId);
     if (orderDir != null) moveDir = orderDir;
