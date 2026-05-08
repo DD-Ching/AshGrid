@@ -1,11 +1,11 @@
 # 上架路線圖 / RELEASE ROADMAP
 
-最後更新:2026-05-06(進化到 14 模塊 Defense + CQB 模型 + 全套 game-feel)。我自主執行 — 進度在 commits、需你動作的標 🔑。
+最後更新:2026-05-08(16 模塊 Defense + 6 NN 風格 + 完整觸控 + cursor/shake/squad/editor 修穩)。我自主執行 — 進度在 commits、需你動作的標 🔑。
 
 ## 階段 0:現況
-- ✅ 核心玩法穩定(NN tier × 5、aim-assist、pawn-swap、5 模式 ×16+ 地圖)
-- ✅ 桌面瀏覽器體驗完整
-- ❌ 手機不能玩 — 是上架最大障礙
+- ✅ 核心玩法穩定(6 NN 風格、aim-assist、pawn-swap、7 模式、21 NN 地圖變體 + 5 戰役地圖)
+- ✅ 桌面 + 手機瀏覽器體驗完整
+- ✅ PWA 可安裝,offline 玩(SW 預快取所有 brain)
 
 ## 階段 1:手機可玩(我先做)
 - [x] 觸控操作(雙搖桿 + 自動射擊預設 ON)— 45822da
@@ -46,7 +46,7 @@
 - [x] Defense 獨立排行榜(與 Survival 分桶)— 下一個 commit
 - 隊伍人數上限 4 → 8
 
-**階段 2c 完成 ✅**(14 模塊 / 5 NN 風格 / 完整觸控)
+**階段 2c 完成 ✅**(16 模塊 / 6 NN 風格 / 完整觸控)
 
 ## 階段 3:Stub 接點(我寫好,你補帳號)
 - [x] AdMob rewarded-ad interface — 746ed8d(stub `requestRewardedAd(id, cb)`)

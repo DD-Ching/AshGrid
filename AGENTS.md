@@ -4,7 +4,7 @@ This file is read first by Claude Code (and any compatible coding agent)
 working in this repo. Treat it as authoritative.
 
 ## Project at a glance
-- Single-file HTML5 game: `index.html` (~14k lines, no build system)
+- Single-file HTML5 game: `index.html` (~17k lines, no build system)
 - Static assets: `ai_arena/onnx/*.onnx` (PPO inference brains), images,
   `manifest.webmanifest`, `sw.js`
 - AI training notebooks: `ai_arena/*.ipynb` (run on Kaggle)

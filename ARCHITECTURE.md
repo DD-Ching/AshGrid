@@ -1,7 +1,11 @@
 # AshGrid 遊戲架構 / GAME ARCHITECTURE
 
-最後更新:2026-05-06。範圍:整個 `index.html` 約 13K 行 + ONNX 模型 + PWA 殼。
+最後更新:2026-05-08。範圍:整個 `index.html` 約 17K 行 + ONNX 模型 + PWA 殼。
 中英對照:每節中文標題後括號是英文錨點,方便 grep。
+
+> ⚠️ Section 3 的行號表是舊的快照(`index.html` 已從 ~13K 增長到 ~17K)。
+> 用作粗略導航即可,精確位置請 grep `// ========`、結構名(`STRUCTURE_DEFS`、
+> `MISSION_FACTORIES.X`、`nnTick`、`recomputePowerGrid` …)定位。
 
 ---
 
@@ -10,9 +14,9 @@
 AshGrid 是**單檔 HTML5 遊戲**(無打包工具),核心是 60FPS 的 2D 俯視戰術射擊。
 特色三層:
 
-1. **NN 對抗** — PPO 訓練的 ONNX 模型驅動敵我雙方,5 種風格(elite/warrior/defensive/sharpshooter/cqb),客戶端 ort.js 推論。
-2. **建造系統** — 16 種模塊(掩體三階梯 / 自動炮塔 / 特斯拉 / EMP / 醫療 / 蜂群 / 終端 ...),所有 NN 模式都可邊打邊建。
-3. **5 種模式 + 16 張地圖** — DM / Survival / Defense / Helo Extract / Convoy(+ Duel/Sniper 變體),NN 模式共用同一個 mission factory pattern。
+1. **NN 對抗** — PPO 訓練的 ONNX 模型驅動敵我雙方,6 種風格(elite/warrior/defensive/sharpshooter/cqb/tactical;tactical 暫 fallback 到 elite 權重),客戶端 ort.js 推論。
+2. **建造系統** — 16 種模塊(掩體三階梯 / 自動炮塔 / 特斯拉 / EMP / 醫療 / 蜂群 / 終端 / 機器人 / 哨點 ...),所有 NN 模式都可邊打邊建。發電機 200u 範圍 + 牆線 BFS 連鎖供電。
+3. **7 NN 模式 + 6 戰役任務** — Skirmish 走 NN 對抗 (DM / Survival / Defense / Helo / Convoy / Duel / Sniper),Campaign 6 關走手工任務工廠;NN 地圖變體有 21 個 + 玩家自製 slot。
 
 部署目標:**itch.io / 自建 web → PWA → 之後 Play Store**。零後端目前(Firebase / AdMob 是 stub)。
 
