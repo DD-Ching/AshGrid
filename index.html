@@ -10452,14 +10452,16 @@ function drawDefenseStatusPill() {
   ctx.strokeStyle = COLORS.cream;
   ctx.lineWidth = 1.5;
   ctx.strokeRect(x, y, pillW, pillH);
-  // Label + cost
+  // Label + cost / current — '30⚡ / 47⚡' so the player can read both
+  // the price and their wallet without glancing at the mission HUD.
   ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 12px sans-serif';
   ctx.textAlign = 'left';
   ctx.fillText(`${def.label()}`, x + 12, y + 16);
   ctx.font = '9px monospace';
   ctx.fillStyle = can ? '#FFD24A' : COLORS.gray;
-  ctx.fillText(`${def.cost}⚡`, x + 12, y + 30);
+  const cur = Math.floor(game._energy || 0);
+  ctx.fillText(`${def.cost}⚡ / ${cur}⚡`, x + 12, y + 30);
   // Hint right-aligned
   ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 10px sans-serif';
