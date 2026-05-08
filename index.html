@@ -13152,19 +13152,18 @@ function updateBullets() {
         spawnDamagePopup(e.x, e.y - 14, b.damage, isKill);
         if (isKill) {
           e.alive = false; game.score += 100; game.killCount++;
-          // Kill SFX intentionally removed — explosion + popup carry the feedback.
+          // Kill SFX + ally-kill radio callout BOTH removed on user request
+          // ('移除擊殺音效!!!', third escalation). The radio callout was the
+          // 'ding-dong' the user kept hearing — showRadioToast plays a 2-tone
+          // beep (1320 + 880 Hz, 70 ms apart) and the cooldown key was bugged
+          // anyway: 'killcall_' + cs + '_' + game.time made the key unique
+          // every tick so the 0.5s rate-limit never engaged. Result: every
+          // ally kill in a firefight fired another ding-dong on top of the
+          // last. Now: silence on kill. Visual feedback only — explosion
+          // VFX, damage popup (isKill=true → bigger red), score bump,
+          // killCount tick. KIA + hurt callouts on FRIENDLY losses still
+          // fire (different cooldown keys, those work correctly).
           createExplosion(e.x, e.y, 'small');
-          // Squad kill callout — when an ally got the kill, the player
-          // gets a brief radio toast naming who took out who. Filtered
-          // by cooldown + only fires when the kill came from a friendly
-          // (b.fromAlly) so the player's own kills stay quiet here.
-          if (b.fromAlly && b.fromUnit && b.fromUnit.callsign) {
-            const cs = b.fromUnit.callsign;
-            const tgt = e.callsign || _r('紅軍', 'RED');
-            _radioOnce('killcall_' + cs + '_' + game.time, 0.5,
-              _r('小隊', 'SQUAD'),
-              _r(`"${cs} 擊落 ${tgt}"`, `"${cs} dropped ${tgt}"`));
-          }
           // Kill streak — chain kills within 4s bump the counter
           const KS_WINDOW = 240;
           const last = player._lastKillTick || -9999;
