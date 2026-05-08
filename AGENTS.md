@@ -10,7 +10,7 @@ working in this repo. Treat it as authoritative.
 - AI training notebooks: `ai_arena/*.ipynb` (run on Kaggle)
 - Local preview server: Python `http.server` on port **8765**, launched
   via `.claude/launch.json` (`name: static`)
-- Live URL: http://localhost:8765/index.html
+- Live URL: **http://localhost:8765/** (NOT `/index.html`)
 
 ## End-of-turn restart block — REQUIRED on every reply that touches
 runnable code or affects the live preview
@@ -24,19 +24,39 @@ must:
 2. `cd` into the working tree (`/Users/ddh/Downloads/AshGrid` or the
    active worktree under `.claude/worktrees/`)
 3. Start a fresh `python3 -m http.server 8765` in the background
-4. Open the URL: `open http://localhost:8765/index.html` (macOS)
+4. Open the URL: `open http://localhost:8765/` (macOS) — **bare domain
+   only, no `/index.html` suffix**. The reason: the preview tool's
+   headless browser navigates to `/` (Python's http.server serves
+   index.html as the default), so my evaluations and the user's view
+   are guaranteed to land on the same `location.pathname` (`/`).
+   `index.html` resolves to the same file but produces a *different*
+   `location.pathname`, which causes my `?cb=` reload trick to
+   redirect to a different URL than what the user is currently on.
+   Same file, but the view-state divergence has bitten verification
+   passes more than once.
 
-Plus a clickable URL on its own line right after the block.
+Plus a clickable URL on its own line right after the block — also
+the bare domain.
 
 Format example:
 
 ```
-lsof -ti:8765 | xargs kill -9 2>/dev/null; cd /Users/ddh/Downloads/AshGrid && python3 -m http.server 8765 >/dev/null 2>&1 & sleep 0.4 && open http://localhost:8765/index.html
+lsof -ti:8765 | xargs kill -9 2>/dev/null; cd /Users/ddh/Downloads/AshGrid && python3 -m http.server 8765 >/dev/null 2>&1 & sleep 0.4 && open http://localhost:8765/
 ```
-http://localhost:8765/index.html
+http://localhost:8765/
 
 If the change is purely docs-only with no runnable component, the
 block can be skipped — but state that explicitly.
+
+### Verification ≠ user view
+
+The preview tool runs its OWN headless Chrome instance. It does NOT
+share `localStorage`, viewport size, or cache state with the user's
+browser. When verifying language/layout/state-dependent UI, drive
+the test through `?reset=stats` (or `?reset=1` for full wipe) to
+match what a fresh-launch user would see, AND test in both `setLang('zh')`
+and `setLang('en')`. Don't rely on the preview's current state being
+representative — it's whatever the previous turn left it in.
 
 ## State / unlocks
 
