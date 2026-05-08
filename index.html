@@ -4753,11 +4753,11 @@ function playPositionalSound(sx, sy, intensity, kind = 'shot', isSelf = false, p
 
 // Generic synthesized SFX (hit/death/respawn/reload/whiz/countdown).
 // Lighter weight than playPositionalSound — single oscillator + envelope.
-// Per-name SFX cooldowns — kill_confirm in particular was stacking
-// 5+ overlapping bandpass sweeps during a streak, which the user
-// reported as 'too loud, uncomfortable'. 8-frame floor keeps the
-// kill register punchy without piling up.
-const _SFX_COOLDOWN = { kill_confirm: 8 };
+// Per-name SFX cooldowns — kept around as a generic floor mechanism.
+// Empty by default; populate when a future preset starts piling up
+// (kill_confirm used to be in here at 8 ticks before the preset was
+// removed entirely on user request — '把那個叮咚鈴聲移除').
+const _SFX_COOLDOWN = {};
 const _sfxLastTick = {};
 function _sfxAllowed(name) {
   const cd = _SFX_COOLDOWN[name];
@@ -4785,12 +4785,12 @@ function playSfx(name, opts = {}) {
     crack:        { freq: 5800, dur: 0.04, decay: 50, type: 'bandpass', vol: 0.34, q: 18 },
     countdown:    { freq:  660, dur: 0.10, decay: 22, type: 'bandpass', vol: 0.30, q: 8 },
     // New presets
-    // kill_confirm: pure sine "tick" — earlier preset was bandpass-filtered
-    // noise at vol 0.45 which the user reported as 'too loud, ugly, jarring'.
-    // Sine tone is cleaner; lower vol (0.18) sits behind the muzzle/death
-    // SFX without dominating; dur 0.08 means even rapid streak kills don't
-    // pile up. The cooldown (8 ticks) still applies on top.
-    kill_confirm: { freq: 1320, dur: 0.08, decay: 26, type: 'lowpass',  vol: 0.18, sweepTo: 1980, q: 1, wave: 'sine' },
+    // kill_confirm: REMOVED on user request ('擊殺音效還在!!!把那個叮咚
+    // 鈴聲移除!!!'). Tried bandpass-noise sweep, then sine sweep at lower
+    // volume — both rejected. Kill feedback now comes purely from the
+    // explosion VFX + damage popup. If a kill audio cue is ever needed
+    // again, do NOT use the kill_confirm preset name (it's been burnt) —
+    // start clean and run it past the user before wiring callsites.
     empty_click:  { freq: 3200, dur: 0.04, decay: 50, type: 'bandpass', vol: 0.28, q: 10 },                 // dry click
     lowhp:        { freq:  120, dur: 0.16, decay:  6, type: 'lowpass',  vol: 0.35, sweepTo: 60   },         // heartbeat thump
     match_start:  { freq:  330, dur: 0.30, decay:  5, type: 'bandpass', vol: 0.55, sweepTo: 990,  q: 3 },   // long up-tone "begin"
@@ -4807,7 +4807,7 @@ function playSfx(name, opts = {}) {
   const buf = ctx.createBuffer(1, Math.max(64, Math.floor(ctx.sampleRate * dur)), ctx.sampleRate);
   const data = buf.getChannelData(0);
   // Two render modes:
-  //   wave: 'sine' → clean tonal sine sweep (kill_confirm, future chimes)
+  //   wave: 'sine' → clean tonal sine sweep (reserved for future chimes)
   //   default      → white noise + bandpass/lowpass filter for hits/clicks
   // The biquad still post-processes both — for sine that adds a soft
   // pre-delay roll-off, which actually rounds the attack nicely.
@@ -13027,7 +13027,8 @@ function detonateRocket(b) {
     e.hp -= dmg;
     if (e.hp <= 0 && e.alive) {
       e.alive = false; game.score += 100; game.killCount++;
-      createExplosion(e.x, e.y, 'small'); playSfx('kill_confirm');
+      // Kill SFX intentionally removed — explosion + popup carry the feedback.
+      createExplosion(e.x, e.y, 'small');
     }
   }
   // Enemy drones
@@ -13113,7 +13114,8 @@ function updateBullets() {
         spawnDamagePopup(e.x, e.y - 14, b.damage, isKill);
         if (isKill) {
           e.alive = false; game.score += 100; game.killCount++;
-          createExplosion(e.x, e.y, 'small'); playSfx('kill_confirm');
+          // Kill SFX intentionally removed — explosion + popup carry the feedback.
+          createExplosion(e.x, e.y, 'small');
           // Squad kill callout — when an ally got the kill, the player
           // gets a brief radio toast naming who took out who. Filtered
           // by cooldown + only fires when the kill came from a friendly
@@ -13186,7 +13188,7 @@ function updateBullets() {
       if (!d.alive) continue;
       if (Math.hypot(b.x-d.x, b.y-d.y) < d.radius) {
         d.hp -= b.damage;
-        if (d.hp <= 0) { d.alive = false; game.score += 150; game.killCount++; createExplosion(d.x, d.y, 'small'); playSfx('kill_confirm'); }
+        if (d.hp <= 0) { d.alive = false; game.score += 150; game.killCount++; createExplosion(d.x, d.y, 'small'); /* kill SFX removed */ }
         hit = true; break;
       }
     }
