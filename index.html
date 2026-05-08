@@ -13229,6 +13229,8 @@ function renderStructures() {
     } else if (s.kind === 'bunker') {
       // Armored bunker — dark fill + diagonal cross-hatch + thick border to
       // sell its tanky 260-HP feel.
+      ctx.fillStyle = COLORS.creamDark;
+      ctx.fillRect(s.x - r + 4, s.y - r + 4, def.size, def.size);   // shadow
       ctx.fillStyle = '#3A3F4A';
       ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
       ctx.strokeStyle = COLORS.black;
@@ -13275,19 +13277,46 @@ function renderStructures() {
         ctx.stroke();
       }
     } else if (s.kind === 'generator') {
+      // Power reach — faint dashed ring at powerR so the player can see
+      // 'this is the area my generator covers' BEFORE placing turrets/
+      // cameras. Ring intensifies briefly (1Hz pulse) to signal it's
+      // alive. Drawn FIRST so it sits behind the body.
+      const powerR = def.powerR || 200;
+      const ringPulse = 0.18 + 0.10 * Math.sin(game.time * 0.06);
+      ctx.globalAlpha = ringPulse;
+      ctx.strokeStyle = '#FFD24A';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, powerR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      // Drop-shadow + body — matches the wall-line aesthetic (4u SE)
       ctx.fillStyle = COLORS.creamDark;
+      ctx.fillRect(s.x - r + 4, s.y - r + 4, def.size, def.size);
+      ctx.fillStyle = '#1A1A1A';
       ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
-      ctx.strokeStyle = COLORS.black; ctx.lineWidth = 2;
+      ctx.strokeStyle = '#FFD24A'; ctx.lineWidth = 2;
       ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
-      // Pulsing core
+      // Pulsing core — vector lightning bolt instead of emoji
       const pulse = 0.4 + 0.4 * Math.sin(game.time * 0.15);
       ctx.fillStyle = `rgba(230, 200, 50, ${pulse})`;
       ctx.fillRect(s.x - 8, s.y - 8, 16, 16);
-      ctx.fillStyle = COLORS.black;
-      ctx.font = 'bold 10px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('⚡', s.x, s.y + 4);
-      ctx.textAlign = 'left';
+      ctx.strokeStyle = '#FFD24A';
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'miter';
+      ctx.beginPath();
+      ctx.moveTo(s.x - 4, s.y - 8);
+      ctx.lineTo(s.x + 1, s.y - 1);
+      ctx.lineTo(s.x - 2, s.y - 1);
+      ctx.lineTo(s.x + 4, s.y + 8);
+      ctx.lineTo(s.x - 1, s.y + 1);
+      ctx.lineTo(s.x + 2, s.y + 1);
+      ctx.closePath();
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fill();
+      ctx.stroke();
     } else if (s.kind === 'camera') {
       ctx.fillStyle = '#1A1A1A';
       ctx.beginPath();
@@ -13385,6 +13414,8 @@ function renderStructures() {
       ctx.globalAlpha = 1;
     } else if (s.kind === 'medstation') {
       // White cross on red diamond
+      ctx.fillStyle = COLORS.creamDark;
+      ctx.fillRect(s.x - r + 3, s.y - r + 3, def.size, def.size);   // shadow
       ctx.fillStyle = COLORS.cream;
       ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
       ctx.strokeStyle = COLORS.red;
