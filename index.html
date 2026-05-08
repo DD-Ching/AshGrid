@@ -5542,26 +5542,38 @@ function editorClear() {
   lowCovers.length = 0;
   editor.spawn = { blue: [], red: [] };
 }
-function editorTest() {
+async function editorTest() {
   editorSave();
   document.getElementById('editor').classList.add('hidden');
   // Read selected test mode from the toolbar dropdown
   let mode = 'dm';
   const sel = document.getElementById('edTestMode');
   if (sel && sel.value) mode = sel.value;
-  // Make sure 'custom' is in the picked mode's pool for the test run by
-  // tagging it temporarily
+  // Tag the custom variant with the picked mode so pickMapForMode includes it
+  // in the pool. (Doesn't matter much because _forceVariantId below short-
+  // circuits the pool, but kept for symmetry — in case any future code path
+  // re-enters pickMapForMode after we clear the flag.)
   const cv = NN_MAP_VARIANTS.find(v => v.id === 'custom');
-  const prevModes = cv.modes;
-  cv.modes = [mode];
-  // Force the custom variant by overriding Math.random for one match-start
-  const idx = NN_MAP_VARIANTS.findIndex(v => v.id === 'custom');
-  const _orig = Math.random;
-  if (idx >= 0) Math.random = () => idx / NN_MAP_VARIANTS.length + 0.0001;
-  // Sniper / duel / survival overrides team size + weapons inside
-  // startNNSkirmish; pass any default values for blue/red.
-  startNNSkirmish(3, 3, 'elite', 'RIFLE', null, mode);
-  setTimeout(() => { Math.random = _orig; cv.modes = prevModes; }, 800);
+  const prevModes = cv ? cv.modes : null;
+  if (cv) cv.modes = [mode];
+  // Force the CURRENT editor slot for the test run (instead of a random
+  // non-empty slot). User report: '測試地圖根本不是我畫的'.
+  const activeSlot = (typeof getActiveSlotData === 'function') ? getActiveSlotData() : null;
+  if (activeSlot) _forceCustomSlot = activeSlot;
+  // Force the custom variant via clean flag (replaces the old Math.random
+  // hack that broke when nnLoadAll cold-loaded ONNX brains for >800 ms,
+  // expiring the override before buildNNArenaVariant ran — that mismatch
+  // is why test runs sometimes loaded a totally different map).
+  _forceVariantId = 'custom';
+  // Await the full match-start so we don't clear the flags before
+  // buildNNArenaVariant has read them.
+  try {
+    await startNNSkirmish(3, 3, 'elite', 'RIFLE', null, mode);
+  } finally {
+    if (cv && prevModes) cv.modes = prevModes;
+    _forceCustomSlot = null;
+    _forceVariantId  = null;
+  }
 }
 // Wire toolbar
 document.querySelectorAll('#editor .ed-tool').forEach(btn => {
@@ -7869,14 +7881,18 @@ const NN_MAP_VARIANTS = [
   },
 ];
 
-// User-built map slot — randomly picks a non-empty slot from the 3-slot
-// customMaps store at variant-build time, so each match with the custom
-// variant rotates through whatever the player has saved.
+// User-built map slot — normally randomly picks a non-empty slot from the
+// 3-slot customMaps store, so each match with the custom variant rotates
+// through whatever the player has saved. The editor's TEST button overrides
+// this via _forceCustomSlot so 'TEST' always loads the slot the user is
+// currently editing, not a random other one (user report: '測試地圖根本不
+// 是我畫的').
 let _customPickCache = null;
+let _forceCustomSlot = null;     // {walls, spawn} — set by editorTest, cleared after match start
 NN_MAP_VARIANTS.push({
   id: 'custom', name: '玩家自制 CUSTOM',
   walls: () => {
-    _customPickCache = getAnyNonEmptyMap();   // share with spawn getter same call
+    _customPickCache = _forceCustomSlot || getAnyNonEmptyMap();
     return _customPickCache && Array.isArray(_customPickCache.walls) ? _customPickCache.walls : [];
   },
   get spawn() {
@@ -7889,7 +7905,16 @@ NN_MAP_VARIANTS.push({
 
 // Mode-aware variant pool. Variants without an explicit `modes` array
 // default to deathmatch only. Some variants tag multiple modes.
+// _forceVariantId, when set, skips the random roll and returns that
+// variant's index directly. Used by editorTest to guarantee the custom
+// variant gets picked even if NN loading takes longer than the previous
+// Math.random hack's 800 ms window.
+let _forceVariantId = null;
 function pickMapForMode(mode) {
+  if (_forceVariantId) {
+    const idx = NN_MAP_VARIANTS.findIndex(v => v.id === _forceVariantId);
+    if (idx >= 0) return idx;
+  }
   const hasSavedCustom = !!getAnyNonEmptyMap();
   // Backfill default tag for variants that don't declare modes. Custom
   // variant only joins the pool when the user has actually saved one.
