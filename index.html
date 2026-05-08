@@ -1124,6 +1124,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <button class="footer-link" id="replayIntroBtn">▶ INTRO</button>
       <button class="footer-link" id="controlsBtn">? CONTROLS</button>
       <button class="footer-link" id="settingsBtn">⚙ SETTINGS</button>
+      <button class="footer-link" id="devBtn" style="opacity:0.55;">⚡ DEV</button>
     </div>
 
     <!-- Controls drawer — collapsed by default. The user opens it from
@@ -1181,6 +1182,66 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     <div class="modal-body" id="achvBody"></div>
   </div>
 </div>
+
+<!-- Dev panel — bottom-of-the-list shortcut for resets / unlocks / stat
+     manipulation. Visible to everyone (no env-gated build), but the
+     button is opacity:0.55 so it doesn't compete with normal CTAs. -->
+<div class="modal-overlay" id="devModal" hidden>
+  <div class="modal-card" style="max-width: 560px;">
+    <div class="modal-tag">
+      <span id="devModalTitle">⚡ DEV PANEL</span>
+      <button class="modal-close" id="devCloseBtn">CLOSE</button>
+    </div>
+    <div class="modal-body" id="devBody" style="padding: 22px 28px;">
+      <div id="devStatusLine" style="font: 11px monospace; color: var(--gray); letter-spacing: 1.5px; margin-bottom: 18px; padding: 10px 14px; background: var(--cream-dark); border-left: 3px solid var(--red);"></div>
+
+      <div class="dev-sect">
+        <div class="dev-h">UNLOCK</div>
+        <div class="dev-row">
+          <button class="dev-btn" id="devUnlockAll">✓ UNLOCK ALL</button>
+          <button class="dev-btn" id="devGated">▾ TUTORIAL MODE</button>
+        </div>
+      </div>
+
+      <div class="dev-sect">
+        <div class="dev-h">PROGRESSION</div>
+        <div class="dev-row">
+          <button class="dev-btn" id="devBump1">+1 MATCH</button>
+          <button class="dev-btn" id="devBump5">+5 MATCHES</button>
+          <button class="dev-btn" id="devDay5">DAY +5</button>
+          <button class="dev-btn" id="devDay30">DAY → 30</button>
+        </div>
+      </div>
+
+      <div class="dev-sect">
+        <div class="dev-h">RESET</div>
+        <div class="dev-row">
+          <button class="dev-btn" id="devResetStats">RESET STATS</button>
+          <button class="dev-btn" id="devResetHints">RESET HINTS</button>
+          <button class="dev-btn dev-btn-red" id="devFactory">⚠ FACTORY RESET</button>
+        </div>
+      </div>
+
+      <div class="dev-sect">
+        <div class="dev-h">JUMP</div>
+        <div class="dev-row">
+          <button class="dev-btn" id="devCheats">GOD MODE (toggle)</button>
+          <button class="dev-btn" id="devOpenURL">RESET URL FLAGS</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+  .dev-sect { margin-bottom: 16px; }
+  .dev-h { font: bold 9px monospace; letter-spacing: 4px; color: var(--red); margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--cream-dark); }
+  .dev-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dev-btn { font: bold 10px monospace; letter-spacing: 2px; padding: 7px 12px; background: var(--black); color: var(--cream); border: none; cursor: pointer; transition: background 0.1s; }
+  .dev-btn:hover { background: var(--red); }
+  .dev-btn-red { background: var(--red); }
+  .dev-btn-red:hover { background: #8a1a14; }
+  .dev-btn.on { background: var(--red); }
+</style>
 
 <!-- Settings modal — real toggles for audio / aim-assist / tutorial mode,
      plus a 'Coming Soon' section with locked rows so the menu has a
@@ -2502,6 +2563,7 @@ const I18N = {
   '#replayIntroBtn':                 { zh: '▶ 開場 INTRO', en: '▶ INTRO' },
   '#controlsBtn':                    { zh: '? 操作', en: '? CONTROLS' },
   '#settingsBtn':                    { zh: '⚙ 設定', en: '⚙ SETTINGS' },
+  '#devBtn':                         { zh: '⚡ 開發者', en: '⚡ DEV' },
   '#settingsModalTitle':             { zh: '設定 / SETTINGS', en: 'SETTINGS' },
   '#settingsMuteLabel':              { zh: '靜音 · Mute', en: 'Mute · 靜音' },
   '#settingsAimAssistLabel':         { zh: '自動瞄準 · Aim Assist', en: 'Aim Assist · 自動瞄準' },
@@ -4902,6 +4964,89 @@ document.querySelectorAll('#settingsModal .settings-row-locked').forEach(row => 
     if (typeof showSwapToast === 'function') showSwapToast(msg);
   };
 });
+// ---------- DEV PANEL ----------
+const _devBtn   = document.getElementById('devBtn');
+const _devModal = document.getElementById('devModal');
+const _devClose = document.getElementById('devCloseBtn');
+function _refreshDevStatus() {
+  const el = document.getElementById('devStatusLine');
+  if (!el) return;
+  const stats = (typeof getGlobalStats === 'function') ? getGlobalStats() : { matchesPlayed: 0, totalKills: 0, bestSurvivalWave: 0 };
+  const day   = (typeof getDayNum === 'function') ? getDayNum() : 14;
+  const tier  = (typeof getUnlockTier === 'function') ? getUnlockTier() : 0;
+  const unlocked = (typeof isAllUnlocked === 'function') ? isAllUnlocked() : true;
+  const hints = (() => { try { return JSON.parse(localStorage.getItem('ag.hintsSeen') || '[]').length; } catch (e) { return 0; } })();
+  el.textContent =
+    `MATCHES ${stats.matchesPlayed}  ·  KILLS ${stats.totalKills}  ·  W${stats.bestSurvivalWave || 0}  ·  ` +
+    `DAY ${day}  ·  TIER ${tier}  ·  UNLOCK ${unlocked ? 'ALL' : 'GATED'}  ·  HINTS ${hints}`;
+  // Sync the toggle button highlights
+  const u = document.getElementById('devUnlockAll');
+  const g = document.getElementById('devGated');
+  if (u) u.classList.toggle('on', unlocked);
+  if (g) g.classList.toggle('on', !unlocked);
+}
+function _devReload() { setTimeout(() => location.reload(), 80); }
+if (_devBtn) _devBtn.onclick = () => {
+  if (_devModal) { _refreshDevStatus(); _devModal.removeAttribute('hidden'); }
+};
+if (_devClose) _devClose.onclick = () => _devModal && _devModal.setAttribute('hidden', '');
+if (_devModal) _devModal.onclick = (e) => { if (e.target === _devModal) _devModal.setAttribute('hidden', ''); };
+const _devActions = {
+  devUnlockAll:   () => { setUnlockAll(true);  _refreshDevStatus(); showSwapToast('✓ UNLOCK ALL'); },
+  devGated:       () => { setUnlockAll(false); _refreshDevStatus(); showSwapToast('▾ TUTORIAL MODE ON'); },
+  devBump1:       () => { bumpMatchPlayed(); _refreshDevStatus(); showSwapToast('+1 MATCH'); },
+  devBump5:       () => { for (let i = 0; i < 5; i++) bumpMatchPlayed(); _refreshDevStatus(); showSwapToast('+5 MATCHES'); },
+  devDay5:        () => {
+    const n = getDayNum() + 5;
+    try { localStorage.setItem('ag.dayNum', String(n)); } catch (e) {}
+    const chip = document.getElementById('dayChip');
+    if (chip) chip.textContent = `DAY ${n}`;
+    _refreshDevStatus(); showSwapToast(`DAY → ${n}`);
+  },
+  devDay30:       () => {
+    try { localStorage.setItem('ag.dayNum', '30'); } catch (e) {}
+    const chip = document.getElementById('dayChip');
+    if (chip) chip.textContent = 'DAY 30';
+    _refreshDevStatus(); showSwapToast('DAY → 30');
+  },
+  devResetStats:  () => {
+    if (!window.confirm('Reset stats / day / leaderboards / achievements? (keeps callsign + unlock pref)')) return;
+    ['ag.stats','ag.dayNum','ag.survivalScores','ag.defenseScores','ag.achievements','ag.lobbyConfig'].forEach(k => {
+      try { localStorage.removeItem(k); } catch (e) {}
+    });
+    _devReload();
+  },
+  devResetHints:  () => {
+    try { localStorage.removeItem('ag.hintsSeen'); localStorage.removeItem('ag.firstMatch'); } catch (e) {}
+    _refreshDevStatus(); showSwapToast('HINTS RESET');
+  },
+  devFactory:     () => {
+    if (!window.confirm('FACTORY RESET — wipe every ag.* key including callsign? This is undo-able.')) return;
+    try {
+      for (const k of Object.keys(localStorage)) if (k.startsWith('ag.')) localStorage.removeItem(k);
+    } catch (e) {}
+    _devReload();
+  },
+  devCheats:      () => {
+    game._godMode = !game._godMode;
+    if (game._godMode) {
+      player._invulnUntil = 1e12;   // effectively forever
+      showSwapToast('GOD MODE ON');
+    } else {
+      player._invulnUntil = 0;
+      showSwapToast('GOD MODE OFF');
+    }
+  },
+  devOpenURL:     () => {
+    const u = new URL(location.href);
+    u.search = ''; u.hash = '';
+    location.replace(u.toString());
+  },
+};
+for (const [id, fn] of Object.entries(_devActions)) {
+  const btn = document.getElementById(id);
+  if (btn) btn.onclick = fn;
+}
 const _campaignBtn = document.getElementById('campaignBtn');
 if (_campaignBtn) _campaignBtn.onclick = () => {
   // Hide both lobbies before kicking the campaign — startGame() only hides
