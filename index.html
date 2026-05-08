@@ -11001,16 +11001,30 @@ function spawnSoldierAt(x, y) {
 
 // Shared HUD helper for the objective panel (used by every mission renderHUD)
 function drawObjectivePanel(lines) {
-  const w = 280, h = 30 + lines.length * 16;
+  const w = 300, h = 36 + lines.length * 17;
   const x = W()/2 - w/2, y = 54;
   drawHUDPanel(x, y, w, h, null);
+  // Header row: 'MSN' tag chip + mission title in red caps + thin red
+  // hairline underneath separating header from data.
   ctx.fillStyle = COLORS.red;
+  ctx.fillRect(x + 10, y + 8, 28, 12);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('MSN', x + 24, y + 17);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = COLORS.black;
   ctx.font = 'bold 11px sans-serif';
-  ctx.fillText(`${T('任务', 'MISSION')} · ${missionTitle(mission)}`, x + 10, y + 18);
+  const title = (missionTitle(mission) || '').toUpperCase();
+  ctx.fillText(title, x + 46, y + 17);
+  // Hairline separator
+  ctx.fillStyle = 'rgba(26, 26, 26, 0.18)';
+  ctx.fillRect(x + 10, y + 26, w - 20, 1);
+  // Body lines — monospace, slight extra leading
   ctx.fillStyle = COLORS.black;
   ctx.font = '10px monospace';
   for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], x + 10, y + 32 + i*15);
+    ctx.fillText(lines[i], x + 10, y + 40 + i * 16);
   }
 }
 
@@ -13466,29 +13480,43 @@ function renderStructures() {
       ctx.fillStyle = s.hp / s.maxHp > 0.4 ? '#3FE63F' : COLORS.red;
       ctx.fillRect(bx, by, bw * s.hp / s.maxHp, bh);
     }
-    // 'NO POWER' indicator — small monospace red chip above unpowered
-    // modules so the player can quickly find the orphaned ones.
+    // 'NO PWR' indicator — proper red pill with cream text. The chip
+    // sits above the module by a margin proportional to its radius, so
+    // big modules (terminal r=25) and tiny ones (camera r=20) all
+    // get a chip that doesn't overlap the body.
     if (def.needsPower && !s._powered) {
       ctx.globalAlpha = 1;
+      const txt = '⚡ NO PWR';
+      ctx.font = 'bold 9px monospace';
+      const tw = ctx.measureText(txt).width;
+      const cw = tw + 12, ch = 14;
+      const cx = s.x - cw / 2, cy = s.y - r - ch - 4;
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(cx + 2, cy + 2, cw, ch);              // drop-shadow
       ctx.fillStyle = COLORS.red;
-      ctx.font = 'bold 8px monospace';
+      ctx.fillRect(cx, cy, cw, ch);                      // body
+      ctx.fillStyle = COLORS.cream;
       ctx.textAlign = 'center';
-      ctx.fillText('⚡ NO PWR', s.x, s.y - r - 14);
+      ctx.fillText(txt, s.x, cy + 10);
       ctx.textAlign = 'left';
     }
-    // Tier badge — Roman numeral II / III stamped at upper-right of the
-    // module. Tier 1 (default) is implicit (no badge).
+    // Tier badge — clean red square with cream Roman numeral, centred
+    // at the module's upper-right with a black drop-shadow that gives
+    // it a stamped-on-armor feel rather than a sticker.
     if ((s.tier || 1) > 1) {
       const t = s.tier;
       const tier = UPGRADE_TIERS[t];
       ctx.globalAlpha = 1;
-      const bx = s.x + r * 0.7, by = s.y - r * 0.9;
+      const bx = s.x + r * 0.7, by = s.y - r * 0.85;
+      const bw = 18, bh = 16;
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(bx - bw/2 + 2, by - bh/2 + 2, bw, bh);   // shadow
       ctx.fillStyle = COLORS.red;
-      ctx.fillRect(bx - 8, by - 7, 16, 14);
+      ctx.fillRect(bx - bw/2, by - bh/2, bw, bh);
       ctx.fillStyle = COLORS.cream;
-      ctx.font = 'bold 9px monospace';
+      ctx.font = 'bold 10px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(tier ? tier.label : 'II', bx, by + 3);
+      ctx.fillText(tier ? tier.label : 'II', bx, by + 4);
       ctx.textAlign = 'left';
     }
     ctx.globalAlpha = 1;
