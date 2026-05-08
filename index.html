@@ -1534,6 +1534,10 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 
 <script>
 // ============ URL FLAGS ============
+// ?fresh=1        — unregister all service workers + clear all caches +
+//                   reload to bare URL. Preserves localStorage (your
+//                   progress stays). Use this in the dev restart block
+//                   so every push lands on the user's screen instantly.
 // ?reset=1        — wipe ag.* localStorage and reload clean (default: full
 //                   unlocked, the veteran experience).
 // ?reset=stats    — keep ag.unlockAll + ag.operatorName, wipe matches/day/
@@ -1544,6 +1548,29 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 // In every case the redirect strips the flag so refreshing won't loop.
 (function () {
   const sp = new URLSearchParams(location.search);
+  // fresh=1 has its own async flow — must finish before stripping the flag,
+  // otherwise the page would reload to '/' on a still-cached SW response.
+  if (sp.get('fresh') === '1') {
+    const stripFlag = () => {
+      const url = new URL(location.href);
+      url.search = '';
+      url.hash = '';
+      location.replace(url.toString());
+    };
+    const tasks = [];
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      tasks.push(navigator.serviceWorker.getRegistrations()
+        .then((rs) => Promise.all(rs.map((r) => r.unregister())))
+        .catch(() => null));
+    }
+    if (typeof caches !== 'undefined' && caches.keys) {
+      tasks.push(caches.keys()
+        .then((ks) => Promise.all(ks.map((k) => caches.delete(k))))
+        .catch(() => null));
+    }
+    Promise.all(tasks).then(stripFlag, stripFlag);
+    return;   // halt module init until the reload fires
+  }
   const r = sp.get('reset');
   if (!r) return;
   try {

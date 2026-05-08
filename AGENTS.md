@@ -38,12 +38,21 @@ must:
 Plus a clickable URL on its own line right after the block — also
 the bare domain.
 
-Format example:
+Format — REQUIRED, copy-paste this exact line at the end of every
+runnable-result reply:
 
 ```
-lsof -ti:8765 | xargs kill -9 2>/dev/null; cd /Users/ddh/Downloads/AshGrid && python3 -m http.server 8765 >/dev/null 2>&1 & sleep 0.4 && open http://localhost:8765/
+lsof -ti:8765 | xargs kill -9 2>/dev/null; cd /Users/ddh/Downloads/AshGrid && python3 -m http.server 8765 >/dev/null 2>&1 & sleep 0.4 && open 'http://localhost:8765/?fresh=1'
 ```
-http://localhost:8765/
+http://localhost:8765/?fresh=1
+
+The `?fresh=1` flag is handled by index.html: it unregisters every
+service worker, clears every cache, then redirects to the bare URL.
+This is the user's anti-staleness lever — guarantees they see the
+latest pushed code without opening DevTools. Their localStorage
+progress is preserved (no progression wipe). The flag handler runs
+BEFORE any other module init, so by the time the page renders, the
+SW + caches are clean.
 
 If the change is purely docs-only with no runnable component, the
 block can be skipped — but state that explicitly.
