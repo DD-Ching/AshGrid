@@ -5996,20 +5996,25 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   const _enemySpawnX = (i) => (redList.length > 1) ? _redAnchorFor(i).x : game._nnSpawnRed.x;
   for (let i = 0; i < redSize; i++) {
     const wid = slotWpn('red', i);
+    // Enemy NN units now match ally HP (80) and ally speed (2.5) so that
+    // NN-vs-NN is genuinely symmetric — was 50 hp / 1.0 speed which made
+    // red feel like cannon fodder (player saw 3-shot kills vs 4-shot on
+    // allies). Tagline 'BOTH TEAMS SHARE A SINGLE PPO MODEL' implies
+    // parity; this commit makes it true.
     const enemy = {
       x: _enemySpawnX(i),
       y: enemySpawnY(i),
-      hp: 50, maxHp: 50, angle: Math.PI,
+      hp: 80, maxHp: 80, angle: Math.PI,
       fireCd: 0, fireRate: 50, radius: 13,
       alive: true, walkPhase: Math.random() * Math.PI*2,
-      speed: 1.0,
+      speed: 2.5,
       team: 1,
       _weapon: WEAPONS[wid] || WEAPONS.RIFLE,
       _nnDifficulty: slotDiff('red', i),
       _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
       _respawnAt: null,
     };
-    applyChassisToUnit(enemy, slotChassis('red', i), 1.0, 50, 13);
+    applyChassisToUnit(enemy, slotChassis('red', i), 2.5, 80, 13);
     enemies.push(enemy);
   }
 
