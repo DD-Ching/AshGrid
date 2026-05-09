@@ -3333,11 +3333,11 @@ function _scheduleFirstMatchToasts() {
       text: '「Shift 衝刺 — 體力會跑,別一直按。」',
       hint: '走路時按住 Shift' },
     { speaker: 'LUMEN', advance: 'buildOpen',
-      text: '「B 開建造輪盤。 大部分模塊還沒解鎖 — 先看 WALL。」',
-      hint: 'B · 開建造輪盤' },
+      text: '「先按 B 打開建造輪盤。 大部分模塊還沒解鎖 — 你只能用 WALL。」',
+      hint: 'B · 打開建造輪盤' },
     { speaker: 'LUMEN', advance: 'place',
-      text: '「從輪盤選 WALL,點地放下一面牆。 訓練結束後其餘模塊逐步解鎖。」',
-      hint: '輪盤 → WALL → 點地放置' },
+      text: '「輪盤現在開了。 用滑鼠點輪盤上的 WALL,然後在地面點一下放下牆。」',
+      hint: '滑鼠點 WALL → 點地面' },
   ] : [
     { speaker: 'LUMEN', advance: 'move',
       text: '"V-07. Training ground online. Try moving — WASD."',
@@ -3370,11 +3370,11 @@ function _scheduleFirstMatchToasts() {
       text: '"Shift to sprint — stamina drains, pace yourself."',
       hint: 'Shift while moving' },
     { speaker: 'LUMEN', advance: 'buildOpen',
-      text: '"B opens the build radial. Most modules are locked — focus on WALL."',
-      hint: 'B · build radial' },
+      text: '"Press B first to open the build radial. Most modules are locked — only WALL is available."',
+      hint: 'B · open build radial' },
     { speaker: 'LUMEN', advance: 'place',
-      text: '"Pick WALL from the radial, click ground to place. Other modules unlock as you progress."',
-      hint: 'Radial → WALL → click to place' },
+      text: '"Radial is open now. Click WALL on the wheel, then click the ground to drop a wall."',
+      hint: 'Click WALL · then click ground' },
   ];
   // Show the first step after a small delay so the match has loaded in
   setTimeout(() => {
@@ -11825,22 +11825,19 @@ function _radialKindUnderCursor(sx, sy) {
 }
 
 function drawDefenseShop() {
-  // Status pill + radial render anywhere build is wired. Used to gate on
-  // game._nnMode here, but campaign now seeds _energy + _structures via
-  // initMission's setup hook (relay mission etc.) — gating on _nnMode
-  // hid the radial entirely in campaign even though buildMode.active +
-  // radialOpen were both true. User report: '建造模式輪盤不見'.
-  // Render whenever the build economy is initialised on the game object.
+  // Status pill + radial render anywhere build is wired.
   const buildReady = game._nnMode || game._structures != null;
   if (!buildReady) return;
   // Tier-gate: hide the build hint until DEFENSE is unlocked (tier 2).
-  // Building still works at any tier — but the HUD stays clean for new
-  // players until the feature is on their radar. Always show in defense
-  // mode itself (which is gated to tier 2 anyway, so this is a no-op
-  // unless someone forces it via _nnGameMode).
+  // EXCEPTION: during FTUE the build radial IS the lesson at step 10/11 —
+  // tier-gating it makes the tutorial unteachable for users on opt-in
+  // tutorial mode (ag.unlockAll === '0'). User report: '我現在就算按B
+  // 之後,我的輪盤也沒有出現,這是搞笑嗎?'.
+  const inFtue = !!(game._ftue && game._ftue.active);
   const tier = (typeof getUnlockTier === 'function') ? getUnlockTier() : 4;
   const inDefense = game._nnGameMode === 'defense';
-  if (tier < 2 && !inDefense && !(typeof isAllUnlocked === 'function' && isAllUnlocked())) return;
+  if (!inFtue && tier < 2 && !inDefense
+      && !(typeof isAllUnlocked === 'function' && isAllUnlocked())) return;
   game._buildShopDrawnThisFrame = true;
   // Status pill — always shown while in defense mode (compact, non-cluttered)
   drawDefenseStatusPill();
