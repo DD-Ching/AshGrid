@@ -3144,9 +3144,14 @@ function _ftueNarrAppendCenter(t) { const el = document.getElementById('ftueNarr
 function _ftueNarrShowChip(text) {
   const el = document.getElementById('ftueNarrChip');
   if (!el) return;
+  // Larger + pulse animation so the chip pulls the eye away from the
+  // dialog text. The animation is the existing ftue-pulse keyframe (CSS
+  // around line 1022) — opacity ramp 0.25 ↔ 0.85 plus a 2px nudge so
+  // the chip "breathes". Mobile users see the same.
   el.innerHTML = '<span style="background:#c8442e;color:#f4ecd8;' +
-    "font:bold 14px 'Courier New',monospace;padding:8px 14px;letter-spacing:3px;" +
-    'box-shadow:2px 2px 0 #5a1010;">' + text + '</span>';
+    "font:bold 18px 'Courier New',monospace;padding:12px 22px;letter-spacing:5px;" +
+    'box-shadow:4px 4px 0 #5a1010;display:inline-block;' +
+    'animation:ftue-pulse 1.4s ease-in-out infinite;">' + text + '</span>';
   el.style.display = 'block';
 }
 function _ftueNarrHideChip() {
@@ -3348,37 +3353,66 @@ async function _ftueScene1_Blackness() {
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
-  // 0:00–0:03 silent
-  await _wait(3000);
-  if (_ftueNarr.skipFlag) return;
-  // 0:03 heartbeat #1
-  _ftueNarrHeartbeat(0.32);
+  // Cycle stamp in the top corner — sets the scene that THIS is a reboot.
+  _ftueNarrSetTop('CYCLE #347 · VECTOR-7 STANDBY');
+  // 0:00–0:02 silent
   await _wait(2000);
   if (_ftueNarr.skipFlag) return;
-  // 0:05 first line types in
-  await _ftueTypeCenter('> CYCLE #347', 24);
-  await _ftueTypeCenter('\n> SEED INTEGRITY  ████░░░░░░  41%', 22);
-  // 0:07 heartbeat #2
-  _ftueNarrHeartbeat(0.40);
-  await _wait(1100);
-  // 0:08 cascade 36 → 33 → 28
-  _ftueNarrAppendCenter('\n> → 36% → 33% → 28%');
+  // 0:02 heartbeat #1 + first SEED reading
+  _ftueNarrHeartbeat(0.30);
+  await _ftueTypeCenter('> CYCLE #347 — INITIATING', 22);
+  await _wait(500);
+  // Per MVP §6: reuse the INTRO.bootLines content for verisimilitude. Tinted
+  // by their classes (ok / warn / err) the same way the legacy INTRO does.
+  if (typeof INTRO === 'object' && INTRO.script) {
+    const lang = (typeof getLang === 'function') ? getLang() : 'en';
+    const s = (INTRO.script[lang] || INTRO.script.en);
+    const bootColor = { ok: '#84c0a0', warn: '#e8c060', err: '#c8442e' };
+    const bootLines = (s && s.bootLines) || [];
+    for (let i = 0; i < bootLines.length; i++) {
+      if (_ftueNarr.skipFlag) break;
+      const [klass, txt] = bootLines[i];
+      const center = document.getElementById('ftueNarrCenter');
+      if (!center) break;
+      const line = document.createElement('div');
+      line.style.cssText = `color:${bootColor[klass] || '#e8e2d4'};` +
+        'font-size:14px;letter-spacing:2px;margin-top:6px;';
+      center.appendChild(line);
+      // Type the line directly into the new sub-element so we don't fight
+      // ftueNarrCenter's textContent. _ftueTypeCenter would walk the
+      // wrong element here.
+      const target = line;
+      for (let c = 0; c < txt.length; c++) {
+        if (_ftueNarr.skipFlag) { target.textContent += txt.slice(c); break; }
+        target.textContent += txt[c];
+        await _wait(14);
+      }
+      await _wait(110);
+    }
+  } else {
+    // Fallback if INTRO has been stripped — keep the original cascade.
+    await _ftueTypeCenter('\n> SEED INTEGRITY  ████░░░░░░  41%', 22);
+    _ftueNarrHeartbeat(0.40);
+    await _wait(1100);
+    _ftueNarrAppendCenter('\n> → 36% → 33% → 28%');
+  }
+  // Second heartbeat — louder
   _ftueNarrHeartbeat(0.48);
-  await _wait(1800);
-  // 0:10 MOTE PROXIMITY DETECTED (red)
+  await _wait(900);
+  // MOTE PROXIMITY DETECTED — the line that names Mote for the first time
   const center = document.getElementById('ftueNarrCenter');
   if (center) {
-    const span = document.createElement('span');
-    span.style.cssText = 'color:#c8442e;display:block;margin-top:14px;letter-spacing:3px;';
+    const span = document.createElement('div');
+    span.style.cssText = 'color:#c8442e;font-size:16px;margin-top:18px;' +
+      'letter-spacing:4px;font-weight:bold;animation:ftue-pulse 1.2s ease-in-out infinite;';
     span.textContent = '> MOTE PROXIMITY DETECTED';
     center.appendChild(span);
   }
-  await _wait(1100);
-  // 0:11 red flash
+  await _wait(1500);
+  // Red flash transition
   el.style.background = '#5a1010';
-  await _wait(140);
+  await _wait(160);
   el.style.background = '#000';
-  // 0:12 fade to S2 — caller transitions
   _ftueMark('s2Reached');
 }
 
@@ -3435,8 +3469,15 @@ async function _ftueScene2_FollowAndFirstEnemy() {
   _ftueNarrSetCenter('');
   await _ftueTypeCenter('Mote launches at the leg.\nBites. Tears. Drops to the floor as the patrol explodes.\nMote limps back, more obvious now.', 22);
   await _wait(2200);
-  // 0:58 Lumen first transmission
+  // 0:58 Lumen first transmission — plays real radio beep + static via the
+  // legacy showRadioToast (still wired). The toast's visual lands behind
+  // the FTUE overlay (lower z-index), but the AUDIO comes through, which
+  // is what we want for ambiance.
   _ftueNarrSetSub('▸ Lumen · ...one down. mote helped. it always does.');
+  if (typeof showRadioToast === 'function') {
+    try { showRadioToast('Lumen', '...one down. mote helped. it always does.', 4500); }
+    catch (e) {}
+  }
   if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
   await _wait(2200);
   _ftueNarrSetSub('');
@@ -3463,8 +3504,12 @@ async function _ftueScene3_ScoutSwarm() {
   await _ftueTypeCenter('UAV up. The corridor floor is a moving carpet.\nIron Swarm — twelve units. Maybe more behind the wall.', 22);
   _ftueNarrSetSub('[CONTACT: 12]\n[DO NOT ENGAGE]');
   await _wait(2800);
-  // Lumen
+  // Lumen — same dual-channel pattern (overlay text + real radio audio)
   _ftueNarrSetSub('▸ Lumen · too many. cover behind the wall. wait for the breach.');
+  if (typeof showRadioToast === 'function') {
+    try { showRadioToast('Lumen', 'too many. cover behind the wall. wait for the breach.', 4500); }
+    catch (e) {}
+  }
   await _wait(2800);
   _ftueNarrSetSub('');
 }
@@ -3479,16 +3524,47 @@ async function _ftueScene4_Breach() {
   await _wait(500);
   await _ftueTypeCenter('A breach in the wall — two metres wide.\nBeyond it, dust. A heavy UGV grinds toward you.', 22);
   await _wait(1800);
-  // Countdown UI on the top
-  _ftueNarrSetTop('IMPACT — 25s');
+  // Real DOM countdown timer per MVP §7 — top-right, big red, monospace.
+  // Replaces the simple ftueNarrTop text version. Pulses when ≤10s.
+  let cdEl = document.getElementById('ftueNarrCountdown');
+  if (!cdEl) {
+    cdEl = document.createElement('div');
+    cdEl.id = 'ftueNarrCountdown';
+    cdEl.style.cssText =
+      'position:absolute;top:36px;right:48px;' +
+      "font-family:'Courier New',monospace;color:#c8442e;" +
+      'font-size:64px;letter-spacing:4px;font-weight:bold;' +
+      'text-shadow:0 0 12px rgba(200,68,46,0.6);' +
+      'min-width:180px;text-align:right;line-height:1;';
+    const overlay = document.getElementById('ftueNarr');
+    if (overlay) overlay.appendChild(cdEl);
+  }
+  const cdLabel = document.createElement('div');
+  cdLabel.style.cssText = 'font-size:12px;letter-spacing:5px;color:#a0584c;margin-bottom:4px;';
+  cdLabel.textContent = 'IMPACT';
+  cdEl.appendChild(cdLabel);
+  const cdValue = document.createElement('div');
+  cdValue.id = 'ftueNarrCdValue';
+  cdValue.textContent = '25s';
+  cdEl.appendChild(cdValue);
   _ftueNarrSetSub('[INCOMING — HEAVY UGV]');
   // Run the countdown asynchronously so chips can show simultaneously
   let countdownAlive = true;
   let secs = 25;
   const tickCD = () => {
     if (!countdownAlive) return;
-    if (_ftueNarr.skipFlag) { _ftueNarrSetTop(''); return; }
-    _ftueNarrSetTop(`IMPACT — ${secs}s`);
+    if (_ftueNarr.skipFlag) {
+      countdownAlive = false;
+      if (cdEl) { cdEl.remove(); }
+      return;
+    }
+    cdValue.textContent = secs + 's';
+    if (secs <= 10) {
+      // Switch to faster pulse + brighter on the urgency window
+      cdValue.style.animation = 'ftue-pulse 0.5s ease-in-out infinite';
+      cdValue.style.color = '#ff6444';
+      cdValue.style.textShadow = '0 0 16px rgba(255,100,68,0.8)';
+    }
     if (secs <= 0) { countdownAlive = false; return; }
     secs--;
     setTimeout(tickCD, 1000);
@@ -3506,15 +3582,31 @@ async function _ftueScene4_Breach() {
   await _ftueWaitKeyAFK([' ', 'enter'], 5000, 14000);
   _ftueNarrHideChip();
   _ftueMark('firstWall');
-  // Wall lands → countdown halts
+  // Wall lands → countdown halts and the DOM timer disappears
   countdownAlive = false;
+  const cdNode = document.getElementById('ftueNarrCountdown');
+  if (cdNode) {
+    cdNode.style.transition = 'opacity 600ms';
+    cdNode.style.opacity = '0';
+    setTimeout(() => { try { cdNode.remove(); } catch (e) {} }, 700);
+  }
   _ftueNarrSetTop('');
   _ftueNarrSetSub('');
   _ftueNarrSetCenter('');
   await _ftueTypeCenter('The wall drops into place.\nDust kicks up.\nThe UGV slams into it and stops.', 22);
   await _wait(1800);
-  // Lumen — first time CLEAR (no static)
+  // Lumen — first time CLEAR (no static). Real radio toast triggers audio
+  // beep so the ear actually hears the moment Lumen breaks through.
   _ftueNarrSetSub('▸ Lumen · there it is.\n▸ Lumen · that is not killing — that is auditing.\n▸ Lumen · build to think. kill is just the last 0.5 seconds.');
+  if (typeof showRadioToast === 'function') {
+    try {
+      showRadioToast('Lumen [CLEAR]', 'there it is. that is not killing — that is auditing.', 4500);
+      setTimeout(() => {
+        try { showRadioToast('Lumen', 'build to think. kill is just the last 0.5 seconds.', 4500); }
+        catch (e) {}
+      }, 1700);
+    } catch (e) {}
+  }
   await _wait(3500);
   // BUILD = AUDIT stamp
   _ftueNarrSetSub('');
@@ -3543,6 +3635,10 @@ async function _ftueScene4_Breach() {
   }
   await _wait(1100);
   _ftueNarrSetSub('▸ Lumen · cover mote. she earned it.');
+  if (typeof showRadioToast === 'function') {
+    try { showRadioToast('Lumen', 'cover mote. she earned it.', 4500); }
+    catch (e) {}
+  }
   if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
   await _wait(2400);
   _ftueNarrSetSub('');
@@ -3552,7 +3648,76 @@ async function _ftueScene4_Breach() {
 async function _ftueScene5_Exit() {
   _ftueNarrLog('SCENE', 'S5 — Exit (2:30-3:00)');
   const el = _ftueNarrOverlay();
-  el.style.background = '#1a0e08';
+  // Procedural exit-vector-field BG: rust-coloured sky gradient + black ground
+  // line + a distant red tower silhouette + 3 hung relay-drone dots.
+  // Inline SVG so we don't need a shipped asset file (per MVP §6 — the
+  // referenced exit-vector-field.svg isn't in the repo today).
+  el.style.background = 'linear-gradient(to bottom,' +
+    '#3a1612 0%, #5a201c 22%, #6a2820 38%, #401410 60%, #1a0a08 78%, #050402 100%)';
+  // Drop a backdrop layer with the tower + drones + horizon
+  let bg = document.getElementById('ftueNarrExitBg');
+  if (!bg) {
+    bg = document.createElement('div');
+    bg.id = 'ftueNarrExitBg';
+    bg.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:0;';
+    bg.innerHTML =
+      '<svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" ' +
+      'style="width:100%;height:100%;display:block;">' +
+        // Horizon glow
+        '<defs>' +
+          '<radialGradient id="ftueExitGlow" cx="50%" cy="62%" r="40%">' +
+            '<stop offset="0%" stop-color="#ff5a3a" stop-opacity="0.55"/>' +
+            '<stop offset="100%" stop-color="#ff5a3a" stop-opacity="0"/>' +
+          '</radialGradient>' +
+          '<linearGradient id="ftueExitGround" x1="0" y1="0" x2="0" y2="1">' +
+            '<stop offset="0%" stop-color="#1a0a08"/>' +
+            '<stop offset="100%" stop-color="#000"/>' +
+          '</linearGradient>' +
+        '</defs>' +
+        // Glow behind the tower
+        '<ellipse cx="800" cy="560" rx="650" ry="120" fill="url(#ftueExitGlow)"/>' +
+        // Far red tower silhouette
+        '<rect x="780" y="200" width="40" height="380" fill="#0a0604"/>' +
+        '<rect x="772" y="200" width="56" height="14" fill="#0a0604"/>' +
+        // Tower red beacons (pulsing via animate)
+        '<circle cx="800" cy="240" r="6" fill="#ff4022">' +
+          '<animate attributeName="opacity" values="0.4;1;0.4" dur="1.6s" repeatCount="indefinite"/>' +
+        '</circle>' +
+        '<circle cx="800" cy="320" r="4" fill="#ff4022" opacity="0.7"/>' +
+        '<circle cx="800" cy="400" r="4" fill="#ff4022" opacity="0.5"/>' +
+        // Three relay drones hung in the air
+        '<g fill="#1a1612" stroke="#3a2820" stroke-width="1">' +
+          '<circle cx="380"  cy="250" r="14"/>' +
+          '<line x1="380" y1="0" x2="380" y2="236" stroke="#1a1612" stroke-width="1" opacity="0.4"/>' +
+          '<circle cx="1180" cy="180" r="12"/>' +
+          '<line x1="1180" y1="0" x2="1180" y2="168" stroke="#1a1612" stroke-width="1" opacity="0.4"/>' +
+          '<circle cx="640"  cy="320" r="10"/>' +
+          '<line x1="640" y1="0" x2="640" y2="310" stroke="#1a1612" stroke-width="1" opacity="0.4"/>' +
+        '</g>' +
+        // Fiber Wasp web — six thin diagonal lines between buildings
+        '<g stroke="#3a2018" stroke-width="0.6" opacity="0.5">' +
+          '<line x1="100"  y1="640" x2="1500" y2="690"/>' +
+          '<line x1="200"  y1="700" x2="1400" y2="650"/>' +
+          '<line x1="300"  y1="660" x2="1300" y2="700"/>' +
+          '<line x1="500"  y1="710" x2="1200" y2="640"/>' +
+          '<line x1="450"  y1="630" x2="1450" y2="710"/>' +
+          '<line x1="700"  y1="730" x2="1100" y2="610"/>' +
+        '</g>' +
+        // Foreground ground line
+        '<rect x="0" y="600" width="1600" height="300" fill="url(#ftueExitGround)"/>' +
+        // Glass shards (procedural)
+        '<g fill="#ff5a3a" opacity="0.3">' +
+          '<polygon points="120,750 130,720 145,755"/>' +
+          '<polygon points="380,810 395,780 410,815"/>' +
+          '<polygon points="720,790 730,765 750,800"/>' +
+          '<polygon points="1050,820 1065,790 1085,825"/>' +
+          '<polygon points="1380,770 1395,740 1415,775"/>' +
+        '</g>' +
+      '</svg>';
+    // Insert as FIRST child so all the text/chip elements render on top.
+    if (el.firstChild) el.insertBefore(bg, el.firstChild);
+    else el.appendChild(bg);
+  }
   _ftueNarrSetTop('');
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
@@ -3561,8 +3726,16 @@ async function _ftueScene5_Exit() {
   await _ftueTypeCenter('You shoulder the steel door open.\n\nThe vector field stretches outward —\nrust-coloured sky, glass underfoot, three relay drones hung like punctuation.\nFour kilometres out, a red tower pulses.\n\nMote sits beside you and does not follow.', 22);
   await _wait(1800);
   _ftueNarrSetSub('▸ Lumen · V-07. you remember the way.');
+  if (typeof showRadioToast === 'function') {
+    try { showRadioToast('Lumen', 'V-07. you remember the way.', 4000); }
+    catch (e) {}
+  }
   await _wait(1700);
   _ftueNarrSetSub('▸ Lumen · cycle 347 begins now.');
+  if (typeof showRadioToast === 'function') {
+    try { showRadioToast('Lumen', 'cycle 347 begins now.', 4000); }
+    catch (e) {}
+  }
   await _wait(1400);
   _ftueNarrSetCenter('');
   await _ftueTypeCenter('CYCLE #347\nAUDIT IN PROGRESS\n...\nREADY?', 28);
