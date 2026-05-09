@@ -1066,6 +1066,38 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 }
 .restart-btn:hover { background: var(--red); }
 
+/* ============ FTUE: First-Session Minimal Start ============ */
+/* When body has .first-session, hide every secondary surface and show
+   only the GREY VECTOR identity + a single WAKE button. Returning
+   players (ag.firstMatch === '1') see normal start screen. */
+#firstSessionContent { display: none; }
+body.first-session .start-content > div:first-child { display: none; }
+body.first-session #primaryCards,
+body.first-session #utilityRow,
+body.first-session .controls-grid,
+body.first-session .footer-bar { display: none !important; }
+body.first-session #firstSessionContent {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 28px; min-height: 70vh; text-align: center;
+}
+body.first-session .start-bg { opacity: 0.35; }
+#fsCycleLabel {
+  font: bold 64px sans-serif; letter-spacing: 12px; color: var(--cream);
+  text-shadow: 4px 4px 0 var(--red);
+}
+#fsTagline { font: 11px monospace; letter-spacing: 4px; color: var(--red); }
+#fsBrand   { font: bold 12px monospace; letter-spacing: 8px; color: var(--gray); }
+#fsFooter  { font: 10px monospace; letter-spacing: 3px; color: var(--gray); opacity: 0.5; margin-top: 32px; }
+#firstWakeBtn {
+  background: var(--red); color: var(--cream); border: none;
+  font: bold 22px sans-serif; letter-spacing: 12px; padding: 22px 56px;
+  cursor: pointer; position: relative;
+  box-shadow: 6px 6px 0 var(--black);
+  transition: transform .12s, box-shadow .12s;
+  animation: introCtaPulse 1.6s ease-in-out infinite;
+}
+#firstWakeBtn:hover { transform: translate(2px, -2px); }
+
 </style>
 </head>
 <body>
@@ -1108,6 +1140,15 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <div class="tagline">FUTURE BATTLEFIELD — DEEP / PERSISTENT / UNMANNED</div>
     </div>
 
+    <!-- FTUE: minimal first-session screen. ONE button. No menu. -->
+    <div id="firstSessionContent">
+      <div id="fsBrand">GREY VECTOR</div>
+      <div id="fsCycleLabel">CYCLE #347</div>
+      <div id="fsTagline">AWAITING WAKE</div>
+      <button id="firstWakeBtn" type="button">甦 醒  WAKE ▶</button>
+      <div id="fsFooter">SEED INTEGRITY: 87% · ROLE: OBJECTIVE AUDITOR</div>
+    </div>
+
     <!-- Two-card hero. SKIRMISH = quick PvAI with the COMBAT SETUP picker
          opening behind it; CAMPAIGN = sequential story missions. Each
          card is the entire click target so the menu reads at a glance. -->
@@ -1131,7 +1172,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     </div>
 
     <!-- Utility row — secondary actions get less weight -->
-    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:4px;">
+    <div id="utilityRow" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:4px;">
       <button class="footer-link" id="editorBtn">▦ MAP EDITOR</button>
       <button class="footer-link" id="dossierBtn">⌂ DOSSIER</button>
       <button class="footer-link" id="logBtn">≡ LOG <span class="badge" id="logBadge" hidden>1</span></button>
@@ -6484,6 +6525,36 @@ document.getElementById('lobbyStartBtn').onclick = () => {
   startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty, _lobby.weapon, lineup, _lobby.mode);
 };
 
+// ============ FTUE: First-Session Minimal Start ============
+// On a player's very first visit (ag.firstMatch !== '1'), the start
+// screen collapses to a single WAKE button — no hero cards, no
+// utility row, no controls grid, no footer chips. Click WAKE → skip
+// the lobby and the tutorial popup, drop them straight into a small
+// 2v2 RIFLE skirmish. After their first match completes, the
+// firstMatch flag is set elsewhere; from then on, returning players
+// see the full start screen.
+(function setupFirstSessionFTUE() {
+  let firstSeen = false;
+  try { firstSeen = localStorage.getItem('ag.firstMatch') === '1'; } catch (e) {}
+  if (!firstSeen) document.body.classList.add('first-session');
+
+  const wakeBtn = document.getElementById('firstWakeBtn');
+  if (!wakeBtn) return;
+
+  wakeBtn.onclick = () => {
+    // Hide start, skip tutorial popup, skip lobby
+    document.getElementById('start').classList.add('hidden');
+    try { localStorage.setItem('ag.tutorialSeen', '1'); } catch (e) {}
+    // FTUE-friendly defaults: small 2v2, mid-tier (warrior), RIFLE, dm
+    if (typeof startNNSkirmish === 'function') {
+      startNNSkirmish(2, 2, 'warrior', 'RIFLE', null, 'dm');
+    }
+    // Strip the FTUE class so when the player returns to start screen
+    // after the match, they see the full options
+    document.body.classList.remove('first-session');
+  };
+})();
+
 function startSkirmish() {
   document.getElementById('start').classList.add('hidden');
   document.getElementById('end').classList.add('hidden');
@@ -6773,9 +6844,17 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   for (const e of enemies) e._invulnUntil = initialInvuln;
 }
 
-function startGame() {
+async function startGame() {
   document.getElementById('start').classList.add('hidden');
   document.getElementById('end').classList.add('hidden');
+
+  // Pre-load the elite brain so campaign enemies (now NN-driven) are awake
+  // from frame 1. Fire-and-forget if it fails — spawnSoldier still pushes
+  // the unit with _useNN: true, and nnTick gates on NN.loaded so units just
+  // sit until the model arrives. Cached after first load.
+  if (typeof nnLoadAll === 'function') {
+    try { await nnLoadAll(['elite']); } catch (e) {}
+  }
 
   game.state = 'playing';
   game.mode = 'tactical';
@@ -6790,7 +6869,11 @@ function startGame() {
   player.x = WORLD.w/2; player.y = WORLD.h/2;
   player.hp = player.maxHp;
   player.ammo = player.maxAmmo;
-  player.reserve = 120;
+  // Reserve bumped 120 → 240 for campaign now that enemies are NN-driven
+  // (HP 80, smarter movement) — at 240 the user has wiggle room across a
+  // 90 s mission of 18–30 soldiers without manual scavenging breaks.
+  // Was '戰役 子彈會耗盡的問題'.
+  player.reserve = 240;
   player.reloading = false;
   player.alive = true;
 
@@ -7939,6 +8022,16 @@ function buildNNArenaVariant(idx) {
   const v = NN_MAP_VARIANTS[idx];
   const walls = v.walls();
   for (const w of walls) {
+    // Custom-editor + drag-line walls are stored as { kind: 'wallLine',
+    // x1, y1, x2, y2, thickness } — these are real vector segments and
+    // need addWallLine, NOT addBuilding. Dropping them through the else
+    // branch was the silent breakage behind '這種牆壁在實戰的時候不會出現'.
+    if (w.kind === 'wallLine') {
+      addWallLine(NN_ARENA.x0 + w.x1, NN_ARENA.y0 + w.y1,
+                  NN_ARENA.x0 + w.x2, NN_ARENA.y0 + w.y2,
+                  { thickness: w.thickness || 18 });
+      continue;
+    }
     const x = NN_ARENA.x0 + w.x;
     const y = NN_ARENA.y0 + w.y;
     if (w.kind === 'cover') {
@@ -8374,6 +8467,25 @@ function nnApplyAction(unit, action, friendlies, enemies) {
     if (orderId === 'retreat')  fire = 0;             // don't shoot while breaking contact
   }
 
+  // Pursue-last-seen fallback: when NN chose idle (moveDir=0) AND has no
+  // currently visible target, push toward where this unit last saw an enemy.
+  // Without this, a player-drawn wall that breaks LoS makes both teams sit
+  // motionless and never re-engage — the user reports it as '別人像木偶
+  // 一樣都沒有攻擊'. Memory window: 4 s (240 ticks); min push distance: 60u.
+  if (moveDir === 0
+      && unit._nnLastSeenTick != null
+      && unit._nnLastSeenTick > game.time - 240
+      && unit._nnLastSeenX != null) {
+    const visTgt = nnNearestVisibleEnemy(unit, enemies);
+    if (!visTgt) {
+      const dx = unit._nnLastSeenX - unit.x;
+      const dy = unit._nnLastSeenY - unit.y;
+      if (Math.hypot(dx, dy) > 60) {
+        moveDir = _vectorToMoveDir(dx, dy);
+      }
+    }
+  }
+
   // Stuck breaker: if this unit has been stuck (<2u progress) for >=20 ticks
   // while NN keeps trying to move, override with a random non-blocked dir.
   unit._nnStuckCt = unit._nnStuckCt || 0;
@@ -8560,7 +8672,19 @@ function updateTeamVision() {
 let _nnInferring = false;
 async function nnTick() {
   if (!NN.loaded || _nnInferring) return;
-  if (game.state !== 'playing' || !game._nnMode) return;
+  if (game.state !== 'playing') return;
+  // Run NN dispatcher in campaign too if any unit has _useNN flagged. The
+  // skirmish path sets game._nnMode and pre-flags every unit; the campaign
+  // path now opts individual enemies in (spawnSoldier + spawnDroneEnemy
+  // tag them with _useNN so they share the trained brain instead of the
+  // legacy state machine). User asked for the merge: '把這個做融合,就是
+  // 我們現在的NN跟現在的戰役的這個他們原本的程式做融合'.
+  if (!game._nnMode) {
+    const anyNN =
+      enemies.some(e => e.alive && e._useNN)
+      || allies.some(a => a.alive && a._useNN);
+    if (!anyNN) return;
+  }
 
   // Refresh team-shared spotting before any nnIsVisible call this tick
   updateTeamVision();
@@ -11828,16 +11952,28 @@ function spawnSoldier(cfg) {
   // speed → enemies with NaN positions stuck invisible after one tick.
   const speedMul = (cfg && cfg.soldierSpeedMul != null) ? cfg.soldierSpeedMul : 1;
   const fast = !!(cfg && cfg.soldierFireFast);
+  // NN-merge: campaign enemies now share the skirmish PPO brain. User asked
+  // '把這個做融合,就是我們現在的NN跟現在的戰役的這個他們原本的程式做融合'.
+  // Flipping _useNN routes them through nnTick instead of updateEnemies'
+  // legacy state machine. updateEnemies already skips _useNN units
+  // (`if (e._useNN) continue`), so no double-control. HP/speed bumped to
+  // NN-equivalent so each kill matters (was 50 hp / 1.0–1.4 speed — way
+  // softer than skirmish — '敵人太弱').
   enemies.push({
     x, y,
-    hp: 50, maxHp: 50,
-    angle: 0,
+    hp: 80, maxHp: 80,
+    angle: 0, gunAngle: 0, gunRecoil: 0, swayPhase: Math.random()*Math.PI*2,
     fireCd: (fast ? 30 : 60) + Math.random()*60,
     fireRate: fast ? 32 : 50,
     radius: 13,
     alive: true,
     walkPhase: Math.random() * Math.PI * 2,
-    speed: (1.0 + Math.random()*0.4) * speedMul,
+    speed: 2.5 * speedMul,
+    team: 1,
+    _weapon: WEAPONS.RIFLE,
+    _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+    _nnDifficulty: 'elite',
+    _respawnAt: null,
   });
 }
 
