@@ -2970,21 +2970,32 @@ function _tickDynamicRadio() {
       }
     }
   }
-  // Hot streak — Lumen warns the audit signature is being tracked
+  // Hot streak — Lumen warns the audit signature is being tracked.
+  // SILENT: killstreak-triggered → routes through showSwapToast not
+  // showRadioToast so it doesn't play the 2-tone ding-dong on every
+  // 5-streak. User: '永遠別讓擊殺音效出現'.
   if ((player._killStreak || 0) >= 5) {
-    _radioOnce('hot', 30, 'Lumen',
-      _r('"你的審計簽名被追蹤了 — 整區都在找你的 Seed。"',
-         '"They tagged your audit signature — every red in the sector wants your Seed now."'));
+    if (!_radioCD['hot'] || _radioCD['hot'] <= game.time) {
+      _radioCD['hot'] = game.time + 30 * 60;
+      if (typeof showSwapToast === 'function') {
+        showSwapToast(_r('▸ Lumen · 你的審計簽名被追蹤了',
+                         '▸ Lumen · Your audit signature is being tracked'));
+      }
+    }
   }
   // GREY VECTOR — Build = Audit. Pure killing without construction drains
-  // Seed Integrity and Lumen will say so. Surface the rule that this is
-  // a building game wearing a shooter's coat.
+  // Seed Integrity and Lumen will say so. SILENT: kill-count-triggered,
+  // routed through showSwapToast.
   const _structCount = (game._structures && game._structures.length) || 0;
   const _killCount = (game.killCount || 0);
   if (_killCount >= 5 && _structCount === 0) {
-    _radioOnce('noBuild', 25, 'Lumen',
-      _r('"V-07。 你在殺戮,不是審計。 子彈不能釐清任何事。 按 B 開建造。"',
-         '"V-07. You are killing, not auditing. Bullets clarify nothing. Hold B to build."'));
+    if (!_radioCD['noBuild'] || _radioCD['noBuild'] <= game.time) {
+      _radioCD['noBuild'] = game.time + 25 * 60;
+      if (typeof showSwapToast === 'function') {
+        showSwapToast(_r('▸ Lumen · 你在殺戮,不是審計。 按 B 開建造',
+                         '▸ Lumen · You are killing, not auditing. Press B'));
+      }
+    }
   }
   if (_structCount >= 1) {
     _radioOnce('firstBuild', 9999, 'Lumen',

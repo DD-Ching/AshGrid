@@ -39,10 +39,13 @@ Plus a clickable URL on its own line right after the block — also
 the bare domain.
 
 Format — REQUIRED, copy-paste this exact line at the end of every
-runnable-result reply:
+runnable-result reply. The `&t=$(date +%s)` suffix is a unique
+cache-buster every run — the user reported that without it Chrome
+sometimes served the previous `?fresh=1` response from cache and
+they ended up looking at stale code:
 
 ```
-lsof -ti:8765 | xargs kill -9 2>/dev/null; cd /Users/ddh/Downloads/AshGrid && python3 -m http.server 8765 >/dev/null 2>&1 & sleep 0.4 && open 'http://localhost:8765/?fresh=1'
+lsof -ti:8765 | xargs kill -9 2>/dev/null; cd /Users/ddh/Downloads/AshGrid && python3 -m http.server 8765 >/dev/null 2>&1 & sleep 0.4 && open "http://localhost:8765/?fresh=1&t=$(date +%s)"
 ```
 http://localhost:8765/?fresh=1
 
