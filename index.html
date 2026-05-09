@@ -3134,14 +3134,23 @@ function _ftueAdvance(reason) {
       _ftueSpawnTutorialAllies();
     }
     if (game._ftue.idx >= game._ftue.steps.length) {
-      // Done — mark seen, deactivate
+      // Done — mark seen, deactivate, AND ensure the dialogue bar is
+      // hidden. Prior bug: monitor said 'DONE — idx 12' but the bottom
+      // black strip still showed the last step's text because _ftueHide
+      // only fires at the START of advance (before idx++); the
+      // 380 ms-fade-then-set-hidden chain could be bypassed if the bar
+      // got re-shown elsewhere or if a frame caught it mid-fade with
+      // .show still applied. Explicit hide here closes the bar for sure.
       game._ftue.active = false;
+      _ftueHide();
+      const dlg = document.getElementById('ftueDialogue');
+      if (dlg) dlg.setAttribute('hidden', '');
       try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
       return;
     }
     const nxt = game._ftue.steps[game._ftue.idx];
     _ftueDialog(nxt.speaker, nxt.text, nxt.hint);
-  }, 700);
+  }, 1100);   // bumped 700 → 1100 ms so the user has time to read each step
 }
 // Public hooks — called from the relevant gameplay sites
 function _ftueOnMove()       { if (game._ftue?.active) { game._ftue.flags.moved = true; _ftueAdvance('move'); } }
@@ -3336,8 +3345,8 @@ function _scheduleFirstMatchToasts() {
       text: '「先按 B 打開建造輪盤。 大部分模塊還沒解鎖 — 你只能用 WALL。」',
       hint: 'B · 打開建造輪盤' },
     { speaker: 'LUMEN', advance: 'place',
-      text: '「輪盤現在開了。 用滑鼠點輪盤上的 WALL,然後在地面點一下放下牆。」',
-      hint: '滑鼠點 WALL → 點地面' },
+      text: '「按 B 打開了建造輪盤(中央那個圓盤)。 點圓盤上的 WALL,再點地面放下一面牆。 沒有滑鼠就用觸控板點。」',
+      hint: '輪盤 → 點 WALL → 點地面' },
   ] : [
     { speaker: 'LUMEN', advance: 'move',
       text: '"V-07. Training ground online. Try moving — WASD."',
@@ -3373,8 +3382,8 @@ function _scheduleFirstMatchToasts() {
       text: '"Press B first to open the build radial. Most modules are locked — only WALL is available."',
       hint: 'B · open build radial' },
     { speaker: 'LUMEN', advance: 'place',
-      text: '"Radial is open now. Click WALL on the wheel, then click the ground to drop a wall."',
-      hint: 'Click WALL · then click ground' },
+      text: '"Pressing B opened the build wheel (the disc on screen). Click WALL on the wheel, then click the ground to drop a wall. Trackpad clicks work."',
+      hint: 'Wheel → click WALL → click ground' },
   ];
   // Show the first step after a small delay so the match has loaded in
   setTimeout(() => {

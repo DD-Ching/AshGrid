@@ -12,59 +12,63 @@ working in this repo. Treat it as authoritative.
   via `.claude/launch.json` (`name: static`)
 - Live URL: **http://localhost:8765/** (NOT `/index.html`)
 
-## End-of-turn restart block — REQUIRED on every reply that touches
-runnable code or affects the live preview
+## End-of-turn restart block — REQUIRED, MUST MATCH THE CURRENT TOPIC
 
-Every reply that ends with a runnable result MUST include a fenced
-shell block the user can paste into a terminal in one shot. The block
-must:
+Every reply that ends with a runnable result includes a fenced shell
+block the user can paste into a terminal in one shot. The block:
 
-1. Free port **8765** of any old occupant
-   (`lsof -ti:8765 | xargs kill -9 2>/dev/null`)
-2. `cd` into the working tree (`/Users/ddh/Downloads/AshGrid` or the
-   active worktree under `.claude/worktrees/`)
-3. Start a fresh `python3 -m http.server 8765` in the background
-4. Open the URL: `open http://localhost:8765/` (macOS) — **bare domain
-   only, no `/index.html` suffix**. The reason: the preview tool's
-   headless browser navigates to `/` (Python's http.server serves
-   index.html as the default), so my evaluations and the user's view
-   are guaranteed to land on the same `location.pathname` (`/`).
-   `index.html` resolves to the same file but produces a *different*
-   `location.pathname`, which causes my `?cb=` reload trick to
-   redirect to a different URL than what the user is currently on.
-   Same file, but the view-state divergence has bitten verification
-   passes more than once.
+1. Frees port **8765** (`lsof -ti:8765 | xargs kill -9 2>/dev/null`)
+2. `cd`s into `/Users/ddh/Downloads/AshGrid`
+3. Starts a fresh `python3 -m http.server 8765` in the background
+4. `open`s a URL that JUMPS THE USER STRAIGHT INTO WHATEVER WE'RE
+   DEBUGGING THIS TURN — bare domain, never `/index.html`
 
-Plus a clickable URL on its own line right after the block — also
-the bare domain.
+**The URL flags you append MUST match what the user is verifying
+right now.** Don't paste a generic `?fresh=1` if we're discussing
+the FTUE — that drops the user on the start screen and they have
+to click through to repro. User feedback (verbatim, multiple turns):
 
-Format — REQUIRED, copy-paste this exact line at the end of every
-runnable-result reply. The `&t=$(date +%s)` suffix is a unique
-cache-buster every run — the user reported that without it Chrome
-sometimes served the previous `?fresh=1` response from cache and
-they ended up looking at stale code:
+> 「Agent.MD 裡面記錄的不是說每一次結束要放哪些存文字,而是每一次
+>  結束之後如果要立即執行我們現在在討論的話題的任務和驗收的話,
+>  要執行哪一段代碼」
+
+Pick the variant that lands on the relevant verification surface:
+
+| Discussion topic                | URL flags                          |
+|---------------------------------|-------------------------------------|
+| FTUE / first-time experience    | `?fresh=1&ftue=1&t=$(date +%s)`    |
+| General gameplay / shake / SFX  | `?fresh=1&t=$(date +%s)`           |
+| Veteran flow tweak              | `?fresh=1&t=$(date +%s)` (skip intro via persisted ag.introSeen) |
+| Reset to clean state            | `?reset=1` (no `&t=…` — reset strips params) |
+| Tutorial-mode opt-in test       | `?reset=tutorial`                   |
+
+Cache-buster `&t=$(date +%s)` is required — without it Chrome
+sometimes serves the previous response from disk cache.
+
+### FTUE flag reference
+
+`?ftue=1` (commit 12d53ef) does on the boot path:
+1. Wipes `ag.firstMatch` + `ag.firstAuditSeen` + `ag.tutorialSeen`
+2. Sets `ag.introSeen = 1` (skip 90 s narration)
+3. Auto-fires the WAKE button after `window.load + 400 ms`
+4. Lights up a top-right `#ftueDevMonitor` panel showing live
+   step idx / expected advance / flags / ally+enemy counts /
+   camera scale / pause flag
+
+Critical sequencing detail: the `?ftue=1` IIFE branch MUST run
+BEFORE the `?fresh=1` IIFE returns, because fresh's redirect strips
+all query params. Both `localStorage` + `sessionStorage` writes
+survive the redirect, so the post-load wiring picks them up on the
+second load. Auto-click is also gated on `fresh !== '1'` so the
+click only fires AFTER the redirect has landed.
+
+### Format
 
 ```
-lsof -ti:8765 | xargs kill -9 2>/dev/null; cd /Users/ddh/Downloads/AshGrid && python3 -m http.server 8765 >/dev/null 2>&1 & sleep 0.4 && open "http://localhost:8765/?fresh=1&t=$(date +%s)"
+lsof -ti:8765 | xargs kill -9 2>/dev/null; cd /Users/ddh/Downloads/AshGrid && python3 -m http.server 8765 >/dev/null 2>&1 & sleep 0.4 && open "http://localhost:8765/<TOPIC-MATCHED-FLAGS>"
 ```
-http://localhost:8765/?fresh=1
 
-### FTUE dev harness — `?ftue=1`
-
-Append `&ftue=1` to the URL above to:
-1. Wipe `ag.firstMatch` + `ag.firstAuditSeen` + `ag.tutorialSeen` (re-arm
-   the first-time flow)
-2. Set `ag.introSeen = 1` (skip the 90-second narration)
-3. Auto-fire the WAKE button on load (no manual click)
-4. Light up a top-right monitor panel showing live FTUE state:
-   current step idx + expected advance + flags + ally/enemy counts +
-   camera scale + pause flag
-
-Use this when iterating on the tutorial:
-
-```
-lsof -ti:8765 | xargs kill -9 2>/dev/null; cd /Users/ddh/Downloads/AshGrid && python3 -m http.server 8765 >/dev/null 2>&1 & sleep 0.4 && open "http://localhost:8765/?fresh=1&ftue=1&t=$(date +%s)"
-```
+…followed by a bare-URL line on its own row for click-through.
 
 The `?fresh=1` flag is handled by index.html: it unregisters every
 service worker, clears every cache, then redirects to the bare URL.
