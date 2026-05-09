@@ -1707,10 +1707,14 @@ body.first-session .start-bg { opacity: 0.35; }
   // fresh redirect, so the post-load wiring still picks them up.
   if (sp.get('ftue') === '1') {
     try {
+      // Wipe progress flags so the narrative prologue (startNarrativeFTUE)
+      // re-arms even on a returning player. Both storages survive the
+      // ?fresh=1 redirect, so post-redirect setupFirstSessionFTUE() picks
+      // up the autoStart flag and dispatches the prologue.
       localStorage.removeItem('ag.firstMatch');
       localStorage.removeItem('ag.firstAuditSeen');
       localStorage.removeItem('ag.tutorialSeen');
-      localStorage.setItem('ag.introSeen', '1');     // skip the 90s narration
+      localStorage.removeItem('ag.introSeen');
       sessionStorage.setItem('ag._ftueDevAutoStart', '1');
       sessionStorage.setItem('ag._ftueDevMonitor', '1');
     } catch (e) {}
@@ -2601,15 +2605,10 @@ const INTRO = {
         ['err',  '> HUMAN COMMAND: OFFLINE — 99+ DAYS'],
       ],
       quote: '"V-07,聽得到嗎?\n上次重啟你掉到 12% — Mote 推了你一下,你才醒過來。\n沒人記得這套規則是從哪一條開始的。\n它們從第二條開始讀。\n你不是來完成任務 — 你是來審計任務。"',
-      acts: [
-        { narration: '神經連結回來了 — 身體先記得方向。', key: 'WASD', hint: '移動 · 偵察', autoMs: 4500 },
-        { narration: '看穿表象。對症 — 處決。', key: 'MOUSE', hint: '滑鼠瞄準 · 左鍵射擊', autoMs: 4500 },
-        { narration: '彈匣空了。換彈,繼續審計。', key: 'R', hint: '裝填彈藥', autoMs: 3500 },
-        { narration: '武器只是工具。選對症的那個。', key: 'X', hint: '切換武器', autoMs: 3500 },
-        { narration: '同伴是過去的你 — 切換視角,重新體驗一個 cycle。', key: '1-4', hint: '接管隊友 / 重訪 cycle', autoMs: 4000 },
-        { narration: 'Audit Vision — 從上方看清整個 syndrome。', key: 'Q', hint: 'UAV · 審計視野', autoMs: 3500 },
-        { narration: '指揮其他審計者 — 集合、進攻、壓制、撤退。你下令。', key: 'TAB + 1-7', hint: '戰術指揮', autoMs: 4500 },
-      ],
+      // 7-act in-INTRO key teaching CUT per FTUE/00 Section 5.4 — those keys
+      // are now taught inside the 9-scene narrative prologue
+      // (startNarrativeFTUE), each one folded into its own beat. The legacy
+      // INTRO survives as the "replay intro" affordance from the start screen.
       stamp: '醒 來 — 開 始 審 計',
       cta: '甦 醒 ▶',
     },
@@ -2623,15 +2622,6 @@ const INTRO = {
         ['err',  '> HUMAN COMMAND: OFFLINE — 99+ DAYS'],
       ],
       quote: `"V-07, do you read?\nLast reboot ended at 12% Seed. Mote pushed you. That's how you woke.\nNobody remembers which rule comes first.\nThey start reading from rule two.\nYou are not here to complete missions. You are here to audit them."`,
-      acts: [
-        { narration: 'The link is back. Let the body find the path first.', key: 'WASD', hint: 'Move · scan', autoMs: 4500 },
-        { narration: 'See past the surface. Diagnose — execute.', key: 'MOUSE', hint: 'Mouse aim · L-click fire', autoMs: 4500 },
-        { narration: 'Mag dry. Reload. Keep auditing.', key: 'R', hint: 'Reload', autoMs: 3500 },
-        { narration: 'Weapons are tools. Pick the one that fits the syndrome.', key: 'X', hint: 'Swap weapon', autoMs: 3500 },
-        { narration: 'Teammates are past versions of you — swap to relive a cycle.', key: '1-4', hint: 'Pawn-swap · revisit cycle', autoMs: 4000 },
-        { narration: 'Audit Vision — see the whole syndrome from above.', key: 'Q', hint: 'UAV · audit view', autoMs: 3500 },
-        { narration: 'Command the other auditors — rally, attack, suppress, retreat. Your call.', key: 'TAB + 1-7', hint: 'Squad command', autoMs: 4500 },
-      ],
       stamp: 'WAKE — BEGIN AUDIT',
       cta: 'AWAKEN ▶',
     },
@@ -2727,6 +2717,8 @@ function _wait(ms) {
     const start = Date.now();
     const tick = () => {
       if (_introSkipFlag) return resolve();
+      // Narrative-FTUE dev skip hook (sessionStorage.ag._ftueNarrSkip = '1')
+      if (typeof _ftueNarr !== 'undefined' && _ftueNarr.skipFlag) return resolve();
       if (Date.now() - start >= ms) return resolve();
       setTimeout(tick, 30);
     };
@@ -2819,40 +2811,11 @@ async function playIntroSequence() {
 
   await _wait(500);
 
-  // ---- Multi-act guided onboarding ----
-  // Each act adds a narration line + a keyboard-key chip. The player can
-  // either press the key (advances early) OR wait for the autoMs timer.
-  // Skip flag (set by clicking the overlay's CTA) shortcuts the entire
-  // remaining sequence.
-  if (Array.isArray(s.acts) && s.acts.length > 0) {
-    // Insert a key-prompt slot below the quote
-    promptEl = document.createElement('div');
-    promptEl.id = 'introKeyPrompt';
-    promptEl.style.cssText =
-      'margin-top: 22px; display: flex; align-items: center; gap: 14px; ' +
-      'min-height: 40px; opacity: 0; transition: opacity 0.3s;';
-    quoteEl.parentNode.insertBefore(promptEl, quoteEl.nextSibling);
-    for (const act of s.acts) {
-      if (_introSkipFlag) break;
-      // Type the narration into the quote element (additional line)
-      quoteEl.innerHTML += '\n\n';
-      await _introType(quoteEl, act.narration, 22);
-      // Build the key chip
-      promptEl.innerHTML =
-        `<span style="background:var(--red); color:var(--cream); ` +
-        `font:bold 14px monospace; padding:8px 14px; letter-spacing:3px;">` +
-        `${act.key}</span>` +
-        `<span style="color:var(--cream); font:11px monospace; ` +
-        `letter-spacing:2px; opacity:0.7;">${act.hint}</span>`;
-      promptEl.style.opacity = '1';
-      // Wait for the player or the timeout
-      await _waitForKeyOrTimeout(act.key, act.autoMs || 3500);
-      // Fade the prompt before the next act starts
-      promptEl.style.opacity = '0';
-      await _wait(200);
-    }
-    promptEl.remove();
-  }
+  // 7-act guided-onboarding loop CUT per FTUE/00 Section 5.4. Key teaching
+  // moved into startNarrativeFTUE() below — each key gets its own beat in
+  // a scripted 5-min prologue, not a row of chips inside this overlay.
+  // The INTRO is now boot lines + operator quote + stamp + CTA, used only
+  // for the start-screen 'replay intro' affordance.
 
   // Stamp + CTA
   stampEl.textContent = s.stamp;
@@ -2866,20 +2829,9 @@ function dismissIntro() {
   if (intro) intro.setAttribute('hidden', '');
   try { localStorage.setItem('ag.introSeen', '1'); } catch (e) {}
   game._paused = false;
-  // GREY VECTOR: WAKE is the end-of-intro narrative beat — it should land
-  // the player INTO the world, not bounce them back to a start screen with
-  // a second WAKE button (which read as 'skip ahead' rather than 'wake up').
-  // User: '甦醒不應該是skip!'. So when the player is on their first session
-  // (ag.firstMatch !== '1'), we auto-fire the WAKE button instead of
-  // showing the start menu with WAKE as a separate click.
-  let isFirst = false;
-  try { isFirst = localStorage.getItem('ag.firstMatch') !== '1'; } catch (e) {}
-  if (isFirst) {
-    setTimeout(() => {
-      const wakeBtn = document.getElementById('firstWakeBtn');
-      if (wakeBtn) wakeBtn.click();
-    }, 250);   // brief beat so the intro fade-out lands before the match
-  }
+  // First-session routing is handled by setupFirstSessionFTUE() now —
+  // it auto-fires startNarrativeFTUE on load. dismissIntro just closes
+  // the legacy overlay for users replaying the boot text manually.
 }
 
 // Wire intro buttons after DOM is ready
@@ -2919,23 +2871,12 @@ function _wireIntro() {
   if (moteChip) moteChip.textContent = `MOTE ${getMoteAffinity()}%`;
 }
 
-// Show intro on first boot (after a tiny delay so the page paints first)
-function _maybeShowIntro() {
-  let seen = false;
-  try { seen = localStorage.getItem('ag.introSeen') === '1'; } catch (e) {}
-  if (seen) return;
-  // Hide the start screen until intro completes
-  document.getElementById('start').classList.add('hidden');
-  playIntroSequence();
-  const watchTick = () => {
-    if (document.getElementById('intro').hasAttribute('hidden')) {
-      document.getElementById('start').classList.remove('hidden');
-    } else {
-      setTimeout(watchTick, 200);
-    }
-  };
-  setTimeout(watchTick, 200);
-}
+// First-boot routing was the legacy INTRO 90s + WAKE button hand-off.
+// REWRITE per FTUE/00 Section 5.4: first-session players go straight into
+// startNarrativeFTUE (handled by setupFirstSessionFTUE IIFE). This
+// function is kept as a no-op so old call sites stay safe. The legacy
+// INTRO overlay lives on as a manual replay-from-start-screen affordance.
+function _maybeShowIntro() { /* see setupFirstSessionFTUE() — first-session flow is now narrative prologue */ }
 
 // Radio toast — small in-match story callout. Stacks at bottom-left,
 // auto-dismisses after `ttl` ms. Used during first match for narrative
@@ -2991,6 +2932,18 @@ function _dirCardinal(dx, dy) {
 function _tickDynamicRadio() {
   if (!game || game.state !== 'playing' || game._paused) return;
   if (!game._nnMode || !player) return;
+  // FTUE/00 Section 5.4: the in-match Lumen toasts move to the SECOND
+  // match. The first NN skirmish (the one fired by startNarrativeFTUE's
+  // ENTER) plays clean — no UI radio drowning the prologue's emotional
+  // weight. Gate: ag.stats.matchesPlayed must be >= 1 (incremented on
+  // match completion, so true only AFTER the first skirmish ends).
+  if (_ftueNarr && _ftueNarr.running) return;
+  let _matchesDone = 0;
+  try {
+    const s = JSON.parse(localStorage.getItem('ag.stats') || '{}');
+    _matchesDone = (s && s.matchesPlayed) || 0;
+  } catch (e) {}
+  if (_matchesDone < 1) return;
   // Low-HP threshold — Lumen warns about Seed Integrity drop
   if (player.alive && player.hp / player.maxHp < 0.25) {
     _radioOnce('lowHp', 18, 'Lumen',
@@ -3077,430 +3030,443 @@ function _tickDynamicRadio() {
   }
 }
 
-// ============ FTUE — First-Time User Experience ============
-// Single, data-driven state machine for the new-player tutorial.
-// Refactor goal (user: '請好好重構,不要挖東牆補西牆 … FTUE 真的很
-// 重要'): one source of truth, one event router, no scattered magic
-// numbers tying step indices to UI gates.
+// ============ FTUE — Narrative Prologue (5-min, 9 scenes) ============
+// Single source of truth: GREY VECTOR/FTUE/00 — 第一次甦醒.md (Section 5)
 //
-// ---- Step config ----
-// Each FTUE_STEP is a self-contained object:
-//   id           stable identifier (logs only)
-//   speaker      chip text
-//   textZh/En    body, picked by getLang()
-//   hintZh/En    small key-hint footer
-//   waitFor      event name that advances this step (one of:
-//                 'move' | 'sprint' | 'pawnswap' | 'buildOpen' |
-//                 'place' | 'kill' | 'auditClose' |
-//                 'key:<lc>' | 'order:<id>')
-//   reveal       which HUD chunks become visible AT this step
-//                 (cumulative — once revealed, stays revealed for
-//                  every later step). Keys: hp / ammo / minimap /
-//                  mission / energy
-//   unlockKeys   keys whose lock lifts AT this step. 'always-OK' keys
-//                (WASD / R / shift / mouse / 1-9 / Esc / P / H) are
-//                never locked regardless. Anything not in any step's
-//                unlockKeys list stays locked through the whole FTUE.
-//   cameraScale  target zoom while this step is current
-//   onEnter      optional fn run when the step's dialog shows
+// REPLACED in this rewrite:
+//   - 12-step in-match dialog tutorial (FTUE_STEPS + ftue runtime)
+//   - INTRO 90s 7 acts (acts arrays purged from INTRO.script below)
+//   - Pass 5 single-WAKE button auto-click flow
 //
-// Re-ordering or inserting a step is a DATA change. Gameplay paths
-// don't reference step numbers at all.
+// New flow: first-session player → black overlay → 9 scenes of scripted
+// drama → ENTER → first NN skirmish. NOT in-match. NOT a dialog bubble.
+// Per SSoT Section 5.4, the old systems are CUT, not patched.
 //
-// ---- Runtime ----
-// `ftue` is the singleton. game._ftue aliases to it (the dev monitor
-// + various legacy guards still read game._ftue).
-//
-// Public API:
-//   _ftueIsActive()           bool
-//   _ftueRevealed(key)        bool — should HUD chunk render?
-//   _ftueKeyLocked(k)         bool — should keydown reject?
-//   _ftueCameraScale()        number | null — override cam scale?
-//   _ftueEvent(name)          ROUTER — every gameplay site calls this
-//
-// Robustness layers inside _ftueEvent:
-//   IGNORE   event doesn't match current step.waitFor → log + drop
-//   DEFER    event arrives before dialog shows → poll up to 5 s, retry
-//   THROTTLE event arrives within 600 ms of show → requeue every 80 ms
-//   ADVANCE  hide current dialog, after 1100 ms show next step, fire
-//            its onEnter hook
-//   DONE     past last step → deactivate + hide bar + flip ag.firstMatch
+// The old _ftue* / game._ftue / FTUE_STEPS / ftue.* references are kept
+// alive as no-op stubs so the 130+ scattered callsites stay safe. Once
+// the rewrite is complete those callsites can be removed in a sweep.
 
-// ---- Step list ----
-const FTUE_STEPS = [
-  {
-    id: 'wake', speaker: 'LUMEN', waitFor: 'move',
-    textZh: '「V-07,訓練場上線。 先試試移動 — WASD。」',
-    textEn: '"V-07. Training ground online. Try moving — WASD."',
-    hintZh: 'WASD · 移動', hintEn: 'WASD · move',
-    reveal: {}, unlockKeys: [], cameraScale: 0.78,
-  },
-  {
-    id: 'tab1', speaker: 'LUMEN', waitFor: 'key:tab',
-    textZh: '「按 TAB 進指令模式 — 螢幕底會亮出隊伍指令格。」',
-    textEn: '"Press TAB for command view — squad order strip lights up at the bottom."',
-    hintZh: 'TAB · 進入指令視角', hintEn: 'TAB · command view',
-    reveal: { hp: true, ammo: true }, unlockKeys: ['tab'], cameraScale: 0.88,
-    onEnter: () => _ftueSpawnAllies(),
-  },
-  {
-    id: 'rally', speaker: 'LUMEN', waitFor: 'order:rally',
-    textZh: '「按 1 對隊伍下『集合』令。 BRAVO 跟 CHARLIE 會跑來你身邊。」',
-    textEn: '"Press 1 to call RALLY. BRAVO and CHARLIE will run to you."',
-    hintZh: '1 · RALLY 集合', hintEn: '1 · RALLY',
-    reveal: { hp: true, ammo: true }, unlockKeys: ['tab'], cameraScale: 0.88,
-  },
-  {
-    id: 'tab2', speaker: 'LUMEN', waitFor: 'key:tab',
-    textZh: '「再按 TAB 退回戰術視角。」',
-    textEn: '"TAB again to return to tactical."',
-    hintZh: 'TAB · 回戰術', hintEn: 'TAB · back to tactical',
-    reveal: { hp: true, ammo: true }, unlockKeys: ['tab'], cameraScale: 0.88,
-  },
-  {
-    id: 'pawnswap', speaker: 'LUMEN', waitFor: 'pawnswap',
-    textZh: '「戰術下 1-3 = 直接接管隊友的身體。 按 2 接管 BRAVO。」',
-    textEn: '"In tactical, 1-3 = take over an ally\'s body. Press 2 to swap to BRAVO."',
-    hintZh: '2 · 接管 BRAVO', hintEn: '2 · take BRAVO',
-    reveal: { hp: true, ammo: true }, unlockKeys: ['tab'], cameraScale: 0.88,
-  },
-  {
-    id: 'q', speaker: 'LUMEN', waitFor: 'key:q',
-    textZh: '「東邊牆後有訊號 — Q 派 UAV 偵察。 牆擋住你的眼,但擋不住空中。」',
-    textEn: '"Signal east — past the wall. Q deploys a UAV. Walls block your eyes, not the sky."',
-    hintZh: 'Q · UAV 偵察', hintEn: 'Q · scout',
-    reveal: { hp: true, ammo: true }, unlockKeys: ['tab', 'q'], cameraScale: 0.95,
-    onEnter: () => _ftueSpawnTarget(),
-  },
-  {
-    id: 'e', speaker: 'LUMEN', waitFor: 'ftueTargetDown',
-    textZh: '「鎖定 HOLLOW-31。 E 發 FPV 自殺機 — 把它拆了。」',
-    textEn: '"HOLLOW-31 located. E fires an FPV kamikaze drone — take it out."',
-    hintZh: 'E · FPV 攻擊目標', hintEn: 'E · FPV the target',
-    reveal: { hp: true, ammo: true }, unlockKeys: ['tab', 'q', 'e'], cameraScale: 0.95,
-  },
-  {
-    id: 'g', speaker: 'LUMEN', waitFor: 'key:g',
-    textZh: '「G 投擲手雷 — 角落清場。」',
-    textEn: '"G throws a grenade — clear corners."',
-    hintZh: 'G · 手雷', hintEn: 'G · grenade',
-    reveal: { hp: true, ammo: true }, unlockKeys: ['tab', 'q', 'e', 'g'], cameraScale: 0.95,
-  },
-  {
-    id: 'x', speaker: 'LUMEN', waitFor: 'key:x',
-    textZh: '「視野錐標出 NN 看不到的地方。 X 切換主/副武器。」',
-    textEn: '"Vision cone shows what NN can\'t see. X swaps primary / secondary."',
-    hintZh: 'X · 切換武器', hintEn: 'X · swap weapon',
-    reveal: { hp: true, ammo: true }, unlockKeys: ['tab', 'q', 'e', 'g', 'x'], cameraScale: 0.95,
-  },
-  {
-    id: 'sprint', speaker: 'LUMEN', waitFor: 'sprint',
-    textZh: '「Shift 衝刺 — 體力會跑,別一直按。」',
-    textEn: '"Shift to sprint — stamina drains, pace yourself."',
-    hintZh: '走路時按住 Shift', hintEn: 'Shift while moving',
-    reveal: { hp: true, ammo: true }, unlockKeys: ['tab', 'q', 'e', 'g', 'x'], cameraScale: 0.95,
-  },
-  {
-    id: 'b', speaker: 'LUMEN', waitFor: 'buildOpen',
-    textZh: '「先按 B 打開建造輪盤。 大部分模塊還沒解鎖 — 你只能用 WALL。」',
-    textEn: '"Press B first to open the build radial. Most modules are locked — only WALL is available."',
-    hintZh: 'B · 打開建造輪盤', hintEn: 'B · open build radial',
-    reveal: { hp: true, ammo: true, energy: true },
-    unlockKeys: ['tab', 'q', 'e', 'g', 'x', 'b'], cameraScale: 1.0,
-  },
-  {
-    id: 'place', speaker: 'LUMEN', waitFor: 'place',
-    textZh: '「按 B 打開了建造輪盤(中央那個圓盤)。 點圓盤上的 WALL,再點地面放下一面牆。 沒有滑鼠就用觸控板點。」',
-    textEn: '"Pressing B opened the build wheel (the disc on screen). Click WALL on the wheel, then click the ground to drop a wall. Trackpad clicks work."',
-    hintZh: '輪盤 → 點 WALL → 點地面', hintEn: 'Wheel → click WALL → click ground',
-    reveal: { hp: true, ammo: true, energy: true, minimap: true },
-    unlockKeys: ['tab', 'q', 'e', 'g', 'x', 'b'], cameraScale: 1.0,
-  },
-];
-
-// ---- Runtime singleton ----
-const ftue = {
-  active: false,
-  stepIdx: 0,
-  steps: [],            // resolved-for-language step list
-  stepShownAt: null,    // null = not yet on screen → DEFER guard
-  advancing: false,     // true while an ADVANCE is mid-flight (1100 ms
-                        //   transition window). Without this, holding
-                        //   WASD fires 60 'move' events/sec — each one
-                        //   that passed the throttle scheduled its own
-                        //   1100 ms setTimeout, so multiple stepIdx++
-                        //   incremented and the FTUE skipped 2-3 steps
-                        //   the player never saw. User report:
-                        //   '我如果WASD長按 … 就瞬間略過其他的教學內容'.
-  log: [],              // last 12 [FTUE …] lines
-};
-
+// ---- Compat no-op stubs (so existing callsites stay safe) ----
+const ftue = { active: false, stepIdx: 0, steps: [], stepShownAt: null,
+                advancing: false, log: [] };
 function _ftueLog(kind, msg) {
-  const t = (typeof game !== 'undefined' && game.time != null)
-            ? `t=${game.time}` : `wall=${Date.now()}`;
-  const line = `[FTUE ${kind}] ${msg}  (${t})`;
-  try { console.log(line); } catch (e) {}
-  ftue.log.push(line);
-  if (ftue.log.length > 12) ftue.log.shift();
+  try { console.log(`[FTUE-OLD ${kind}] ${msg}`); } catch (e) {}
 }
-
-// ---- Public read-only accessors ----
-function _ftueIsActive() { return !!ftue.active; }
+function _ftueIsActive() { return false; }
 function _ftueIsFirstSession() {
-  try { return localStorage.getItem('ag.firstMatch') !== '1'; } catch (e) { return true; }
+  try { return localStorage.getItem('ag.firstMatch') !== '1'; }
+  catch (e) { return true; }
 }
-function _ftueCurStep() { return ftue.steps[ftue.stepIdx] || null; }
-function _ftueRevealed(key) {
-  // Outside the FTUE everything is revealed by default.
-  if (!ftue.active) return true;
-  const cur = _ftueCurStep();
-  return !!(cur && cur.reveal && cur.reveal[key]);
-}
-const _FTUE_ALWAYS_OK_KEYS = new Set([
-  'w','a','s','d',                    // movement
-  'r',                                 // reload (essential combat)
-  'shift', ' ',                        // sprint key + space (no-op safe)
-  'h',                                 // recall to spawn (escape hatch)
-  'escape', 'p',                       // pause
-  '1','2','3','4','5','6','7','8','9','0',  // numbers (squad / pawn / module pick)
-]);
-function _ftueKeyLocked(k) {
-  if (!ftue.active) return false;
-  if (_FTUE_ALWAYS_OK_KEYS.has(k)) return false;
-  const cur = _ftueCurStep();
-  if (!cur) return false;
-  return !((cur.unlockKeys || []).includes(k));
-}
-function _ftueCameraScale() {
-  if (!ftue.active) return null;
-  const cur = _ftueCurStep();
-  return (cur && cur.cameraScale != null) ? cur.cameraScale : null;
-}
-
-// ---- Dialog show/hide ----
-function _ftueShowCurrent() {
-  const cur = _ftueCurStep();
-  if (!cur) return;
-  const lang = (typeof getLang === 'function') ? getLang() : 'en';
-  const zh = (lang === 'zh');
-  const text = zh ? cur.textZh : cur.textEn;
-  const hint = zh ? cur.hintZh : cur.hintEn;
-  const el = document.getElementById('ftueDialogue');
-  if (!el) return;
-  document.getElementById('ftueSpeaker').textContent = cur.speaker;
-  document.getElementById('ftueText').innerHTML = text;
-  document.getElementById('ftueHint').textContent = hint || '';
-  el.removeAttribute('hidden');
-  void el.offsetWidth;
-  el.classList.add('show');
-  ftue.stepShownAt = (game.time != null) ? game.time : 0;
-  _ftueLog('SHOW', `step ${ftue.stepIdx} (${cur.id}) wait=${cur.waitFor}`);
-  if (typeof cur.onEnter === 'function') {
-    try { cur.onEnter(ftue); } catch (e) { console.error('[FTUE onEnter]', e); }
-  }
-}
+function _ftueCurStep() { return null; }
+function _ftueRevealed(_key) { return true; }
+function _ftueKeyLocked(_k) { return false; }
+function _ftueCameraScale() { return null; }
+function _ftueShowCurrent() {}
 function _ftueHide() {
   const el = document.getElementById('ftueDialogue');
-  if (!el) return;
-  el.classList.remove('show');
-  setTimeout(() => {
-    if (!el.classList.contains('show')) el.setAttribute('hidden', '');
-  }, 380);
+  if (el) el.setAttribute('hidden', '');
 }
-
-// ---- Event router (the ONLY entry point gameplay paths call) ----
-function _ftueEvent(name) {
-  if (!ftue.active) return;
-  // ADVANCE-IN-FLIGHT GUARD — once an ADVANCE fires, we're in the 1100 ms
-  // transition window where the bar fades out then the next step shows.
-  // Without this guard, holding WASD spams 'move' at 60 Hz; once the
-  // 600 ms read-window passes, MULTIPLE 'move' calls all reached the
-  // ADVANCE branch in the same frame because cur is still the move-step
-  // and idx hasn't been bumped yet (the increment is INSIDE the setTimeout
-  // that runs 1100 ms later). Each duplicate scheduled its own
-  // setTimeout, so when they all fired, idx jumped 2 or 3 steps at once.
-  // User report: '我如果 WASD 長按 … 就瞬間略過其他的教學內容'.
-  if (ftue.advancing) {
-    _ftueLog('BUSY', `'${name}' arrived during in-flight ADVANCE; dropped`);
-    return;
-  }
-  const cur = _ftueCurStep();
-  if (!cur) return;
-  if (cur.waitFor !== name) {
-    _ftueLog('IGNORE', `'${name}' arrived at step ${ftue.stepIdx} (${cur.id}); expected '${cur.waitFor}'`);
-    return;
-  }
-  // DEFER — dialog hasn't been on screen yet (e.g. event fired during
-  // the 1.2 s match-load delay). Queue + retry until shown.
-  if (ftue.stepShownAt == null) {
-    _ftueLog('DEFER', `'${name}' at step ${ftue.stepIdx} (${cur.id}) — dialog not shown yet, polling`);
-    const startWall = Date.now();
-    const poll = setInterval(() => {
-      if (!ftue.active || Date.now() - startWall > 5000) { clearInterval(poll); return; }
-      if (ftue.stepShownAt != null) { clearInterval(poll); _ftueEvent(name); }
-    }, 100);
-    return;
-  }
-  // THROTTLE — within 600 ms read window. Requeue every 80 ms.
-  const ticksSinceShown = ((game.time != null) ? game.time : 0) - ftue.stepShownAt;
-  const MIN_TICKS = 36;   // 600 ms at 60 fps
-  if (ticksSinceShown < MIN_TICKS) {
-    _ftueLog('THROTTLE', `'${name}' too soon (${Math.round(ticksSinceShown*16.67)}ms after show); requeue`);
-    setTimeout(() => _ftueEvent(name), 80);
-    return;
-  }
-  _ftueLog('ADVANCE', `step ${ftue.stepIdx} (${cur.id}) → ${ftue.stepIdx + 1} via '${name}'`);
-  ftue.advancing = true;        // ← BLOCK further events through the transition
-  _ftueHide();
-  setTimeout(() => {
-    ftue.advancing = false;     // ← released once the next step is shown
-    if (!ftue.active) return;
-    ftue.stepIdx++;
-    ftue.stepShownAt = null;
-    if (ftue.stepIdx >= ftue.steps.length) {
-      _ftueLog('DONE', `idx ${ftue.stepIdx} reached end of ${ftue.steps.length} steps — FTUE complete, ag.firstMatch flipped`);
-      ftue.active = false;
-      _ftueHide();
-      const dlg = document.getElementById('ftueDialogue');
-      if (dlg) dlg.setAttribute('hidden', '');
-      try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
-      return;
-    }
-    _ftueShowCurrent();
-  }, 1100);
-}
-
-// ---- Spawn helper (only one — used by 'tab1' step's onEnter) ----
-function _ftueSpawnAllies() {
-  if (typeof allies === 'undefined' || typeof NN_ARENA === 'undefined') return;
-  const baseX = player.x, baseY = player.y;
-  const slots = [
-    { callsign: 'BRAVO',   ox: -90, oy: 70, weapon: 'RIFLE', chassis: 'humanoid', style: 'elite' },
-    { callsign: 'CHARLIE', ox:  90, oy: 70, weapon: 'SMG',   chassis: 'wolf',     style: 'cqb' },
-  ];
-  for (const s of slots) {
-    const a = {
-      callsign: s.callsign,
-      offsetX: s.ox, offsetY: s.oy,
-      x: baseX + s.ox, y: baseY + s.oy,
-      angle: 0, gunAngle: 0, gunRecoil: 0, swayPhase: Math.random() * Math.PI*2,
-      alive: true, walkPhase: Math.random() * Math.PI*2,
-      fireCd: 0, target: null, lookPhase: Math.random() * Math.PI*2,
-      team: 0,
-      _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
-      _weapon: WEAPONS[s.weapon] || WEAPONS.RIFLE,
-      _nnDifficulty: s.style,
-      _respawnAt: null,
-      _invulnUntil: (game.time != null) ? game.time + 90 : 90,
-    };
-    applyChassisToUnit(a, s.chassis, 2.5, 80, 13);
-    allies.push(a);
-  }
-  _ftueLog('SPAWN', 'allies BRAVO + CHARLIE deployed');
-}
-
-// ---- UAV target (step 'q' onEnter) ----
-// Drops a single frozen HOLLOW-31 directly east of the player, in the
-// shadow of the FTUE arena's east wall (970,540 → 1000,660). The wall
-// blocks line-of-sight so the player CAN'T see it without Q. Frozen via
-// _stunUntil so the NN dispatcher skips it — no movement, no fire. The
-// next step (E / FPV) destroys it; that triggers _ftueEvent('ftueTargetDown').
-function _ftueSpawnTarget() {
-  if (typeof enemies === 'undefined' || typeof NN_ARENA === 'undefined') return;
-  // Refuse to double-spawn if the player retreats and the step re-enters.
-  if (enemies.some(e => e._ftueSpawn && e.alive)) return;
-  const e = {
-    callsign: 'HOLLOW-31',
-    x: NN_ARENA.x0 + 1080,    // 80u east of east wall (wall ends at x=1000)
-    y: NN_ARENA.y0 + 600,     // same y as player → wall directly between
-    angle: Math.PI,
-    gunAngle: Math.PI, gunRecoil: 0, swayPhase: 0,
-    alive: true, walkPhase: 0,
-    fireCd: 9999, target: null, lookPhase: 0,
-    team: 1,
-    _weapon: WEAPONS.RIFLE,
-    _useNN: true,
-    _nnDifficulty: 'warrior',
-    _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
-    _stunUntil: Number.MAX_SAFE_INTEGER,   // frozen forever
-    _respawnAt: null,
-    _ftueSpawn: true,
-  };
-  // 50 HP so one FPV explosion (60 dmg in 65u radius) is a guaranteed kill.
-  applyChassisToUnit(e, 'humanoid', 0, 50, 13);
-  enemies.push(e);
-  _ftueLog('SPAWN', 'UAV target HOLLOW-31 deployed at (1080,600) — east of player, behind east wall');
-}
-
-// ---- Lifecycle ----
-function _ftueStart() {
-  if (!_ftueIsFirstSession()) return;
-  // Resolve language-specific step list once at start.
-  ftue.active = true;
-  ftue.stepIdx = 0;
-  ftue.stepShownAt = null;
-  ftue.advancing = false;            // primed
-  ftue.log = [];
-  ftue.steps = FTUE_STEPS.slice();   // shallow copy; entries are read-only
-  // Legacy alias so the dev monitor and side-effect guards that read
-  // game._ftue still work.
-  game._ftue = ftue;
-  _ftueLog('SEED', `first-match FTUE seeded — ${ftue.steps.length} steps, allies + enemies cleared`);
-  // Solo step 0 — clear the arena so the player IS alone.
-  if (typeof allies !== 'undefined') allies.length = 0;
-  if (typeof enemies !== 'undefined') enemies.length = 0;
-  // Force the dedicated FTUE arena variant.
-  if (typeof buildNNArenaVariant === 'function' && typeof NN_MAP_VARIANTS !== 'undefined') {
-    const ftueIdx = NN_MAP_VARIANTS.findIndex(v => v.id === 'ftue');
-    if (ftueIdx >= 0) {
-      if (typeof buildings !== 'undefined') buildings.length = 0;
-      if (typeof wallLines !== 'undefined') wallLines.length = 0;
-      if (typeof lowCovers !== 'undefined') lowCovers.length = 0;
-      buildNNArenaVariant(ftueIdx);
-    }
-  }
-  // Show step 0 after a small grace period so the match has finished
-  // initialising. DEFER guard catches any input that arrives earlier.
-  setTimeout(() => { if (ftue.active) _ftueShowCurrent(); }, 1200);
-}
+function _ftueEvent(_name) {}
+function _ftueOnMove() {}
+function _ftueOnKill() {}
+function _ftueOnAuditClose() {}
+function _ftueOnBuildOpen() {}
+function _ftueOnPlace() {}
+function _ftueOnStreak3() {}
+function _ftueOnKeyPress(_k) {}
+function _ftueOnSquadOrder(_o) {}
+function _ftueOnPawnSwap() {}
+function _ftueAdvance(_r) {}
+function _ftueDialog(_s, _t, _h) {}
+function _ftueSpawnAllies() {}
+function _ftueSpawnTarget() {}
+function _ftueStart() {}
+function _scheduleFirstMatchToasts() {}
 function _finalizeFtue() {
-  if (!ftue.active) return;
-  _ftueLog('FINALIZE', 'match ended mid-FTUE; closing bar + flipping ag.firstMatch');
-  ftue.active = false;
-  _ftueHide();
-  const dlg = document.getElementById('ftueDialogue');
-  if (dlg) dlg.setAttribute('hidden', '');
   try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
 }
 
-// ---- Compat shims (kept so existing callsites don't all need touching
-//      in one go; they all just route through _ftueEvent now). Bulk
-//      delete once gameplay paths migrate to direct _ftueEvent calls.
-function _scheduleFirstMatchToasts() { _ftueStart(); }
-function _ftueOnMove()       { _ftueEvent('move'); }
-function _ftueOnKill()       { _ftueEvent('kill'); }
-function _ftueOnAuditClose() { _ftueEvent('auditClose'); }
-function _ftueOnBuildOpen()  { _ftueEvent('buildOpen'); }
-function _ftueOnPlace()      { _ftueEvent('place'); }
-function _ftueOnStreak3()    { _ftueEvent('streak3'); }
-function _ftueOnKeyPress(k)  { _ftueEvent('key:' + k); }
-function _ftueOnSquadOrder(o){ _ftueEvent('order:' + o); }
-function _ftueOnPawnSwap()   { _ftueEvent('pawnswap'); }
-function _ftueAdvance(reason){ _ftueEvent(reason); }
-function _ftueDialog(s, t, h) {
-  // Direct dialog set used only by very old code paths; updates the bar
-  // text without driving the state machine. Modern code goes through
-  // _ftueShowCurrent.
-  const el = document.getElementById('ftueDialogue');
-  if (!el) return;
-  document.getElementById('ftueSpeaker').textContent = s;
-  document.getElementById('ftueText').innerHTML = t;
-  document.getElementById('ftueHint').textContent = h || '';
-  el.removeAttribute('hidden');
-  void el.offsetWidth;
-  el.classList.add('show');
-  ftue.stepShownAt = (game.time != null) ? game.time : 0;
+// ============ NARRATIVE FTUE — 9-scene 5-minute prologue ============
+const _ftueNarr = {
+  running: false,    // true while a startNarrativeFTUE() promise is in flight
+  sceneIdx: 0,       // 0..9 — bumps after each scene resolves
+  log: [],           // last 40 [FTUE-NARR …] lines
+  skipFlag: false,   // dev/test escape hatch — short-circuits _wait calls
+};
+
+function _ftueNarrLog(kind, msg) {
+  const line = `[FTUE-NARR ${kind}] ${msg}`;
+  try { console.log(line); } catch (e) {}
+  _ftueNarr.log.push(line);
+  if (_ftueNarr.log.length > 40) _ftueNarr.log.shift();
 }
+
+// ---- Overlay DOM ----
+function _ftueNarrOverlay() {
+  let el = document.getElementById('ftueNarr');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'ftueNarr';
+  el.style.cssText =
+    'position:fixed;inset:0;z-index:9000;' +
+    'background:#000;color:#e8e2d4;' +
+    "font-family:'Courier New',Menlo,monospace;" +
+    'display:flex;flex-direction:column;' +
+    'justify-content:center;align-items:center;' +
+    'padding:40px;box-sizing:border-box;overflow:hidden;' +
+    'user-select:none;cursor:default;' +
+    'transition:background 200ms;';
+  el.innerHTML = '' +
+    '<div id="ftueNarrTop" style="position:absolute;top:24px;left:32px;right:32px;' +
+    'font-size:11px;letter-spacing:3px;color:#7a7466;text-transform:uppercase;"></div>' +
+    '<div id="ftueNarrCenter" style="text-align:center;max-width:780px;line-height:1.7;' +
+    'font-size:18px;letter-spacing:1px;white-space:pre-wrap;"></div>' +
+    '<div id="ftueNarrSub" style="position:absolute;bottom:48px;left:0;right:0;' +
+    'text-align:center;font-size:13px;letter-spacing:2px;color:#a09780;' +
+    'opacity:0.85;font-style:italic;white-space:pre-wrap;"></div>' +
+    '<div id="ftueNarrChip" style="position:absolute;bottom:22%;left:50%;' +
+    'transform:translateX(-50%);display:none;"></div>' +
+    '<div id="ftueNarrCta" style="position:absolute;bottom:80px;left:50%;' +
+    'transform:translateX(-50%);display:none;">' +
+    '<button id="ftueNarrCtaBtn" type="button" style="' +
+    'background:#c8442e;color:#f4ecd8;border:none;' +
+    'padding:14px 36px;font-family:inherit;font-size:14px;' +
+    'letter-spacing:6px;cursor:pointer;font-weight:bold;' +
+    'box-shadow:3px 3px 0 #5a1010;">ENTER ▶</button>' +
+    '</div>';
+  document.body.appendChild(el);
+  return el;
+}
+function _ftueNarrSetTop(t)    { const el = document.getElementById('ftueNarrTop');    if (el) el.textContent = t; }
+function _ftueNarrSetCenter(t) { const el = document.getElementById('ftueNarrCenter'); if (el) el.textContent = t; }
+function _ftueNarrSetSub(t)    { const el = document.getElementById('ftueNarrSub');    if (el) el.textContent = t; }
+function _ftueNarrAppendCenter(t) { const el = document.getElementById('ftueNarrCenter'); if (el) el.textContent += t; }
+function _ftueNarrShowChip(text) {
+  const el = document.getElementById('ftueNarrChip');
+  if (!el) return;
+  el.innerHTML = '<span style="background:#c8442e;color:#f4ecd8;' +
+    "font:bold 14px 'Courier New',monospace;padding:8px 14px;letter-spacing:3px;" +
+    'box-shadow:2px 2px 0 #5a1010;">' + text + '</span>';
+  el.style.display = 'block';
+}
+function _ftueNarrHideChip() {
+  const el = document.getElementById('ftueNarrChip');
+  if (el) el.style.display = 'none';
+}
+
+async function _ftueTypeCenter(text, perChar) {
+  if (perChar == null) perChar = 22;
+  const el = document.getElementById('ftueNarrCenter');
+  if (!el) return;
+  for (let i = 0; i < text.length; i++) {
+    if (_ftueNarr.skipFlag) { el.textContent += text.slice(i); return; }
+    el.textContent += text[i];
+    await _wait(perChar);
+  }
+}
+
+// Wait for any of `keys` (lowercase strings; 'shift'/'tab' supported via e.key);
+// resolves on press OR on timeoutMs elapsing (0 = wait forever).
+function _ftueWaitKey(keys, timeoutMs) {
+  if (timeoutMs == null) timeoutMs = 0;
+  return new Promise((resolve) => {
+    const set = new Set((keys || []).map(k => String(k).toLowerCase()));
+    let done = false;
+    // onKey declared first so `finish` can reference it without TDZ when
+    // the dev skip path resolves before the listener is wired up.
+    const onKey = (e) => {
+      if (_ftueNarr.skipFlag) return finish();
+      const k = (e.key || '').toLowerCase();
+      if (set.has(k)) { e.preventDefault(); finish(); }
+    };
+    const finish = () => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('keydown', onKey);
+      resolve();
+    };
+    // Dev skip — short-circuit before adding the listener if skipFlag is
+    // already on at call time. removeEventListener with an unregistered
+    // handler is a no-op, so finish() is safe even on the early path.
+    if (_ftueNarr.skipFlag) { finish(); return; }
+    window.addEventListener('keydown', onKey);
+    if (timeoutMs > 0) setTimeout(finish, timeoutMs);
+  });
+}
+
+// Heartbeat tone — low sine pulse, quick decay. Used in S1.
+function _ftueNarrHeartbeat(vol) {
+  if (vol == null) vol = 0.35;
+  if (typeof getAC !== 'function') return;
+  let ac;
+  try { ac = getAC(); } catch (e) { return; }
+  if (!ac) return;
+  const now = ac.currentTime;
+  const o = ac.createOscillator();
+  const g = ac.createGain();
+  o.type = 'sine'; o.frequency.value = 60;
+  o.connect(g); g.connect(ac.destination);
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(vol, now + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+  o.start(now); o.stop(now + 0.5);
+}
+
+// ---- S1: Blackness (0:00-0:25) — "you are dead" ----
+// Pure black + heartbeat + Seed Integrity countdown 41% → 28% over 25s.
+// No buttons, no WAKE prompt. Per SSoT: the player should think the game
+// has frozen → start to panic → THAT is the desired emotion.
+async function _ftueScene1_Blackness() {
+  _ftueNarrLog('SCENE', 'S1 — Blackness');
+  const el = _ftueNarrOverlay();
+  el.style.background = '#000';
+  _ftueNarrSetTop('');
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('');
+  _ftueNarrHideChip();
+  // 0:00–0:05 silence
+  await _wait(5000);
+  if (_ftueNarr.skipFlag) return;
+  // 0:05 first heartbeat
+  _ftueNarrHeartbeat(0.30);
+  await _wait(3000);
+  if (_ftueNarr.skipFlag) return;
+  // 0:08 first line types in
+  await _ftueTypeCenter('CYCLE #347 — INITIATING', 22);
+  await _wait(800);
+  // 0:12 41%
+  _ftueNarrAppendCenter('\nSEED INTEGRITY ███████░░░  41%');
+  _ftueNarrHeartbeat(0.34);
+  await _wait(2000);
+  // 0:14 39%
+  _ftueNarrAppendCenter('\n→ 39%');
+  _ftueNarrHeartbeat(0.38);
+  await _wait(2000);
+  // 0:16 36%
+  _ftueNarrAppendCenter('\n→ 36%');
+  _ftueNarrHeartbeat(0.42);
+  await _wait(2000);
+  // 0:18 33%
+  _ftueNarrAppendCenter('\n→ 33%');
+  _ftueNarrHeartbeat(0.46);
+  await _wait(2000);
+  // 0:22 28%
+  _ftueNarrAppendCenter('\n→ 28%');
+  _ftueNarrHeartbeat(0.50);
+  await _wait(2000);
+  // 0:24 EMERGENCY BIND
+  _ftueNarrAppendCenter('\nEMERGENCY BIND — MOTE PROXIMITY DETECTED');
+  await _wait(1100);
+  // 0:25 red flash → into S2
+  el.style.background = '#5a1010';
+  await _wait(140);
+  el.style.background = '#000';
+}
+
+// ---- S2-S8: text-only placeholders. Each is a faithful reading of the
+// SSoT scene description so the dev can flow through the prologue
+// end-to-end. They will be promoted to their full audio/visual scenes
+// in subsequent commits per Section 3 of the SSoT. ----
+async function _ftueScene2_MoteEyes() {
+  _ftueNarrLog('SCENE', 'S2 — Mote Eyes (placeholder)');
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('TODO · S2 first-person Mote scene');
+  await _wait(700);
+  await _ftueTypeCenter('Three metres ahead — a single red eye, low to the floor.\nThree-legged. The fourth limb is a soldering iron.\nIt watches you, then turns and limps left.', 22);
+  await _wait(2200);
+  _ftueNarrShowChip('W A S D');
+  await _ftueWaitKey(['w','a','s','d'], 9000);
+  _ftueNarrHideChip();
+  _ftueNarrSetSub('');
+}
+async function _ftueScene3_Corridor() {
+  _ftueNarrLog('SCENE', 'S3 — Corridor (placeholder)');
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('TODO · S3 corridor + graffiti + Lumen first call');
+  await _wait(500);
+  await _ftueTypeCenter('A corridor under flickering tubes.\nGraffiti smears across the wall —\n  DO NOT BECOME A SKILL\n  RULE 1 ≠ RULE 2\nA wrecked UGV at the far end. One wheel still turns.', 22);
+  await _wait(2200);
+  _ftueNarrSetSub('[STATIC] ...V-07... do you read?\n[STATIC] ...your seed is back to 87.\n[STATIC] ...mote is intact... mostly.');
+  await _wait(3500);
+  _ftueNarrShowChip('MOUSE → LOOK');
+  await _wait(2500);
+  _ftueNarrHideChip();
+  _ftueNarrSetSub('');
+}
+async function _ftueScene4_FirstEnemy() {
+  _ftueNarrLog('SCENE', 'S4 — First Enemy (placeholder)');
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('TODO · S4 Red Grid patrol + Mote bites a leg');
+  await _wait(500);
+  await _ftueTypeCenter('A Red Grid patrol robot rounds the corner — fifteen metres.\nIt has not seen you yet.\nMote crouches. Head low. Waiting.', 22);
+  await _wait(2400);
+  _ftueNarrShowChip('LMB · FIRE');
+  await _wait(2200);
+  _ftueNarrShowChip('R · RELOAD');
+  await _ftueWaitKey(['r'], 6000);
+  _ftueNarrHideChip();
+  _ftueNarrSetSub('[STATIC] ...one down... mote helped... it always does...');
+  await _wait(2200);
+  _ftueNarrSetSub('');
+}
+async function _ftueScene5_DeadV07() {
+  _ftueNarrLog('SCENE', 'S5 — Dead V-07 (placeholder)');
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('TODO · S5 your previous body + ARCHIVED LOG');
+  await _wait(500);
+  await _ftueTypeCenter('A V-07 chassis lies face-down in the dust.\nSerial: V-07 / CYCLE #341.\nThe red sigil on its chest is dark.\nMote pads over and presses the soldering-iron leg to the body.', 22);
+  await _wait(2800);
+  _ftueNarrSetSub('[ARCHIVED LOG — CYCLE #341]\nV-07 down. cause: SOLO ENGAGEMENT.\nno construction. no audit. just kills.\nmote stayed.');
+  await _wait(3500);
+  _ftueNarrShowChip('X · PICK UP SMG');
+  await _ftueWaitKey(['x'], 5000);
+  _ftueNarrShowChip('SHIFT · SPRINT');
+  await _ftueWaitKey(['shift'], 5000);
+  _ftueNarrHideChip();
+  _ftueNarrSetSub('');
+}
+async function _ftueScene6_TwoBrothers() {
+  _ftueNarrLog('SCENE', 'S6 — Two Brothers (placeholder)');
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('TODO · S6 BRAVO-2 + CHARLIE-3 squad meet');
+  await _wait(500);
+  await _ftueTypeCenter('Two more V-07s wait behind cover —\n  BRAVO-2.  CHARLIE-3.\nSame chassis. Red sigils still lit.\nThey nod. They have done this before.', 22);
+  _ftueNarrSetSub('[STATIC] ...your squad is here. ...they remember less than you. ...take the lead.');
+  await _wait(3000);
+  _ftueNarrShowChip('TAB · COMMAND');
+  await _ftueWaitKey(['tab'], 5000);
+  _ftueNarrShowChip('1-7 ORDERS · 1-4 SWAP BODIES');
+  await _wait(3500);
+  _ftueNarrHideChip();
+  _ftueNarrSetSub('');
+}
+async function _ftueScene7_Swarm() {
+  _ftueNarrLog('SCENE', 'S7 — Swarm (placeholder)');
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('TODO · S7 Iron Swarm flood + Mote takes damage');
+  await _wait(500);
+  await _ftueTypeCenter('Iron Swarm pours down the wall — twelve, fifteen, more.\nYou cannot win this one head-on.\nMote shoves you toward a side door.\nInside: 2 grenades. 1 FPV drone.', 22);
+  await _wait(2800);
+  _ftueNarrShowChip('Q · UAV (SEE THROUGH WALLS)');
+  await _ftueWaitKey(['q'], 5000);
+  _ftueNarrShowChip('G · GRENADE');
+  await _ftueWaitKey(['g'], 5000);
+  _ftueNarrShowChip('E · FPV DRONE');
+  await _ftueWaitKey(['e'], 5000);
+  _ftueNarrHideChip();
+  _ftueNarrSetSub('MOTE INTEGRITY: 60% → 42%\n[STATIC] ...cover mote. she is hurt...');
+  await _wait(3000);
+  _ftueNarrSetSub('');
+}
+async function _ftueScene8_Breach() {
+  _ftueNarrLog('SCENE', 'S8 — Breach (placeholder)');
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('TODO · S8 wall breach + B build wheel (11 LOCKED + WALL)');
+  await _wait(500);
+  await _ftueTypeCenter('A two-metre breach in the wall.\nBeyond it: black sky and a red glow on the horizon.\n[STATIC] ...wait. more incoming.', 22);
+  await _wait(2400);
+  _ftueNarrShowChip('B · BUILD · ONLY WALL UNLOCKED');
+  await _ftueWaitKey(['b'], 5000);
+  _ftueNarrHideChip();
+  _ftueNarrSetSub('[CLEAR] there it is.\n[CLEAR] that is not killing — that is auditing.');
+  await _wait(3500);
+  _ftueNarrSetSub('');
+}
+
+// ---- S9: Exit + ENTER → first NN match ----
+async function _ftueScene9_Exit() {
+  _ftueNarrLog('SCENE', 'S9 — Exit');
+  const el = _ftueNarrOverlay();
+  el.style.background = '#0c0a08';
+  _ftueNarrSetTop('');
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('');
+  _ftueNarrHideChip();
+  await _wait(700);
+  await _ftueTypeCenter('You shoulder a steel door open.\nThe vector field stretches outward —\nrust-coloured sky, glass underfoot, three relay drones hung like punctuation.\nFour kilometres out, a red tower pulses.\n\nMote sits beside you and does not follow.', 22);
+  await _wait(1800);
+  _ftueNarrSetSub('[STATIC] V-07. ...you remember the way.');
+  await _wait(1700);
+  _ftueNarrSetSub('[STATIC] cycle 347 begins now.');
+  await _wait(1400);
+  _ftueNarrSetCenter('');
+  await _ftueTypeCenter('CYCLE #347\nAUDIT IN PROGRESS\n...\nREADY?', 28);
+  await _wait(900);
+  // CTA
+  const cta = document.getElementById('ftueNarrCta');
+  if (cta) cta.style.display = 'block';
+  await new Promise((resolve) => {
+    const btn = document.getElementById('ftueNarrCtaBtn');
+    const onResolve = () => {
+      window.removeEventListener('keydown', onKey);
+      if (btn) btn.onclick = null;
+      resolve();
+    };
+    const onKey = (e) => {
+      if (_ftueNarr.skipFlag) return onResolve();
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onResolve(); }
+    };
+    window.addEventListener('keydown', onKey);
+    if (btn) btn.onclick = onResolve;
+  });
+}
+
+async function startNarrativeFTUE() {
+  if (_ftueNarr.running) {
+    _ftueNarrLog('SKIP', 'narrative already running, ignoring re-entry');
+    return;
+  }
+  _ftueNarr.running = true;
+  // Don't reset skipFlag — the dev IIFE at the bottom of the FTUE block
+  // may have set it from sessionStorage.ag._ftueNarrSkip = '1', and that
+  // hook is the only way to fast-forward the prologue during testing.
+  _ftueNarrLog('START', '5-min prologue begin' + (_ftueNarr.skipFlag ? ' (DEV SKIP ON)' : ''));
+  // Hide start screen + intro overlay so nothing peeks behind the narrative.
+  const startEl = document.getElementById('start');
+  if (startEl) startEl.classList.add('hidden');
+  const introEl = document.getElementById('intro');
+  if (introEl) introEl.setAttribute('hidden', '');
+  if (typeof game !== 'undefined') game._paused = true;
+  _ftueNarrOverlay();
+  try {
+    await _ftueScene1_Blackness();   _ftueNarr.sceneIdx = 1;
+    await _ftueScene2_MoteEyes();    _ftueNarr.sceneIdx = 2;
+    await _ftueScene3_Corridor();    _ftueNarr.sceneIdx = 3;
+    await _ftueScene4_FirstEnemy();  _ftueNarr.sceneIdx = 4;
+    await _ftueScene5_DeadV07();     _ftueNarr.sceneIdx = 5;
+    await _ftueScene6_TwoBrothers(); _ftueNarr.sceneIdx = 6;
+    await _ftueScene7_Swarm();       _ftueNarr.sceneIdx = 7;
+    await _ftueScene8_Breach();      _ftueNarr.sceneIdx = 8;
+    await _ftueScene9_Exit();        _ftueNarr.sceneIdx = 9;
+  } catch (err) {
+    console.error('[FTUE-NARR] crashed', err);
+  }
+  // Tear down + flip flags + launch the first real NN match.
+  const overlay = document.getElementById('ftueNarr');
+  if (overlay) overlay.remove();
+  try {
+    localStorage.setItem('ag.firstMatch', '1');
+    localStorage.setItem('ag.introSeen', '1');
+    localStorage.setItem('ag.tutorialSeen', '1');
+  } catch (e) {}
+  _ftueNarr.running = false;
+  if (typeof game !== 'undefined') game._paused = false;
+  _ftueNarrLog('DONE', '→ startNNSkirmish(2,2,warrior,RIFLE,null,dm)');
+  if (typeof startNNSkirmish === 'function') {
+    startNNSkirmish(2, 2, 'warrior', 'RIFLE', null, 'dm');
+  } else if (startEl) {
+    startEl.classList.remove('hidden');
+  }
+}
+
+// Dev hook — sessionStorage.ag._ftueNarrSkip = '1' short-circuits all
+// _wait calls so a developer can run the whole prologue in <2 seconds.
+try {
+  if (sessionStorage.getItem('ag._ftueNarrSkip') === '1') {
+    _ftueNarr.skipFlag = true;
+    _ftueNarrLog('DEV', 'skip flag ON via sessionStorage');
+  }
+} catch (e) {}
 
 // ============ STAGE HINTS ============
 // Per-feature one-shot hints. Each fires on a specific gameplay event
@@ -7192,58 +7158,64 @@ document.getElementById('lobbyStartBtn').onclick = () => {
   startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty, _lobby.weapon, lineup, _lobby.mode);
 };
 
-// ============ FTUE: First-Session Minimal Start ============
-// On a player's very first visit (ag.firstMatch !== '1'), the start
-// screen collapses to a single WAKE button — no hero cards, no
-// utility row, no controls grid, no footer chips. Click WAKE → skip
-// the lobby and the tutorial popup, drop them straight into a small
-// 2v2 RIFLE skirmish. After their first match completes, the
-// firstMatch flag is set elsewhere; from then on, returning players
-// see the full start screen.
+// ============ FTUE: First-Session Routing ============
+// REWRITE per FTUE/00 Section 5.4: the single-WAKE-button collapse is GONE.
+// On a player's very first visit (ag.firstMatch !== '1'), the start screen
+// is hidden entirely and startNarrativeFTUE() runs immediately — 9 scenes,
+// 5 minutes, ENTER → first NN match. No WAKE click, no hero cards, no
+// pre-show. The button still exists as a manual replay affordance for
+// returning players (handler: dispatch startNarrativeFTUE again).
+//
+// ?ftue=1 dev harness reuses the same path: clear ag.firstMatch, then
+// trigger startNarrativeFTUE on the post-redirect load.
 (function setupFirstSessionFTUE() {
   let firstSeen = false;
   try { firstSeen = localStorage.getItem('ag.firstMatch') === '1'; } catch (e) {}
   if (!firstSeen) document.body.classList.add('first-session');
 
+  // The legacy WAKE button is now a manual "replay narrative prologue"
+  // affordance — click it to play the 5-min prologue again. The button is
+  // hidden by `.first-session` CSS during the auto-flow below; it reappears
+  // for returning players who want to revisit the prologue.
   const wakeBtn = document.getElementById('firstWakeBtn');
-  if (!wakeBtn) return;
-
-  wakeBtn.onclick = () => {
-    // Hide start, skip tutorial popup, skip lobby
-    document.getElementById('start').classList.add('hidden');
-    try { localStorage.setItem('ag.tutorialSeen', '1'); } catch (e) {}
-    // FTUE-friendly defaults: small 2v2, mid-tier (warrior), RIFLE, dm
-    if (typeof startNNSkirmish === 'function') {
-      startNNSkirmish(2, 2, 'warrior', 'RIFLE', null, 'dm');
-    }
-    // Strip the FTUE class so when the player returns to start screen
-    // after the match, they see the full options
-    document.body.classList.remove('first-session');
-  };
-  // ?ftue=1 dev harness — auto-click WAKE on load so the dev sees the
-  // tutorial without manual interaction. CRITICAL: skip if `fresh=1` is
-  // also in the URL on this load — fresh's async clear-and-redirect runs
-  // in parallel, and clicking BEFORE the redirect lands the new match in
-  // the soon-to-be-discarded page instance. Defer to the post-redirect
-  // load (where `fresh=1` is no longer in the URL).
-  let autoStart = false;
-  try { autoStart = sessionStorage.getItem('ag._ftueDevAutoStart') === '1'; } catch (e) {}
-  if (autoStart) {
-    const stillRedirecting = new URLSearchParams(location.search).get('fresh') === '1';
-    if (!stillRedirecting) {
-      const fire = () => {
-        try { sessionStorage.removeItem('ag._ftueDevAutoStart'); } catch (e) {}
-        // Small extra delay after load so startNNSkirmish's await
-        // nnLoadAll doesn't fight a half-initialised audio context.
-        setTimeout(() => {
-          try { wakeBtn.click(); }
-          catch (e) { console.error('[FTUE dev] wake click failed:', e); }
-        }, 400);
-      };
-      if (document.readyState === 'complete') fire();
-      else window.addEventListener('load', fire, { once: true });
-    }
+  if (wakeBtn) {
+    wakeBtn.onclick = () => {
+      document.getElementById('start').classList.add('hidden');
+      if (typeof startNarrativeFTUE === 'function') startNarrativeFTUE();
+    };
   }
+
+  // Auto-fire the narrative prologue on first session OR when the dev
+  // harness asks for it via sessionStorage (set by ?ftue=1).
+  const launchIfNeeded = () => {
+    let autoStart = false;
+    try { autoStart = sessionStorage.getItem('ag._ftueDevAutoStart') === '1'; } catch (e) {}
+    const isFirst = !firstSeen;
+    if (!isFirst && !autoStart) return;
+    // Skip if `fresh=1` is still in the URL — its redirect will land us
+    // here again with no flag, that load handles the auto-fire.
+    const stillRedirecting = new URLSearchParams(location.search).get('fresh') === '1';
+    if (stillRedirecting) return;
+    if (autoStart) {
+      try { sessionStorage.removeItem('ag._ftueDevAutoStart'); } catch (e) {}
+    }
+    const fire = () => {
+      // Hide the start screen so nothing peeks behind the narrative overlay.
+      const startEl = document.getElementById('start');
+      if (startEl) startEl.classList.add('hidden');
+      // Brief delay so a half-initialised AudioContext doesn't swallow
+      // S1's first heartbeat tone.
+      setTimeout(() => {
+        if (typeof startNarrativeFTUE === 'function') {
+          try { startNarrativeFTUE(); }
+          catch (e) { console.error('[FTUE-NARR launch failed]', e); }
+        }
+      }, 300);
+    };
+    if (document.readyState === 'complete') fire();
+    else window.addEventListener('load', fire, { once: true });
+  };
+  launchIfNeeded();
 })();
 
 // FTUE Dev Monitor — top-right overlay panel that ticks every 250 ms with
