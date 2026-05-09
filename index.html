@@ -3223,6 +3223,14 @@ const ftue = {
   stepIdx: 0,
   steps: [],            // resolved-for-language step list
   stepShownAt: null,    // null = not yet on screen → DEFER guard
+  advancing: false,     // true while an ADVANCE is mid-flight (1100 ms
+                        //   transition window). Without this, holding
+                        //   WASD fires 60 'move' events/sec — each one
+                        //   that passed the throttle scheduled its own
+                        //   1100 ms setTimeout, so multiple stepIdx++
+                        //   incremented and the FTUE skipped 2-3 steps
+                        //   the player never saw. User report:
+                        //   '我如果WASD長按 … 就瞬間略過其他的教學內容'.
   log: [],              // last 12 [FTUE …] lines
 };
 
@@ -3302,6 +3310,19 @@ function _ftueHide() {
 // ---- Event router (the ONLY entry point gameplay paths call) ----
 function _ftueEvent(name) {
   if (!ftue.active) return;
+  // ADVANCE-IN-FLIGHT GUARD — once an ADVANCE fires, we're in the 1100 ms
+  // transition window where the bar fades out then the next step shows.
+  // Without this guard, holding WASD spams 'move' at 60 Hz; once the
+  // 600 ms read-window passes, MULTIPLE 'move' calls all reached the
+  // ADVANCE branch in the same frame because cur is still the move-step
+  // and idx hasn't been bumped yet (the increment is INSIDE the setTimeout
+  // that runs 1100 ms later). Each duplicate scheduled its own
+  // setTimeout, so when they all fired, idx jumped 2 or 3 steps at once.
+  // User report: '我如果 WASD 長按 … 就瞬間略過其他的教學內容'.
+  if (ftue.advancing) {
+    _ftueLog('BUSY', `'${name}' arrived during in-flight ADVANCE; dropped`);
+    return;
+  }
   const cur = _ftueCurStep();
   if (!cur) return;
   if (cur.waitFor !== name) {
@@ -3328,8 +3349,10 @@ function _ftueEvent(name) {
     return;
   }
   _ftueLog('ADVANCE', `step ${ftue.stepIdx} (${cur.id}) → ${ftue.stepIdx + 1} via '${name}'`);
+  ftue.advancing = true;        // ← BLOCK further events through the transition
   _ftueHide();
   setTimeout(() => {
+    ftue.advancing = false;     // ← released once the next step is shown
     if (!ftue.active) return;
     ftue.stepIdx++;
     ftue.stepShownAt = null;
@@ -3382,6 +3405,7 @@ function _ftueStart() {
   ftue.active = true;
   ftue.stepIdx = 0;
   ftue.stepShownAt = null;
+  ftue.advancing = false;            // primed
   ftue.log = [];
   ftue.steps = FTUE_STEPS.slice();   // shallow copy; entries are read-only
   // Legacy alias so the dev monitor and side-effect guards that read
