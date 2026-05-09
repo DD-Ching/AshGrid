@@ -1699,6 +1699,22 @@ body.first-session .start-bg { opacity: 0.35; }
 // In every case the redirect strips the flag so refreshing won't loop.
 (function () {
   const sp = new URLSearchParams(location.search);
+  // ?ftue=1 — DEV harness. PROCESSED FIRST so the localStorage + session
+  // Storage flags are committed BEFORE the fresh handler does its
+  // strip-and-redirect dance. Otherwise `?fresh=1&ftue=1` lost the ftue
+  // flag in the redirect and the dev never saw the auto-start (user
+  // report: '並沒有...被擋住了?'). Both storages persist across the
+  // fresh redirect, so the post-load wiring still picks them up.
+  if (sp.get('ftue') === '1') {
+    try {
+      localStorage.removeItem('ag.firstMatch');
+      localStorage.removeItem('ag.firstAuditSeen');
+      localStorage.removeItem('ag.tutorialSeen');
+      localStorage.setItem('ag.introSeen', '1');     // skip the 90s narration
+      sessionStorage.setItem('ag._ftueDevAutoStart', '1');
+      sessionStorage.setItem('ag._ftueDevMonitor', '1');
+    } catch (e) {}
+  }
   // fresh=1 has its own async flow — must finish before stripping the flag,
   // otherwise the page would reload to '/' on a still-cached SW response.
   if (sp.get('fresh') === '1') {
@@ -1722,23 +1738,9 @@ body.first-session .start-bg { opacity: 0.35; }
     Promise.all(tasks).then(stripFlag, stripFlag);
     return;   // halt module init until the reload fires
   }
-  // ?ftue=1 — DEV harness for monitoring the FTUE flow. Re-arm the
-  // first-session state, skip the intro, and stash a flag the post-load
-  // wiring (further below) reads to auto-click WAKE + light up the
-  // monitor panel.
-  if (sp.get('ftue') === '1') {
-    try {
-      localStorage.removeItem('ag.firstMatch');
-      localStorage.removeItem('ag.firstAuditSeen');
-      localStorage.removeItem('ag.tutorialSeen');
-      localStorage.setItem('ag.introSeen', '1');     // skip the 90s narration
-      sessionStorage.setItem('ag._ftueDevAutoStart', '1');
-      sessionStorage.setItem('ag._ftueDevMonitor', '1');
-    } catch (e) {}
-    // Don't return — let the rest of the boot continue. The flag stays
-    // in the URL until reset/fresh strips it; that's fine, no infinite
-    // loop because we set ag.introSeen so nothing re-fires.
-  }
+  // (ftue=1 flags already committed at the top of this IIFE; nothing
+  // to do here. localStorage + sessionStorage survive the fresh redirect
+  // so the post-DOM wiring picks them up regardless.)
   const r = sp.get('reset');
   if (!r) return;
   try {
@@ -7141,12 +7143,28 @@ document.getElementById('lobbyStartBtn').onclick = () => {
     document.body.classList.remove('first-session');
   };
   // ?ftue=1 dev harness — auto-click WAKE on load so the dev sees the
-  // tutorial without manual interaction.
+  // tutorial without manual interaction. CRITICAL: skip if `fresh=1` is
+  // also in the URL on this load — fresh's async clear-and-redirect runs
+  // in parallel, and clicking BEFORE the redirect lands the new match in
+  // the soon-to-be-discarded page instance. Defer to the post-redirect
+  // load (where `fresh=1` is no longer in the URL).
   let autoStart = false;
   try { autoStart = sessionStorage.getItem('ag._ftueDevAutoStart') === '1'; } catch (e) {}
   if (autoStart) {
-    try { sessionStorage.removeItem('ag._ftueDevAutoStart'); } catch (e) {}
-    setTimeout(() => wakeBtn.click(), 300);
+    const stillRedirecting = new URLSearchParams(location.search).get('fresh') === '1';
+    if (!stillRedirecting) {
+      const fire = () => {
+        try { sessionStorage.removeItem('ag._ftueDevAutoStart'); } catch (e) {}
+        // Small extra delay after load so startNNSkirmish's await
+        // nnLoadAll doesn't fight a half-initialised audio context.
+        setTimeout(() => {
+          try { wakeBtn.click(); }
+          catch (e) { console.error('[FTUE dev] wake click failed:', e); }
+        }, 400);
+      };
+      if (document.readyState === 'complete') fire();
+      else window.addEventListener('load', fire, { once: true });
+    }
   }
 })();
 
