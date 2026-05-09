@@ -3095,6 +3095,22 @@ const game_ftue = {
 function _ftueIsFirstSession() {
   try { return localStorage.getItem('ag.firstMatch') !== '1'; } catch (e) { return true; }
 }
+// FTUE logging — every state transition timestamps to console with a
+// [FTUE] prefix + pushed onto game._ftue.log so the dev monitor panel
+// can show the last few entries. User: '可以寫一些 Consol 在後台 …
+// 你看一下剛剛可能出有哪些錯誤'.
+function _ftueLog(kind, msg) {
+  const t = (typeof game !== 'undefined' && game.time != null)
+            ? `t=${game.time}` : `wall=${Date.now()}`;
+  const line = `[FTUE ${kind}] ${msg}  (${t})`;
+  try { console.log(line); } catch (e) {}
+  if (game._ftue) {
+    game._ftue.log = game._ftue.log || [];
+    game._ftue.log.push(line);
+    if (game._ftue.log.length > 12) game._ftue.log.shift();
+  }
+}
+
 function _ftueDialog(speaker, text, hint) {
   const el = document.getElementById('ftueDialogue');
   if (!el) return;
@@ -3105,6 +3121,15 @@ function _ftueDialog(speaker, text, hint) {
   // Force a reflow so the .show transition triggers when re-shown
   void el.offsetWidth;
   el.classList.add('show');
+  // Mark the step as actually visible — _ftueAdvance refuses to fire
+  // earlier than this so a premature WASD/key-press during the 1.2 s
+  // pre-show delay doesn't blow past the step the user never read.
+  // User: '我只是提前按了WASD,它就整個壞掉了 … 應該是我完成了之後,
+  // 它會往下一個地步走'.
+  if (game._ftue) {
+    game._ftue.stepShownAt = (game.time != null) ? game.time : 0;
+    _ftueLog('SHOW', `step ${game._ftue.idx} (${speaker}) wait=${(game._ftue.steps[game._ftue.idx]||{}).advance}`);
+  }
 }
 function _ftueHide() {
   const el = document.getElementById('ftueDialogue');
@@ -3115,7 +3140,41 @@ function _ftueHide() {
 function _ftueAdvance(reason) {
   if (!game._ftue || !game._ftue.active) return;
   const cur = game._ftue.steps[game._ftue.idx];
-  if (!cur || cur.advance !== reason) return;
+  if (!cur) return;
+  if (cur.advance !== reason) {
+    _ftueLog('IGNORE', `'${reason}' arrived at step ${game._ftue.idx}; expected '${cur.advance}'`);
+    return;
+  }
+  // Premature-input guard: if the step's dialog hasn't been on screen
+  // long enough for the player to read, queue the advance for after the
+  // minimum read time. Without this, the first dialog had a 1.2 s pre-
+  // show delay during which any WASD press fired _ftueAdvance('move'),
+  // racing the dialog reveal — user saw a flash of step 0 then step 1
+  // and concluded the FTUE 'broke'. 600 ms minimum from dialog show.
+  const MIN_READ_MS = 600;
+  const shownAt = game._ftue.stepShownAt;
+  if (shownAt == null) {
+    _ftueLog('DEFER', `'${reason}' at step ${game._ftue.idx} — dialog not shown yet, will advance once it shows`);
+    // Don't drop the advance — schedule a re-fire AFTER the dialog shows.
+    // We poll the stepShownAt every 100 ms up to 5 s.
+    const start = Date.now();
+    const poll = setInterval(() => {
+      if (!game._ftue?.active || Date.now() - start > 5000) { clearInterval(poll); return; }
+      if (game._ftue.stepShownAt != null) {
+        clearInterval(poll);
+        _ftueAdvance(reason);
+      }
+    }, 100);
+    return;
+  }
+  const sinceShown = ((game.time != null) ? game.time : 0) - shownAt;
+  // game.time is in 60 fps ticks → 600 ms ≈ 36 ticks
+  if (sinceShown < 36) {
+    _ftueLog('THROTTLE', `'${reason}' too soon (${Math.round(sinceShown*16.67)}ms after show); requeueing`);
+    setTimeout(() => _ftueAdvance(reason), 80);
+    return;
+  }
+  _ftueLog('ADVANCE', `step ${game._ftue.idx} → ${game._ftue.idx + 1} via '${reason}'`);
   const advancingFromIdx = game._ftue.idx;
   // Hide current, schedule next after a beat
   _ftueHide();
@@ -3134,13 +3193,7 @@ function _ftueAdvance(reason) {
       _ftueSpawnTutorialAllies();
     }
     if (game._ftue.idx >= game._ftue.steps.length) {
-      // Done — mark seen, deactivate, AND ensure the dialogue bar is
-      // hidden. Prior bug: monitor said 'DONE — idx 12' but the bottom
-      // black strip still showed the last step's text because _ftueHide
-      // only fires at the START of advance (before idx++); the
-      // 380 ms-fade-then-set-hidden chain could be bypassed if the bar
-      // got re-shown elsewhere or if a frame caught it mid-fade with
-      // .show still applied. Explicit hide here closes the bar for sure.
+      _ftueLog('DONE', `idx ${game._ftue.idx} reached end of step list — FTUE complete, ag.firstMatch flipped to '1'`);
       game._ftue.active = false;
       _ftueHide();
       const dlg = document.getElementById('ftueDialogue');
@@ -3148,9 +3201,12 @@ function _ftueAdvance(reason) {
       try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
       return;
     }
+    // Reset stepShownAt — the new step's dialog will reset it via
+    // _ftueDialog. Premature advance guard re-engages until then.
+    game._ftue.stepShownAt = null;
     const nxt = game._ftue.steps[game._ftue.idx];
     _ftueDialog(nxt.speaker, nxt.text, nxt.hint);
-  }, 1100);   // bumped 700 → 1100 ms so the user has time to read each step
+  }, 1100);
 }
 // Public hooks — called from the relevant gameplay sites
 function _ftueOnMove()       { if (game._ftue?.active) { game._ftue.flags.moved = true; _ftueAdvance('move'); } }
@@ -3277,6 +3333,9 @@ function _scheduleFirstMatchToasts() {
   game._ftue.idx = 0;
   game._ftue.active = true;
   game._ftue.flags = { moved: false, kill: 0, auditClose: false, buildOpen: false, place: 0, streak: 0 };
+  game._ftue.stepShownAt = null;     // primed for premature-advance guard
+  game._ftue.log = [];
+  _ftueLog('SEED', 'first-match FTUE seeded — 12 steps, allies + enemies cleared');
   // Solo step 0 — clear allies and enemies so the player IS alone on the
   // map for the first move. Each future step transition (handled in
   // _ftueAdvance) re-introduces the minimum content needed.
@@ -7210,14 +7269,22 @@ document.getElementById('lobbyStartBtn').onclick = () => {
         .map(([k, v]) => `${k}:${v}`).join(' · ');
       const ally = (typeof allies !== 'undefined') ? allies.filter(a => a.alive).length : '?';
       const enemy = (typeof enemies !== 'undefined') ? enemies.filter(e => e.alive).length : '?';
+      const recentLog = (f.log || []).slice(-5)
+        .map(l => `<div style="opacity:0.7;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${l}</div>`)
+        .join('');
+      const shownAgo = f.stepShownAt != null
+        ? Math.round(((game.time - f.stepShownAt) * 16.67))
+        : '—';
       panel.innerHTML =
         `<b style="color:#C8261C">FTUE · STEP ${f.idx}/${f.steps.length - 1}</b>` +
         `<br><span style="color:#FFD24A">${cur.speaker || '—'}</span> ` +
         `→ wait <span style="color:#FFD24A">${cur.advance || '—'}</span>` +
         `<br><span style="opacity:0.7">"${(cur.text || '').slice(0, 60)}…"</span>` +
         `<br><span style="opacity:0.85">flags: ${flagsTxt}</span>` +
-        `<br>allies ${ally} · enemies ${enemy}` +
-        `<br><span style="opacity:0.7">cam ${(typeof camera !== 'undefined' ? camera.targetScale.toFixed(2) : '?')} · paused ${!!(game && game._paused)}</span>`;
+        `<br>allies ${ally} · enemies ${enemy} · shown-for ${shownAgo}ms` +
+        `<br><span style="opacity:0.7">cam ${(typeof camera !== 'undefined' ? camera.targetScale.toFixed(2) : '?')} · paused ${!!(game && game._paused)}</span>` +
+        `<br><b style="color:#C8261C;font-size:10px;">RECENT LOG</b>` +
+        recentLog;
     }
     requestAnimationFrame(() => setTimeout(tick, 250));
   };
