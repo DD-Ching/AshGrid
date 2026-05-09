@@ -977,6 +977,61 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   pointer-events: none;
   background: transparent;
 }
+
+/* FTUE DIALOGUE BAR — visual-novel style sequential prompt. Bottom-center,
+   speaker chip on left, text on right, pulsing ▼ on the far right. Only
+   one line shown at a time; advances when the player performs the
+   step's required action. Replaces the old stacked-toast pile-up. */
+#ftueDialogue {
+  position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%);
+  width: min(92vw, 880px);
+  background: rgba(20, 18, 24, 0.92);
+  border-top: 1px solid rgba(232, 228, 216, 0.22);
+  border-bottom: 1px solid rgba(232, 228, 216, 0.22);
+  color: var(--cream);
+  font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  z-index: 250;
+  pointer-events: none;
+  padding: 14px 18px 10px;
+  opacity: 0; transition: opacity 0.35s ease;
+}
+#ftueDialogue.show { opacity: 1; }
+.ftue-row {
+  display: flex; align-items: flex-start; gap: 14px;
+}
+.ftue-speaker {
+  flex: 0 0 auto;
+  background: var(--red); color: var(--cream);
+  font-weight: 800; letter-spacing: 3px; font-size: 12px;
+  padding: 6px 14px;
+  text-transform: uppercase;
+}
+.ftue-text {
+  flex: 1 1 auto;
+  font-size: 15px; line-height: 1.5;
+  letter-spacing: 0.5px;
+  padding-top: 4px;
+}
+.ftue-pulse {
+  flex: 0 0 auto;
+  font-size: 12px; opacity: 0.6;
+  padding-top: 6px;
+  animation: ftue-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ftue-pulse {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50%      { opacity: 0.85; transform: translateY(2px); }
+}
+.ftue-hint {
+  font-size: 10px; letter-spacing: 2px; color: var(--gray);
+  margin-top: 8px; text-align: right;
+  font-family: monospace;
+}
+@media (max-width: 600px) {
+  #ftueDialogue { bottom: 100px; padding: 10px 12px 8px; }
+  .ftue-text { font-size: 13px; }
+  .ftue-speaker { font-size: 10px; padding: 5px 10px; letter-spacing: 2px; }
+}
 .editor-toolbar {
   position: fixed; top: 0; left: 0; right: 0;
   display: flex; align-items: center; gap: 8px;
@@ -1108,6 +1163,21 @@ body.first-session .start-bg { opacity: 0.35; }
 </head>
 <body>
 <canvas id="game"></canvas>
+
+<!-- ============ FTUE DIALOGUE BAR ============ -->
+<!-- Bottom-of-screen visual-novel-style dialogue used during the player's
+     very first match. Replaces the old stacked radio toast pile-up. One
+     line at a time, sequential, advances on a specific player action.
+     Spec: user reference image (visual novel speaker chip + line + ▼).
+     Only visible when game._ftue.active === true. -->
+<div id="ftueDialogue" hidden>
+  <div class="ftue-row">
+    <div class="ftue-speaker" id="ftueSpeaker">LUMEN</div>
+    <div class="ftue-text" id="ftueText"></div>
+    <div class="ftue-pulse" id="ftuePulse">▼</div>
+  </div>
+  <div class="ftue-hint" id="ftueHint"></div>
+</div>
 
 <!-- ============ INTRO / AWAKEN SEQUENCE ============ -->
 <!-- Shown on first boot. The lobby is reframed as a "comm center" through
@@ -2281,6 +2351,8 @@ function _wireFooterModals() {
     if (game._auditPaused) {
       game._auditPaused = false;
       game._paused = false;
+      // FTUE: closing the first-kill audit modal advances step 2 → step 3
+      if (typeof _ftueOnAuditClose === 'function') _ftueOnAuditClose();
     }
   };
   if (auditModal) auditModal.onclick = (e) => {
@@ -2948,30 +3020,132 @@ function _tickDynamicRadio() {
   }
 }
 
-// Schedule a few story beats during the player's first match. Marks
-// ag.firstMatch=1 after the first cycle so subsequent matches stay clean.
+// FTUE Dialogue State Machine — sequential, one-at-a-time prompts gated
+// on player ACTIONS instead of a fixed timer. Replaces the old four-toast
+// pile-up where Lumen / Mote / Audit lines stacked on top of each other in
+// the radio-toast column. User: '不需要堆疊,要階段式 — 做了之後才往下推進'.
+// Visual novel-style dialogue bar at #ftueDialogue (bottom center).
+// Steps live in game._ftue.steps and advance when the listed `advance`
+// event fires (move, kill, auditClose, buildOpen, place, streak3).
+//
+// Once-per-account: ag.firstMatch flips to '1' after the last step or when
+// the match ends. Veterans never see the bar at all.
+const game_ftue = {
+  active: false, idx: -1, steps: [],
+  // Track action flags that the steps watch for
+  flags: { moved: false, kill: 0, auditClose: false, buildOpen: false, place: 0, streak: 0 },
+};
+function _ftueIsFirstSession() {
+  try { return localStorage.getItem('ag.firstMatch') !== '1'; } catch (e) { return true; }
+}
+function _ftueDialog(speaker, text, hint) {
+  const el = document.getElementById('ftueDialogue');
+  if (!el) return;
+  document.getElementById('ftueSpeaker').textContent = speaker;
+  document.getElementById('ftueText').innerHTML = text;
+  document.getElementById('ftueHint').textContent = hint || '';
+  el.removeAttribute('hidden');
+  // Force a reflow so the .show transition triggers when re-shown
+  void el.offsetWidth;
+  el.classList.add('show');
+}
+function _ftueHide() {
+  const el = document.getElementById('ftueDialogue');
+  if (!el) return;
+  el.classList.remove('show');
+  setTimeout(() => { if (!el.classList.contains('show')) el.setAttribute('hidden', ''); }, 380);
+}
+function _ftueAdvance(reason) {
+  if (!game._ftue || !game._ftue.active) return;
+  const cur = game._ftue.steps[game._ftue.idx];
+  if (!cur || cur.advance !== reason) return;
+  // Hide current, schedule next after a beat
+  _ftueHide();
+  setTimeout(() => {
+    if (!game._ftue.active) return;
+    game._ftue.idx++;
+    if (game._ftue.idx >= game._ftue.steps.length) {
+      // Done — mark seen, deactivate
+      game._ftue.active = false;
+      try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
+      return;
+    }
+    const nxt = game._ftue.steps[game._ftue.idx];
+    _ftueDialog(nxt.speaker, nxt.text, nxt.hint);
+  }, 700);
+}
+// Public hooks — called from the relevant gameplay sites
+function _ftueOnMove()       { if (game._ftue?.active) { game._ftue.flags.moved = true; _ftueAdvance('move'); } }
+function _ftueOnKill()       { if (game._ftue?.active) { game._ftue.flags.kill++;       _ftueAdvance('kill'); } }
+function _ftueOnAuditClose() { if (game._ftue?.active) { game._ftue.flags.auditClose = true; _ftueAdvance('auditClose'); } }
+function _ftueOnBuildOpen()  { if (game._ftue?.active) { game._ftue.flags.buildOpen = true; _ftueAdvance('buildOpen'); } }
+function _ftueOnPlace()      { if (game._ftue?.active) { game._ftue.flags.place++;     _ftueAdvance('place'); } }
+function _ftueOnStreak3()    { if (game._ftue?.active) { game._ftue.flags.streak = 3; _ftueAdvance('streak3'); } }
+
+// Build the step list (replaces old _scheduleFirstMatchToasts).
 function _scheduleFirstMatchToasts() {
-  let firstSeen = false;
-  try { firstSeen = localStorage.getItem('ag.firstMatch') === '1'; } catch (e) {}
-  if (firstSeen) return;
+  if (!_ftueIsFirstSession()) return;
   const lang = (typeof getLang === 'function') ? getLang() : 'en';
-  const beats = (lang === 'zh') ? [
-    ['Lumen', '"V-07,聽得到嗎? 上次你掉到 12% — Mote 推了你一下,你才醒過來。"', 1800],
-    ['Mote', 'PATH FOUND. 側翼比正面快兩倍。', 14000],
-    ['Lumen', '"按 B 蓋審計站。 能源 = 擊殺 + 發電機 + 你還活著的時間。"', 28000],
-    ['Audit Mode', '"連殺 3 個 → Diagnose-and-Execute。 對症出手,不是亂打。"', 44000],
+  const zh = (lang === 'zh');
+  game._ftue = game_ftue;
+  game._ftue.idx = 0;
+  game._ftue.active = true;
+  game._ftue.flags = { moved: false, kill: 0, auditClose: false, buildOpen: false, place: 0, streak: 0 };
+  game._ftue.steps = zh ? [
+    { speaker: 'LUMEN', advance: 'move',
+      text: '「V-07,聽得到嗎? 上次你掉到 12% — Mote 推了你一下,你才醒過來。」',
+      hint: 'WASD · 開始移動' },
+    { speaker: 'LUMEN', advance: 'kill',
+      text: '「Red Grid 的巡邏進場了。 處決一個 Syndrome carrier。」',
+      hint: '滑鼠瞄準 · 按住左鍵射擊' },
+    { speaker: 'LUMEN', advance: 'auditClose',
+      text: '「你剛剛處決了一個。 Audit Card 自動跳出。 選一個處置 — 不對的後果你會記得。」',
+      hint: '從 6 個 Audit Action 選一個' },
+    { speaker: 'LUMEN', advance: 'buildOpen',
+      text: '「你還沒設置任何審計站。 子彈不能釐清任何事 — 建築才能。 200⚡ 備用,按 B 開建造。」',
+      hint: 'B · 開建造輪盤' },
+    { speaker: 'LUMEN', advance: 'place',
+      text: '「審計基礎設施上線中。 蓋一個 — 任何一個都行。 你蓋的,就是你變成什麼。」',
+      hint: '從輪盤選一個 · 點地圖放置' },
+    { speaker: 'MOTE', advance: 'streak3',
+      text: 'PATH FOUND. 連殺 3 個 → Diagnose-and-Execute. 對症出手,不是亂打。',
+      hint: '處決 3 個 Syndrome carrier' },
   ] : [
-    ['Lumen', '"V-07, do you read? Last cycle you dropped to 12%. Mote pushed you. That\'s how you woke."', 1800],
-    ['Mote', 'PATH FOUND. Flanking is 2× faster than head-on.', 14000],
-    ['Lumen', '"Press B to build audit stations. Energy = kills + generators + time you stay alive."', 28000],
-    ['Audit Mode', '"3-kill streak triggers Diagnose-and-Execute. Strike on diagnosis, not noise."', 44000],
+    { speaker: 'LUMEN', advance: 'move',
+      text: '"V-07, do you read? Last cycle you dropped to 12%. Mote pushed you. That\'s how you woke."',
+      hint: 'WASD · start moving' },
+    { speaker: 'LUMEN', advance: 'kill',
+      text: '"A Red Grid patrol just entered. Execute one Syndrome carrier."',
+      hint: 'Mouse to aim · hold LMB to fire' },
+    { speaker: 'LUMEN', advance: 'auditClose',
+      text: '"You just executed one. The Audit Card auto-pops. Pick a verdict — the wrong one stays with you."',
+      hint: 'Pick one of 6 Audit Actions' },
+    { speaker: 'LUMEN', advance: 'buildOpen',
+      text: '"You haven\'t built any audit stations. Bullets clarify nothing — architecture audits. 200⚡ ready. Press B."',
+      hint: 'B · open build radial' },
+    { speaker: 'LUMEN', advance: 'place',
+      text: '"Audit infrastructure coming online. Place one — anything. What you build is what you become."',
+      hint: 'Pick from the radial · click ground to place' },
+    { speaker: 'MOTE', advance: 'streak3',
+      text: 'PATH FOUND. Streak of 3 → Diagnose-and-Execute. Strike on diagnosis, not noise.',
+      hint: 'Execute 3 Syndrome carriers in chain' },
   ];
-  for (const [label, text, atMs] of beats) {
-    setTimeout(() => {
-      if (game.state === 'playing' && !game._paused) showRadioToast(label, text);
-    }, atMs);
+  // Show the first step after a small delay so the match has loaded in
+  setTimeout(() => {
+    if (!game._ftue.active) return;
+    const s = game._ftue.steps[0];
+    _ftueDialog(s.speaker, s.text, s.hint);
+  }, 1200);
+}
+// Auto-finalize on match end so the bar disappears even if the player
+// quits mid-FTUE — and the flag still flips to '1' so the next match
+// is clean.
+function _finalizeFtue() {
+  if (game._ftue && game._ftue.active) {
+    game._ftue.active = false;
+    _ftueHide();
+    try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
   }
-  try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
 }
 
 // ============ STAGE HINTS ============
@@ -3560,6 +3734,8 @@ function placeStructure(kind, wx, wy) {
   game._structures.push(s);
   game._energy -= def.cost;
   showSwapToast(T(`部署 ${def.label()}`, `Deployed ${def.label()}`));
+  // FTUE: first placement advances step 4 → step 5 (streak training)
+  if (typeof _ftueOnPlace === 'function') _ftueOnPlace();
   // Cumulative build counter — feeds the ARCHITECT achievement
   try {
     const total = (parseInt(localStorage.getItem('ag.buildCount') || '0', 10) || 0) + 1;
@@ -4100,6 +4276,8 @@ function toggleBuildMode() {
   if (!buildMode.active) {
     buildMode.active = true;
     buildMode.radialOpen = true;
+    // FTUE: opening the build radial advances step 3 → step 4 (place one)
+    if (typeof _ftueOnBuildOpen === 'function') _ftueOnBuildOpen();
   } else if (buildMode.radialOpen) {
     // Radial already open → another B closes it (keep placing mode armed)
     buildMode.radialOpen = false;
@@ -9033,6 +9211,10 @@ function returnToNNLobby() {
 // unlocks if the bumpMatchPlayed call crossed a threshold this match.
 // PLAY AGAIN restarts the same mode immediately; LOBBY returns to menu.
 function showNNEndCard(result) {
+  // FTUE: match ended — close the tutorial bar (no-op if already done) and
+  // flip ag.firstMatch so the next match is clean even if the player exited
+  // before reaching the streak3 step.
+  if (typeof _finalizeFtue === 'function') _finalizeFtue();
   const card = document.getElementById('nnEndCard');
   if (!card) return;
   const lang = (typeof getLang === 'function') ? getLang() : 'en';
@@ -13229,6 +13411,8 @@ function updatePlayer() {
     player.x += mx * player.speed * speedMul;
     player.y += my * player.speed * speedMul;
     player.walkPhase += 0.22 * speedMul;
+    // FTUE step 0 → step 1 advance: detected first WASD movement
+    if (typeof _ftueOnMove === 'function') _ftueOnMove();
     // Footprint trail — every ~30 ticks while moving (any NN / campaign mode)
     if (game.time % 30 === 0) emitFootprint(player);
   }
@@ -13596,6 +13780,8 @@ function updateBullets() {
           if (typeof _maybeTriggerFirstKillAudit === 'function') {
             _maybeTriggerFirstKillAudit(b.fromUnit === player);
           }
+          // FTUE: a player kill advances step 1 → step 2 (Audit Card popup)
+          if (b.fromUnit === player && typeof _ftueOnKill === 'function') _ftueOnKill();
           // Kill SFX + ally-kill radio callout BOTH removed on user request
           // ('移除擊殺音效!!!', third escalation). The radio callout was the
           // 'ding-dong' the user kept hearing — showRadioToast plays a 2-tone
@@ -13635,6 +13821,8 @@ function updateBullets() {
             triggerShake(4, 8);
             unlockAchievement('killstreak3');
             if (player._killStreak >= 5) unlockAchievement('killstreak5');
+            // FTUE: 3-streak advances the final tutorial step
+            if (typeof _ftueOnStreak3 === 'function') _ftueOnStreak3();
           } else {
             triggerShake(2, 4);
           }
