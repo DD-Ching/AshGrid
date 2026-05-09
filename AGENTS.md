@@ -49,6 +49,23 @@ lsof -ti:8765 | xargs kill -9 2>/dev/null; cd /Users/ddh/Downloads/AshGrid && py
 ```
 http://localhost:8765/?fresh=1
 
+### FTUE dev harness — `?ftue=1`
+
+Append `&ftue=1` to the URL above to:
+1. Wipe `ag.firstMatch` + `ag.firstAuditSeen` + `ag.tutorialSeen` (re-arm
+   the first-time flow)
+2. Set `ag.introSeen = 1` (skip the 90-second narration)
+3. Auto-fire the WAKE button on load (no manual click)
+4. Light up a top-right monitor panel showing live FTUE state:
+   current step idx + expected advance + flags + ally/enemy counts +
+   camera scale + pause flag
+
+Use this when iterating on the tutorial:
+
+```
+lsof -ti:8765 | xargs kill -9 2>/dev/null; cd /Users/ddh/Downloads/AshGrid && python3 -m http.server 8765 >/dev/null 2>&1 & sleep 0.4 && open "http://localhost:8765/?fresh=1&ftue=1&t=$(date +%s)"
+```
+
 The `?fresh=1` flag is handled by index.html: it unregisters every
 service worker, clears every cache, then redirects to the bare URL.
 This is the user's anti-staleness lever — guarantees they see the

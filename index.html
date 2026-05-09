@@ -1690,6 +1690,12 @@ body.first-session .start-bg { opacity: 0.35; }
 // ?reset=tutorial — wipe AND opt into gated tutorial mode (only DM at the
 //                   start, things unlock per match). The 'opt-in' bit is
 //                   ag.unlockAll === '0'.
+// ?ftue=1         — DEV: re-arm the first-time-user flow + skip the
+//                   intro overlay + auto-fire the WAKE button so the
+//                   tutorial starts immediately. Pairs with a live monitor
+//                   panel (top-right) showing current FTUE step + flags.
+//                   Designed for `open ?ftue=1` from a shell so the dev
+//                   can watch tutorial progress without clicking anything.
 // In every case the redirect strips the flag so refreshing won't loop.
 (function () {
   const sp = new URLSearchParams(location.search);
@@ -1715,6 +1721,23 @@ body.first-session .start-bg { opacity: 0.35; }
     }
     Promise.all(tasks).then(stripFlag, stripFlag);
     return;   // halt module init until the reload fires
+  }
+  // ?ftue=1 — DEV harness for monitoring the FTUE flow. Re-arm the
+  // first-session state, skip the intro, and stash a flag the post-load
+  // wiring (further below) reads to auto-click WAKE + light up the
+  // monitor panel.
+  if (sp.get('ftue') === '1') {
+    try {
+      localStorage.removeItem('ag.firstMatch');
+      localStorage.removeItem('ag.firstAuditSeen');
+      localStorage.removeItem('ag.tutorialSeen');
+      localStorage.setItem('ag.introSeen', '1');     // skip the 90s narration
+      sessionStorage.setItem('ag._ftueDevAutoStart', '1');
+      sessionStorage.setItem('ag._ftueDevMonitor', '1');
+    } catch (e) {}
+    // Don't return — let the rest of the boot continue. The flag stays
+    // in the URL until reset/fresh strips it; that's fine, no infinite
+    // loop because we set ag.introSeen so nothing re-fires.
   }
   const r = sp.get('reset');
   if (!r) return;
@@ -7117,6 +7140,61 @@ document.getElementById('lobbyStartBtn').onclick = () => {
     // after the match, they see the full options
     document.body.classList.remove('first-session');
   };
+  // ?ftue=1 dev harness — auto-click WAKE on load so the dev sees the
+  // tutorial without manual interaction.
+  let autoStart = false;
+  try { autoStart = sessionStorage.getItem('ag._ftueDevAutoStart') === '1'; } catch (e) {}
+  if (autoStart) {
+    try { sessionStorage.removeItem('ag._ftueDevAutoStart'); } catch (e) {}
+    setTimeout(() => wakeBtn.click(), 300);
+  }
+})();
+
+// FTUE Dev Monitor — top-right overlay panel that ticks every 250 ms with
+// the current step idx, expected advance condition, flags collected, ally
+// + enemy counts, and the lock state. Visible only when ?ftue=1 was used
+// (or sessionStorage.ag._ftueDevMonitor is set manually). Dev-only; never
+// shown to a normal first-session player.
+(function setupFtueDevMonitor() {
+  let on = false;
+  try { on = sessionStorage.getItem('ag._ftueDevMonitor') === '1'; } catch (e) {}
+  if (!on) return;
+  const panel = document.createElement('div');
+  panel.id = 'ftueDevMonitor';
+  panel.style.cssText =
+    'position: fixed; top: 12px; right: 12px; z-index: 999;' +
+    'background: rgba(20, 18, 24, 0.94); color: #E8E4D8;' +
+    'font: 11px/1.45 monospace; padding: 10px 12px;' +
+    'border: 1px solid #C8261C; min-width: 240px; max-width: 320px;' +
+    'pointer-events: none; letter-spacing: 0.5px;' +
+    'box-shadow: 2px 2px 0 #C8261C;';
+  document.body.appendChild(panel);
+  const tick = () => {
+    const f = (typeof game !== 'undefined' && game._ftue) ? game._ftue : null;
+    if (!f) {
+      panel.innerHTML = '<b style="color:#C8261C">FTUE MONITOR</b><br>(no game._ftue yet)';
+    } else if (!f.active) {
+      panel.innerHTML = `<b style="color:#C8261C">FTUE MONITOR</b><br>` +
+        `<span style="color:#999">DONE — idx ${f.idx}</span><br>` +
+        `ag.firstMatch: ${localStorage.getItem('ag.firstMatch') || 'null'}`;
+    } else {
+      const cur = f.steps[f.idx] || {};
+      const flagsTxt = Object.entries(f.flags || {})
+        .map(([k, v]) => `${k}:${v}`).join(' · ');
+      const ally = (typeof allies !== 'undefined') ? allies.filter(a => a.alive).length : '?';
+      const enemy = (typeof enemies !== 'undefined') ? enemies.filter(e => e.alive).length : '?';
+      panel.innerHTML =
+        `<b style="color:#C8261C">FTUE · STEP ${f.idx}/${f.steps.length - 1}</b>` +
+        `<br><span style="color:#FFD24A">${cur.speaker || '—'}</span> ` +
+        `→ wait <span style="color:#FFD24A">${cur.advance || '—'}</span>` +
+        `<br><span style="opacity:0.7">"${(cur.text || '').slice(0, 60)}…"</span>` +
+        `<br><span style="opacity:0.85">flags: ${flagsTxt}</span>` +
+        `<br>allies ${ally} · enemies ${enemy}` +
+        `<br><span style="opacity:0.7">cam ${(typeof camera !== 'undefined' ? camera.targetScale.toFixed(2) : '?')} · paused ${!!(game && game._paused)}</span>`;
+    }
+    requestAnimationFrame(() => setTimeout(tick, 250));
+  };
+  tick();
 })();
 
 function startSkirmish() {
