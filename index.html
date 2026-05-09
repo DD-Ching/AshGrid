@@ -3166,16 +3166,17 @@ const FTUE_STEPS = [
   },
   {
     id: 'q', speaker: 'LUMEN', waitFor: 'key:q',
-    textZh: '「Q 召出偵察 UAV — 看穿牆後。」',
-    textEn: '"Q deploys a recon UAV — see past walls."',
-    hintZh: 'Q · UAV 偵察', hintEn: 'Q · UAV',
+    textZh: '「東邊牆後有訊號 — Q 派 UAV 偵察。 牆擋住你的眼,但擋不住空中。」',
+    textEn: '"Signal east — past the wall. Q deploys a UAV. Walls block your eyes, not the sky."',
+    hintZh: 'Q · UAV 偵察', hintEn: 'Q · scout',
     reveal: { hp: true, ammo: true }, unlockKeys: ['tab', 'q'], cameraScale: 0.95,
+    onEnter: () => _ftueSpawnTarget(),
   },
   {
-    id: 'e', speaker: 'LUMEN', waitFor: 'key:e',
-    textZh: '「E 發射 FPV 自殺機 — 對遠目標精準爆破。」',
-    textEn: '"E fires an FPV kamikaze drone — precise blast at range."',
-    hintZh: 'E · FPV 無人機', hintEn: 'E · FPV drone',
+    id: 'e', speaker: 'LUMEN', waitFor: 'ftueTargetDown',
+    textZh: '「鎖定 HOLLOW-31。 E 發 FPV 自殺機 — 把它拆了。」',
+    textEn: '"HOLLOW-31 located. E fires an FPV kamikaze drone — take it out."',
+    hintZh: 'E · FPV 攻擊目標', hintEn: 'E · FPV the target',
     reveal: { hp: true, ammo: true }, unlockKeys: ['tab', 'q', 'e'], cameraScale: 0.95,
   },
   {
@@ -3396,6 +3397,39 @@ function _ftueSpawnAllies() {
     allies.push(a);
   }
   _ftueLog('SPAWN', 'allies BRAVO + CHARLIE deployed');
+}
+
+// ---- UAV target (step 'q' onEnter) ----
+// Drops a single frozen HOLLOW-31 directly east of the player, in the
+// shadow of the FTUE arena's east wall (970,540 → 1000,660). The wall
+// blocks line-of-sight so the player CAN'T see it without Q. Frozen via
+// _stunUntil so the NN dispatcher skips it — no movement, no fire. The
+// next step (E / FPV) destroys it; that triggers _ftueEvent('ftueTargetDown').
+function _ftueSpawnTarget() {
+  if (typeof enemies === 'undefined' || typeof NN_ARENA === 'undefined') return;
+  // Refuse to double-spawn if the player retreats and the step re-enters.
+  if (enemies.some(e => e._ftueSpawn && e.alive)) return;
+  const e = {
+    callsign: 'HOLLOW-31',
+    x: NN_ARENA.x0 + 1080,    // 80u east of east wall (wall ends at x=1000)
+    y: NN_ARENA.y0 + 600,     // same y as player → wall directly between
+    angle: Math.PI,
+    gunAngle: Math.PI, gunRecoil: 0, swayPhase: 0,
+    alive: true, walkPhase: 0,
+    fireCd: 9999, target: null, lookPhase: 0,
+    team: 1,
+    _weapon: WEAPONS.RIFLE,
+    _useNN: true,
+    _nnDifficulty: 'warrior',
+    _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+    _stunUntil: Number.MAX_SAFE_INTEGER,   // frozen forever
+    _respawnAt: null,
+    _ftueSpawn: true,
+  };
+  // 50 HP so one FPV explosion (60 dmg in 65u radius) is a guaranteed kill.
+  applyChassisToUnit(e, 'humanoid', 0, 50, 13);
+  enemies.push(e);
+  _ftueLog('SPAWN', 'UAV target HOLLOW-31 deployed at (1080,600) — east of player, behind east wall');
 }
 
 // ---- Lifecycle ----
@@ -13687,6 +13721,18 @@ function updateSoundEvents() {
 function update() {
   if (game.state !== 'playing') return;
   game.time++;
+
+  // FTUE: detect death of the UAV/FPV target spawned by step 'q'. Single
+  // watcher (instead of hooking every kill site) — fires the advance event
+  // once per spawn. Independent of the killing weapon (FPV, bullet, grenade).
+  if (typeof ftue !== 'undefined' && ftue.active && typeof enemies !== 'undefined') {
+    for (const e of enemies) {
+      if (e._ftueSpawn && !e.alive && !e._ftueDeathFired) {
+        e._ftueDeathFired = true;
+        _ftueEvent('ftueTargetDown');
+      }
+    }
+  }
 
   // Footprint emission for allies + enemies — once every 30 ticks, drop a
   // print at each living unit's position if they actually moved this tick.
