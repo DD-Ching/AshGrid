@@ -989,14 +989,20 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 .editor-title { color: var(--red); font-weight: 800; letter-spacing: 4px;
                 font-size: 13px; margin-right: 12px; }
 .ed-tool, .ed-action {
-  background: var(--cream-dark); border: 2px solid var(--black);
+  /* Toolbar bg is dark (rgba black 92%); buttons need to be high-contrast cream
+     with black border to stay legible. Earlier the buttons were 'cream-dark'
+     which is grayish on near-black bg — text was readable but the BUTTON
+     EDGES blended into the bar so it was hard to tell where one button ended
+     and the next began. User: '有些功能按鈕看不清楚'. */
+  background: var(--cream); border: 2px solid var(--black);
   color: var(--black); font-family: inherit;
   font-size: 12px; font-weight: 800; letter-spacing: 2px;
-  padding: 6px 14px; cursor: pointer;
+  padding: 7px 14px; cursor: pointer;
+  box-shadow: 1px 1px 0 var(--red);   /* tiny red drop shadow lifts buttons off the dark bar */
 }
-.ed-tool:hover, .ed-action:hover { background: var(--cream); }
-.ed-tool.active  { background: var(--red); color: var(--cream); border-color: var(--red); }
-.ed-action.active { background: var(--red); color: var(--cream); border-color: var(--red); }
+.ed-tool:hover, .ed-action:hover { background: #fff; box-shadow: 2px 2px 0 var(--red); }
+.ed-tool.active  { background: var(--red); color: var(--cream); border-color: var(--cream); box-shadow: 1px 1px 0 var(--black); }
+.ed-action.active { background: var(--red); color: var(--cream); border-color: var(--cream); box-shadow: 1px 1px 0 var(--black); }
 .ed-spacer { flex: 1; min-width: 0; }
 @media (max-width: 720px) {
   .editor-toolbar { gap: 4px; padding: 6px 8px; }
@@ -1530,12 +1536,14 @@ body.first-session .start-bg { opacity: 0.35; }
 <div class="overlay editor-overlay hidden" id="editor">
   <div class="editor-toolbar">
     <span class="editor-title">編輯器 / EDITOR</span>
-    <button data-tool="wall"      class="ed-tool">墙</button>
-    <button data-tool="cover"     class="ed-tool active">掩</button>
-    <button data-tool="tree"      class="ed-tool">树</button>
-    <button data-tool="blueSpawn" class="ed-tool">蓝出</button>
-    <button data-tool="redSpawn"  class="ed-tool">红出</button>
-    <button data-tool="erase"     class="ed-tool">删</button>
+    <button data-tool="wall"      class="ed-tool">墙 WALL</button>
+    <button data-tool="cover"     class="ed-tool active">掩 COVER</button>
+    <button data-tool="bunker"    class="ed-tool">堡 BUNKER</button>
+    <button data-tool="sandbag"   class="ed-tool">沙包 SBAG</button>
+    <button data-tool="tree"      class="ed-tool">树 TREE</button>
+    <button data-tool="blueSpawn" class="ed-tool">蓝出 BLUE</button>
+    <button data-tool="redSpawn"  class="ed-tool">红出 RED</button>
+    <button data-tool="erase"     class="ed-tool">删 ERASE</button>
     <span class="ed-spacer"></span>
     <select id="edSlotSelect" class="ed-action" style="padding: 5px 8px;"></select>
     <button id="edClearBtn" class="ed-action">清空</button>
@@ -2845,6 +2853,26 @@ function _tickDynamicRadio() {
       _r('"你的審計簽名被追蹤了 — 整區都在找你的 Seed。"',
          '"They tagged your audit signature — every red in the sector wants your Seed now."'));
   }
+  // GREY VECTOR — Build = Audit. Pure killing without construction drains
+  // Seed Integrity and Lumen will say so. Surface the rule that this is
+  // a building game wearing a shooter's coat.
+  const _structCount = (game._structures && game._structures.length) || 0;
+  const _killCount = (game.killCount || 0);
+  if (_killCount >= 5 && _structCount === 0) {
+    _radioOnce('noBuild', 25, 'Lumen',
+      _r('"V-07。 你在殺戮,不是審計。 子彈不能釐清任何事。 按 B 開建造。"',
+         '"V-07. You are killing, not auditing. Bullets clarify nothing. Hold B to build."'));
+  }
+  if (_structCount >= 1) {
+    _radioOnce('firstBuild', 9999, 'Lumen',
+      _r('"審計基礎設施上線。 建築才能審計。"',
+         '"Audit infrastructure online. Architecture audits where bullets cannot."'));
+  }
+  if (game.time > 60 * 60 && _structCount === 0 && _killCount < 3) {
+    _radioOnce('promptBuild', 40, 'Lumen',
+      _r('"你還沒設置任何審計站。 你打算用什麼證明你不是純殺手?"',
+         '"You haven\'t placed any audit stations yet. How will you prove you are not just a killer?"'));
+  }
   // Hostile recon warning — 4 cardinal sectors. When ≥2 enemies appear in
   // a sector for the first time this match, fire a one-shot directional
   // alert. ag time-based, fires once per sector per match.
@@ -2930,6 +2958,8 @@ const STAGE_HINTS = {
                      en: '★ SURVIVAL unlocked — hold waves, teammates stay dead' },
   unlock_defense:  { zh: '★ 解鎖 DEFENSE — 邊建造邊抵禦,16 模塊任選',
                      en: '★ DEFENSE unlocked — build while you fight, 16 modules' },
+  build_now:       { zh: '⚡ 200 能源備用 · 按 B 蓋砲塔/牆守住中繼',
+                     en: '⚡ 200⚡ to spend — press B to build turrets / walls' },
 };
 function showStageHint(id) {
   const def = STAGE_HINTS[id];
@@ -3056,12 +3086,14 @@ const I18N = {
 
   // ---- Map editor toolbar ----
   '#editor .editor-title':                    { zh: '編輯器 / EDITOR', en: 'EDITOR' },
-  '#editor [data-tool="wall"]':               { zh: '墙',  en: 'WALL' },
-  '#editor [data-tool="cover"]':              { zh: '掩',  en: 'COVER' },
-  '#editor [data-tool="tree"]':               { zh: '树',  en: 'TREE' },
-  '#editor [data-tool="blueSpawn"]':          { zh: '蓝出', en: 'BLUE+' },
-  '#editor [data-tool="redSpawn"]':           { zh: '红出', en: 'RED+' },
-  '#editor [data-tool="erase"]':              { zh: '删',  en: 'ERASE' },
+  '#editor [data-tool="wall"]':               { zh: '墙 WALL',     en: 'WALL' },
+  '#editor [data-tool="cover"]':              { zh: '掩 COVER',    en: 'COVER' },
+  '#editor [data-tool="bunker"]':             { zh: '堡 BUNKER',   en: 'BUNKER' },
+  '#editor [data-tool="sandbag"]':            { zh: '沙包 SBAG',   en: 'SANDBAG' },
+  '#editor [data-tool="tree"]':               { zh: '树 TREE',     en: 'TREE' },
+  '#editor [data-tool="blueSpawn"]':          { zh: '蓝出 BLUE',   en: 'BLUE+' },
+  '#editor [data-tool="redSpawn"]':           { zh: '红出 RED',    en: 'RED+' },
+  '#editor [data-tool="erase"]':              { zh: '删 ERASE',    en: 'ERASE' },
   '#edClearBtn':                              { zh: '清空', en: 'CLEAR' },
   '#edSaveBtn':                               { zh: '存档', en: 'SAVE' },
   '#edTestMode option[value="dm"]':           { zh: '对抗', en: 'DM' },
@@ -5310,9 +5342,14 @@ function openEditor() {
       }
       const x = NN_ARENA.x0 + w.x, y = NN_ARENA.y0 + w.y;
       if (w.kind === 'cover') {
-        addLowCover(x, y, w.w, w.h, w.canopy ? '#3F4A3A' : COLORS.creamDark, { kind: w.canopy ? 'tree' : 'crate', canopy: !!w.canopy });
+        const sub = w.subkind || (w.canopy ? 'tree' : 'crate');
+        const col = sub === 'tree'    ? '#3F4A3A'
+                  : sub === 'sandbag' ? '#A89568'
+                  :                     COLORS.creamDark;
+        addLowCover(x, y, w.w, w.h, col, { kind: sub, canopy: sub === 'tree' || !!w.canopy });
       } else {
-        addBuilding(x, y, w.w, w.h, COLORS.gray);
+        const sub = w.subkind || 'building';
+        addBuilding(x, y, w.w, w.h, COLORS.gray, { kind: sub, accent: !!w.accent });
       }
     }
   }
@@ -5444,6 +5481,14 @@ function _editorPlaceCell(gx, gy) {
     addLowCover(wx, wy, tile, tile, COLORS.creamDark, { kind: 'crate' });
   } else if (editor.tool === 'tree') {
     addLowCover(wx, wy, tile, tile, '#3F4A3A', { kind: 'tree', canopy: true });
+  } else if (editor.tool === 'sandbag') {
+    // Sandbag: low cover, distinct olive tone — same role as crate but reads
+    // visually as a defensive emplacement vs a stacked supply box.
+    addLowCover(wx, wy, tile, tile, '#A89568', { kind: 'sandbag' });
+  } else if (editor.tool === 'bunker') {
+    // Bunker: full-height building (blocks LoS + bullets). Tougher than walls,
+    // 60u solid block — gives the editor a 'fortified emplacement' option.
+    addBuilding(wx, wy, tile, tile, COLORS.gray, { kind: 'bunker', accent: true });
   }
 }
 
@@ -5484,7 +5529,9 @@ function editorSerialize() {
   const walls = [];
   for (const b of buildings) {
     walls.push({ x: b.x - NN_ARENA.x0, y: b.y - NN_ARENA.y0,
-                 w: b.w, h: b.h, kind: 'building' });
+                 w: b.w, h: b.h, kind: 'building',
+                 subkind: b.kind || 'building',  // 'bunker' / 'building'
+                 accent: !!b.accent });
   }
   for (const w of wallLines) {
     walls.push({
@@ -5496,7 +5543,9 @@ function editorSerialize() {
   }
   for (const lc of lowCovers) {
     walls.push({ x: lc.x - NN_ARENA.x0, y: lc.y - NN_ARENA.y0,
-                 w: lc.w, h: lc.h, kind: 'cover', canopy: !!lc.canopy });
+                 w: lc.w, h: lc.h, kind: 'cover',
+                 subkind: lc.kind || 'crate',     // 'crate' / 'sandbag' / 'tree'
+                 canopy: !!lc.canopy });
   }
   const out = { walls };
   const blue = Array.isArray(editor.spawn.blue) ? editor.spawn.blue : [];
@@ -5562,9 +5611,14 @@ function editorSwitchSlot(idx) {
       }
       const x = NN_ARENA.x0 + w.x, y = NN_ARENA.y0 + w.y;
       if (w.kind === 'cover') {
-        addLowCover(x, y, w.w, w.h, w.canopy ? '#3F4A3A' : COLORS.creamDark, { kind: w.canopy ? 'tree' : 'crate', canopy: !!w.canopy });
+        const sub = w.subkind || (w.canopy ? 'tree' : 'crate');
+        const col = sub === 'tree'    ? '#3F4A3A'
+                  : sub === 'sandbag' ? '#A89568'
+                  :                     COLORS.creamDark;
+        addLowCover(x, y, w.w, w.h, col, { kind: sub, canopy: sub === 'tree' || !!w.canopy });
       } else {
-        addBuilding(x, y, w.w, w.h, COLORS.gray);
+        const sub = w.subkind || 'building';
+        addBuilding(x, y, w.w, w.h, COLORS.gray, { kind: sub, accent: !!w.accent });
       }
     }
   }
@@ -8035,10 +8089,19 @@ function buildNNArenaVariant(idx) {
     const x = NN_ARENA.x0 + w.x;
     const y = NN_ARENA.y0 + w.y;
     if (w.kind === 'cover') {
-      addLowCover(x, y, w.w, w.h, w.color || (w.canopy ? '#3F4A3A' : COLORS.creamDark),
-                  { kind: w.canopy ? 'tree' : 'crate', canopy: !!w.canopy });
+      // sub: 'crate' (default cream) / 'sandbag' (olive) / 'tree' (canopy)
+      const sub = w.subkind || (w.canopy ? 'tree' : 'crate');
+      const col = w.color
+        || (sub === 'tree'    ? '#3F4A3A'
+        :   sub === 'sandbag' ? '#A89568'
+        :                       COLORS.creamDark);
+      addLowCover(x, y, w.w, w.h, col,
+                  { kind: sub, canopy: sub === 'tree' || !!w.canopy });
     } else {
-      addBuilding(x, y, w.w, w.h, w.color || COLORS.gray, { accent: !!w.accent });
+      // sub: 'building' (default) / 'bunker' (tougher full-height block)
+      const sub = w.subkind || 'building';
+      addBuilding(x, y, w.w, w.h, w.color || COLORS.gray,
+                  { kind: sub, accent: !!w.accent });
     }
   }
   buildCoverPoints();
@@ -8792,9 +8855,18 @@ function initMission(missionDef, mapDef) {
   // a real outpost, not a bare crystal in the middle of nowhere).
   if (mission.setupStructures) {
     if (typeof game._structures === 'undefined' || !game._structures) game._structures = [];
-    if (typeof game._energy === 'undefined') game._energy = 100;
+    // Campaign players need a starting build budget so they can immediately
+    // start fortifying without waiting for kills to drip in energy. 200⚡
+    // covers e.g. 1 turret (100) + 2 sandbag walls (60) before any kill.
+    // User: '這個遊戲有關很大部分是跟建造有關,要讓玩家能體會到'.
+    if (typeof game._energy === 'undefined') game._energy = 200;
     mission.setupStructures();
     if (typeof recomputePowerGrid === 'function') recomputePowerGrid();
+    // First-time tutorial nudge — fires once across all sessions; gates on
+    // ag.hintsSeen so veterans never see it after the first relay.
+    if (typeof showStageHint === 'function') {
+      setTimeout(() => showStageHint('build_now'), 1500);
+    }
   }
 }
 
@@ -9641,7 +9713,11 @@ MISSION_FACTORIES.hold = function(mapDef) {
     x: WORLD.w/2, y: WORLD.h/2, r: 90,
     hp: 600, maxHp: 600, alive: true,
   };
-  const duration = 90 * 60; // 90 sec at 60fps
+  // 90s → 120s: lets the player commit to building a wall ring / placing
+  // turrets between waves instead of just shoot-camping. The whole point of
+  // the build economy is for the player to engage with it; a too-tight
+  // window forces them to skip building. User: '時間更要長一點'.
+  const duration = 120 * 60;
   let elapsed = 0;
   let waveTimer = 90; // brief grace period before first wave
   return {
