@@ -3301,7 +3301,12 @@ function _ftueWaitKey(keys, timeoutMs) {
     const onKey = (e) => {
       if (_ftueNarr.skipFlag) return finish();
       const k = (e.key || '').toLowerCase();
-      if (set.has(k)) { e.preventDefault(); finish(); }
+      // CRITICAL: do NOT preventDefault. The keydown event needs to
+      // propagate to the global gameplay handler — pressing 'b' has to
+      // reach toggleBuildMode(), 'q' has to reach toggleDrone(), etc.
+      // Eating the event was why pressing B during S4 silently did
+      // nothing ('按下b輪盤為何不出現'). We just OBSERVE the press here.
+      if (set.has(k)) finish();
     };
     const finish = () => {
       if (done) return;
@@ -4177,20 +4182,34 @@ async function _ftueScene4_Breach() {
   tickCD();
   await _wait(2200);
   _ftueNarrShowChip(_r('[B] · 建造', '[B] · BUILD'));
-  // Wait for B press (ftueWaitKeyAFK respects skipFlag + AFK refire)
+  // Wait for B press. The waitKey listener no longer eats the event, so
+  // the global keydown handler at line ~6711 fires toggleBuildMode()
+  // naturally and the radial wheel opens. We don't need to call it
+  // ourselves (and trying to — under the wrong name `toggleBuildRadial`
+  // — was the silent-no-wheel bug the user hit).
   await _ftueWaitKeyAFK(['b'], 4500, 16000);
   _ftueNarrHideChip();
   _ftueMark('firstBuild');
-  // Open build wheel — uses existing build mode
-  if (typeof toggleBuildRadial === 'function') {
-    try { toggleBuildRadial(); } catch (e) {}
+  await _wait(400);
+  _ftueNarrShowChip(_r('選擇 牆 → 點地面放置', 'PICK WALL → CLICK GROUND'));
+  // Wait for an ACTUAL wall (game._structures grows from the existing
+  // build pipeline). Skip-flag + 16s timeout escape so the prologue
+  // never gets stuck.
+  const wallStart = Date.now();
+  const startCount = (game._structures && game._structures.length) || 0;
+  while ((Date.now() - wallStart) < 16000) {
+    if (_ftueNarr.skipFlag) break;
+    const cur = (game._structures && game._structures.length) || 0;
+    if (cur > startCount) break;
+    await _wait(120);
   }
-  await _wait(800);
-  _ftueNarrShowChip(_r('點擊 · 牆 (WALL)', 'CLICK · WALL'));
-  // Give player up to 10s to actually place — but in skip mode advance fast
-  await _ftueWaitKeyAFK([' ', 'enter'], 5000, 12000);
   _ftueNarrHideChip();
   _ftueMark('firstWall');
+  // Force-close build mode if the player got stuck inside it (skip path)
+  if (typeof buildMode !== 'undefined') {
+    buildMode.active = false;
+    buildMode.radialOpen = false;
+  }
   // Stop countdown — wall placed (visually)
   countdownAlive = false;
   if (cdEl) {
