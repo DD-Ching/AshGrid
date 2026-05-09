@@ -16447,7 +16447,31 @@ function drawDrone(x, y, color, phase) {
 
 
 // ============ HUD ============
+// FTUE progressive HUD reveal — keeps the screen clean while the visual-novel
+// dialogue bar is teaching one step at a time. User: '上只有我自己一個獨立
+// 個體,然後不要有其他的介面 … 因為會階段式的解鎖嘛,教學嘛'.
+//
+// Reveal thresholds (game._ftue.idx):
+//   step 0 (move)      → only player + dialogue, NO HUD at all
+//   step 1+ (combat)   → HP / ammo / crosshair revealed (combat needs them)
+//   step 3+ (build)    → energy chip + status panel
+//   step 4+ (placed)   → minimap
+//   FTUE done          → full HUD
+function _ftueHudLevel() {
+  if (!game._ftue || !game._ftue.active) return 99;   // no FTUE = full HUD
+  return game._ftue.idx;
+}
 function renderHUD() {
+  // FTUE step 0 (movement-only): bail out before drawing ANY HUD chunk.
+  // Dialogue bar is HTML so it stays. Player + crosshair come from
+  // renderHUDOverlays which we still call below.
+  const _ftueLvl = _ftueHudLevel();
+  if (_ftueLvl < 1) {
+    // Still tick the swap-toast / FTUE-side animations + crosshair.
+    renderHUDOverlays();
+    renderDeathRecap();
+    return;
+  }
   // Hit flash
   if (game.hitFlash > 0) {
     ctx.fillStyle = `rgba(200, 38, 28, ${game.hitFlash / 12 * 0.35})`;
@@ -16612,8 +16636,11 @@ function renderHUD() {
   // overlap the HTML overlay (the user reported '兩個視窗會重疊').
   const _endCard = document.getElementById('nnEndCard');
   const _endCardVisible = _endCard && _endCard.style.display === 'flex';
-  if (mission && mission.renderHUD && !_endCardVisible) mission.renderHUD();
-  if (mission && (game.mode === 'tactical' || game.mode === 'command')) drawObjectiveCompass();
+  // FTUE: hide mission objective panel + compass until after the audit
+  // step (idx >= 3). Player just learned move/kill/audit — no need for
+  // objective text yet.
+  if (mission && mission.renderHUD && !_endCardVisible && _ftueLvl >= 3) mission.renderHUD();
+  if (mission && (game.mode === 'tactical' || game.mode === 'command') && _ftueLvl >= 3) drawObjectiveCompass();
 
   // ----- Compact bottom command bar: HP + Ammo + UAV in one slim row -----
   const barH = 54;
@@ -16679,6 +16706,19 @@ function renderHUD() {
     ctx.fillRect(barX + 396 + i*18, barY + 30, 14, 10);
   }
 
+  // FTUE: minimap doesn't appear until step 4 (after the player has placed
+  // their first structure — '一步步解鎖全部'). Skip directly to the rest
+  // of the HUD overlays for earlier steps.
+  if (_ftueLvl < 4) {
+    // continue to crosshair + mode overlay below; just skip the minimap block
+    if (game._nnMode && !game._buildShopDrawnThisFrame) {
+      drawDefenseShop();
+    }
+    game._buildShopDrawnThisFrame = false;
+    renderHUDOverlays();
+    renderDeathRecap();
+    return;
+  }
   // Mini-map (bottom-right) — collapsible. Click the small toggle in the
   // top-right corner of its panel to fold it down to a 70×26 "MAP ▲" tab.
   // NOTE: must NOT early-return from renderHUD — the crosshair, mode overlay
