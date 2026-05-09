@@ -2039,10 +2039,16 @@ function unlockAchievement(id) {
   _matchAchievementUnlocks.push(a);
   const lang = (typeof getLang === 'function') ? getLang() : 'en';
   const title = (lang === 'zh') ? a.title_zh : a.title_en;
-  if (typeof showRadioToast === 'function') {
-    // Plain text label since we no longer use emoji icons — keep the
-    // toast clean. The on-screen modal carries the full SVG.
-    showRadioToast((lang === 'zh') ? '成就解鎖' : 'ACHIEVEMENT', title, 4500);
+  // Achievement unlock used to route through showRadioToast — that path
+  // plays a 2-tone beep (1320 + 880 Hz) which is the ding-dong the user
+  // has flagged FOUR TIMES now. first_blood / killstreak3 / killstreak5
+  // are kill-triggered achievements, so re-arming them via ?reset=1 made
+  // the kill-ding-dong come back even after the kill_confirm preset and
+  // the ally-kill radio callout were both deleted. Switch to showSwapToast
+  // (silent) so achievement unlocks remain VISIBLE but never SOUND.
+  if (typeof showSwapToast === 'function') {
+    const tag = (lang === 'zh') ? '成就解鎖' : 'ACHIEVEMENT';
+    showSwapToast(`▸ ${tag} · ${title}`);
   }
 }
 // Achievements that depend on locked features. Hidden until the underlying
