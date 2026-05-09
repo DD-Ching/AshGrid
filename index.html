@@ -4298,6 +4298,11 @@ const COLORS = {
   creamDark: '#D4CFC0',
   gray: '#6B6B6B',
   lightGray: '#B8B4A8',
+  // Per FTUE/01 §A.4.1 — the floor must NEVER be cream/light.
+  // Used by render() clear + every map-theme rect (replaces COLORS.cream).
+  // User feedback (verbatim): '幾乎不會有白色得底色!永遠!!'
+  floor:       '#0F0F0F',
+  floorAccent: '#1A1A1A',
 };
 
 const WORLD = { w: 3200, h: 3200 };
@@ -8322,7 +8327,7 @@ MAPS.push({
     soldierFireFast: false,
   },
   build() {
-    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.cream });
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.floor });
     // Single quiet hazard wedge instead of overlapping wedge + chevrons
     addTheme({ kind: 'wedge', cx: WORLD.w*0.5, cy: WORLD.h*0.5, r: 1900, a0: -Math.PI*0.92, a1: -Math.PI*0.45, color: COLORS.red, alpha: 0.07 });
     // Three cooling pools (was 5) — central + two corners
@@ -8404,7 +8409,7 @@ MAPS.push({
     soldierFireFast: true,
   },
   build() {
-    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.cream });
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.floor });
     addTheme({ kind: 'plume', cx: WORLD.w/2, cy: WORLD.h*0.40, w: 900, h: WORLD.h*0.85, color: COLORS.red, alpha: 0.10 });
     // 3 slag pools (was 5)
     const slags = [
@@ -8488,9 +8493,9 @@ MAPS.push({
     soldierFireFast: false,
   },
   build() {
-    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.cream });
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.floor });
     addTheme({ kind: 'water', x: 0, y: 0, w: WORLD.w*0.18, h: WORLD.h, color: COLORS.gray });
-    addTheme({ kind: 'rect', x: WORLD.w*0.18, y: 0, w: 80, h: WORLD.h, color: COLORS.creamDark });
+    addTheme({ kind: 'rect', x: WORLD.w*0.18, y: 0, w: 80, h: WORLD.h, color: COLORS.floorAccent });
     // Yard markings — far fewer (was 19 lines, now 6)
     for (let i = 0; i < 4; i++) addTheme({ kind: 'line-h', x: WORLD.w*0.22, y: 600 + i*640, w: WORLD.w*0.76, h: 3, color: COLORS.gray, alpha: 0.30 });
     for (let i = 0; i < 2; i++) addTheme({ kind: 'line-v', x: WORLD.w*0.40 + i*WORLD.w*0.30, y: 120, w: 3, h: WORLD.h-240, color: COLORS.gray, alpha: 0.30 });
@@ -8562,7 +8567,7 @@ MAPS.push({
     soldierFireFast: true,
   },
   build() {
-    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.cream });
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.floor });
     // Three quiet cooling vent bands instead of seven
     for (let i = 0; i < 3; i++) {
       addTheme({ kind: 'rect', x: 280, y: 540 + i*880, w: WORLD.w-560, h: 18, color: COLORS.red, alpha: 0.22 });
@@ -8646,7 +8651,7 @@ MAPS.push({
     soldierFireFast: false,
   },
   build() {
-    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.cream });
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.floor });
     // 5 concentric rings (was 12) — still gives the radial feel
     for (let i = 0; i < 5; i++) {
       addTheme({ kind: 'circle-stroke', cx: WORLD.w/2, cy: WORLD.h*0.40, r: 320 + i*280, color: COLORS.red, alpha: 0.18, dash: [12, 18] });
@@ -8665,7 +8670,7 @@ MAPS.push({
       addTheme({ kind: 'mast', x: 240 + i*520, y: WORLD.h*0.08, h: 220 + (i%2)*40, color: COLORS.black });
     }
     // Runway: simpler centerline (8 dashes instead of 16)
-    addTheme({ kind: 'rect', x: WORLD.w*0.45, y: 0, w: WORLD.w*0.10, h: WORLD.h, color: COLORS.creamDark });
+    addTheme({ kind: 'rect', x: WORLD.w*0.45, y: 0, w: WORLD.w*0.10, h: WORLD.h, color: COLORS.floorAccent });
     for (let i = 0; i < 8; i++) addTheme({ kind: 'rect', x: WORLD.w*0.50 - 6, y: 200 + i*380, w: 12, h: 100, color: COLORS.black });
 
     // GROUND — 2 control kiosks + 4 hive support pylons (was 4 + 6)
@@ -8747,10 +8752,9 @@ MAPS.push({
     soldierFireFast: false,
   },
   build() {
-    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.cream });
-    // Light grid background to show scale
-    for (let x = 200; x < WORLD.w; x += 200) addTheme({ kind: 'line-v', x, y: 0, w: 1, h: WORLD.h, color: COLORS.creamDark, alpha: 0.5 });
-    for (let y = 200; y < WORLD.h; y += 200) addTheme({ kind: 'line-h', x: 0, y, w: WORLD.w, h: 1, color: COLORS.creamDark, alpha: 0.5 });
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.floor });
+    // (Light grid background CUT per FTUE/01 §10 + §A.4.1 — no grid lines.
+    // The "show scale" purpose was strategy-game cosmetics, not GREY VECTOR.)
 
     // Maze walls — strategically placed so cover-seeking AI has options.
     // Vertical walls
@@ -8805,19 +8809,13 @@ MAPS.push({
   build() {
     // Cream base only inside the 1200×1200 region; outside left grey-ish
     addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: '#9a978c' });
-    addTheme({ kind: 'rect', x: NN_ARENA.x0, y: NN_ARENA.y0, w: NN_ARENA.w, h: NN_ARENA.h, color: COLORS.cream });
+    addTheme({ kind: 'rect', x: NN_ARENA.x0, y: NN_ARENA.y0, w: NN_ARENA.w, h: NN_ARENA.h, color: COLORS.floor });
     // Border
     addTheme({ kind: 'rect', x: NN_ARENA.x0, y: NN_ARENA.y0 - 4, w: NN_ARENA.w, h: 8, color: COLORS.red });
     addTheme({ kind: 'rect', x: NN_ARENA.x0, y: NN_ARENA.y0 + NN_ARENA.h - 4, w: NN_ARENA.w, h: 8, color: COLORS.red });
     addTheme({ kind: 'rect', x: NN_ARENA.x0 - 4, y: NN_ARENA.y0, w: 8, h: NN_ARENA.h, color: COLORS.red });
     addTheme({ kind: 'rect', x: NN_ARENA.x0 + NN_ARENA.w - 4, y: NN_ARENA.y0, w: 8, h: NN_ARENA.h, color: COLORS.red });
-    // Light grid for scale reference
-    for (let x = NN_ARENA.x0 + 200; x < NN_ARENA.x0 + NN_ARENA.w; x += 200) {
-      addTheme({ kind: 'line-v', x, y: NN_ARENA.y0, w: 1, h: NN_ARENA.h, color: COLORS.creamDark, alpha: 0.4 });
-    }
-    for (let y = NN_ARENA.y0 + 200; y < NN_ARENA.y0 + NN_ARENA.h; y += 200) {
-      addTheme({ kind: 'line-h', x: NN_ARENA.x0, y, w: NN_ARENA.w, h: 1, color: COLORS.creamDark, alpha: 0.4 });
-    }
+    // (Grid for scale reference CUT per FTUE/01 §10 + §A.4.1 — no grid lines.)
     // Walls + cover are added per-match by buildNNArenaVariant() so we can
     // randomize layouts to match the training distribution. Build() only
     // creates the empty arena shell (border, grid, spawn markers, landmark).
@@ -15237,7 +15235,10 @@ function screenToWorld(sx, sy) {
 
 // ============ RENDER ============
 function render() {
-  ctx.fillStyle = COLORS.cream;
+  // Canvas-clear MUST be dark per FTUE/01 §A.4.1 ('幾乎不會有白色得底色').
+  // The world theme rect (per-map addTheme) renders over this; the clear
+  // shows around the edges when zoomed-out / smaller worlds.
+  ctx.fillStyle = COLORS.floor;
   ctx.fillRect(0, 0, W(), H());
 
   // Apply camera shake — small random offset, decays in update(). Pure
