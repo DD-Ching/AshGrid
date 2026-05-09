@@ -978,44 +978,45 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   background: transparent;
 }
 
-/* FTUE DIALOGUE BAR — visual-novel style sequential prompt. Bottom-center,
-   speaker chip on left, text on right, pulsing ▼ on the far right. Only
-   one line shown at a time; advances when the player performs the
-   step's required action. Replaces the old stacked-toast pile-up. */
+/* FTUE DIALOGUE BAR — text-adventure strip across the full bottom of the
+   screen. NOT a floating window. Pure black background, full width,
+   speaker tag on left, text on right, pulsing ▼ at far right. User
+   reference image (Steins;Gate / 文字冒險). Only one line at a time;
+   advances when the player performs the step's required action. */
 #ftueDialogue {
-  position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%);
-  width: min(92vw, 880px);
-  background: rgba(20, 18, 24, 0.92);
-  border-top: 1px solid rgba(232, 228, 216, 0.22);
-  border-bottom: 1px solid rgba(232, 228, 216, 0.22);
+  position: fixed; left: 0; right: 0; bottom: 0;
+  width: 100%;
+  background: #000;
+  border-top: 1px solid rgba(232, 228, 216, 0.35);
   color: var(--cream);
   font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
-  z-index: 250;
+  z-index: 300;
   pointer-events: none;
-  padding: 14px 18px 10px;
+  padding: 22px 28px 18px;
   opacity: 0; transition: opacity 0.35s ease;
 }
 #ftueDialogue.show { opacity: 1; }
 .ftue-row {
-  display: flex; align-items: flex-start; gap: 14px;
+  display: flex; align-items: flex-start; gap: 18px;
+  max-width: 1200px; margin: 0 auto;
 }
 .ftue-speaker {
   flex: 0 0 auto;
   background: var(--red); color: var(--cream);
   font-weight: 800; letter-spacing: 3px; font-size: 12px;
-  padding: 6px 14px;
+  padding: 7px 16px;
   text-transform: uppercase;
 }
 .ftue-text {
   flex: 1 1 auto;
-  font-size: 15px; line-height: 1.5;
+  font-size: 16px; line-height: 1.55;
   letter-spacing: 0.5px;
-  padding-top: 4px;
+  padding-top: 5px;
 }
 .ftue-pulse {
   flex: 0 0 auto;
-  font-size: 12px; opacity: 0.6;
-  padding-top: 6px;
+  font-size: 14px; opacity: 0.6;
+  padding-top: 7px;
   animation: ftue-pulse 1.4s ease-in-out infinite;
 }
 @keyframes ftue-pulse {
@@ -1023,13 +1024,14 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   50%      { opacity: 0.85; transform: translateY(2px); }
 }
 .ftue-hint {
-  font-size: 10px; letter-spacing: 2px; color: var(--gray);
-  margin-top: 8px; text-align: right;
+  font-size: 11px; letter-spacing: 3px; color: var(--gray);
+  margin-top: 10px; text-align: right;
   font-family: monospace;
+  max-width: 1200px; margin-left: auto; margin-right: auto;
 }
 @media (max-width: 600px) {
-  #ftueDialogue { bottom: 100px; padding: 10px 12px 8px; }
-  .ftue-text { font-size: 13px; }
+  #ftueDialogue { padding: 14px 16px 12px; }
+  .ftue-text { font-size: 14px; }
   .ftue-speaker { font-size: 10px; padding: 5px 10px; letter-spacing: 2px; }
 }
 .editor-toolbar {
@@ -3114,7 +3116,19 @@ function _ftueAdvance(reason) {
 }
 // Public hooks — called from the relevant gameplay sites
 function _ftueOnMove()       { if (game._ftue?.active) { game._ftue.flags.moved = true; _ftueAdvance('move'); } }
-function _ftueOnKill()       { if (game._ftue?.active) { game._ftue.flags.kill++;       _ftueAdvance('kill'); } }
+function _ftueOnKill()       {
+  if (!game._ftue?.active) return;
+  game._ftue.flags.kill++;
+  _ftueAdvance('kill');                                 // step 1 advance
+  // Step 5 backup advance: count kills regardless of the 4-second kill-
+  // streak window. User reported step 5 stuck because the streak counter
+  // resets between kills if pacing exceeds 4 s ('明明還在教程 … 任務也
+  // 沒往下推進'). Counting raw kills since step entry guarantees advance.
+  if (game._ftue.idx === 5) {
+    game._ftue.flags.step5Kills = (game._ftue.flags.step5Kills || 0) + 1;
+    if (game._ftue.flags.step5Kills >= 3) _ftueAdvance('streak3');
+  }
+}
 function _ftueOnAuditClose() { if (game._ftue?.active) { game._ftue.flags.auditClose = true; _ftueAdvance('auditClose'); } }
 function _ftueOnBuildOpen()  { if (game._ftue?.active) { game._ftue.flags.buildOpen = true; _ftueAdvance('buildOpen'); } }
 function _ftueOnPlace()      { if (game._ftue?.active) { game._ftue.flags.place++;     _ftueAdvance('place'); } }
@@ -9313,6 +9327,12 @@ function updateMission() {
     updateAirstrikes();
   }
   game._structuresTickedThisFrame = false;
+  // FTUE freeze: while the tutorial dialogue is running, suppress the
+  // mission's win/loss check entirely. Otherwise a 2v2 DM with kill
+  // threshold 6 can fire VICTORY before the player has reached the
+  // streak3 step. User report: '明明就還在教程,根本就沒有什麼勝利
+  // 或失敗 … 完全亂搞一通'.
+  if (game._ftue && game._ftue.active) return;
   if (mission.isComplete && mission.isComplete()) {
     mission.status = 'success';
     onMissionSuccess();
@@ -9385,8 +9405,13 @@ function returnToNNLobby() {
 // unlocks if the bumpMatchPlayed call crossed a threshold this match.
 // PLAY AGAIN restarts the same mode immediately; LOBBY returns to menu.
 function showNNEndCard(result) {
-  // FTUE: match ended — close the tutorial bar (no-op if already done) and
-  // flip ag.firstMatch so the next match is clean even if the player exited
+  // Hard FTUE guard — the tutorial owns the screen until streak3 fires.
+  // Any path that tries to drop a VICTORY / DEFEAT card while FTUE is
+  // still active is suppressed (the mission update gate above usually
+  // catches it, but this is the failsafe).
+  if (game._ftue && game._ftue.active) return;
+  // Match ended — close the tutorial bar (no-op if already done) and flip
+  // ag.firstMatch so the next match is clean even if the player exited
   // before reaching the streak3 step.
   if (typeof _finalizeFtue === 'function') _finalizeFtue();
   const card = document.getElementById('nnEndCard');
