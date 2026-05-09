@@ -3120,46 +3120,65 @@ function _ftueOnBuildOpen()  { if (game._ftue?.active) { game._ftue.flags.buildO
 function _ftueOnPlace()      { if (game._ftue?.active) { game._ftue.flags.place++;     _ftueAdvance('place'); } }
 function _ftueOnStreak3()    { if (game._ftue?.active) { game._ftue.flags.streak = 3; _ftueAdvance('streak3'); } }
 
-// Spawn one Red Grid patroller for the FTUE step-1 first-kill moment.
-// Placed within the NN_ARENA, away from the player, so they have to take
-// a few steps before engagement.
-function _ftueSpawnFirstEnemy() {
-  if (typeof NN_ARENA === 'undefined') return;
+// FTUE enemy spawns are CURATED, not random. User: '不要單一元素 …
+// 你可以隨機,或者是你為它們精心安排'. Each FTUE encounter is staged so
+// the player meets a distinct chassis / weapon / NN-style combo.
+// Helper to build one — keeps callsite shapes consistent.
+function _ftueMakeEnemy(opts) {
+  const w = WEAPONS[opts.weapon] || WEAPONS.RIFLE;
   const e = {
-    x: NN_ARENA.x0 + NN_ARENA.w * 0.78,
-    y: NN_ARENA.y0 + NN_ARENA.h * 0.5,
-    angle: Math.PI, fireCd: 60, fireRate: 50,
+    x: opts.x, y: opts.y,
+    angle: opts.angle != null ? opts.angle : Math.PI,
+    fireCd: 60, fireRate: 50,
     alive: true, walkPhase: 0,
     team: 1,
-    _weapon: WEAPONS.RIFLE,
-    _nnDifficulty: 'warrior',
+    _weapon: w,
+    _nnDifficulty: opts.style || 'warrior',
     _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
     _respawnAt: null,
-    _ftueSpawn: true,        // tag so nothing tries to respawn this slot
+    _ftueSpawn: true,
+    callsign: opts.callsign,
   };
-  applyChassisToUnit(e, 'humanoid', 2.5, 80, 13);
-  enemies.push(e);
+  applyChassisToUnit(e, opts.chassis || 'humanoid', 2.5, 80, 13);
+  return e;
 }
-// On step 4→5 advance, drop in 2 more so the player can chain a streak
-// of 3 (1 already alive + 2 new = 3 kills available).
+// Step 1 — single enemy named after Hollow-31 (GAME DESIGN.md §8.I).
+// Empty Word Protection syndrome: a humanoid still defending an empty
+// command room. Standard rifle, warrior brain — the canonical baseline
+// threat the player learns to counter.
+function _ftueSpawnFirstEnemy() {
+  if (typeof NN_ARENA === 'undefined') return;
+  enemies.push(_ftueMakeEnemy({
+    callsign: 'HOLLOW-31',
+    x: NN_ARENA.x0 + NN_ARENA.w * 0.78,
+    y: NN_ARENA.y0 + NN_ARENA.h * 0.5,
+    chassis: 'humanoid', weapon: 'RIFLE', style: 'warrior',
+  }));
+}
+// Step 5 — three distinct combos so the player learns the roster lives
+// in the same arena: heavy/LMG anchor, wolf/SMG flanker, humanoid/SNIPER
+// long-lane. Each one of the three GREY VECTOR chassis classes,
+// each with a thematically appropriate NN brain.
 function _ftueSpawnStreakEnemies() {
   if (typeof NN_ARENA === 'undefined') return;
-  for (let i = 0; i < 2; i++) {
-    const e = {
-      x: NN_ARENA.x0 + NN_ARENA.w * (0.65 + i * 0.12),
-      y: NN_ARENA.y0 + NN_ARENA.h * (0.35 + i * 0.30),
-      angle: Math.PI, fireCd: 60, fireRate: 50,
-      alive: true, walkPhase: 0,
-      team: 1,
-      _weapon: WEAPONS.RIFLE,
-      _nnDifficulty: i === 0 ? 'warrior' : 'cqb',
-      _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
-      _respawnAt: null,
-      _ftueSpawn: true,
-    };
-    applyChassisToUnit(e, i === 0 ? 'humanoid' : 'wolf', 2.5, 80, 13);
-    enemies.push(e);
-  }
+  enemies.push(_ftueMakeEnemy({
+    callsign: 'IRON-04',                // Iron Swarm — bee anchor
+    x: NN_ARENA.x0 + NN_ARENA.w * 0.70,
+    y: NN_ARENA.y0 + NN_ARENA.h * 0.35,
+    chassis: 'heavy',    weapon: 'LMG',    style: 'defensive',
+  }));
+  enemies.push(_ftueMakeEnemy({
+    callsign: 'GREY-S2',                // Grey Salvage scrap-wolf
+    x: NN_ARENA.x0 + NN_ARENA.w * 0.82,
+    y: NN_ARENA.y0 + NN_ARENA.h * 0.65,
+    chassis: 'wolf',     weapon: 'SMG',    style: 'cqb',
+  }));
+  enemies.push(_ftueMakeEnemy({
+    callsign: 'BLACK-07',               // Black Signal sharpshooter
+    x: NN_ARENA.x0 + NN_ARENA.w * 0.92,
+    y: NN_ARENA.y0 + NN_ARENA.h * 0.5,
+    chassis: 'humanoid', weapon: 'SNIPER', style: 'sharpshooter',
+  }));
 }
 
 // Build the step list (replaces old _scheduleFirstMatchToasts).
@@ -3176,6 +3195,26 @@ function _scheduleFirstMatchToasts() {
   // _ftueAdvance) re-introduces the minimum content needed.
   if (typeof allies !== 'undefined') allies.length = 0;
   if (typeof enemies !== 'undefined') enemies.length = 0;
+  // Re-build the arena with the dedicated FTUE variant (curated cover
+  // layout — see NN_MAP_VARIANTS 'ftue'). The skirmish init has already
+  // rolled a default variant so we rebuild on top. Mirror what
+  // editorTest does with _forceVariantId.
+  if (typeof buildNNArenaVariant === 'function' && typeof NN_MAP_VARIANTS !== 'undefined') {
+    const ftueIdx = NN_MAP_VARIANTS.findIndex(v => v.id === 'ftue');
+    if (ftueIdx >= 0) {
+      // clear any walls/lowCovers from the previous variant
+      if (typeof buildings !== 'undefined') buildings.length = 0;
+      if (typeof wallLines !== 'undefined') wallLines.length = 0;
+      if (typeof lowCovers !== 'undefined') lowCovers.length = 0;
+      buildNNArenaVariant(ftueIdx);
+    }
+  }
+  // Custom camera — zoom out a touch during step 0 so the empty arena
+  // reads as 'space around me, no one else'. Restored to default 1.0
+  // when the FTUE deactivates (in _ftueAdvance final step).
+  if (typeof camera !== 'undefined') {
+    camera.targetScale = 0.85;
+  }
   // Match-state side-effects from the cleared spawns: invuln window
   // already set in startNNSkirmish but the units it covered are gone now.
   // No structures pre-placed here — relay-style outpost (gen + medstation)
@@ -8004,6 +8043,25 @@ const NN_ARENA_MAP_INDEX = MAPS.length - 1;
 // sees the same map distribution it trained on.
 
 const NN_MAP_VARIANTS = [
+  // FTUE-only arena. Curated geometry for the 6-step tutorial:
+  //  - empty centre (step 0 'alone in space' moment)
+  //  - 4 cover blocks at the cardinals (step 1 first kill — somewhere to
+  //    line up a shot)
+  //  - a short E-W wall line (step 4 'place a structure beside it')
+  //  - both spawn anchors aligned on the long axis so the camera doesn't
+  //    have to pan
+  // Hidden from the regular pool (modes: []) — only ever picked via
+  // _forceVariantId from the FTUE flow.
+  { id: 'ftue',     name: 'FTUE · 教學',
+    walls: () => [
+      { x: 540, y: 200, w: 120, h: 30, kind: 'building' },
+      { x: 540, y: 970, w: 120, h: 30, kind: 'building' },
+      { x: 200, y: 540, w: 30,  h: 120, kind: 'building' },
+      { x: 970, y: 540, w: 30,  h: 120, kind: 'building' },
+    ],
+    spawn: { blue: [{ x: 200, y: 600 }], red: [{ x: 1000, y: 600 }] },
+    modes: [],   // never rolls in the regular variant pool
+  },
   { id: 'open',     name: '开阔 OPEN',
     walls: () => [],
     modes: ['dm', 'duel', 'sniper'],
@@ -14334,6 +14392,19 @@ function updateCamera() {
     target = player;
     camera.targetScale = 1;
     camera.targetRotation = 0;
+  }
+  // FTUE custom cinematography — pull the camera back during the early
+  // tutorial steps so the empty NN_ARENA reads as 'I'm alone in this
+  // space'. Steps closer in as enemies drop in.
+  //   step 0 (alone)        scale 0.78   wide breathing room
+  //   step 1 (1 enemy)      scale 0.88   slight pull-out so target visible
+  //   step 2-3 (audit/build) scale 0.95
+  //   step 4+ / done         scale 1.0   normal
+  if (game._ftue && game._ftue.active && game.mode === 'tactical') {
+    const lvl = game._ftue.idx;
+    if      (lvl === 0) camera.targetScale = 0.78;
+    else if (lvl === 1) camera.targetScale = 0.88;
+    else if (lvl <= 3)  camera.targetScale = 0.95;
   }
   camera.scale += (camera.targetScale - camera.scale) * 0.1;
   let rotDiff = camera.targetRotation - camera.rotation;
