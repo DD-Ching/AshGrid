@@ -1716,7 +1716,9 @@ body.first-session .start-bg { opacity: 0.35; }
       localStorage.removeItem('ag.tutorialSeen');
       localStorage.removeItem('ag.introSeen');
       sessionStorage.setItem('ag._ftueDevAutoStart', '1');
-      sessionStorage.setItem('ag._ftueDevMonitor', '1');
+      // ag._ftueDevMonitor disabled in canvas-FTUE — the panel was a
+      // visible lobby-UI leak per §A.4. Reset only for this turn:
+      sessionStorage.removeItem('ag._ftueDevMonitor');
     } catch (e) {}
   }
   // fresh=1 has its own async flow — must finish before stripping the flag,
@@ -3066,9 +3068,21 @@ function _ftueIsFirstSession() {
   catch (e) { return true; }
 }
 function _ftueCurStep() { return null; }
-function _ftueRevealed(_key) { return true; }
+function _ftueRevealed(key) {
+  // Outside FTUE: full HUD always.
+  const f = (typeof game !== 'undefined') ? game._ftueScripted : null;
+  if (!f) return true;
+  // Scripted FTUE: only show what hudShow[key] explicitly enables.
+  // Per FTUE/01 §A.4: HUD is hidden by default; HP/ammo reveal mid-S2 on
+  // first enemy contact; minimap NEVER shows during FTUE.
+  return !!(f.hudShow && f.hudShow[key]);
+}
 function _ftueKeyLocked(_k) { return false; }
-function _ftueCameraScale() { return null; }
+function _ftueCameraScale() {
+  const f = (typeof game !== 'undefined') ? game._ftueScripted : null;
+  if (f && f.cameraScaleTarget != null) return f.cameraScaleTarget;
+  return null;
+}
 function _ftueShowCurrent() {}
 function _ftueHide() {
   const el = document.getElementById('ftueDialogue');
@@ -3338,6 +3352,401 @@ function _ftueNarrHeartbeat(vol) {
   o.start(now); o.stop(now + 0.5);
 }
 
+// ============================================================
+// FTUE SCRIPTED CANVAS MODE — §A.2 / §A.4 implementation
+//
+// During scenes S2-S4, the player IS in the game canvas with real WASD
+// movement, real Mote ally sprite, real enemies. The ONLY thing the
+// player visually sees is the inside of a circle around them — the rest
+// of the canvas is fully black via a destination-out cutout per §A.2.
+//
+// game._ftueScripted is the runtime flag. When set:
+//   - render() carves a vision hole over screen-center with current radius
+//   - renderHUD() suppresses HP/ammo/mission/minimap/energy chrome
+//   - drawMinimap path is skipped entirely
+//   - update() drives the Mote ally via state machine
+//   - update() runs scripted timers (enemy spawn, chip schedules)
+// ============================================================
+
+// Vision-hole render (§A.2). Called from render() AFTER world is drawn,
+// in screen-space. Single-path source-over gradient: transparent at
+// `playerX, playerY` center, opaque #0A0A0A at edges. The world drawn
+// underneath shows through the hole; everything outside fades to black.
+//
+// (The spec's destination-out variant doesn't work when applied AFTER
+// an opaque fillRect — that erases the world. The equivalent effect is
+// a single source-over radial gradient with alpha 0 → 0 → 1.)
+function _renderFtueVision(ctx, screenX, screenY, clearR) {
+  // Use CSS-pixel dims because render() applies a DPR setTransform.
+  // Buffer dims (canvas.width/height) are 2x on HiDPI screens — using
+  // them here would put the gradient center at the wrong place.
+  const W_ = (typeof W === 'function') ? W() : ctx.canvas.width;
+  const H_ = (typeof H === 'function') ? H() : ctx.canvas.height;
+  const outerR = Math.max(clearR * 1.4, clearR + 80);
+  // 1. Black-with-transparent-hole overlay
+  ctx.save();
+  const g = ctx.createRadialGradient(screenX, screenY, 0,
+                                     screenX, screenY, outerR);
+  g.addColorStop(0, 'rgba(10,10,10,0)');
+  g.addColorStop(clearR / outerR, 'rgba(10,10,10,0)');
+  g.addColorStop(1, 'rgba(10,10,10,0.99)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W_, H_);
+  ctx.restore();
+  // 2. Faint red rim — sells "this is your light source"
+  ctx.save();
+  const rim = ctx.createRadialGradient(screenX, screenY, clearR * 0.85,
+                                       screenX, screenY, clearR * 1.05);
+  rim.addColorStop(0, 'rgba(200, 38, 28, 0)');
+  rim.addColorStop(0.5, 'rgba(200, 38, 28, 0.10)');
+  rim.addColorStop(1, 'rgba(200, 38, 28, 0)');
+  ctx.fillStyle = rim;
+  ctx.fillRect(0, 0, W_, H_);
+  ctx.restore();
+}
+
+// Scripted-FTUE state holder. Mounted on game._ftueScripted while the
+// canvas-based prologue runs (S2-S4).
+function _ftueScriptedDefaults() {
+  return {
+    // Vision (§A.2 — Seed Integrity progression)
+    visionRadius: 100,         // current (lerped each frame)
+    targetVisionRadius: 100,   // S2=160, S3=220, S4=280, S5=360, UAV=1200
+    visionLerpRate: 0.06,
+    breathPhase: 0,            // base radius pulses ±4 px every 2.4s
+    // HUD reveal flags (§A.4 — only what's needed shows)
+    hudShow: { hp: false, ammo: false, mission: false, minimap: false, energy: false },
+    // Sequencer
+    sceneIdx: 0,
+    // Per-scene timers + entity refs (filled in by orchestrators)
+    moteRef: null,
+    redGridRef: null,
+    swarmRefs: [],
+    sceneStartT: 0,
+  };
+}
+
+// Bootstrap a real game state for S2-onward canvas play. Mirrors the
+// minimum subset of startSkirmish() — without spawnAllies() (we spawn
+// only Mote ourselves) and without spawnSoldier() loops.
+function _ftueStartScripted() {
+  const s = document.getElementById('start');
+  if (s) s.classList.add('hidden');
+  const e = document.getElementById('end');
+  if (e) e.classList.add('hidden');
+  game.state = 'playing';
+  game.mode = 'tactical';
+  game.wave = 1;
+  game.score = 0; game.killCount = 0; game.time = 0;
+  game.message = ''; game.waveBreak = 0; game.missionRetries = 0;
+  game._skirmish = true;
+  game._nnMode = false;
+  game._paused = false;
+  // Reset player to a clean state
+  player.hp = player.maxHp;
+  player.ammo = player.maxAmmo;
+  player.reserve = 120;
+  player.reloading = false;
+  player.alive = true;
+  // Clear arrays
+  if (typeof drone !== 'undefined') { drone.deployed = false; drone.battery = drone.maxBattery; }
+  if (typeof fpv !== 'undefined')   { fpv.active = false; fpv.available = fpv.max; fpv.trail = []; }
+  if (typeof bullets !== 'undefined') bullets.length = 0;
+  if (typeof enemyBullets !== 'undefined') enemyBullets.length = 0;
+  enemies.length = 0; allies.length = 0;
+  if (typeof enemyDrones !== 'undefined') enemyDrones.length = 0;
+  if (typeof explosions !== 'undefined') explosions.length = 0;
+  if (typeof muzzleFlashes !== 'undefined') muzzleFlashes.length = 0;
+  if (typeof damagePopups !== 'undefined') damagePopups.length = 0;
+  if (typeof soundEvents !== 'undefined') soundEvents.length = 0;
+  // Build the FTUE arena variant. Falls back to the regular arena if the
+  // FTUE variant isn't found.
+  if (typeof generateWorld === 'function') {
+    const ftueIdx = (typeof MAPS !== 'undefined')
+      ? MAPS.findIndex(m => m && m.id === 'nn_arena')
+      : -1;
+    generateWorld(ftueIdx >= 0 ? ftueIdx : 0);
+  }
+  // Drop the player at the FTUE arena center
+  if (typeof NN_ARENA !== 'undefined') {
+    player.x = NN_ARENA.x0 + NN_ARENA.w / 2;
+    player.y = NN_ARENA.y0 + NN_ARENA.h / 2;
+  }
+  // Set up scripted state
+  game._ftueScripted = _ftueScriptedDefaults();
+  game._ftueScripted.sceneStartT = Date.now();
+  // Tighten camera in
+  if (typeof camera !== 'undefined') {
+    camera.scale = 0.55;
+    camera.targetScale = 0.55;
+    game._ftueScripted.cameraScaleTarget = 0.55;
+    camera.x = player.x;
+    camera.y = player.y;
+  }
+  _ftueNarrLog('SCRIPTED', 'started — player + Mote on canvas');
+}
+
+function _ftueEndScripted() {
+  const f = game._ftueScripted;
+  if (!f) return;
+  // Clear arrays so the post-FTUE NN match starts clean
+  enemies.length = 0; allies.length = 0;
+  if (typeof bullets !== 'undefined') bullets.length = 0;
+  if (typeof enemyBullets !== 'undefined') enemyBullets.length = 0;
+  game._ftueScripted = null;
+  game.state = 'menu';
+  _ftueNarrLog('SCRIPTED', 'ended — handed back to menu');
+}
+
+// Spawn the Mote ally — uses the existing ally sprite path but flagged
+// _ftueMote so the update() loop drives it via the scripted state machine
+// instead of the NN dispatcher.
+function _ftueSpawnMote(offsetX, offsetY) {
+  if (typeof allies === 'undefined' || typeof applyChassisToUnit !== 'function') return null;
+  const m = {
+    callsign: 'MOTE',
+    offsetX: offsetX || -80, offsetY: offsetY || -60,
+    x: player.x + (offsetX || -80),
+    y: player.y + (offsetY || -60),
+    angle: 0, gunAngle: 0, gunRecoil: 0, swayPhase: 0,
+    alive: true, walkPhase: 0,
+    fireCd: 9999, target: null, lookPhase: 0,
+    team: 0,
+    _useNN: false,
+    _ftueMote: true,
+    _moteState: 'WAITING',
+    _moteStateT: Date.now(),
+    _moteEyePulseT: 0,
+    _moteWaypoints: [],
+    _moteWaypointIdx: 0,
+    _weapon: WEAPONS.RIFLE,
+    _respawnAt: null,
+    _invulnUntil: Number.MAX_SAFE_INTEGER,    // §4.3 Mote is invulnerable
+    _ftueInvuln: true,
+  };
+  applyChassisToUnit(m, 'humanoid', 0, 999, 13);    // 0 base speed, we drive position
+  allies.push(m);
+  if (game._ftueScripted) game._ftueScripted.moteRef = m;
+  _ftueNarrLog('SCRIPTED', 'Mote spawned at (' + m.x + ',' + m.y + ')');
+  return m;
+}
+
+// Spawn a scripted enemy — uses existing spawnSoldier-style entity but
+// caps HP/dmg per FTUE/01 §4.1 ("敵人血量限定 60、damage 限定 8").
+function _ftueSpawnEnemy(x, y, type) {
+  if (typeof enemies === 'undefined' || typeof applyChassisToUnit !== 'function') return null;
+  type = type || 'redgrid';
+  const e = {
+    callsign: type === 'redgrid' ? 'RED-GRID-1' : 'SWARM',
+    x: x, y: y,
+    angle: Math.PI, gunAngle: Math.PI, gunRecoil: 0, swayPhase: 0,
+    alive: true, walkPhase: 0,
+    fireCd: 60, target: null, lookPhase: 0, alerted: 0,
+    team: 1,
+    _useNN: true,
+    _nnDifficulty: 'warrior',
+    _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+    _weapon: WEAPONS.RIFLE,
+    _respawnAt: null,
+    _ftueEnemy: true,
+  };
+  applyChassisToUnit(e, 'humanoid', 0.7, 60, 13);   // 60 HP cap per §4.1
+  // Cap incoming-bullet damage to 8 by overriding the weapon's damage
+  // value when this enemy fires (handled via a multiplier on _weapon clone)
+  enemies.push(e);
+  return e;
+}
+
+// Mote AI tick — driven from update() once per frame.
+// State machine summarized from §1 S2/S3/S4/S5 specs.
+function _ftueUpdateMote(m) {
+  if (!m || !m.alive) return;
+  const f = game._ftueScripted;
+  const nowMs = Date.now();
+  const dt = (nowMs - (m._lastMoteT || nowMs)) / 1000;
+  m._lastMoteT = nowMs;
+  // Eye pulse phase (used by render)
+  m._moteEyePulseT += dt;
+  // State-driven movement
+  switch (m._moteState) {
+    case 'WAITING': {
+      // Idle, no movement
+      break;
+    }
+    case 'FOLLOW_PATH': {
+      const wps = m._moteWaypoints || [];
+      const idx = m._moteWaypointIdx | 0;
+      if (idx >= wps.length) { m._moteState = 'STOP_AND_LOOK_BACK'; m._moteStateT = nowMs; break; }
+      const wp = wps[idx];
+      const dx = wp.x - m.x, dy = wp.y - m.y;
+      const d = Math.hypot(dx, dy);
+      // Wait for player if too far behind
+      const dp = Math.hypot(player.x - m.x, player.y - m.y);
+      if (dp > 280) { m._moteState = 'WAIT_FOR_PLAYER'; m._moteStateT = nowMs; break; }
+      const speed = 110;
+      if (d < 8) {
+        m.x = wp.x; m.y = wp.y;
+        m._moteWaypointIdx = idx + 1;
+      } else {
+        m.x += (dx / d) * speed * dt;
+        m.y += (dy / d) * speed * dt;
+        m.angle = Math.atan2(dy, dx);
+        m.walkPhase += dt * 8;
+      }
+      break;
+    }
+    case 'WAIT_FOR_PLAYER': {
+      const dp = Math.hypot(player.x - m.x, player.y - m.y);
+      if (dp < 220) { m._moteState = 'FOLLOW_PATH'; m._moteStateT = nowMs; }
+      break;
+    }
+    case 'STOP_AND_LOOK_BACK': {
+      // Face toward player
+      m.angle = Math.atan2(player.y - m.y, player.x - m.x);
+      break;
+    }
+    case 'CHARGE_ENEMY': {
+      // Run at the nearest live enemy
+      let tgt = null, bestD = Infinity;
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        const d = Math.hypot(e.x - m.x, e.y - m.y);
+        if (d < bestD) { bestD = d; tgt = e; }
+      }
+      if (!tgt) { m._moteState = 'HURT'; m._moteStateT = nowMs; break; }
+      const dx = tgt.x - m.x, dy = tgt.y - m.y, d = Math.hypot(dx, dy);
+      const speed = 220;
+      if (d < 60) {
+        // Bite — knock 60 HP off the enemy
+        tgt.hp -= 60;
+        if (tgt.hp <= 0) {
+          tgt.alive = false;
+          if (typeof game !== 'undefined') { game.score += 100; game.killCount++; }
+          if (typeof createExplosion === 'function') createExplosion(tgt.x, tgt.y, 'small');
+        }
+        m._moteState = 'HURT';
+        m._moteStateT = nowMs;
+      } else {
+        m.x += (dx / d) * speed * dt;
+        m.y += (dy / d) * speed * dt;
+        m.angle = Math.atan2(dy, dx);
+        m.walkPhase += dt * 14;
+      }
+      break;
+    }
+    case 'HURT': {
+      // Knockback + limp visual; advance to FOLLOW_PLAYER after 2s
+      if (nowMs - m._moteStateT > 2000) {
+        m._moteState = 'FOLLOW_PLAYER';
+        m._moteStateT = nowMs;
+      }
+      break;
+    }
+    case 'FOLLOW_PLAYER': {
+      const dx = player.x - m.x, dy = player.y - m.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 90) {
+        const speed = 130;
+        m.x += (dx / d) * speed * dt;
+        m.y += (dy / d) * speed * dt;
+        m.angle = Math.atan2(dy, dx);
+        m.walkPhase += dt * 8;
+      }
+      break;
+    }
+    case 'ALERT': {
+      // Idle but with faster eye pulse — visible via _moteEyePulseT
+      m.angle = Math.atan2(player.y - m.y + 200, player.x - m.x + 200);  // face away/forward
+      break;
+    }
+    case 'PUSH_TO_BREACH': {
+      // Walk fast to the breach waypoint
+      if (!m._pushTarget) m._pushTarget = { x: player.x + 200, y: player.y };
+      const dx = m._pushTarget.x - m.x, dy = m._pushTarget.y - m.y, d = Math.hypot(dx, dy);
+      if (d < 8) { m._moteState = 'WAIT_AT_BREACH'; m._moteStateT = nowMs; }
+      else {
+        const speed = 200;
+        m.x += (dx / d) * speed * dt;
+        m.y += (dy / d) * speed * dt;
+        m.angle = Math.atan2(dy, dx);
+        m.walkPhase += dt * 12;
+      }
+      break;
+    }
+    case 'WAIT_AT_BREACH':
+    case 'SIT_AT_WALL':
+    case 'SIT_AT_PLAYER_SIDE': {
+      // Idle, eye pulses slow
+      break;
+    }
+  }
+}
+
+// Tick — runs every frame from update(). Lerps vision radius toward target,
+// applies breathing pulse, drives Mote AI for any flagged ally.
+function _ftueScriptedTick() {
+  const f = game._ftueScripted;
+  if (!f) return;
+  // Lerp vision radius toward target
+  f.visionRadius += (f.targetVisionRadius - f.visionRadius) * f.visionLerpRate;
+  // Breathing pulse on top of base radius (small, ±4 px every 2.4s)
+  f.breathPhase += 1 / 60;
+  // HP-based shrink (§A.2 interaction)
+  let hpPenalty = 0;
+  if (player && player.alive && player.maxHp > 0) {
+    const hpFrac = player.hp / player.maxHp;
+    if (hpFrac < 0.3) hpPenalty = 40;
+  }
+  f.effectiveVisionRadius = f.visionRadius
+    + Math.sin(f.breathPhase * Math.PI / 1.2) * 4
+    - hpPenalty;
+  // Drive Mote AI
+  for (const a of allies) {
+    if (a && a._ftueMote && a.alive) _ftueUpdateMote(a);
+  }
+}
+
+// Render-side: called from render() AFTER ctx.restore() so we're in
+// screen-space. Player is at screen-center (camera follows them) so the
+// hole is at W()/2, H()/2.
+function _ftueScriptedRender(ctx, shakeX, shakeY) {
+  const f = game._ftueScripted;
+  if (!f) return;
+  const r = f.effectiveVisionRadius || f.visionRadius;
+  // Screen-center is W()/2, H()/2 (CSS pixels, post-DPR transform).
+  const sx = ((typeof W === 'function') ? W() : ctx.canvas.width) / 2 + (shakeX || 0);
+  const sy = ((typeof H === 'function') ? H() : ctx.canvas.height) / 2 + (shakeY || 0);
+  _renderFtueVision(ctx, sx, sy, r);
+}
+
+// Render the Mote red eye + chassis tint on top of the regular ally
+// render. Hooked into the per-frame ally render loop via a small patch.
+// Called in WORLD-space (inside the ctx.save()/scale/translate block).
+function _ftueDrawMoteOverlay(ctx, m) {
+  if (!m || !m._ftueMote) return;
+  // Red glowing eye — 2 px dot with breathing alpha
+  const t = m._moteEyePulseT || 0;
+  const baseAlpha = 0.7 + 0.3 * Math.sin(t * Math.PI * 2 / 1.6);
+  const flashing = (m._moteState === 'ALERT') ? 0.6 + 0.4 * Math.sin(t * Math.PI * 2 / 0.6) : baseAlpha;
+  ctx.save();
+  ctx.translate(m.x, m.y);
+  ctx.rotate(m.angle);
+  // Eye position — slightly forward of head
+  const eyeX = 6, eyeY = -1;
+  // Outer halo
+  ctx.fillStyle = `rgba(230, 61, 51, ${0.18 * flashing})`;
+  ctx.beginPath();
+  ctx.arc(eyeX, eyeY, 6, 0, Math.PI * 2);
+  ctx.fill();
+  // Inner core
+  ctx.fillStyle = `rgba(200, 38, 28, ${flashing})`;
+  ctx.beginPath();
+  ctx.arc(eyeX, eyeY, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+
 // (Legacy 25-second S1 was here. Replaced by the 12-second MVP S1 below
 // per FTUE/01 §1 timing. The S1 timing change is the only S1 difference;
 // content is the same boot lines + Seed countdown + MOTE PROXIMITY DETECTED.)
@@ -3525,170 +3934,241 @@ async function _ftueScene1_Blackness() {
   _ftueMark('s2Reached');
 }
 
-// ---- S2: 跟著走 + 第一個敵人(0:12 - 1:00) ----
+// ---- S2: 跟 Mote 走 + 第一個敵人 (0:12 - 1:00) — canvas-based ----
 async function _ftueScene2_FollowAndFirstEnemy() {
-  _ftueNarrLog('SCENE', 'S2 — 跟著走 + 第一個敵人');
-  const el = _ftueNarrOverlay();
-  el.style.background = '#0A0A0A';
-  _ftueSetVignette(220);   // §A.2 — Seed 50%, vision opens slightly
+  _ftueNarrLog('SCENE', 'S2 — canvas (Mote + Red Grid)');
+  // 1. Drop the DOM background — canvas behind shows through. The chip /
+  //    sub / center text float above the canvas via fixed-position children.
+  const overlay = document.getElementById('ftueNarr');
+  if (overlay) {
+    overlay.style.background = 'transparent';
+    overlay.style.pointerEvents = 'none';
+  }
+  // 2. Mount scripted FTUE state on canvas
+  _ftueStartScripted();
+  // The DOM ftueNarrVignette belongs to the S1 / S5 overlay path —
+  // disable it during canvas FTUE so the canvas-level vision hole isn't
+  // double-darkened by a DOM gradient.
+  const vEl = document.getElementById('ftueNarrVignette');
+  if (vEl) vEl.style.background = 'transparent';
+  const f = game._ftueScripted;
+  if (!f) return;
+  f.sceneIdx = 2;
+  f.targetVisionRadius = 160;     // §A.2 Seed 50%
+  f.visionRadius = 100;            // start tight, lerp out
+  // 3. Spawn Mote in WAITING (eye visible at edge of vision)
+  const mote = _ftueSpawnMote(-90, -50);
+  // 4. Top stamp persists, sub bar shows scene marker
+  _ftueNarrSetTop(_r('週期 #347 · VECTOR-7 待機', 'CYCLE #347 · VECTOR-7 STANDBY'));
   _ftueNarrSetCenter('');
-  _ftueNarrSetSub('');
-  _ftueNarrHideChip();
-  await _wait(600);   // §A.6 — fade-in beat
-  // 0:14 [SUBJECT MOTE: WAITING]
   _ftueNarrSetSub(_r('[目標 MOTE:等待中]', '[SUBJECT MOTE: WAITING]'));
-  await _wait(1500);
-  // 0:18 Mote walks → WASD chip
-  await _ftueTypeCenter(_r(
-    '前方三公尺,貼近地面 — 一隻紅眼。\n三條腿,第四肢是焊接過的金屬。\n它看了你一眼,轉身,瘸著朝左走。',
-    'Three metres ahead, low to the floor — a single red eye.\nThree-legged. The fourth limb is a soldering iron.\nIt watches you, then turns and limps left.'
-  ));
-  await _wait(1500);
+  _ftueNarrHideChip();
+  // Tighten camera in (S2 is the closest)
+  if (typeof camera !== 'undefined') { camera.targetScale = 0.55; }
+  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.55;
+  await _wait(2000);
+  // 5. WASD chip — visible but the player will likely move on instinct
+  //    once Mote starts walking
   _ftueNarrShowChip('W A S D');
-  await _ftueWaitKeyAFK(['w','a','s','d'], 5000, 18000);
+  // 6. After 4s, Mote starts walking left along scripted path
+  setTimeout(() => {
+    if (!mote || !mote.alive) return;
+    mote._moteState = 'FOLLOW_PATH';
+    mote._moteWaypoints = [
+      { x: player.x - 220, y: player.y - 30 },
+      { x: player.x - 380, y: player.y - 30 },
+      { x: player.x - 380, y: player.y + 60 },
+    ];
+    mote._moteWaypointIdx = 0;
+  }, 4000);
+  // 7. Wait for player WASD (or AFK timeout)
+  await _ftueWaitKeyAFK(['w','a','s','d'], 5000, 22000);
   _ftueNarrHideChip();
-  // 0:23 MOUSE → AIM
-  _ftueNarrSetSub(_r('滑鼠 → 瞄準', 'MOUSE → AIM'));
-  await _wait(2200);
-  // 0:30 Mote stops
-  _ftueNarrSetCenter('');
-  await _ftueTypeCenter(_r(
-    'Mote 停在轉角。轉頭。等你。',
-    'Mote stops at the corner. Turns. Waits.'
-  ));
-  await _wait(1800);
-  // 0:35 Red Grid
+  _ftueMark('firstMove');
+  // 8. After Mote reaches wp3, spawn the Red Grid in player's blind spot
+  await _wait(4000);
   _ftueNarrSetSub(_r('[接觸 — 紅網巡邏者]', '[CONTACT — RED GRID PATROL]'));
-  await _wait(800);
-  await _ftueTypeCenter('\n\n' + _r(
-    '一台紅網巡邏機從轉角繞出來。\n它還沒看到你。它正朝 Mote 走過去。',
-    'A Red Grid patrol robot rounds the corner.\nIt has not seen you. It is walking toward Mote.'
-  ));
+  // Spawn enemy ~480 px to the side — outside the 160 px vision circle.
+  // The player will see it as it approaches Mote / the player.
+  const enemy = _ftueSpawnEnemy(player.x - 460, player.y - 40, 'redgrid');
+  // §A.4: HUD stays hidden — DOM sub-bar + chips convey state. Spec §1
+  // S2 0:38 wants HP+ammo reveal, but the lobby chrome attached to them
+  // (top-left status panel, mission card, pause buttons) violates §A.4
+  // ('沒有既有 lobby UI'). For MVP we keep all hudShow flags false →
+  // renderHUD bails. A bespoke mini-HUD comes in a follow-up.
   await _wait(1500);
-  // 0:38 LMB chip
   _ftueNarrShowChip(_r('[滑鼠左鍵] · 開火', '[LMB] · FIRE'));
-  await _ftueWaitKeyAFK([' '], 4500, 12000);
+  // 9. Combat loop — wait for the enemy to die. Track player firing /
+  //    reload markers + trigger Mote tackle when the player reloads.
+  const combatStart = Date.now();
+  let firstShotMarked = false;
+  let firstReloadMarked = false;
+  let chargeFired = false;
+  while (enemy && enemy.alive && (Date.now() - combatStart) < 30000) {
+    if (_ftueNarr.skipFlag) break;
+    await _wait(120);
+    if (player.ammo < player.maxAmmo && !firstShotMarked) {
+      firstShotMarked = true;
+      _ftueMark('firstShot');
+      _ftueNarrHideChip();
+    }
+    if (player.reloading && !firstReloadMarked) {
+      firstReloadMarked = true;
+      _ftueMark('firstReload');
+    }
+    if (player.ammo === 0 && !player.reloading && !chargeFired) {
+      // Mag dry — show R chip (timeScale slow-mo not implemented to keep
+      // engine simple; reload chip still teaches the key)
+      _ftueNarrShowChip(_r('[R] · 換彈', '[R] · RELOAD'));
+    }
+    if (player.reloading && !chargeFired && mote && mote.alive) {
+      // Trigger Mote tackle during reload window
+      mote._moteState = 'CHARGE_ENEMY';
+      mote._moteStateT = Date.now();
+      chargeFired = true;
+      _ftueNarrHideChip();
+    }
+  }
+  // 10. Force-kill if combat dragged on
+  if (enemy && enemy.alive) {
+    enemy.alive = false;
+    if (typeof createExplosion === 'function') createExplosion(enemy.x, enemy.y, 'small');
+  }
   _ftueNarrHideChip();
-  _ftueMark('firstShot');
-  // 0:50 mag dry → R
-  _ftueNarrSetCenter('');
-  _ftueNarrSetSub('');
-  await _ftueTypeCenter(_r(
-    '彈匣空了。 槍卡了半秒。\n紅網還站著。',
-    'MAG DRY. Gun freezes for half a second.\nThe Red Grid is still standing.'
-  ));
-  await _wait(1500);
-  _ftueNarrShowChip(_r('[R] · 換彈', '[R] · RELOAD'));
-  await _ftueWaitKeyAFK(['r'], 4500, 10000);
-  _ftueNarrHideChip();
-  _ftueMark('firstReload');
-  // 0:53 Mote tackles
-  _ftueNarrSetCenter('');
-  await _ftueTypeCenter(_r(
-    'Mote 撲向它的腿。\n咬。 撕。 在巡邏機爆炸的瞬間倒回地上。\nMote 拐回來,瘸得更明顯。',
-    'Mote launches at the leg.\nBites. Tears. Drops to the floor as the patrol explodes.\nMote limps back, more obvious now.'
-  ));
-  await _wait(2200);
-  // 0:58 Lumen first transmission — §A.5 static-only via _ftueRadio
+  // 11. Lumen first transmission — static-only, no beep (§A.5)
   _ftueNarrSetSub('▸ Lumen · ' + _r(
-    '...一個倒了。 Mote 幫了你。 它總是這樣。',
-    '...one down. mote helped. it always does.'
+    '...一個倒了。 Mote 又幫了你。 它總是這樣。',
+    '...one down. mote helped you. again.'
   ));
   _ftueRadio('Lumen', 'Lumen',
-    '...一個倒了。 Mote 幫了你。 它總是這樣。',
-    '...one down. mote helped. it always does.', 4500);
+    '...一個倒了。 Mote 又幫了你。 它總是這樣。',
+    '...one down. mote helped you. again.', 4500);
   if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
-  await _wait(2200);
+  await _wait(3500);
   _ftueNarrSetSub('');
 }
 
-// ---- S3: 看清楚(1:00 - 1:30) ----
+// ---- S3: 看清楚 (1:00 - 1:30) — Q UAV + swarm ----
 async function _ftueScene3_ScoutSwarm() {
-  _ftueNarrLog('SCENE', 'S3 — 看清楚');
-  _ftueSetVignette(260);   // §A.2 — vision opening up
+  _ftueNarrLog('SCENE', 'S3 — Q UAV + swarm');
+  const f = game._ftueScripted;
+  if (!f) return;
+  f.sceneIdx = 3;
+  f.targetVisionRadius = 220;     // §A.2 Seed 60%
+  if (typeof camera !== 'undefined') camera.targetScale = 0.65;
+  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.65;
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
-  await _wait(600);   // §A.6 fade beat
-  await _ftueTypeCenter(_r(
-    '你越過那台殘骸。 Mote 貼在你右邊。\n走廊在前方變寬。',
-    'You move past the dead patrol. Mote keeps to your right.\nThe corridor opens up ahead.'
-  ));
-  await _wait(1800);
-  _ftueNarrSetSub(_r('[多重接觸 — 數量未知]', '[MULTIPLE CONTACT — UNCLEAR COUNT]'));
-  await _wait(1500);
+  await _wait(1200);
+  _ftueNarrSetSub(_r('[多重接觸 — 數量不明]', '[MULTIPLE CONTACT — UNCLEAR COUNT]'));
+  // Spawn 8 swarm-tier enemies far away in a cluster (in the blind zone).
+  // They're invisible to player (outside vision radius). When Q hits, vision
+  // expands to 1200 and they reveal.
+  const swarmCenter = { x: player.x + 480, y: player.y };
+  for (let i = 0; i < 12; i++) {
+    const ang = (i / 12) * Math.PI * 2;
+    const r = 60 + Math.random() * 80;
+    const e = _ftueSpawnEnemy(
+      swarmCenter.x + Math.cos(ang) * r,
+      swarmCenter.y + Math.sin(ang) * r,
+      'swarm'
+    );
+    if (e) e._stunUntil = Number.MAX_SAFE_INTEGER;  // keep them frozen — no aggro
+    f.swarmRefs.push(e);
+  }
+  await _wait(2000);
   _ftueNarrShowChip(_r('[Q] · UAV 偵察', '[Q] · AUDIT VISION'));
+  // Wait for Q press
   await _ftueWaitKeyAFK(['q'], 4500, 14000);
   _ftueNarrHideChip();
   _ftueMark('firstUav');
-  _ftueNarrSetCenter('');
-  await _ftueTypeCenter(_r(
-    'UAV 升空。 走廊地面整片在動。\n鐵蜂群 — 十二隻。 牆後可能還有更多。',
-    'UAV up. The corridor floor is a moving carpet.\nIron Swarm — twelve units. Maybe more behind the wall.'
-  ));
-  _ftueNarrSetSub(_r('[接觸:12]\n[勿正面交戰]', '[CONTACT: 12]\n[DO NOT ENGAGE]'));
-  await _wait(2800);
+  // UAV moment — vision expands to 1200, camera zooms out
+  f.targetVisionRadius = 1200;
+  if (typeof camera !== 'undefined') camera.targetScale = 0.28;
+  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.28;
+  _ftueNarrSetSub('');
+  _ftueNarrSetCenter(_r('[接觸:12]\n[勿正面交戰]', '[CONTACT: 12]\n[DO NOT ENGAGE]'));
+  // Style the center as red big text for the UAV moment
+  const center = document.getElementById('ftueNarrCenter');
+  if (center) {
+    center.style.color = '#C8261C';
+    center.style.fontSize = '24px';
+    center.style.letterSpacing = '4px';
+    center.style.fontWeight = 'bold';
+  }
+  await _wait(4500);
+  // Lumen tells you to stand down
   _ftueNarrSetSub('▸ Lumen · ' + _r(
-    '太多。 退到牆後。 等破口。',
+    '太多了。 退到掩體後。 等破口開。',
     'too many. cover behind the wall. wait for the breach.'
   ));
   _ftueRadio('Lumen', 'Lumen',
-    '太多。 退到牆後。 等破口。',
+    '太多了。 退到掩體後。 等破口開。',
     'too many. cover behind the wall. wait for the breach.', 4500);
-  await _wait(2800);
+  await _wait(3000);
+  // Vision contracts back, swarm despawns + Mote pushes player to S4
+  f.targetVisionRadius = 220;
+  if (typeof camera !== 'undefined') camera.targetScale = 0.65;
+  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.65;
+  // Despawn swarm
+  for (const e of f.swarmRefs) { if (e) e.alive = false; }
+  f.swarmRefs.length = 0;
+  // Reset center style for next scene
+  if (center) {
+    center.style.color = '#E8E4D8';
+    center.style.fontSize = '18px';
+    center.style.letterSpacing = '1px';
+    center.style.fontWeight = 'normal';
+  }
+  _ftueNarrSetCenter('');
+  await _wait(1500);
+  _ftueNarrSetSub(_r('[Mote 知道路。 跟上。]', '[mote knows the way. follow.]'));
+  await _wait(2500);
   _ftueNarrSetSub('');
 }
 
-// ---- S4: 破口(1:30 - 2:30) — 最重要的 60 秒 ----
+// ---- S4: 破口 (1:30 - 2:30) — countdown + B + wall + BUILD = AUDIT ----
 async function _ftueScene4_Breach() {
-  _ftueNarrLog('SCENE', 'S4 — 破口');
-  _ftueSetVignette(300);   // §A.2 — Seed 70%, almost fully visible
+  _ftueNarrLog('SCENE', 'S4 — countdown + B + wall + BUILD = AUDIT');
+  const f = game._ftueScripted;
+  if (!f) return;
+  f.sceneIdx = 4;
+  f.targetVisionRadius = 280;     // §A.2 Seed 70%
+  if (typeof camera !== 'undefined') camera.targetScale = 0.7;
+  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.7;
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
-  await _wait(600);
-  await _ftueTypeCenter(_r(
-    '牆上一道兩公尺寬的破口。\n外頭塵土。 一台重型 UGV 正輾過來。',
-    'A breach in the wall — two metres wide.\nBeyond it, dust. A heavy UGV grinds toward you.'
-  ));
-  await _wait(1800);
-  // §A.3-compliant DOM countdown timer — #C8261C red, monospace
+  await _wait(1500);
+  _ftueNarrSetSub(_r('[警告 — 重型 UGV 接近 — 撞擊倒數 25 秒]', '[INCOMING — HEAVY UGV — IMPACT 25s]'));
+  // Countdown timer DOM (top-right, big red, monospace)
   let cdEl = document.getElementById('ftueNarrCountdown');
   if (!cdEl) {
     cdEl = document.createElement('div');
     cdEl.id = 'ftueNarrCountdown';
     cdEl.style.cssText =
-      'position:absolute;top:36px;right:48px;z-index:6;' +
+      'position:fixed;top:36px;right:48px;z-index:9100;' +
       "font-family:'Courier New',monospace;color:#C8261C;" +
       'font-size:64px;letter-spacing:4px;font-weight:bold;' +
       'text-shadow:0 0 12px rgba(200,38,28,0.6);' +
       'min-width:180px;text-align:right;line-height:1;';
-    const overlay = document.getElementById('ftueNarr');
-    if (overlay) overlay.appendChild(cdEl);
+    document.body.appendChild(cdEl);
   }
-  const cdLabel = document.createElement('div');
-  cdLabel.style.cssText = 'font-size:12px;letter-spacing:5px;color:#6B6B6B;margin-bottom:4px;';
-  cdLabel.textContent = _r('衝擊', 'IMPACT');
-  cdEl.appendChild(cdLabel);
-  const cdValue = document.createElement('div');
-  cdValue.id = 'ftueNarrCdValue';
-  cdValue.textContent = '25s';
-  cdEl.appendChild(cdValue);
-  _ftueNarrSetSub(_r('[來襲 — 重型 UGV]', '[INCOMING — HEAVY UGV]'));
+  cdEl.innerHTML = '<div style="font-size:12px;letter-spacing:5px;color:#6B6B6B;margin-bottom:4px;">' +
+    _r('衝擊', 'IMPACT') + '</div><div id="ftueNarrCdValue">25s</div>';
   let countdownAlive = true;
   let secs = 25;
   const tickCD = () => {
     if (!countdownAlive) return;
-    if (_ftueNarr.skipFlag) {
-      countdownAlive = false;
-      if (cdEl) cdEl.remove();
-      return;
-    }
-    cdValue.textContent = secs + 's';
-    if (secs <= 10) {
-      cdValue.style.animation = 'ftue-pulse 0.5s ease-in-out infinite';
-      cdValue.style.color = '#E63D33';
-      cdValue.style.textShadow = '0 0 16px rgba(230,61,51,0.8)';
+    if (_ftueNarr.skipFlag) { countdownAlive = false; if (cdEl) cdEl.remove(); return; }
+    const v = document.getElementById('ftueNarrCdValue');
+    if (v) {
+      v.textContent = secs + 's';
+      if (secs <= 10) {
+        v.style.animation = 'ftue-pulse 0.5s ease-in-out infinite';
+        v.style.color = '#E63D33';
+      }
     }
     if (secs <= 0) { countdownAlive = false; return; }
     secs--;
@@ -3697,116 +4177,126 @@ async function _ftueScene4_Breach() {
   tickCD();
   await _wait(2200);
   _ftueNarrShowChip(_r('[B] · 建造', '[B] · BUILD'));
+  // Wait for B press (ftueWaitKeyAFK respects skipFlag + AFK refire)
   await _ftueWaitKeyAFK(['b'], 4500, 16000);
   _ftueNarrHideChip();
   _ftueMark('firstBuild');
-  _ftueNarrSetCenter('');
-  await _ftueTypeCenter(_r(
-    '建造輪盤展開。\n十二格。 十一格灰 — 鎖定。\n\n[鎖定] 裁決砲塔   ── 完成 1 個 cycle 解鎖\n[鎖定] 審計終端   ── 證據驅動的演化\n\n只剩 WALL 是亮的。',
-    'The build wheel opens.\nTwelve slots. Eleven greyed out — LOCKED.\n\n[LOCKED] VERDICT TURRET ── COMPLETE 1 CYCLE TO UNLOCK\n[LOCKED] AUDIT CONSOLE   ── EVIDENCE-BASED EVOLUTION\n\nOnly WALL is lit.'
-  ));
-  _ftueNarrShowChip(_r('點擊 · WALL', 'CLICK · WALL'));
-  await _ftueWaitKeyAFK([' ', 'enter'], 5000, 14000);
+  // Open build wheel — uses existing build mode
+  if (typeof toggleBuildRadial === 'function') {
+    try { toggleBuildRadial(); } catch (e) {}
+  }
+  await _wait(800);
+  _ftueNarrShowChip(_r('點擊 · 牆 (WALL)', 'CLICK · WALL'));
+  // Give player up to 10s to actually place — but in skip mode advance fast
+  await _ftueWaitKeyAFK([' ', 'enter'], 5000, 12000);
   _ftueNarrHideChip();
   _ftueMark('firstWall');
+  // Stop countdown — wall placed (visually)
   countdownAlive = false;
-  const cdNode = document.getElementById('ftueNarrCountdown');
-  if (cdNode) {
-    cdNode.style.transition = 'opacity 600ms';
-    cdNode.style.opacity = '0';
-    setTimeout(() => { try { cdNode.remove(); } catch (e) {} }, 700);
+  if (cdEl) {
+    cdEl.style.transition = 'opacity 600ms';
+    cdEl.style.opacity = '0';
+    setTimeout(() => { try { cdEl.remove(); } catch (e) {} }, 700);
   }
-  _ftueNarrSetTop('');
   _ftueNarrSetSub('');
-  _ftueNarrSetCenter('');
-  await _ftueTypeCenter(_r(
-    '牆塊落下,卡在缺口。\n灰塵翻上來。\nUGV 撞上去停了下來。',
-    'The wall drops into place.\nDust kicks up.\nThe UGV slams into it and stops.'
-  ));
-  await _wait(1800);
-  // Lumen — first time CLEAR (no static-as-distortion; §A.5 still no beep)
-  _ftueNarrSetSub('▸ Lumen · ' + _r(
-    '就是這個。\n這不是殺戮 — 是審計。\n建造,才是思考。 殺,只是最後 0.5 秒。',
-    'there it is.\nthat is not killing — that is auditing.\nbuild to think. kill is just the last 0.5 seconds.'
-  ));
+  await _wait(1500);
+  // Lumen first CLEAR voice — three lines
+  _ftueNarrSetSub('▸ Lumen · ' + _r('就是這個。', 'there it is.'));
   _ftueRadio('Lumen [清晰]', 'Lumen [CLEAR]',
-    '就是這個。 這不是殺戮 — 是審計。',
-    'there it is. that is not killing — that is auditing.', 4500);
-  setTimeout(() => {
-    _ftueRadio('Lumen', 'Lumen',
-      '建造,才是思考。 殺,只是最後 0.5 秒。',
-      'build to think. kill is just the last 0.5 seconds.', 4500);
-  }, 1700);
-  await _wait(3500);
-  // BUILD = AUDIT big stamp — §A.6 timing: 1.2s fade-in / 2s hold / 1.5s out
+    '就是這個。', 'there it is.', 3500);
+  await _wait(1700);
+  _ftueNarrSetSub('▸ Lumen · ' + _r('這不是擊殺 — 這是審計。', 'that is not killing — that is auditing.'));
+  _ftueRadio('Lumen', 'Lumen',
+    '這不是擊殺 — 這是審計。', 'that is not killing — that is auditing.', 3500);
+  await _wait(1700);
+  _ftueNarrSetSub('▸ Lumen · ' + _r('建造才能思考。 擊殺只是最後 0.5 秒。',
+    'build to think. kill is just the last 0.5 seconds.'));
+  _ftueRadio('Lumen', 'Lumen',
+    '建造才能思考。 擊殺只是最後 0.5 秒。',
+    'build to think. kill is just the last 0.5 seconds.', 3500);
+  await _wait(2000);
+  // BIG_TITLE_CARD — vision expands to ~1200, timeScale paused via _paused,
+  // big text fades in 1.2s + holds 2s + fades out 1.5s (§A.6)
   _ftueNarrSetSub('');
-  _ftueNarrSetCenter('');
+  const oldRadius = f.targetVisionRadius;
+  f.targetVisionRadius = 1200;
+  game._paused = true;
   const center = document.getElementById('ftueNarrCenter');
   if (center) {
     center.style.transition = 'opacity 1.2s linear';
     center.style.opacity = '0';
-    center.textContent = _r('建造 = 審計\n───────────\nBUILD = AUDIT', 'BUILD = AUDIT\n───────────\n建造 = 審計');
-    center.style.fontSize = '32px';
-    center.style.letterSpacing = '6px';
-    center.style.color = '#E8E4D8';
+    center.innerHTML =
+      '<div style="font-size:56px;font-weight:bold;letter-spacing:8px;color:#E8E4D8;">' +
+      _r('建造 = 審計', 'BUILD = AUDIT') +
+      '</div>' +
+      '<div style="margin:18px auto;width:240px;height:1px;background:#C8261C;"></div>' +
+      '<div style="font-size:28px;letter-spacing:4px;color:#E8E4D8;">' +
+      _r('建築即審計', 'CONSTRUCTION IS AUDIT') +
+      '</div>';
     void center.offsetWidth;
     center.style.opacity = '1';
   }
-  // QA pause point — when sessionStorage.ag._ftueNarrPauseAtBuildEquals='1',
-  // hold here so the BUILD=AUDIT stamp is screenshot-stable instead of
-  // being raced past by the dev-skip flag.
-  try {
-    if (sessionStorage.getItem('ag._ftueNarrPauseAtBuildEquals') === '1') {
-      await _ftueQaHold('BUILD=AUDIT stamp');
-    }
-  } catch (e) {}
-  await _wait(2000);   // hold
+  await _wait(2000);
   if (center) {
     center.style.transition = 'opacity 1.5s linear';
     center.style.opacity = '0';
-    setTimeout(() => {
-      if (!center) return;
-      center.style.fontSize = '18px';
-      center.style.letterSpacing = '1px';
-      center.textContent = '';
-      center.style.opacity = '1';
-      center.style.transition = '';
-    }, 1500);
   }
   await _wait(1700);
-  _ftueNarrSetSub('▸ Lumen · ' + _r(
-    '保護 Mote。 它值得。',
-    'cover mote. she earned it.'
-  ));
-  _ftueRadio('Lumen', 'Lumen',
-    '保護 Mote。 它值得。',
-    'cover mote. she earned it.', 4500);
+  if (center) {
+    center.innerHTML = '';
+    center.style.opacity = '1';
+    center.style.transition = '';
+  }
+  // Resume game + collapse vision back
+  game._paused = false;
+  f.targetVisionRadius = oldRadius;
+  // Mote sits at the wall
+  if (f.moteRef) {
+    f.moteRef._moteState = 'SIT_AT_WALL';
+    f.moteRef._moteStateT = Date.now();
+  }
+  await _wait(1500);
+  _ftueNarrSetSub('▸ Lumen · ' + _r('掩護 Mote。 她值得。', 'cover mote. she earned it.'));
+  _ftueRadio('Lumen', 'Lumen', '掩護 Mote。 她值得。', 'cover mote. she earned it.', 4000);
   if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
-  await _wait(2400);
+  await _wait(2800);
   _ftueNarrSetSub('');
 }
 
-// ---- S5: 出口(2:30 - 3:00) ----
+// ---- S5: 出口 (2:30 - 3:00) — door + exit-vector-field + ENTER ----
 async function _ftueScene5_Exit() {
-  _ftueNarrLog('SCENE', 'S5 — 出口');
-  _ftueSetVignette(380);   // §A.2 — Seed 87%, full vision
+  _ftueNarrLog('SCENE', 'S5 — exit + ENTER');
+  const f = game._ftueScripted;
+  if (f) {
+    f.sceneIdx = 5;
+    f.targetVisionRadius = 360;   // §A.2 Seed 87%
+  }
+  // After a beat, vision expands hugely + we tear down scripted state
+  // and switch the overlay to opaque exit-field BG.
+  await _wait(1500);
+  if (f) f.targetVisionRadius = 1400;
+  if (typeof camera !== 'undefined') camera.targetScale = 0.32;
+  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.32;
+  await _wait(1600);
+  // Tear down scripted state — return canvas to menu, then mount the
+  // exit-field overlay BG over the top.
+  _ftueEndScripted();
   const el = _ftueNarrOverlay();
-  // §A.3 palette: rust-toned dark gradient (NOT bright orange).
-  // The procedural exit-vector-field SVG layer renders below the text.
+  // Restore opacity for overlay + paint exit-field SVG bg
   el.style.background =
     'linear-gradient(to bottom,' +
     '#1A0808 0%, #2A0E0C 22%, #401612 38%, #2A0E0C 60%, #1A0808 78%, #0A0404 100%)';
+  el.style.pointerEvents = '';
   let bg = document.getElementById('ftueNarrExitBg');
   if (!bg) {
     bg = document.createElement('div');
     bg.id = 'ftueNarrExitBg';
-    bg.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:0;';
+    bg.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:0;opacity:0;transition:opacity 1.6s linear;';
     bg.innerHTML =
       '<svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" ' +
       'style="width:100%;height:100%;display:block;">' +
         '<defs>' +
           '<radialGradient id="ftueExitGlow" cx="50%" cy="62%" r="40%">' +
-            // §A.3 #E63D33 red (NOT bright orange)
             '<stop offset="0%" stop-color="#E63D33" stop-opacity="0.45"/>' +
             '<stop offset="100%" stop-color="#E63D33" stop-opacity="0"/>' +
           '</radialGradient>' +
@@ -3816,16 +4306,13 @@ async function _ftueScene5_Exit() {
           '</linearGradient>' +
         '</defs>' +
         '<ellipse cx="800" cy="560" rx="650" ry="120" fill="url(#ftueExitGlow)"/>' +
-        // Tower silhouette — §A.3 #1A1A1A main-black
         '<rect x="780" y="200" width="40" height="380" fill="#1A1A1A"/>' +
         '<rect x="772" y="200" width="56" height="14" fill="#1A1A1A"/>' +
-        // Tower beacons — §A.3 #C8261C
         '<circle cx="800" cy="240" r="6" fill="#C8261C">' +
           '<animate attributeName="opacity" values="0.4;1;0.4" dur="1.6s" repeatCount="indefinite"/>' +
         '</circle>' +
         '<circle cx="800" cy="320" r="4" fill="#C8261C" opacity="0.7"/>' +
         '<circle cx="800" cy="400" r="4" fill="#C8261C" opacity="0.5"/>' +
-        // Relay drones — §A.3 #1A1A1A on dark
         '<g fill="#1A1A1A" stroke="#1A1A1A" stroke-width="1">' +
           '<circle cx="380"  cy="250" r="14"/>' +
           '<line x1="380" y1="0" x2="380" y2="236" stroke="#1A1A1A" stroke-width="1" opacity="0.4"/>' +
@@ -3834,7 +4321,6 @@ async function _ftueScene5_Exit() {
           '<circle cx="640"  cy="320" r="10"/>' +
           '<line x1="640" y1="0" x2="640" y2="310" stroke="#1A1A1A" stroke-width="1" opacity="0.4"/>' +
         '</g>' +
-        // Fiber Wasp web — §A.3 grey threads
         '<g stroke="#6B6B6B" stroke-width="0.6" opacity="0.4">' +
           '<line x1="100"  y1="640" x2="1500" y2="690"/>' +
           '<line x1="200"  y1="700" x2="1400" y2="650"/>' +
@@ -3844,7 +4330,6 @@ async function _ftueScene5_Exit() {
           '<line x1="700"  y1="730" x2="1100" y2="610"/>' +
         '</g>' +
         '<rect x="0" y="600" width="1600" height="300" fill="url(#ftueExitGround)"/>' +
-        // Glass shards — §A.3 #C8261C dim
         '<g fill="#C8261C" opacity="0.25">' +
           '<polygon points="120,750 130,720 145,755"/>' +
           '<polygon points="380,810 395,780 410,815"/>' +
@@ -3856,48 +4341,33 @@ async function _ftueScene5_Exit() {
     if (el.firstChild) el.insertBefore(bg, el.firstChild);
     else el.appendChild(bg);
   }
+  // Fade in BG
+  void bg.offsetWidth;
+  bg.style.opacity = '1';
   _ftueNarrSetTop('');
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
-  await _wait(700);
-  await _ftueTypeCenter(_r(
-    '你扛開那道鋼門。\n\n向量場朝外延伸 —\n鏽色天空,腳下碎玻璃,三具中繼無人機掛在空中像句點。\n四公里外,一座紅色塔在跳動。\n\nMote 在你身邊坐下,沒有跟出來。',
-    'You shoulder the steel door open.\n\nThe vector field stretches outward —\nrust-coloured sky, glass underfoot, three relay drones hung like punctuation.\nFour kilometres out, a red tower pulses.\n\nMote sits beside you and does not follow.'
-  ));
   await _wait(1800);
-  _ftueNarrSetSub('▸ Lumen · ' + _r(
-    'V-07。 你還記得路。',
-    'V-07. you remember the way.'
-  ));
-  _ftueRadio('Lumen', 'Lumen',
-    'V-07。 你還記得路。',
-    'V-07. you remember the way.', 4000);
+  _ftueNarrSetSub('▸ Lumen · ' + _r('V-07。 你還記得路。', 'V-07. you remember the way.'));
+  _ftueRadio('Lumen', 'Lumen', 'V-07。 你還記得路。', 'V-07. you remember the way.', 4000);
   await _wait(1700);
-  _ftueNarrSetSub('▸ Lumen · ' + _r(
-    '週期 347 現在開始。',
-    'cycle 347 begins now.'
-  ));
-  _ftueRadio('Lumen', 'Lumen',
-    '週期 347 現在開始。',
-    'cycle 347 begins now.', 4000);
-  await _wait(1400);
+  _ftueNarrSetSub('▸ Lumen · ' + _r('週期 347 從現在開始。', 'cycle 347 begins now.'));
+  _ftueRadio('Lumen', 'Lumen', '週期 347 從現在開始。', 'cycle 347 begins now.', 4000);
+  await _wait(1500);
+  // Big title card
   _ftueNarrSetCenter('');
-  await _ftueTypeCenter(_r(
-    '週期 #347\n審計進行中\n...\n準備好了?',
-    'CYCLE #347\nAUDIT IN PROGRESS\n...\nREADY?'
-  ), 28);
+  await _ftueTypeCenter(_r('週期 #347\n審計進行中\n...\n準備好?', 'CYCLE #347\nAUDIT IN PROGRESS\n...\nREADY?'), 28);
   await _wait(900);
   try { localStorage.setItem('ag.seedIntegrity', '87'); } catch (e) {}
   if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
-  // CTA — §A.6 fade in 1.2s
+  // Show CTA
   const cta = document.getElementById('ftueNarrCta');
   if (cta) {
     cta.style.display = 'block';
     void cta.offsetWidth;
     cta.style.opacity = '1';
   }
-  // Update CTA button label per current language
   const ctaBtn = document.getElementById('ftueNarrCtaBtn');
   if (ctaBtn) ctaBtn.textContent = _r('[ 進入 ▶ ]', '[ ENTER ▶ ]');
   await new Promise((resolve) => {
@@ -13413,6 +13883,7 @@ function updateAllies() {
   for (const a of allies) {
     if (!a.alive) continue;
     if (a._useNN) continue; // NN dispatcher owns this unit's per-tick movement
+    if (a._ftueMote) continue; // _ftueScriptedTick / _ftueUpdateMote owns Mote
     // Stuck detector — sidestep when blocked
     if (a._lastX == null) { a._lastX = a.x; a._lastY = a.y; a._stuckFrames = 0; }
     if (Math.hypot(a.x - a._lastX, a.y - a._lastY) < 2) a._stuckFrames++;
@@ -14217,6 +14688,10 @@ function updateSoundEvents() {
 function update() {
   if (game.state !== 'playing') return;
   game.time++;
+
+  // FTUE scripted-canvas tick — vision-radius lerp, Mote AI state machine,
+  // breath pulse. No-op when game._ftueScripted is null (i.e. outside FTUE).
+  if (typeof _ftueScriptedTick === 'function') _ftueScriptedTick();
 
   // FTUE: detect death of the UAV/FPV target spawned by step 'q'. Single
   // watcher (instead of hooking every kill site) — fires the advance event
@@ -15270,8 +15745,23 @@ function render() {
   // the radial picker is on top of the world).
   if (buildMode.active && !buildMode.radialOpen
       && game.state === 'playing' && !game._paused) renderBuildPreview();
+  // Mote red-eye glow + Mote ALERT pulse — drawn in WORLD-space so it
+  // tracks the Mote sprite under the camera transform.
+  if (game._ftueScripted && allies && allies.length) {
+    for (const a of allies) {
+      if (a && a._ftueMote && a.alive) _ftueDrawMoteOverlay(ctx, a);
+    }
+  }
 
   ctx.restore();
+
+  // §A.2 vision-light-radius cutout — applied AFTER world (so world is
+  // visible inside the hole) and BEFORE HUD (so HUD chrome sits on top
+  // of the black mask). Only fires during scripted FTUE; outside of
+  // FTUE the world renders normally with full visibility.
+  if (game._ftueScripted) {
+    _ftueScriptedRender(ctx, shakeX, shakeY);
+  }
 
   if (game.state !== 'editor') renderHUD();
 }
@@ -16079,28 +16569,33 @@ function renderEditorOverlay() {
 }
 
 function renderWorld() {
-  // Grid (subtle)
-  ctx.strokeStyle = COLORS.creamDark;
-  ctx.lineWidth = 1;
-  const gridSize = 80;
-  const viewBuffer = 200;
-  const startX = Math.max(0, camera.x - W()/camera.scale - viewBuffer);
-  const startY = Math.max(0, camera.y - H()/camera.scale - viewBuffer);
-  const endX = Math.min(WORLD.w, camera.x + W()/camera.scale + viewBuffer);
-  const endY = Math.min(WORLD.h, camera.y + H()/camera.scale + viewBuffer);
-  ctx.beginPath();
-  for (let x = Math.floor(startX/gridSize)*gridSize; x < endX; x += gridSize) {
-    ctx.moveTo(x, startY); ctx.lineTo(x, endY);
+  // §A.4.1 / §10 — during scripted FTUE, skip ALL world chrome (grid,
+  // theme dressing, routes, landmarks). Only floor + walls + entities
+  // render. Grid in particular is banned ('那是策略遊戲風').
+  const _ftueLite = !!game._ftueScripted;
+  if (!_ftueLite) {
+    // Grid (subtle)
+    ctx.strokeStyle = COLORS.creamDark;
+    ctx.lineWidth = 1;
+    const gridSize = 80;
+    const viewBuffer = 200;
+    const startX = Math.max(0, camera.x - W()/camera.scale - viewBuffer);
+    const startY = Math.max(0, camera.y - H()/camera.scale - viewBuffer);
+    const endX = Math.min(WORLD.w, camera.x + W()/camera.scale + viewBuffer);
+    const endY = Math.min(WORLD.h, camera.y + H()/camera.scale + viewBuffer);
+    ctx.beginPath();
+    for (let x = Math.floor(startX/gridSize)*gridSize; x < endX; x += gridSize) {
+      ctx.moveTo(x, startY); ctx.lineTo(x, endY);
+    }
+    for (let y = Math.floor(startY/gridSize)*gridSize; y < endY; y += gridSize) {
+      ctx.moveTo(startX, y); ctx.lineTo(endX, y);
+    }
+    ctx.stroke();
+    // === THEME-DRIVEN MAP DRESSING ===
+    drawThemeShapes();
+    drawRoutes();
+    drawLandmarksUnder();
   }
-  for (let y = Math.floor(startY/gridSize)*gridSize; y < endY; y += gridSize) {
-    ctx.moveTo(startX, y); ctx.lineTo(endX, y);
-  }
-  ctx.stroke();
-
-  // === THEME-DRIVEN MAP DRESSING ===
-  drawThemeShapes();
-  drawRoutes();
-  drawLandmarksUnder();
 
   // Decorative shapes
   for (const d of decorations) {
@@ -17717,6 +18212,12 @@ function renderHUD() {
   // top-right corner of its panel to fold it down to a 70×26 "MAP ▲" tab.
   // NOTE: must NOT early-return from renderHUD — the crosshair, mode overlay
   // and message banner all live AFTER this section.
+  // §A.4: minimap is COMPLETELY hidden during scripted FTUE. Skip rendering.
+  if (game._ftueScripted) {
+    renderHUDOverlays();
+    renderDeathRecap();
+    return;
+  }
   const _narrowMM = W() < 500;
   const mw = _narrowMM ? 130 : 180, mh = _narrowMM ? 130 : 180;
   const mx = W() - mw - 16, my = H() - mh - 16;
@@ -18542,16 +19043,23 @@ function renderCommandOverlay() {
 // ============ PAUSE ============
 function togglePause() {
   if (game.state !== 'playing') return;
+  // §A.4 — pause overlay uses lobby cream UI; suppress during canvas FTUE.
+  if (game._ftueScripted) return;
   game._paused = !game._paused;
   // Drop any held mouse so we don't keep firing on resume
   if (game._paused) mouse.down = false;
 }
 // Auto-pause when the tab loses focus or becomes hidden — prevents ghost
 // kills while the player tabs to look something up.
+// SUPPRESSED during scripted FTUE per FTUE/01 §A — the prologue's
+// scripted timing breaks if the player loses focus mid-scene, AND the
+// pause overlay itself uses lobby cream UI which would violate §A.4.
 document.addEventListener('visibilitychange', () => {
+  if (game._ftueScripted) return;
   if (document.hidden && game.state === 'playing' && !game._paused) togglePause();
 });
 window.addEventListener('blur', () => {
+  if (game._ftueScripted) return;
   if (game.state === 'playing' && !game._paused) togglePause();
 });
 function drawPauseOverlay() {
