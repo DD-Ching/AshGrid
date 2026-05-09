@@ -3212,186 +3212,364 @@ function _ftueNarrHeartbeat(vol) {
   o.start(now); o.stop(now + 0.5);
 }
 
-// ---- S1: Blackness (0:00-0:25) — "you are dead" ----
-// Pure black + heartbeat + Seed Integrity countdown 41% → 28% over 25s.
-// No buttons, no WAKE prompt. Per SSoT: the player should think the game
-// has frozen → start to panic → THAT is the desired emotion.
+// (Legacy 25-second S1 was here. Replaced by the 12-second MVP S1 below
+// per FTUE/01 §1 timing. The S1 timing change is the only S1 difference;
+// content is the same boot lines + Seed countdown + MOTE PROXIMITY DETECTED.)
+
+// ---- Instrumentation: ag.ftue.* timestamps (MVP §3) ----
+// Each event records FIRST-occurrence wall-clock timestamp. Read at any
+// time via getFtueMarks() — exposed below for QA / dev console.
+function _ftueMark(key) {
+  try {
+    const data = JSON.parse(localStorage.getItem('ag.ftue') || '{}');
+    if (data[key] != null) return;          // first-occurrence only
+    data[key] = Date.now();
+    localStorage.setItem('ag.ftue', JSON.stringify(data));
+    _ftueNarrLog('MARK', `ag.ftue.${key} = ${data[key]}`);
+  } catch (e) {}
+}
+function _ftueMarkSet(key, value) {
+  try {
+    const data = JSON.parse(localStorage.getItem('ag.ftue') || '{}');
+    data[key] = value;
+    localStorage.setItem('ag.ftue', JSON.stringify(data));
+  } catch (e) {}
+}
+function _ftueGetMarks() {
+  try { return JSON.parse(localStorage.getItem('ag.ftue') || '{}'); }
+  catch (e) { return {}; }
+}
+// Expose for QA — typing `getFtueMarks()` in console returns the data
+window.getFtueMarks = _ftueGetMarks;
+
+// ---- Global input listeners that fire once per session, scoped to FTUE ----
+// Attached on _ftueStart(), removed on completion / skip. Simpler than
+// threading a hook into every input site.
+let _ftueInputBindingsActive = false;
+function _ftueAttachInputMarkers() {
+  if (_ftueInputBindingsActive) return;
+  _ftueInputBindingsActive = true;
+  const onKey = (e) => {
+    const k = (e.key || '').toLowerCase();
+    if ('wasd'.includes(k))  _ftueMark('firstMove');
+    if (k === 'r')           _ftueMark('firstReload');
+    if (k === 'q')           _ftueMark('firstUav');
+    if (k === 'b')           _ftueMark('firstBuild');
+    if (k === 'escape')      _ftueOnEscape();
+  };
+  const onMouse = () => _ftueMark('firstShot');
+  window.addEventListener('keydown', onKey);
+  window.addEventListener('mousedown', onMouse);
+  _ftueNarr._inputCleanup = () => {
+    window.removeEventListener('keydown', onKey);
+    window.removeEventListener('mousedown', onMouse);
+    _ftueInputBindingsActive = false;
+  };
+}
+
+// ---- ESC skip dialog (MVP §4.4) ----
+let _ftueSkipDialogOpen = false;
+function _ftueOnEscape() {
+  if (_ftueSkipDialogOpen || !_ftueNarr.running) return;
+  _ftueSkipDialogOpen = true;
+  const overlay = document.getElementById('ftueNarr');
+  if (!overlay) { _ftueSkipDialogOpen = false; return; }
+  const dlg = document.createElement('div');
+  dlg.id = 'ftueSkipDialog';
+  dlg.style.cssText =
+    'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
+    'background:#1a1612;color:#f4ecd8;padding:32px 40px;' +
+    "font-family:'Courier New',monospace;font-size:13px;letter-spacing:2px;" +
+    'border:2px solid #c8442e;box-shadow:6px 6px 0 #5a1010;' +
+    'z-index:10000;text-align:center;line-height:1.7;';
+  dlg.innerHTML =
+    '<div style="font-size:14px;margin-bottom:18px;">SKIP PROLOGUE?</div>' +
+    "<div style=\"opacity:0.7;font-size:11px;margin-bottom:24px;\">you'll miss what mote did for you.</div>" +
+    '<button id="ftueSkipYes" type="button" style="background:#444;color:#f4ecd8;border:none;padding:10px 24px;font-family:inherit;font-size:12px;letter-spacing:3px;margin-right:14px;cursor:pointer;">SKIP ▶</button>' +
+    '<button id="ftueSkipNo"  type="button" style="background:#c8442e;color:#f4ecd8;border:none;padding:10px 24px;font-family:inherit;font-size:12px;letter-spacing:3px;cursor:pointer;">STAY</button>';
+  overlay.appendChild(dlg);
+  const close = () => { dlg.remove(); _ftueSkipDialogOpen = false; };
+  document.getElementById('ftueSkipYes').onclick = () => {
+    close();
+    _ftueNarr.skipFlag = true;     // short-circuits all _wait + _ftueWaitKey
+    _ftueMarkSet('skipped', Date.now());
+    _ftueNarrLog('SKIP', 'player chose SKIP via ESC dialog');
+  };
+  document.getElementById('ftueSkipNo').onclick = close;
+}
+
+// ---- AFK chip refire (MVP §4.2) ----
+// Helper: show a chip and wait for keypress. If no press in `afkMs`,
+// re-flash the chip; if no press in `afkMs * 2`, show an explicit
+// "[V-07: AWAITING INPUT]" prompt. Resolves on press or after the
+// total `timeoutMs` ceiling.
+async function _ftueWaitKeyAFK(keys, afkMs, totalTimeoutMs) {
+  if (afkMs == null) afkMs = 5000;
+  if (totalTimeoutMs == null) totalTimeoutMs = 30000;
+  const start = Date.now();
+  let pressed = false;
+  const innerWait = (ms) => Promise.race([
+    _ftueWaitKey(keys, ms).then(() => { pressed = true; }),
+    _wait(ms),
+  ]);
+  await innerWait(afkMs);
+  if (pressed || _ftueNarr.skipFlag) return;
+  // Re-flash chip — caller is expected to re-show it
+  _ftueNarrFlashChip();
+  await innerWait(afkMs);
+  if (pressed || _ftueNarr.skipFlag) return;
+  // Final nag
+  const sub = document.getElementById('ftueNarrSub');
+  const oldSub = sub ? sub.textContent : '';
+  _ftueNarrSetSub('[V-07: AWAITING INPUT]');
+  const remaining = Math.max(0, totalTimeoutMs - (Date.now() - start));
+  await innerWait(remaining);
+  if (sub) _ftueNarrSetSub(oldSub);
+}
+function _ftueNarrFlashChip() {
+  const chip = document.getElementById('ftueNarrChip');
+  if (!chip) return;
+  chip.style.opacity = '0.3';
+  setTimeout(() => { chip.style.opacity = '1'; }, 220);
+}
+
+// ============================================================
+// MVP 5 SCENES — per FTUE/01 §1
+// ============================================================
+
+// ---- S1: 黑暗 (0:00 - 0:12) ----
+// 12 seconds. Black + heartbeat + Seed countdown + MOTE PROXIMITY DETECTED.
 async function _ftueScene1_Blackness() {
-  _ftueNarrLog('SCENE', 'S1 — Blackness');
+  _ftueNarrLog('SCENE', 'S1 — Blackness (0:00-0:12)');
+  _ftueMark('s1Reached');
   const el = _ftueNarrOverlay();
   el.style.background = '#000';
   _ftueNarrSetTop('');
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
-  // 0:00–0:05 silence
-  await _wait(5000);
-  if (_ftueNarr.skipFlag) return;
-  // 0:05 first heartbeat
-  _ftueNarrHeartbeat(0.30);
+  // 0:00–0:03 silent
   await _wait(3000);
   if (_ftueNarr.skipFlag) return;
-  // 0:08 first line types in
-  await _ftueTypeCenter('CYCLE #347 — INITIATING', 22);
-  await _wait(800);
-  // 0:12 41%
-  _ftueNarrAppendCenter('\nSEED INTEGRITY ███████░░░  41%');
-  _ftueNarrHeartbeat(0.34);
+  // 0:03 heartbeat #1
+  _ftueNarrHeartbeat(0.32);
   await _wait(2000);
-  // 0:14 39%
-  _ftueNarrAppendCenter('\n→ 39%');
-  _ftueNarrHeartbeat(0.38);
-  await _wait(2000);
-  // 0:16 36%
-  _ftueNarrAppendCenter('\n→ 36%');
-  _ftueNarrHeartbeat(0.42);
-  await _wait(2000);
-  // 0:18 33%
-  _ftueNarrAppendCenter('\n→ 33%');
-  _ftueNarrHeartbeat(0.46);
-  await _wait(2000);
-  // 0:22 28%
-  _ftueNarrAppendCenter('\n→ 28%');
-  _ftueNarrHeartbeat(0.50);
-  await _wait(2000);
-  // 0:24 EMERGENCY BIND
-  _ftueNarrAppendCenter('\nEMERGENCY BIND — MOTE PROXIMITY DETECTED');
+  if (_ftueNarr.skipFlag) return;
+  // 0:05 first line types in
+  await _ftueTypeCenter('> CYCLE #347', 24);
+  await _ftueTypeCenter('\n> SEED INTEGRITY  ████░░░░░░  41%', 22);
+  // 0:07 heartbeat #2
+  _ftueNarrHeartbeat(0.40);
   await _wait(1100);
-  // 0:25 red flash → into S2
+  // 0:08 cascade 36 → 33 → 28
+  _ftueNarrAppendCenter('\n> → 36% → 33% → 28%');
+  _ftueNarrHeartbeat(0.48);
+  await _wait(1800);
+  // 0:10 MOTE PROXIMITY DETECTED (red)
+  const center = document.getElementById('ftueNarrCenter');
+  if (center) {
+    const span = document.createElement('span');
+    span.style.cssText = 'color:#c8442e;display:block;margin-top:14px;letter-spacing:3px;';
+    span.textContent = '> MOTE PROXIMITY DETECTED';
+    center.appendChild(span);
+  }
+  await _wait(1100);
+  // 0:11 red flash
   el.style.background = '#5a1010';
   await _wait(140);
   el.style.background = '#000';
+  // 0:12 fade to S2 — caller transitions
+  _ftueMark('s2Reached');
 }
 
-// ---- S2-S8: text-only placeholders. Each is a faithful reading of the
-// SSoT scene description so the dev can flow through the prologue
-// end-to-end. They will be promoted to their full audio/visual scenes
-// in subsequent commits per Section 3 of the SSoT. ----
-async function _ftueScene2_MoteEyes() {
-  _ftueNarrLog('SCENE', 'S2 — Mote Eyes (placeholder)');
-  _ftueNarrSetCenter('');
-  _ftueNarrSetSub('TODO · S2 first-person Mote scene');
-  await _wait(700);
-  await _ftueTypeCenter('Three metres ahead — a single red eye, low to the floor.\nThree-legged. The fourth limb is a soldering iron.\nIt watches you, then turns and limps left.', 22);
-  await _wait(2200);
-  _ftueNarrShowChip('W A S D');
-  await _ftueWaitKey(['w','a','s','d'], 9000);
-  _ftueNarrHideChip();
-  _ftueNarrSetSub('');
-}
-async function _ftueScene3_Corridor() {
-  _ftueNarrLog('SCENE', 'S3 — Corridor (placeholder)');
-  _ftueNarrSetCenter('');
-  _ftueNarrSetSub('TODO · S3 corridor + graffiti + Lumen first call');
-  await _wait(500);
-  await _ftueTypeCenter('A corridor under flickering tubes.\nGraffiti smears across the wall —\n  DO NOT BECOME A SKILL\n  RULE 1 ≠ RULE 2\nA wrecked UGV at the far end. One wheel still turns.', 22);
-  await _wait(2200);
-  _ftueNarrSetSub('[STATIC] ...V-07... do you read?\n[STATIC] ...your seed is back to 87.\n[STATIC] ...mote is intact... mostly.');
-  await _wait(3500);
-  _ftueNarrShowChip('MOUSE → LOOK');
-  await _wait(2500);
-  _ftueNarrHideChip();
-  _ftueNarrSetSub('');
-}
-async function _ftueScene4_FirstEnemy() {
-  _ftueNarrLog('SCENE', 'S4 — First Enemy (placeholder)');
-  _ftueNarrSetCenter('');
-  _ftueNarrSetSub('TODO · S4 Red Grid patrol + Mote bites a leg');
-  await _wait(500);
-  await _ftueTypeCenter('A Red Grid patrol robot rounds the corner — fifteen metres.\nIt has not seen you yet.\nMote crouches. Head low. Waiting.', 22);
-  await _wait(2400);
-  _ftueNarrShowChip('LMB · FIRE');
-  await _wait(2200);
-  _ftueNarrShowChip('R · RELOAD');
-  await _ftueWaitKey(['r'], 6000);
-  _ftueNarrHideChip();
-  _ftueNarrSetSub('[STATIC] ...one down... mote helped... it always does...');
-  await _wait(2200);
-  _ftueNarrSetSub('');
-}
-async function _ftueScene5_DeadV07() {
-  _ftueNarrLog('SCENE', 'S5 — Dead V-07 (placeholder)');
-  _ftueNarrSetCenter('');
-  _ftueNarrSetSub('TODO · S5 your previous body + ARCHIVED LOG');
-  await _wait(500);
-  await _ftueTypeCenter('A V-07 chassis lies face-down in the dust.\nSerial: V-07 / CYCLE #341.\nThe red sigil on its chest is dark.\nMote pads over and presses the soldering-iron leg to the body.', 22);
-  await _wait(2800);
-  _ftueNarrSetSub('[ARCHIVED LOG — CYCLE #341]\nV-07 down. cause: SOLO ENGAGEMENT.\nno construction. no audit. just kills.\nmote stayed.');
-  await _wait(3500);
-  _ftueNarrShowChip('X · PICK UP SMG');
-  await _ftueWaitKey(['x'], 5000);
-  _ftueNarrShowChip('SHIFT · SPRINT');
-  await _ftueWaitKey(['shift'], 5000);
-  _ftueNarrHideChip();
-  _ftueNarrSetSub('');
-}
-async function _ftueScene6_TwoBrothers() {
-  _ftueNarrLog('SCENE', 'S6 — Two Brothers (placeholder)');
-  _ftueNarrSetCenter('');
-  _ftueNarrSetSub('TODO · S6 BRAVO-2 + CHARLIE-3 squad meet');
-  await _wait(500);
-  await _ftueTypeCenter('Two more V-07s wait behind cover —\n  BRAVO-2.  CHARLIE-3.\nSame chassis. Red sigils still lit.\nThey nod. They have done this before.', 22);
-  _ftueNarrSetSub('[STATIC] ...your squad is here. ...they remember less than you. ...take the lead.');
-  await _wait(3000);
-  _ftueNarrShowChip('TAB · COMMAND');
-  await _ftueWaitKey(['tab'], 5000);
-  _ftueNarrShowChip('1-7 ORDERS · 1-4 SWAP BODIES');
-  await _wait(3500);
-  _ftueNarrHideChip();
-  _ftueNarrSetSub('');
-}
-async function _ftueScene7_Swarm() {
-  _ftueNarrLog('SCENE', 'S7 — Swarm (placeholder)');
-  _ftueNarrSetCenter('');
-  _ftueNarrSetSub('TODO · S7 Iron Swarm flood + Mote takes damage');
-  await _wait(500);
-  await _ftueTypeCenter('Iron Swarm pours down the wall — twelve, fifteen, more.\nYou cannot win this one head-on.\nMote shoves you toward a side door.\nInside: 2 grenades. 1 FPV drone.', 22);
-  await _wait(2800);
-  _ftueNarrShowChip('Q · UAV (SEE THROUGH WALLS)');
-  await _ftueWaitKey(['q'], 5000);
-  _ftueNarrShowChip('G · GRENADE');
-  await _ftueWaitKey(['g'], 5000);
-  _ftueNarrShowChip('E · FPV DRONE');
-  await _ftueWaitKey(['e'], 5000);
-  _ftueNarrHideChip();
-  _ftueNarrSetSub('MOTE INTEGRITY: 60% → 42%\n[STATIC] ...cover mote. she is hurt...');
-  await _wait(3000);
-  _ftueNarrSetSub('');
-}
-async function _ftueScene8_Breach() {
-  _ftueNarrLog('SCENE', 'S8 — Breach (placeholder)');
-  _ftueNarrSetCenter('');
-  _ftueNarrSetSub('TODO · S8 wall breach + B build wheel (11 LOCKED + WALL)');
-  await _wait(500);
-  await _ftueTypeCenter('A two-metre breach in the wall.\nBeyond it: black sky and a red glow on the horizon.\n[STATIC] ...wait. more incoming.', 22);
-  await _wait(2400);
-  _ftueNarrShowChip('B · BUILD · ONLY WALL UNLOCKED');
-  await _ftueWaitKey(['b'], 5000);
-  _ftueNarrHideChip();
-  _ftueNarrSetSub('[CLEAR] there it is.\n[CLEAR] that is not killing — that is auditing.');
-  await _wait(3500);
-  _ftueNarrSetSub('');
-}
-
-// ---- S9: Exit + ENTER → first NN match ----
-async function _ftueScene9_Exit() {
-  _ftueNarrLog('SCENE', 'S9 — Exit');
+// ---- S2: 跟著走 + 第一個敵人 (0:12 - 1:00) ----
+// 48 seconds. Mote walks → Red Grid → LMB fire → reload + Mote tackle.
+// THIS COMMIT: text-driven placeholder with MVP narrative beats and the
+// 4 chips (WASD / MOUSE / LMB / R). The actual scripted-gameplay
+// implementation (Mote sprite + Red Grid NN + camera 0.55) lands in a
+// follow-up commit per the MVP 1-week budget.
+async function _ftueScene2_FollowAndFirstEnemy() {
+  _ftueNarrLog('SCENE', 'S2 — Follow + first enemy (0:12-1:00)');
   const el = _ftueNarrOverlay();
   el.style.background = '#0c0a08';
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('');
+  _ftueNarrHideChip();
+  await _wait(500);
+  // 0:14 [SUBJECT MOTE: WAITING]
+  _ftueNarrSetSub('[SUBJECT MOTE: WAITING]');
+  await _wait(1500);
+  // 0:18 Mote walks → WASD chip
+  await _ftueTypeCenter('Three metres ahead, low to the floor — a single red eye.\nThree-legged. The fourth limb is a soldering iron.\nIt watches you, then turns and limps left.', 22);
+  await _wait(1500);
+  _ftueNarrShowChip('W A S D');
+  await _ftueWaitKeyAFK(['w','a','s','d'], 5000, 18000);
+  _ftueNarrHideChip();
+  // 0:23 MOUSE → AIM (sub line)
+  _ftueNarrSetSub('MOUSE → AIM');
+  await _wait(2200);
+  // 0:30 Mote stops, looks back
+  _ftueNarrSetCenter('');
+  await _ftueTypeCenter('Mote stops at the corner. Turns. Waits.', 22);
+  await _wait(1800);
+  // 0:35 Red Grid patrol appears
+  _ftueNarrSetSub('[CONTACT — RED GRID PATROL]');
+  await _wait(800);
+  await _ftueTypeCenter('\n\nA Red Grid patrol robot rounds the corner.\nIt has not seen you. It is walking toward Mote.', 22);
+  await _wait(1500);
+  // 0:38 LMB chip + HP/ammo reveal
+  _ftueNarrShowChip('[LMB] · FIRE');
+  await _ftueWaitKeyAFK([' '], 4500, 12000);   // space = proxy for click
+  _ftueNarrHideChip();
+  _ftueMark('firstShot');
+  // 0:50 Reload moment — gun "jams"
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('');
+  await _ftueTypeCenter("MAG DRY. Gun freezes for half a second.\nThe Red Grid is still standing.", 22);
+  await _wait(1500);
+  _ftueNarrShowChip('[R] · RELOAD');
+  await _ftueWaitKeyAFK(['r'], 4500, 10000);
+  _ftueNarrHideChip();
+  _ftueMark('firstReload');
+  // 0:53 Mote tackles
+  _ftueNarrSetCenter('');
+  await _ftueTypeCenter('Mote launches at the leg.\nBites. Tears. Drops to the floor as the patrol explodes.\nMote limps back, more obvious now.', 22);
+  await _wait(2200);
+  // 0:58 Lumen first transmission
+  _ftueNarrSetSub('▸ Lumen · ...one down. mote helped. it always does.');
+  if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
+  await _wait(2200);
+  _ftueNarrSetSub('');
+}
+
+// ---- S3: 看清楚 (1:00 - 1:30) ----
+// 30 seconds. Q UAV + see swarm + DO NOT ENGAGE.
+async function _ftueScene3_ScoutSwarm() {
+  _ftueNarrLog('SCENE', 'S3 — Scout the swarm (1:00-1:30)');
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('');
+  _ftueNarrHideChip();
+  await _wait(500);
+  await _ftueTypeCenter('You move past the dead patrol. Mote keeps to your right.\nThe corridor opens up ahead.', 22);
+  await _wait(1800);
+  _ftueNarrSetSub('[MULTIPLE CONTACT — UNCLEAR COUNT]');
+  await _wait(1500);
+  _ftueNarrShowChip('[Q] · AUDIT VISION');
+  await _ftueWaitKeyAFK(['q'], 4500, 14000);
+  _ftueNarrHideChip();
+  _ftueMark('firstUav');
+  // UAV view — describe the swarm
+  _ftueNarrSetCenter('');
+  await _ftueTypeCenter('UAV up. The corridor floor is a moving carpet.\nIron Swarm — twelve units. Maybe more behind the wall.', 22);
+  _ftueNarrSetSub('[CONTACT: 12]\n[DO NOT ENGAGE]');
+  await _wait(2800);
+  // Lumen
+  _ftueNarrSetSub('▸ Lumen · too many. cover behind the wall. wait for the breach.');
+  await _wait(2800);
+  _ftueNarrSetSub('');
+}
+
+// ---- S4: 破口 (1:30 - 2:30) — the most important 60 seconds ----
+// Countdown + B + Wall + BUILD = AUDIT moment.
+async function _ftueScene4_Breach() {
+  _ftueNarrLog('SCENE', 'S4 — Breach (1:30-2:30)');
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub('');
+  _ftueNarrHideChip();
+  await _wait(500);
+  await _ftueTypeCenter('A breach in the wall — two metres wide.\nBeyond it, dust. A heavy UGV grinds toward you.', 22);
+  await _wait(1800);
+  // Countdown UI on the top
+  _ftueNarrSetTop('IMPACT — 25s');
+  _ftueNarrSetSub('[INCOMING — HEAVY UGV]');
+  // Run the countdown asynchronously so chips can show simultaneously
+  let countdownAlive = true;
+  let secs = 25;
+  const tickCD = () => {
+    if (!countdownAlive) return;
+    if (_ftueNarr.skipFlag) { _ftueNarrSetTop(''); return; }
+    _ftueNarrSetTop(`IMPACT — ${secs}s`);
+    if (secs <= 0) { countdownAlive = false; return; }
+    secs--;
+    setTimeout(tickCD, 1000);
+  };
+  tickCD();
+  await _wait(2200);
+  _ftueNarrShowChip('[B] · BUILD');
+  await _ftueWaitKeyAFK(['b'], 4500, 16000);
+  _ftueNarrHideChip();
+  _ftueMark('firstBuild');
+  // Wheel description (placeholder for actual wheel UI)
+  _ftueNarrSetCenter('');
+  await _ftueTypeCenter('The build wheel opens.\nTwelve slots. Eleven greyed out — LOCKED.\n\n[LOCKED] VERDICT TURRET ── COMPLETE 1 CYCLE TO UNLOCK\n[LOCKED] AUDIT CONSOLE   ── EVIDENCE-BASED EVOLUTION\n\nOnly WALL is lit.', 22);
+  _ftueNarrShowChip('CLICK · WALL');
+  await _ftueWaitKeyAFK([' ', 'enter'], 5000, 14000);
+  _ftueNarrHideChip();
+  _ftueMark('firstWall');
+  // Wall lands → countdown halts
+  countdownAlive = false;
+  _ftueNarrSetTop('');
+  _ftueNarrSetSub('');
+  _ftueNarrSetCenter('');
+  await _ftueTypeCenter('The wall drops into place.\nDust kicks up.\nThe UGV slams into it and stops.', 22);
+  await _wait(1800);
+  // Lumen — first time CLEAR (no static)
+  _ftueNarrSetSub('▸ Lumen · there it is.\n▸ Lumen · that is not killing — that is auditing.\n▸ Lumen · build to think. kill is just the last 0.5 seconds.');
+  await _wait(3500);
+  // BUILD = AUDIT stamp
+  _ftueNarrSetSub('');
+  _ftueNarrSetCenter('');
+  const center = document.getElementById('ftueNarrCenter');
+  if (center) {
+    center.style.transition = 'opacity 1.6s';
+    center.style.opacity = '0';
+    center.textContent = 'BUILD = AUDIT\n───────────\n建築即審計';
+    center.style.fontSize = '32px';
+    center.style.letterSpacing = '6px';
+    void center.offsetWidth;
+    center.style.opacity = '1';
+  }
+  await _wait(2400);
+  if (center) {
+    center.style.opacity = '0';
+    setTimeout(() => {
+      if (!center) return;
+      center.style.fontSize = '18px';
+      center.style.letterSpacing = '1px';
+      center.textContent = '';
+      center.style.opacity = '1';
+      center.style.transition = 'none';
+    }, 900);
+  }
+  await _wait(1100);
+  _ftueNarrSetSub('▸ Lumen · cover mote. she earned it.');
+  if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
+  await _wait(2400);
+  _ftueNarrSetSub('');
+}
+
+// ---- S5: 出口 + ENTER → first NN match (2:30 - 3:00) ----
+async function _ftueScene5_Exit() {
+  _ftueNarrLog('SCENE', 'S5 — Exit (2:30-3:00)');
+  const el = _ftueNarrOverlay();
+  el.style.background = '#1a0e08';
   _ftueNarrSetTop('');
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
   await _wait(700);
-  await _ftueTypeCenter('You shoulder a steel door open.\nThe vector field stretches outward —\nrust-coloured sky, glass underfoot, three relay drones hung like punctuation.\nFour kilometres out, a red tower pulses.\n\nMote sits beside you and does not follow.', 22);
+  await _ftueTypeCenter('You shoulder the steel door open.\n\nThe vector field stretches outward —\nrust-coloured sky, glass underfoot, three relay drones hung like punctuation.\nFour kilometres out, a red tower pulses.\n\nMote sits beside you and does not follow.', 22);
   await _wait(1800);
-  _ftueNarrSetSub('[STATIC] V-07. ...you remember the way.');
+  _ftueNarrSetSub('▸ Lumen · V-07. you remember the way.');
   await _wait(1700);
-  _ftueNarrSetSub('[STATIC] cycle 347 begins now.');
+  _ftueNarrSetSub('▸ Lumen · cycle 347 begins now.');
   await _wait(1400);
   _ftueNarrSetCenter('');
   await _ftueTypeCenter('CYCLE #347\nAUDIT IN PROGRESS\n...\nREADY?', 28);
   await _wait(900);
+  // Restore Seed Integrity to 87 visually (purely flavour — sets ag.seedIntegrity)
+  try { localStorage.setItem('ag.seedIntegrity', '87'); } catch (e) {}
+  if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
   // CTA
   const cta = document.getElementById('ftueNarrCta');
   if (cta) cta.style.display = 'block';
@@ -3409,7 +3587,12 @@ async function _ftueScene9_Exit() {
     window.addEventListener('keydown', onKey);
     if (btn) btn.onclick = onResolve;
   });
+  _ftueMark('s5Entered');
 }
+
+// ============================================================
+// Orchestrator
+// ============================================================
 
 async function startNarrativeFTUE() {
   if (_ftueNarr.running) {
@@ -3417,10 +3600,11 @@ async function startNarrativeFTUE() {
     return;
   }
   _ftueNarr.running = true;
-  // Don't reset skipFlag — the dev IIFE at the bottom of the FTUE block
-  // may have set it from sessionStorage.ag._ftueNarrSkip = '1', and that
-  // hook is the only way to fast-forward the prologue during testing.
-  _ftueNarrLog('START', '5-min prologue begin' + (_ftueNarr.skipFlag ? ' (DEV SKIP ON)' : ''));
+  _ftueNarrLog('START', '3-min MVP prologue begin' + (_ftueNarr.skipFlag ? ' (DEV SKIP ON)' : ''));
+  // Reset MVP marks for a clean run (keeps `skipped` if it existed, since
+  // that's a one-shot sticky flag the player chose).
+  try { localStorage.removeItem('ag.ftue'); } catch (e) {}
+  _ftueAttachInputMarkers();
   // Hide start screen + intro overlay so nothing peeks behind the narrative.
   const startEl = document.getElementById('start');
   if (startEl) startEl.classList.add('hidden');
@@ -3428,30 +3612,31 @@ async function startNarrativeFTUE() {
   if (introEl) introEl.setAttribute('hidden', '');
   if (typeof game !== 'undefined') game._paused = true;
   _ftueNarrOverlay();
+  const t0 = Date.now();
   try {
-    await _ftueScene1_Blackness();   _ftueNarr.sceneIdx = 1;
-    await _ftueScene2_MoteEyes();    _ftueNarr.sceneIdx = 2;
-    await _ftueScene3_Corridor();    _ftueNarr.sceneIdx = 3;
-    await _ftueScene4_FirstEnemy();  _ftueNarr.sceneIdx = 4;
-    await _ftueScene5_DeadV07();     _ftueNarr.sceneIdx = 5;
-    await _ftueScene6_TwoBrothers(); _ftueNarr.sceneIdx = 6;
-    await _ftueScene7_Swarm();       _ftueNarr.sceneIdx = 7;
-    await _ftueScene8_Breach();      _ftueNarr.sceneIdx = 8;
-    await _ftueScene9_Exit();        _ftueNarr.sceneIdx = 9;
+    await _ftueScene1_Blackness();             _ftueNarr.sceneIdx = 1;
+    await _ftueScene2_FollowAndFirstEnemy();   _ftueNarr.sceneIdx = 2;
+    await _ftueScene3_ScoutSwarm();            _ftueNarr.sceneIdx = 3;
+    await _ftueScene4_Breach();                _ftueNarr.sceneIdx = 4;
+    await _ftueScene5_Exit();                  _ftueNarr.sceneIdx = 5;
   } catch (err) {
     console.error('[FTUE-NARR] crashed', err);
   }
+  // Total time spent in the prologue
+  _ftueMarkSet('totalSec', Math.round((Date.now() - t0) / 1000));
   // Tear down + flip flags + launch the first real NN match.
+  if (_ftueNarr._inputCleanup) { _ftueNarr._inputCleanup(); _ftueNarr._inputCleanup = null; }
   const overlay = document.getElementById('ftueNarr');
   if (overlay) overlay.remove();
   try {
     localStorage.setItem('ag.firstMatch', '1');
     localStorage.setItem('ag.introSeen', '1');
     localStorage.setItem('ag.tutorialSeen', '1');
+    localStorage.setItem('ag.ftueMvpDone', '1');   // gates _scheduleFirstMatchToasts (MVP §5)
   } catch (e) {}
   _ftueNarr.running = false;
   if (typeof game !== 'undefined') game._paused = false;
-  _ftueNarrLog('DONE', '→ startNNSkirmish(2,2,warrior,RIFLE,null,dm)');
+  _ftueNarrLog('DONE', `→ startNNSkirmish(2,2,warrior,RIFLE,null,dm) · marks=${JSON.stringify(_ftueGetMarks())}`);
   if (typeof startNNSkirmish === 'function') {
     startNNSkirmish(2, 2, 'warrior', 'RIFLE', null, 'dm');
   } else if (startEl) {
