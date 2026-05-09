@@ -3077,170 +3077,282 @@ function _tickDynamicRadio() {
   }
 }
 
-// FTUE Dialogue State Machine — sequential, one-at-a-time prompts gated
-// on player ACTIONS instead of a fixed timer. Replaces the old four-toast
-// pile-up where Lumen / Mote / Audit lines stacked on top of each other in
-// the radio-toast column. User: '不需要堆疊,要階段式 — 做了之後才往下推進'.
-// Visual novel-style dialogue bar at #ftueDialogue (bottom center).
-// Steps live in game._ftue.steps and advance when the listed `advance`
-// event fires (move, kill, auditClose, buildOpen, place, streak3).
+// ============ FTUE — First-Time User Experience ============
+// Single, data-driven state machine for the new-player tutorial.
+// Refactor goal (user: '請好好重構,不要挖東牆補西牆 … FTUE 真的很
+// 重要'): one source of truth, one event router, no scattered magic
+// numbers tying step indices to UI gates.
 //
-// Once-per-account: ag.firstMatch flips to '1' after the last step or when
-// the match ends. Veterans never see the bar at all.
-const game_ftue = {
-  active: false, idx: -1, steps: [],
-  // Track action flags that the steps watch for
-  flags: { moved: false, kill: 0, auditClose: false, buildOpen: false, place: 0, streak: 0 },
+// ---- Step config ----
+// Each FTUE_STEP is a self-contained object:
+//   id           stable identifier (logs only)
+//   speaker      chip text
+//   textZh/En    body, picked by getLang()
+//   hintZh/En    small key-hint footer
+//   waitFor      event name that advances this step (one of:
+//                 'move' | 'sprint' | 'pawnswap' | 'buildOpen' |
+//                 'place' | 'kill' | 'auditClose' |
+//                 'key:<lc>' | 'order:<id>')
+//   reveal       which HUD chunks become visible AT this step
+//                 (cumulative — once revealed, stays revealed for
+//                  every later step). Keys: hp / ammo / minimap /
+//                  mission / energy
+//   unlockKeys   keys whose lock lifts AT this step. 'always-OK' keys
+//                (WASD / R / shift / mouse / 1-9 / Esc / P / H) are
+//                never locked regardless. Anything not in any step's
+//                unlockKeys list stays locked through the whole FTUE.
+//   cameraScale  target zoom while this step is current
+//   onEnter      optional fn run when the step's dialog shows
+//
+// Re-ordering or inserting a step is a DATA change. Gameplay paths
+// don't reference step numbers at all.
+//
+// ---- Runtime ----
+// `ftue` is the singleton. game._ftue aliases to it (the dev monitor
+// + various legacy guards still read game._ftue).
+//
+// Public API:
+//   _ftueIsActive()           bool
+//   _ftueRevealed(key)        bool — should HUD chunk render?
+//   _ftueKeyLocked(k)         bool — should keydown reject?
+//   _ftueCameraScale()        number | null — override cam scale?
+//   _ftueEvent(name)          ROUTER — every gameplay site calls this
+//
+// Robustness layers inside _ftueEvent:
+//   IGNORE   event doesn't match current step.waitFor → log + drop
+//   DEFER    event arrives before dialog shows → poll up to 5 s, retry
+//   THROTTLE event arrives within 600 ms of show → requeue every 80 ms
+//   ADVANCE  hide current dialog, after 1100 ms show next step, fire
+//            its onEnter hook
+//   DONE     past last step → deactivate + hide bar + flip ag.firstMatch
+
+// ---- Step list ----
+const FTUE_STEPS = [
+  {
+    id: 'wake', speaker: 'LUMEN', waitFor: 'move',
+    textZh: '「V-07,訓練場上線。 先試試移動 — WASD。」',
+    textEn: '"V-07. Training ground online. Try moving — WASD."',
+    hintZh: 'WASD · 移動', hintEn: 'WASD · move',
+    reveal: {}, unlockKeys: [], cameraScale: 0.78,
+  },
+  {
+    id: 'tab1', speaker: 'LUMEN', waitFor: 'key:tab',
+    textZh: '「按 TAB 進指令模式 — 螢幕底會亮出隊伍指令格。」',
+    textEn: '"Press TAB for command view — squad order strip lights up at the bottom."',
+    hintZh: 'TAB · 進入指令視角', hintEn: 'TAB · command view',
+    reveal: { hp: true, ammo: true }, unlockKeys: ['tab'], cameraScale: 0.88,
+    onEnter: () => _ftueSpawnAllies(),
+  },
+  {
+    id: 'rally', speaker: 'LUMEN', waitFor: 'order:rally',
+    textZh: '「按 1 對隊伍下『集合』令。 BRAVO 跟 CHARLIE 會跑來你身邊。」',
+    textEn: '"Press 1 to call RALLY. BRAVO and CHARLIE will run to you."',
+    hintZh: '1 · RALLY 集合', hintEn: '1 · RALLY',
+    reveal: { hp: true, ammo: true }, unlockKeys: ['tab'], cameraScale: 0.88,
+  },
+  {
+    id: 'tab2', speaker: 'LUMEN', waitFor: 'key:tab',
+    textZh: '「再按 TAB 退回戰術視角。」',
+    textEn: '"TAB again to return to tactical."',
+    hintZh: 'TAB · 回戰術', hintEn: 'TAB · back to tactical',
+    reveal: { hp: true, ammo: true }, unlockKeys: ['tab'], cameraScale: 0.88,
+  },
+  {
+    id: 'pawnswap', speaker: 'LUMEN', waitFor: 'pawnswap',
+    textZh: '「戰術下 1-3 = 直接接管隊友的身體。 按 2 接管 BRAVO。」',
+    textEn: '"In tactical, 1-3 = take over an ally\'s body. Press 2 to swap to BRAVO."',
+    hintZh: '2 · 接管 BRAVO', hintEn: '2 · take BRAVO',
+    reveal: { hp: true, ammo: true }, unlockKeys: ['tab'], cameraScale: 0.88,
+  },
+  {
+    id: 'q', speaker: 'LUMEN', waitFor: 'key:q',
+    textZh: '「Q 召出偵察 UAV — 看穿牆後。」',
+    textEn: '"Q deploys a recon UAV — see past walls."',
+    hintZh: 'Q · UAV 偵察', hintEn: 'Q · UAV',
+    reveal: { hp: true, ammo: true }, unlockKeys: ['tab', 'q'], cameraScale: 0.95,
+  },
+  {
+    id: 'e', speaker: 'LUMEN', waitFor: 'key:e',
+    textZh: '「E 發射 FPV 自殺機 — 對遠目標精準爆破。」',
+    textEn: '"E fires an FPV kamikaze drone — precise blast at range."',
+    hintZh: 'E · FPV 無人機', hintEn: 'E · FPV drone',
+    reveal: { hp: true, ammo: true }, unlockKeys: ['tab', 'q', 'e'], cameraScale: 0.95,
+  },
+  {
+    id: 'g', speaker: 'LUMEN', waitFor: 'key:g',
+    textZh: '「G 投擲手雷 — 角落清場。」',
+    textEn: '"G throws a grenade — clear corners."',
+    hintZh: 'G · 手雷', hintEn: 'G · grenade',
+    reveal: { hp: true, ammo: true }, unlockKeys: ['tab', 'q', 'e', 'g'], cameraScale: 0.95,
+  },
+  {
+    id: 'x', speaker: 'LUMEN', waitFor: 'key:x',
+    textZh: '「視野錐標出 NN 看不到的地方。 X 切換主/副武器。」',
+    textEn: '"Vision cone shows what NN can\'t see. X swaps primary / secondary."',
+    hintZh: 'X · 切換武器', hintEn: 'X · swap weapon',
+    reveal: { hp: true, ammo: true }, unlockKeys: ['tab', 'q', 'e', 'g', 'x'], cameraScale: 0.95,
+  },
+  {
+    id: 'sprint', speaker: 'LUMEN', waitFor: 'sprint',
+    textZh: '「Shift 衝刺 — 體力會跑,別一直按。」',
+    textEn: '"Shift to sprint — stamina drains, pace yourself."',
+    hintZh: '走路時按住 Shift', hintEn: 'Shift while moving',
+    reveal: { hp: true, ammo: true }, unlockKeys: ['tab', 'q', 'e', 'g', 'x'], cameraScale: 0.95,
+  },
+  {
+    id: 'b', speaker: 'LUMEN', waitFor: 'buildOpen',
+    textZh: '「先按 B 打開建造輪盤。 大部分模塊還沒解鎖 — 你只能用 WALL。」',
+    textEn: '"Press B first to open the build radial. Most modules are locked — only WALL is available."',
+    hintZh: 'B · 打開建造輪盤', hintEn: 'B · open build radial',
+    reveal: { hp: true, ammo: true, energy: true },
+    unlockKeys: ['tab', 'q', 'e', 'g', 'x', 'b'], cameraScale: 1.0,
+  },
+  {
+    id: 'place', speaker: 'LUMEN', waitFor: 'place',
+    textZh: '「按 B 打開了建造輪盤(中央那個圓盤)。 點圓盤上的 WALL,再點地面放下一面牆。 沒有滑鼠就用觸控板點。」',
+    textEn: '"Pressing B opened the build wheel (the disc on screen). Click WALL on the wheel, then click the ground to drop a wall. Trackpad clicks work."',
+    hintZh: '輪盤 → 點 WALL → 點地面', hintEn: 'Wheel → click WALL → click ground',
+    reveal: { hp: true, ammo: true, energy: true, minimap: true },
+    unlockKeys: ['tab', 'q', 'e', 'g', 'x', 'b'], cameraScale: 1.0,
+  },
+];
+
+// ---- Runtime singleton ----
+const ftue = {
+  active: false,
+  stepIdx: 0,
+  steps: [],            // resolved-for-language step list
+  stepShownAt: null,    // null = not yet on screen → DEFER guard
+  log: [],              // last 12 [FTUE …] lines
 };
-function _ftueIsFirstSession() {
-  try { return localStorage.getItem('ag.firstMatch') !== '1'; } catch (e) { return true; }
-}
-// FTUE logging — every state transition timestamps to console with a
-// [FTUE] prefix + pushed onto game._ftue.log so the dev monitor panel
-// can show the last few entries. User: '可以寫一些 Consol 在後台 …
-// 你看一下剛剛可能出有哪些錯誤'.
+
 function _ftueLog(kind, msg) {
   const t = (typeof game !== 'undefined' && game.time != null)
             ? `t=${game.time}` : `wall=${Date.now()}`;
   const line = `[FTUE ${kind}] ${msg}  (${t})`;
   try { console.log(line); } catch (e) {}
-  if (game._ftue) {
-    game._ftue.log = game._ftue.log || [];
-    game._ftue.log.push(line);
-    if (game._ftue.log.length > 12) game._ftue.log.shift();
-  }
+  ftue.log.push(line);
+  if (ftue.log.length > 12) ftue.log.shift();
 }
 
-function _ftueDialog(speaker, text, hint) {
+// ---- Public read-only accessors ----
+function _ftueIsActive() { return !!ftue.active; }
+function _ftueIsFirstSession() {
+  try { return localStorage.getItem('ag.firstMatch') !== '1'; } catch (e) { return true; }
+}
+function _ftueCurStep() { return ftue.steps[ftue.stepIdx] || null; }
+function _ftueRevealed(key) {
+  // Outside the FTUE everything is revealed by default.
+  if (!ftue.active) return true;
+  const cur = _ftueCurStep();
+  return !!(cur && cur.reveal && cur.reveal[key]);
+}
+const _FTUE_ALWAYS_OK_KEYS = new Set([
+  'w','a','s','d',                    // movement
+  'r',                                 // reload (essential combat)
+  'shift', ' ',                        // sprint key + space (no-op safe)
+  'h',                                 // recall to spawn (escape hatch)
+  'escape', 'p',                       // pause
+  '1','2','3','4','5','6','7','8','9','0',  // numbers (squad / pawn / module pick)
+]);
+function _ftueKeyLocked(k) {
+  if (!ftue.active) return false;
+  if (_FTUE_ALWAYS_OK_KEYS.has(k)) return false;
+  const cur = _ftueCurStep();
+  if (!cur) return false;
+  return !((cur.unlockKeys || []).includes(k));
+}
+function _ftueCameraScale() {
+  if (!ftue.active) return null;
+  const cur = _ftueCurStep();
+  return (cur && cur.cameraScale != null) ? cur.cameraScale : null;
+}
+
+// ---- Dialog show/hide ----
+function _ftueShowCurrent() {
+  const cur = _ftueCurStep();
+  if (!cur) return;
+  const lang = (typeof getLang === 'function') ? getLang() : 'en';
+  const zh = (lang === 'zh');
+  const text = zh ? cur.textZh : cur.textEn;
+  const hint = zh ? cur.hintZh : cur.hintEn;
   const el = document.getElementById('ftueDialogue');
   if (!el) return;
-  document.getElementById('ftueSpeaker').textContent = speaker;
+  document.getElementById('ftueSpeaker').textContent = cur.speaker;
   document.getElementById('ftueText').innerHTML = text;
   document.getElementById('ftueHint').textContent = hint || '';
   el.removeAttribute('hidden');
-  // Force a reflow so the .show transition triggers when re-shown
   void el.offsetWidth;
   el.classList.add('show');
-  // Mark the step as actually visible — _ftueAdvance refuses to fire
-  // earlier than this so a premature WASD/key-press during the 1.2 s
-  // pre-show delay doesn't blow past the step the user never read.
-  // User: '我只是提前按了WASD,它就整個壞掉了 … 應該是我完成了之後,
-  // 它會往下一個地步走'.
-  if (game._ftue) {
-    game._ftue.stepShownAt = (game.time != null) ? game.time : 0;
-    _ftueLog('SHOW', `step ${game._ftue.idx} (${speaker}) wait=${(game._ftue.steps[game._ftue.idx]||{}).advance}`);
+  ftue.stepShownAt = (game.time != null) ? game.time : 0;
+  _ftueLog('SHOW', `step ${ftue.stepIdx} (${cur.id}) wait=${cur.waitFor}`);
+  if (typeof cur.onEnter === 'function') {
+    try { cur.onEnter(ftue); } catch (e) { console.error('[FTUE onEnter]', e); }
   }
 }
 function _ftueHide() {
   const el = document.getElementById('ftueDialogue');
   if (!el) return;
   el.classList.remove('show');
-  setTimeout(() => { if (!el.classList.contains('show')) el.setAttribute('hidden', ''); }, 380);
+  setTimeout(() => {
+    if (!el.classList.contains('show')) el.setAttribute('hidden', '');
+  }, 380);
 }
-function _ftueAdvance(reason) {
-  if (!game._ftue || !game._ftue.active) return;
-  const cur = game._ftue.steps[game._ftue.idx];
+
+// ---- Event router (the ONLY entry point gameplay paths call) ----
+function _ftueEvent(name) {
+  if (!ftue.active) return;
+  const cur = _ftueCurStep();
   if (!cur) return;
-  if (cur.advance !== reason) {
-    _ftueLog('IGNORE', `'${reason}' arrived at step ${game._ftue.idx}; expected '${cur.advance}'`);
+  if (cur.waitFor !== name) {
+    _ftueLog('IGNORE', `'${name}' arrived at step ${ftue.stepIdx} (${cur.id}); expected '${cur.waitFor}'`);
     return;
   }
-  // Premature-input guard: if the step's dialog hasn't been on screen
-  // long enough for the player to read, queue the advance for after the
-  // minimum read time. Without this, the first dialog had a 1.2 s pre-
-  // show delay during which any WASD press fired _ftueAdvance('move'),
-  // racing the dialog reveal — user saw a flash of step 0 then step 1
-  // and concluded the FTUE 'broke'. 600 ms minimum from dialog show.
-  const MIN_READ_MS = 600;
-  const shownAt = game._ftue.stepShownAt;
-  if (shownAt == null) {
-    _ftueLog('DEFER', `'${reason}' at step ${game._ftue.idx} — dialog not shown yet, will advance once it shows`);
-    // Don't drop the advance — schedule a re-fire AFTER the dialog shows.
-    // We poll the stepShownAt every 100 ms up to 5 s.
-    const start = Date.now();
+  // DEFER — dialog hasn't been on screen yet (e.g. event fired during
+  // the 1.2 s match-load delay). Queue + retry until shown.
+  if (ftue.stepShownAt == null) {
+    _ftueLog('DEFER', `'${name}' at step ${ftue.stepIdx} (${cur.id}) — dialog not shown yet, polling`);
+    const startWall = Date.now();
     const poll = setInterval(() => {
-      if (!game._ftue?.active || Date.now() - start > 5000) { clearInterval(poll); return; }
-      if (game._ftue.stepShownAt != null) {
-        clearInterval(poll);
-        _ftueAdvance(reason);
-      }
+      if (!ftue.active || Date.now() - startWall > 5000) { clearInterval(poll); return; }
+      if (ftue.stepShownAt != null) { clearInterval(poll); _ftueEvent(name); }
     }, 100);
     return;
   }
-  const sinceShown = ((game.time != null) ? game.time : 0) - shownAt;
-  // game.time is in 60 fps ticks → 600 ms ≈ 36 ticks
-  if (sinceShown < 36) {
-    _ftueLog('THROTTLE', `'${reason}' too soon (${Math.round(sinceShown*16.67)}ms after show); requeueing`);
-    setTimeout(() => _ftueAdvance(reason), 80);
+  // THROTTLE — within 600 ms read window. Requeue every 80 ms.
+  const ticksSinceShown = ((game.time != null) ? game.time : 0) - ftue.stepShownAt;
+  const MIN_TICKS = 36;   // 600 ms at 60 fps
+  if (ticksSinceShown < MIN_TICKS) {
+    _ftueLog('THROTTLE', `'${name}' too soon (${Math.round(ticksSinceShown*16.67)}ms after show); requeue`);
+    setTimeout(() => _ftueEvent(name), 80);
     return;
   }
-  _ftueLog('ADVANCE', `step ${game._ftue.idx} → ${game._ftue.idx + 1} via '${reason}'`);
-  const advancingFromIdx = game._ftue.idx;
-  // Hide current, schedule next after a beat
+  _ftueLog('ADVANCE', `step ${ftue.stepIdx} (${cur.id}) → ${ftue.stepIdx + 1} via '${name}'`);
   _ftueHide();
   setTimeout(() => {
-    if (!game._ftue.active) return;
-    game._ftue.idx++;
-    // Solo-FTUE world progression — gate gameplay content on step idx so
-    // the user's '只有我自己一個獨立個體' really lands. Each step transition
-    // adds the minimum new content needed for the next step.
-    if (advancingFromIdx === 0) {
-      // Player just moved → bring in BRAVO + CHARLIE so the next steps
-      // (TAB squad order, pawn-swap to ally) have actual targets. No
-      // enemies in this training-ground FTUE — the user said
-      // '訓練場 … 大部分未解鎖 … 別一開始就要搞文書工作', so combat
-      // is deferred to a real match later.
-      _ftueSpawnTutorialAllies();
-    }
-    if (game._ftue.idx >= game._ftue.steps.length) {
-      _ftueLog('DONE', `idx ${game._ftue.idx} reached end of step list — FTUE complete, ag.firstMatch flipped to '1'`);
-      game._ftue.active = false;
+    if (!ftue.active) return;
+    ftue.stepIdx++;
+    ftue.stepShownAt = null;
+    if (ftue.stepIdx >= ftue.steps.length) {
+      _ftueLog('DONE', `idx ${ftue.stepIdx} reached end of ${ftue.steps.length} steps — FTUE complete, ag.firstMatch flipped`);
+      ftue.active = false;
       _ftueHide();
       const dlg = document.getElementById('ftueDialogue');
       if (dlg) dlg.setAttribute('hidden', '');
       try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
       return;
     }
-    // Reset stepShownAt — the new step's dialog will reset it via
-    // _ftueDialog. Premature advance guard re-engages until then.
-    game._ftue.stepShownAt = null;
-    const nxt = game._ftue.steps[game._ftue.idx];
-    _ftueDialog(nxt.speaker, nxt.text, nxt.hint);
+    _ftueShowCurrent();
   }, 1100);
 }
-// Public hooks — called from the relevant gameplay sites
-function _ftueOnMove()       { if (game._ftue?.active) { game._ftue.flags.moved = true; _ftueAdvance('move'); } }
-function _ftueOnKill()       { if (game._ftue?.active) { game._ftue.flags.kill++; _ftueAdvance('kill'); } }
-function _ftueOnAuditClose() { if (game._ftue?.active) { game._ftue.flags.auditClose = true; _ftueAdvance('auditClose'); } }
-function _ftueOnBuildOpen()  { if (game._ftue?.active) { game._ftue.flags.buildOpen = true; _ftueAdvance('buildOpen'); } }
-function _ftueOnPlace()      { if (game._ftue?.active) { game._ftue.flags.place++; _ftueAdvance('place'); } }
-function _ftueOnStreak3()    { if (game._ftue?.active) { game._ftue.flags.streak = 3; _ftueAdvance('streak3'); } }
-// Generic key-press hook — used for the new training-ground sequence
-// where each step waits for ONE specific key. Spec: user request
-// '訓練場 游標 wasd  tab-123 123 q e g 視野錐 x shift b 輪盤 wall'.
-// Caller passes the lowercased key; we route to _ftueAdvance with a
-// synthetic reason like 'key:q' so step matching is exact.
-function _ftueOnKeyPress(k) {
-  if (!game._ftue?.active) return;
-  _ftueAdvance('key:' + k);
-}
-function _ftueOnSquadOrder(orderId) {
-  if (!game._ftue?.active) return;
-  _ftueAdvance('order:' + orderId);
-}
-function _ftueOnPawnSwap() {
-  if (!game._ftue?.active) return;
-  _ftueAdvance('pawnswap');
-}
-// Spawn 2 allies near the player so squad-order and pawn-swap steps
-// have a target. Fired from _ftueAdvance after the movement step so
-// step 0 still feels solo.
-function _ftueSpawnTutorialAllies() {
+
+// ---- Spawn helper (only one — used by 'tab1' step's onEnter) ----
+function _ftueSpawnAllies() {
   if (typeof allies === 'undefined' || typeof NN_ARENA === 'undefined') return;
   const baseX = player.x, baseY = player.y;
   const slots = [
-    { callsign: 'BRAVO',   ox: -90, oy: 70,  weapon: 'RIFLE', chassis: 'humanoid', style: 'elite' },
-    { callsign: 'CHARLIE', ox:  90, oy: 70,  weapon: 'SMG',   chassis: 'wolf',     style: 'cqb' },
+    { callsign: 'BRAVO',   ox: -90, oy: 70, weapon: 'RIFLE', chassis: 'humanoid', style: 'elite' },
+    { callsign: 'CHARLIE', ox:  90, oy: 70, weapon: 'SMG',   chassis: 'wolf',     style: 'cqb' },
   ];
   for (const s of slots) {
     const a = {
@@ -3249,217 +3361,87 @@ function _ftueSpawnTutorialAllies() {
       x: baseX + s.ox, y: baseY + s.oy,
       angle: 0, gunAngle: 0, gunRecoil: 0, swayPhase: Math.random() * Math.PI*2,
       alive: true, walkPhase: Math.random() * Math.PI*2,
-      fireCd: 0, target: null,
-      lookPhase: Math.random() * Math.PI*2,
+      fireCd: 0, target: null, lookPhase: Math.random() * Math.PI*2,
       team: 0,
       _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
       _weapon: WEAPONS[s.weapon] || WEAPONS.RIFLE,
       _nnDifficulty: s.style,
       _respawnAt: null,
-      _invulnUntil: (typeof game !== 'undefined' && game.time != null) ? game.time + 90 : 90,
+      _invulnUntil: (game.time != null) ? game.time + 90 : 90,
     };
     applyChassisToUnit(a, s.chassis, 2.5, 80, 13);
     allies.push(a);
   }
+  _ftueLog('SPAWN', 'allies BRAVO + CHARLIE deployed');
 }
 
-// FTUE enemy spawns are CURATED, not random. User: '不要單一元素 …
-// 你可以隨機,或者是你為它們精心安排'. Each FTUE encounter is staged so
-// the player meets a distinct chassis / weapon / NN-style combo.
-// Helper to build one — keeps callsite shapes consistent.
-function _ftueMakeEnemy(opts) {
-  const w = WEAPONS[opts.weapon] || WEAPONS.RIFLE;
-  const e = {
-    x: opts.x, y: opts.y,
-    angle: opts.angle != null ? opts.angle : Math.PI,
-    fireCd: 60, fireRate: 50,
-    alive: true, walkPhase: 0,
-    team: 1,
-    _weapon: w,
-    _nnDifficulty: opts.style || 'warrior',
-    _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
-    _respawnAt: null,
-    _ftueSpawn: true,
-    callsign: opts.callsign,
-  };
-  applyChassisToUnit(e, opts.chassis || 'humanoid', 2.5, 80, 13);
-  return e;
-}
-// Step 1 — single enemy named after Hollow-31 (GAME DESIGN.md §8.I).
-// Empty Word Protection syndrome: a humanoid still defending an empty
-// command room. Standard rifle, warrior brain — the canonical baseline
-// threat the player learns to counter.
-function _ftueSpawnFirstEnemy() {
-  if (typeof NN_ARENA === 'undefined') return;
-  enemies.push(_ftueMakeEnemy({
-    callsign: 'HOLLOW-31',
-    x: NN_ARENA.x0 + NN_ARENA.w * 0.78,
-    y: NN_ARENA.y0 + NN_ARENA.h * 0.5,
-    chassis: 'humanoid', weapon: 'RIFLE', style: 'warrior',
-  }));
-}
-// Step 5 — three distinct combos so the player learns the roster lives
-// in the same arena: heavy/LMG anchor, wolf/SMG flanker, humanoid/SNIPER
-// long-lane. Each one of the three GREY VECTOR chassis classes,
-// each with a thematically appropriate NN brain.
-function _ftueSpawnStreakEnemies() {
-  if (typeof NN_ARENA === 'undefined') return;
-  enemies.push(_ftueMakeEnemy({
-    callsign: 'IRON-04',                // Iron Swarm — bee anchor
-    x: NN_ARENA.x0 + NN_ARENA.w * 0.70,
-    y: NN_ARENA.y0 + NN_ARENA.h * 0.35,
-    chassis: 'heavy',    weapon: 'LMG',    style: 'defensive',
-  }));
-  enemies.push(_ftueMakeEnemy({
-    callsign: 'GREY-S2',                // Grey Salvage scrap-wolf
-    x: NN_ARENA.x0 + NN_ARENA.w * 0.82,
-    y: NN_ARENA.y0 + NN_ARENA.h * 0.65,
-    chassis: 'wolf',     weapon: 'SMG',    style: 'cqb',
-  }));
-  enemies.push(_ftueMakeEnemy({
-    callsign: 'BLACK-07',               // Black Signal sharpshooter
-    x: NN_ARENA.x0 + NN_ARENA.w * 0.92,
-    y: NN_ARENA.y0 + NN_ARENA.h * 0.5,
-    chassis: 'humanoid', weapon: 'SNIPER', style: 'sharpshooter',
-  }));
-}
-
-// Build the step list (replaces old _scheduleFirstMatchToasts).
-function _scheduleFirstMatchToasts() {
+// ---- Lifecycle ----
+function _ftueStart() {
   if (!_ftueIsFirstSession()) return;
-  const lang = (typeof getLang === 'function') ? getLang() : 'en';
-  const zh = (lang === 'zh');
-  game._ftue = game_ftue;
-  game._ftue.idx = 0;
-  game._ftue.active = true;
-  game._ftue.flags = { moved: false, kill: 0, auditClose: false, buildOpen: false, place: 0, streak: 0 };
-  game._ftue.stepShownAt = null;     // primed for premature-advance guard
-  game._ftue.log = [];
-  _ftueLog('SEED', 'first-match FTUE seeded — 12 steps, allies + enemies cleared');
-  // Solo step 0 — clear allies and enemies so the player IS alone on the
-  // map for the first move. Each future step transition (handled in
-  // _ftueAdvance) re-introduces the minimum content needed.
+  // Resolve language-specific step list once at start.
+  ftue.active = true;
+  ftue.stepIdx = 0;
+  ftue.stepShownAt = null;
+  ftue.log = [];
+  ftue.steps = FTUE_STEPS.slice();   // shallow copy; entries are read-only
+  // Legacy alias so the dev monitor and side-effect guards that read
+  // game._ftue still work.
+  game._ftue = ftue;
+  _ftueLog('SEED', `first-match FTUE seeded — ${ftue.steps.length} steps, allies + enemies cleared`);
+  // Solo step 0 — clear the arena so the player IS alone.
   if (typeof allies !== 'undefined') allies.length = 0;
   if (typeof enemies !== 'undefined') enemies.length = 0;
-  // Re-build the arena with the dedicated FTUE variant (curated cover
-  // layout — see NN_MAP_VARIANTS 'ftue'). The skirmish init has already
-  // rolled a default variant so we rebuild on top. Mirror what
-  // editorTest does with _forceVariantId.
+  // Force the dedicated FTUE arena variant.
   if (typeof buildNNArenaVariant === 'function' && typeof NN_MAP_VARIANTS !== 'undefined') {
     const ftueIdx = NN_MAP_VARIANTS.findIndex(v => v.id === 'ftue');
     if (ftueIdx >= 0) {
-      // clear any walls/lowCovers from the previous variant
       if (typeof buildings !== 'undefined') buildings.length = 0;
       if (typeof wallLines !== 'undefined') wallLines.length = 0;
       if (typeof lowCovers !== 'undefined') lowCovers.length = 0;
       buildNNArenaVariant(ftueIdx);
     }
   }
-  // Custom camera — zoom out a touch during step 0 so the empty arena
-  // reads as 'space around me, no one else'. Restored to default 1.0
-  // when the FTUE deactivates (in _ftueAdvance final step).
-  if (typeof camera !== 'undefined') {
-    camera.targetScale = 0.85;
-  }
-  // Match-state side-effects from the cleared spawns: invuln window
-  // already set in startNNSkirmish but the units it covered are gone now.
-  // No structures pre-placed here — relay-style outpost (gen + medstation)
-  // belongs to campaign relay, not the FTUE skirmish path.
-  // Mechanics-first training-ground sequence per user spec:
-  //   訓練場 → 游標+wasd → tab-123 → 123 → q e g → 視野錐+x+shift+b → 輪盤+wall
-  // Each step waits for ONE specific input. Combat / Audit Card paperwork
-  // is deferred — '別一開始就要搞文書工作'.
-  game._ftue.steps = zh ? [
-    { speaker: 'LUMEN', advance: 'move',
-      text: '「V-07,訓練場上線。 先試試移動 — WASD。」',
-      hint: 'WASD · 移動' },
-    { speaker: 'LUMEN', advance: 'key:tab',
-      text: '「按 TAB 進指令模式 — 螢幕底會亮出隊伍指令格。」',
-      hint: 'TAB · 進入指令視角' },
-    { speaker: 'LUMEN', advance: 'order:rally',
-      text: '「按 1 對隊伍下『集合』令。 BRAVO 跟 CHARLIE 會跑來你身邊。」',
-      hint: '1 · RALLY 集合' },
-    { speaker: 'LUMEN', advance: 'key:tab',
-      text: '「再按 TAB 退回戰術視角。」',
-      hint: 'TAB · 回戰術' },
-    { speaker: 'LUMEN', advance: 'pawnswap',
-      text: '「戰術下 1-3 = 直接接管隊友的身體。 按 2 接管 BRAVO。」',
-      hint: '2 · 接管 BRAVO' },
-    { speaker: 'LUMEN', advance: 'key:q',
-      text: '「Q 召出偵察 UAV — 看穿牆後。」',
-      hint: 'Q · UAV 偵察' },
-    { speaker: 'LUMEN', advance: 'key:e',
-      text: '「E 發射 FPV 自殺機 — 對遠目標精準爆破。」',
-      hint: 'E · FPV 無人機' },
-    { speaker: 'LUMEN', advance: 'key:g',
-      text: '「G 投擲手雷 — 角落清場。」',
-      hint: 'G · 手雷' },
-    { speaker: 'LUMEN', advance: 'key:x',
-      text: '「視野錐標出 NN 看不到的地方。 X 切換主/副武器。」',
-      hint: 'X · 切換武器' },
-    { speaker: 'LUMEN', advance: 'sprint',
-      text: '「Shift 衝刺 — 體力會跑,別一直按。」',
-      hint: '走路時按住 Shift' },
-    { speaker: 'LUMEN', advance: 'buildOpen',
-      text: '「先按 B 打開建造輪盤。 大部分模塊還沒解鎖 — 你只能用 WALL。」',
-      hint: 'B · 打開建造輪盤' },
-    { speaker: 'LUMEN', advance: 'place',
-      text: '「按 B 打開了建造輪盤(中央那個圓盤)。 點圓盤上的 WALL,再點地面放下一面牆。 沒有滑鼠就用觸控板點。」',
-      hint: '輪盤 → 點 WALL → 點地面' },
-  ] : [
-    { speaker: 'LUMEN', advance: 'move',
-      text: '"V-07. Training ground online. Try moving — WASD."',
-      hint: 'WASD · move' },
-    { speaker: 'LUMEN', advance: 'key:tab',
-      text: '"Press TAB for command view — squad order strip lights up at the bottom."',
-      hint: 'TAB · command view' },
-    { speaker: 'LUMEN', advance: 'order:rally',
-      text: '"Press 1 to call RALLY. BRAVO and CHARLIE will run to you."',
-      hint: '1 · RALLY' },
-    { speaker: 'LUMEN', advance: 'key:tab',
-      text: '"TAB again to return to tactical."',
-      hint: 'TAB · back to tactical' },
-    { speaker: 'LUMEN', advance: 'pawnswap',
-      text: '"In tactical, 1-3 = take over an ally\'s body. Press 2 to swap to BRAVO."',
-      hint: '2 · take BRAVO' },
-    { speaker: 'LUMEN', advance: 'key:q',
-      text: '"Q deploys a recon UAV — see past walls."',
-      hint: 'Q · UAV' },
-    { speaker: 'LUMEN', advance: 'key:e',
-      text: '"E fires an FPV kamikaze drone — precise blast at range."',
-      hint: 'E · FPV drone' },
-    { speaker: 'LUMEN', advance: 'key:g',
-      text: '"G throws a grenade — clear corners."',
-      hint: 'G · grenade' },
-    { speaker: 'LUMEN', advance: 'key:x',
-      text: '"Vision cone shows what NN can\'t see. X swaps primary / secondary."',
-      hint: 'X · swap weapon' },
-    { speaker: 'LUMEN', advance: 'sprint',
-      text: '"Shift to sprint — stamina drains, pace yourself."',
-      hint: 'Shift while moving' },
-    { speaker: 'LUMEN', advance: 'buildOpen',
-      text: '"Press B first to open the build radial. Most modules are locked — only WALL is available."',
-      hint: 'B · open build radial' },
-    { speaker: 'LUMEN', advance: 'place',
-      text: '"Pressing B opened the build wheel (the disc on screen). Click WALL on the wheel, then click the ground to drop a wall. Trackpad clicks work."',
-      hint: 'Wheel → click WALL → click ground' },
-  ];
-  // Show the first step after a small delay so the match has loaded in
-  setTimeout(() => {
-    if (!game._ftue.active) return;
-    const s = game._ftue.steps[0];
-    _ftueDialog(s.speaker, s.text, s.hint);
-  }, 1200);
+  // Show step 0 after a small grace period so the match has finished
+  // initialising. DEFER guard catches any input that arrives earlier.
+  setTimeout(() => { if (ftue.active) _ftueShowCurrent(); }, 1200);
 }
-// Auto-finalize on match end so the bar disappears even if the player
-// quits mid-FTUE — and the flag still flips to '1' so the next match
-// is clean.
 function _finalizeFtue() {
-  if (game._ftue && game._ftue.active) {
-    game._ftue.active = false;
-    _ftueHide();
-    try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
-  }
+  if (!ftue.active) return;
+  _ftueLog('FINALIZE', 'match ended mid-FTUE; closing bar + flipping ag.firstMatch');
+  ftue.active = false;
+  _ftueHide();
+  const dlg = document.getElementById('ftueDialogue');
+  if (dlg) dlg.setAttribute('hidden', '');
+  try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
+}
+
+// ---- Compat shims (kept so existing callsites don't all need touching
+//      in one go; they all just route through _ftueEvent now). Bulk
+//      delete once gameplay paths migrate to direct _ftueEvent calls.
+function _scheduleFirstMatchToasts() { _ftueStart(); }
+function _ftueOnMove()       { _ftueEvent('move'); }
+function _ftueOnKill()       { _ftueEvent('kill'); }
+function _ftueOnAuditClose() { _ftueEvent('auditClose'); }
+function _ftueOnBuildOpen()  { _ftueEvent('buildOpen'); }
+function _ftueOnPlace()      { _ftueEvent('place'); }
+function _ftueOnStreak3()    { _ftueEvent('streak3'); }
+function _ftueOnKeyPress(k)  { _ftueEvent('key:' + k); }
+function _ftueOnSquadOrder(o){ _ftueEvent('order:' + o); }
+function _ftueOnPawnSwap()   { _ftueEvent('pawnswap'); }
+function _ftueAdvance(reason){ _ftueEvent(reason); }
+function _ftueDialog(s, t, h) {
+  // Direct dialog set used only by very old code paths; updates the bar
+  // text without driving the state machine. Modern code goes through
+  // _ftueShowCurrent.
+  const el = document.getElementById('ftueDialogue');
+  if (!el) return;
+  document.getElementById('ftueSpeaker').textContent = s;
+  document.getElementById('ftueText').innerHTML = t;
+  document.getElementById('ftueHint').textContent = h || '';
+  el.removeAttribute('hidden');
+  void el.offsetWidth;
+  el.classList.add('show');
+  ftue.stepShownAt = (game.time != null) ? game.time : 0;
 }
 
 // ============ STAGE HINTS ============
@@ -5636,48 +5618,18 @@ window.addEventListener('keydown', e => {
   }
   // While paused, swallow all other hotkeys
   if (game._paused) return;
-  // FTUE key lock — during the first match, restrict the keyset so the
-  // player isn't drowning in unexplained options. Each step unlocks more:
-  //   step 0-1: WASD + mouse + R + H + Esc/P only
-  //   step 3+:  + B (build) — taught at this step
-  //   step 5+/done: full keyset
-  // User: '鎖 TAB / Q / E / G / B 鍵直到對應 step'.
-  if (game._ftue && game._ftue.active && game.state === 'playing') {
-    const lvl = game._ftue.idx;
-    // Always-allowed keys (movement / fire-via-mouse-elsewhere / reload /
-    // recall / pause already handled above). Keys we deliberately gate:
-    //   q = UAV recon, e = FPV drone, g = grenade, b = build, tab = command,
-    //   x = weapon swap, u = upgrade, v = aim assist, n = dev skip
-    // Lock table for the mechanics-first sequence:
-    //   step 0 (move)            → only WASD + R + Esc/P + H
-    //   step 1+ (TAB tutorial)   → + TAB
-    //   step 5+ (Q tutorial)     → + Q
-    //   step 6+ (E tutorial)     → + E
-    //   step 7+ (G tutorial)     → + G
-    //   step 8+ (X tutorial)     → + X
-    //   step 10+ (B tutorial)    → + B
-    //   FTUE done                → all
-    // V (aim assist), U (upgrade), N (dev) stay locked until FTUE done
-    // — these aren't in the user-spec teaching sequence.
-    const lockedAtThisStep = {
-      tab: lvl < 1,
-      q:   lvl < 5,
-      e:   lvl < 6,
-      g:   lvl < 7,
-      x:   lvl < 8,
-      b:   lvl < 10,
-      u:   lvl < 99,
-      v:   lvl < 99,
-      n:   lvl < 99,
-    };
-    if (lockedAtThisStep[k]) {
-      // Surface a soft hint the first time the player pokes a locked key
-      if (typeof showSwapToast === 'function' && !game._ftueLockToastTick) {
-        game._ftueLockToastTick = (game.time || 0) + 60;
-        showSwapToast(T('▸ 教學中 · 該功能稍後解鎖', '▸ Tutorial · key unlocks shortly'));
-      }
-      return;
+  // FTUE key lock — driven by the data-driven _ftueKeyLocked accessor.
+  // Each step's unlockKeys list (FTUE_STEPS at top of file) decides what's
+  // unlocked at that step. Always-OK keys (WASD / R / Shift / numbers /
+  // H / Esc / P) live in _FTUE_ALWAYS_OK_KEYS and are never locked.
+  // No more magic-number lvl checks — re-ordering steps just works.
+  if (typeof _ftueKeyLocked === 'function' && _ftueKeyLocked(k)
+      && game.state === 'playing') {
+    if (typeof showSwapToast === 'function' && !game._ftueLockToastTick) {
+      game._ftueLockToastTick = (game.time || 0) + 60;
+      showSwapToast(T('▸ 教學中 · 該功能稍後解鎖', '▸ Tutorial · key unlocks shortly'));
     }
+    return;
   }
   if (game.state === 'playing') {
     if (k === 'q') { if (typeof _ftueOnKeyPress === 'function') _ftueOnKeyPress('q'); toggleDrone(); }
@@ -14688,17 +14640,12 @@ function updateCamera() {
     camera.targetScale = 1;
     camera.targetRotation = 0;
   }
-  // FTUE custom cinematography — wider during early steps (alone /
-  // squad arriving), pulls in as gameplay layers reveal.
-  //   step 0     (alone)              scale 0.78
-  //   step 1-4   (TAB / squad / swap) scale 0.88   (allies on map, framed wide)
-  //   step 5-9   (specials + sprint)  scale 0.95
-  //   step 10+   (build phase)        scale 1.00
-  if (game._ftue && game._ftue.active && game.mode === 'tactical') {
-    const lvl = game._ftue.idx;
-    if      (lvl === 0) camera.targetScale = 0.78;
-    else if (lvl <= 4)  camera.targetScale = 0.88;
-    else if (lvl <= 9)  camera.targetScale = 0.95;
+  // FTUE custom cinematography — data-driven via cameraScale on the
+  // current step's config (FTUE_STEPS, see top of file). Returns null
+  // when FTUE inactive so the default tactical scale wins.
+  if (game.mode === 'tactical') {
+    const ftueScale = (typeof _ftueCameraScale === 'function') ? _ftueCameraScale() : null;
+    if (ftueScale != null) camera.targetScale = ftueScale;
   }
   camera.scale += (camera.targetScale - camera.scale) * 0.1;
   let rotDiff = camera.targetRotation - camera.rotation;
@@ -16928,26 +16875,21 @@ function drawDrone(x, y, color, phase) {
 
 
 // ============ HUD ============
-// FTUE progressive HUD reveal — keeps the screen clean while the visual-novel
-// dialogue bar is teaching one step at a time. User: '上只有我自己一個獨立
-// 個體,然後不要有其他的介面 … 因為會階段式的解鎖嘛,教學嘛'.
-//
-// Reveal thresholds (game._ftue.idx):
-//   step 0 (move)      → only player + dialogue, NO HUD at all
-//   step 1+ (combat)   → HP / ammo / crosshair revealed (combat needs them)
-//   step 3+ (build)    → energy chip + status panel
-//   step 4+ (placed)   → minimap
-//   FTUE done          → full HUD
-function _ftueHudLevel() {
-  if (!game._ftue || !game._ftue.active) return 99;   // no FTUE = full HUD
-  return game._ftue.idx;
-}
+// HUD render — FTUE-aware via the data-driven _ftueRevealed(key) accessor.
+// Outside the FTUE every key returns true (full HUD). During FTUE the
+// reveal map on each step config (above, FTUE_STEPS) decides what shows.
 function renderHUD() {
-  // FTUE step 0 (movement-only): bail out before drawing ANY HUD chunk.
-  // Dialogue bar is HTML so it stays. Player + crosshair come from
+  // Compute reveal flags ONCE per frame so we don't trip the data lookup
+  // dozens of times. Keys: hp, ammo, mission, minimap, energy.
+  const showHp     = _ftueRevealed('hp');
+  const showAmmo   = _ftueRevealed('ammo');
+  const showMin    = _ftueRevealed('minimap');
+  const showMsn    = _ftueRevealed('mission');
+  const showEnergy = _ftueRevealed('energy');
+  // Step 0 ('wake') has nothing revealed → bail before drawing any chunk.
+  // Dialog bar is HTML so it stays. Player + crosshair come from
   // renderHUDOverlays which we still call below.
-  const _ftueLvl = _ftueHudLevel();
-  if (_ftueLvl < 1) {
+  if (!showHp && !showAmmo && !showMin && !showMsn && !showEnergy) {
     // Still tick the swap-toast / FTUE-side animations + crosshair.
     renderHUDOverlays();
     renderDeathRecap();
@@ -17117,11 +17059,12 @@ function renderHUD() {
   // overlap the HTML overlay (the user reported '兩個視窗會重疊').
   const _endCard = document.getElementById('nnEndCard');
   const _endCardVisible = _endCard && _endCard.style.display === 'flex';
-  // FTUE: hide mission objective panel + compass during the entire
-  // training-ground sequence (steps 0-11). User: '不應該有其他功能或顯示
-  // 其他選項'. Once FTUE finishes (_ftueLvl = 99), the panel comes back.
-  if (mission && mission.renderHUD && !_endCardVisible && _ftueLvl >= 99) mission.renderHUD();
-  if (mission && (game.mode === 'tactical' || game.mode === 'command') && _ftueLvl >= 99) drawObjectiveCompass();
+  // FTUE: hide mission objective panel + compass while tutorial is
+  // active. Reveal driven by the per-step `reveal.mission` flag — no
+  // step in the current list sets it, so the panel + compass stay
+  // dark for all 12 steps and come back when ftue.active flips false.
+  if (mission && mission.renderHUD && !_endCardVisible && showMsn) mission.renderHUD();
+  if (mission && (game.mode === 'tactical' || game.mode === 'command') && showMsn) drawObjectiveCompass();
 
   // ----- Compact bottom command bar: HP + Ammo + UAV in one slim row -----
   const barH = 54;
@@ -17187,11 +17130,12 @@ function renderHUD() {
     ctx.fillRect(barX + 396 + i*18, barY + 30, 14, 10);
   }
 
-  // FTUE: minimap doesn't appear until step 10 (build-radial tutorial).
-  // Player needs spatial awareness to plan placements; before that the
-  // training is pure key-press flow and minimap would just clutter.
-  if (_ftueLvl < 10) {
-    // continue to crosshair + mode overlay below; just skip the minimap block
+  // FTUE: minimap reveal is driven by reveal.minimap on the current step
+  // (set true on the 'place' step). Before that we still need to call
+  // drawDefenseShop (radial + build pill) AND renderHUDOverlays
+  // (crosshair / kill-streak chip / death recap), so we early-return
+  // through them without drawing the minimap panel.
+  if (!showMin) {
     if (game._nnMode && !game._buildShopDrawnThisFrame) {
       drawDefenseShop();
     }
