@@ -4084,12 +4084,19 @@ const buildMode = { active: false, radialOpen: false, kind: 'wall' };
 // forward; Esc bails out anywhere. Activating from OFF opens the radial
 // straight away so the user can pick a module without an extra click.
 function toggleBuildMode() {
-  // Building works in any NN mode now. The energy economy ticks the same
-  // way regardless — kills and generators are the only payout sources.
-  if (!game._nnMode || game.state !== 'playing') {
+  // Building works in any in-match state — skirmish + campaign both. Was
+  // gated on game._nnMode which made B a no-op in campaign even though
+  // initMission already seeds _energy / _structures for missions with a
+  // setupStructures hook. User: '建造模式輪盤不見'.
+  if (game.state !== 'playing') {
     showSwapToast(T('未在战场中', 'Not on the battlefield'));
     return;
   }
+  // Lazy-init the build economy so B works in campaign missions that
+  // didn't pre-seed via setupStructures (convoy / blackbox / capture /
+  // breach / hive). Player gets a starting 100⚡ on first press.
+  if (game._energy == null) game._energy = 100;
+  if (!game._structures) game._structures = [];
   if (!buildMode.active) {
     buildMode.active = true;
     buildMode.radialOpen = true;
@@ -11243,9 +11250,14 @@ function _radialKindUnderCursor(sx, sy) {
 }
 
 function drawDefenseShop() {
-  // Status pill + radial render in every NN mode now that build works
-  // anywhere. Pill stays minimal so non-defense modes aren't cluttered.
-  if (!game._nnMode) return;
+  // Status pill + radial render anywhere build is wired. Used to gate on
+  // game._nnMode here, but campaign now seeds _energy + _structures via
+  // initMission's setup hook (relay mission etc.) — gating on _nnMode
+  // hid the radial entirely in campaign even though buildMode.active +
+  // radialOpen were both true. User report: '建造模式輪盤不見'.
+  // Render whenever the build economy is initialised on the game object.
+  const buildReady = game._nnMode || game._structures != null;
+  if (!buildReady) return;
   // Tier-gate: hide the build hint until DEFENSE is unlocked (tier 2).
   // Building still works at any tier — but the HUD stays clean for new
   // players until the feature is on their radar. Always show in defense
