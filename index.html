@@ -13037,8 +13037,13 @@ function update() {
   // UAV runs without battery drain — keep deployed indefinitely.
 
   updateSquadIntel();
-  // NN AI inference (async, fires every other frame so it doesn't dominate the loop)
-  if (game._nnMode && (game.time & 1)) nnTick();
+  // NN AI inference (async, fires every other frame so it doesn't dominate
+  // the loop). Used to gate on game._nnMode here, but campaign enemies are
+  // now NN-merged (`_useNN: true` on each spawnSoldier) — the gate would
+  // skip the dispatcher and they'd freeze. User report: '敵人又變木頭人了'.
+  // The dispatcher's own early-out handles 'no NN units' cleanly so calling
+  // it every-other-frame is safe in legacy modes too.
+  if (game.time & 1) nnTick();
 
   updateAllies();
   updateEnemies();
