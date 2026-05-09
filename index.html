@@ -2834,6 +2834,20 @@ function dismissIntro() {
   if (intro) intro.setAttribute('hidden', '');
   try { localStorage.setItem('ag.introSeen', '1'); } catch (e) {}
   game._paused = false;
+  // GREY VECTOR: WAKE is the end-of-intro narrative beat — it should land
+  // the player INTO the world, not bounce them back to a start screen with
+  // a second WAKE button (which read as 'skip ahead' rather than 'wake up').
+  // User: '甦醒不應該是skip!'. So when the player is on their first session
+  // (ag.firstMatch !== '1'), we auto-fire the WAKE button instead of
+  // showing the start menu with WAKE as a separate click.
+  let isFirst = false;
+  try { isFirst = localStorage.getItem('ag.firstMatch') !== '1'; } catch (e) {}
+  if (isFirst) {
+    setTimeout(() => {
+      const wakeBtn = document.getElementById('firstWakeBtn');
+      if (wakeBtn) wakeBtn.click();
+    }, 250);   // brief beat so the intro fade-out lands before the match
+  }
 }
 
 // Wire intro buttons after DOM is ready
@@ -3070,11 +3084,24 @@ function _ftueAdvance(reason) {
   if (!game._ftue || !game._ftue.active) return;
   const cur = game._ftue.steps[game._ftue.idx];
   if (!cur || cur.advance !== reason) return;
+  const advancingFromIdx = game._ftue.idx;
   // Hide current, schedule next after a beat
   _ftueHide();
   setTimeout(() => {
     if (!game._ftue.active) return;
     game._ftue.idx++;
+    // Solo-FTUE world progression — gate gameplay content on step idx so
+    // the user's '只有我自己一個獨立個體' really lands. Each step transition
+    // adds the minimum new content needed for the next step.
+    if (advancingFromIdx === 0) {
+      // Player just learned to move → spawn the first enemy for the
+      // first-kill moment. Allies stay absent; the player is alone.
+      _ftueSpawnFirstEnemy();
+    } else if (advancingFromIdx === 4) {
+      // Player just placed their first structure → drop two more enemies
+      // so the streak-of-3 step has actual targets.
+      _ftueSpawnStreakEnemies();
+    }
     if (game._ftue.idx >= game._ftue.steps.length) {
       // Done — mark seen, deactivate
       game._ftue.active = false;
@@ -3093,6 +3120,48 @@ function _ftueOnBuildOpen()  { if (game._ftue?.active) { game._ftue.flags.buildO
 function _ftueOnPlace()      { if (game._ftue?.active) { game._ftue.flags.place++;     _ftueAdvance('place'); } }
 function _ftueOnStreak3()    { if (game._ftue?.active) { game._ftue.flags.streak = 3; _ftueAdvance('streak3'); } }
 
+// Spawn one Red Grid patroller for the FTUE step-1 first-kill moment.
+// Placed within the NN_ARENA, away from the player, so they have to take
+// a few steps before engagement.
+function _ftueSpawnFirstEnemy() {
+  if (typeof NN_ARENA === 'undefined') return;
+  const e = {
+    x: NN_ARENA.x0 + NN_ARENA.w * 0.78,
+    y: NN_ARENA.y0 + NN_ARENA.h * 0.5,
+    angle: Math.PI, fireCd: 60, fireRate: 50,
+    alive: true, walkPhase: 0,
+    team: 1,
+    _weapon: WEAPONS.RIFLE,
+    _nnDifficulty: 'warrior',
+    _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+    _respawnAt: null,
+    _ftueSpawn: true,        // tag so nothing tries to respawn this slot
+  };
+  applyChassisToUnit(e, 'humanoid', 2.5, 80, 13);
+  enemies.push(e);
+}
+// On step 4→5 advance, drop in 2 more so the player can chain a streak
+// of 3 (1 already alive + 2 new = 3 kills available).
+function _ftueSpawnStreakEnemies() {
+  if (typeof NN_ARENA === 'undefined') return;
+  for (let i = 0; i < 2; i++) {
+    const e = {
+      x: NN_ARENA.x0 + NN_ARENA.w * (0.65 + i * 0.12),
+      y: NN_ARENA.y0 + NN_ARENA.h * (0.35 + i * 0.30),
+      angle: Math.PI, fireCd: 60, fireRate: 50,
+      alive: true, walkPhase: 0,
+      team: 1,
+      _weapon: WEAPONS.RIFLE,
+      _nnDifficulty: i === 0 ? 'warrior' : 'cqb',
+      _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+      _respawnAt: null,
+      _ftueSpawn: true,
+    };
+    applyChassisToUnit(e, i === 0 ? 'humanoid' : 'wolf', 2.5, 80, 13);
+    enemies.push(e);
+  }
+}
+
 // Build the step list (replaces old _scheduleFirstMatchToasts).
 function _scheduleFirstMatchToasts() {
   if (!_ftueIsFirstSession()) return;
@@ -3102,6 +3171,15 @@ function _scheduleFirstMatchToasts() {
   game._ftue.idx = 0;
   game._ftue.active = true;
   game._ftue.flags = { moved: false, kill: 0, auditClose: false, buildOpen: false, place: 0, streak: 0 };
+  // Solo step 0 — clear allies and enemies so the player IS alone on the
+  // map for the first move. Each future step transition (handled in
+  // _ftueAdvance) re-introduces the minimum content needed.
+  if (typeof allies !== 'undefined') allies.length = 0;
+  if (typeof enemies !== 'undefined') enemies.length = 0;
+  // Match-state side-effects from the cleared spawns: invuln window
+  // already set in startNNSkirmish but the units it covered are gone now.
+  // No structures pre-placed here — relay-style outpost (gen + medstation)
+  // belongs to campaign relay, not the FTUE skirmish path.
   game._ftue.steps = zh ? [
     { speaker: 'LUMEN', advance: 'move',
       text: '「V-07,聽得到嗎? 上次你掉到 12% — Mote 推了你一下,你才醒過來。」',
@@ -5332,6 +5410,33 @@ window.addEventListener('keydown', e => {
   }
   // While paused, swallow all other hotkeys
   if (game._paused) return;
+  // FTUE key lock — during the first match, restrict the keyset so the
+  // player isn't drowning in unexplained options. Each step unlocks more:
+  //   step 0-1: WASD + mouse + R + H + Esc/P only
+  //   step 3+:  + B (build) — taught at this step
+  //   step 5+/done: full keyset
+  // User: '鎖 TAB / Q / E / G / B 鍵直到對應 step'.
+  if (game._ftue && game._ftue.active && game.state === 'playing') {
+    const lvl = game._ftue.idx;
+    // Always-allowed keys (movement / fire-via-mouse-elsewhere / reload /
+    // recall / pause already handled above). Keys we deliberately gate:
+    //   q = UAV recon, e = FPV drone, g = grenade, b = build, tab = command,
+    //   x = weapon swap, u = upgrade, v = aim assist, n = dev skip
+    const lockedAtThisStep = {
+      q: lvl < 5, e: lvl < 5, g: lvl < 5,
+      b: lvl < 3,             // build unlocked at the build-tutorial step
+      tab: lvl < 5, x: lvl < 5, u: lvl < 4,
+      v: lvl < 1, n: lvl < 99,
+    };
+    if (lockedAtThisStep[k]) {
+      // Surface a soft hint the first time the player pokes a locked key
+      if (typeof showSwapToast === 'function' && !game._ftueLockToastTick) {
+        game._ftueLockToastTick = (game.time || 0) + 60;
+        showSwapToast(T('▸ 教學中 · 該功能稍後解鎖', '▸ Tutorial · key unlocks shortly'));
+      }
+      return;
+    }
+  }
   if (game.state === 'playing') {
     if (k === 'q') toggleDrone();
     else if (k === 'e') launchFPV();
