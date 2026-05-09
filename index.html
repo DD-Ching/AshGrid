@@ -2267,9 +2267,54 @@ function _wireFooterModals() {
   const auditClose = document.getElementById('auditCloseBtn');
   const auditModal = document.getElementById('auditModal');
   if (auditBtn && auditModal) auditBtn.onclick = () => { buildAuditConsole(); auditModal.removeAttribute('hidden'); };
-  if (auditClose) auditClose.onclick = () => auditModal.setAttribute('hidden', '');
-  if (auditModal) auditModal.onclick = (e) => { if (e.target === auditModal) auditModal.setAttribute('hidden', ''); };
+  if (auditClose) auditClose.onclick = () => {
+    auditModal.setAttribute('hidden', '');
+    // FTUE Phase 4 — closing the audit modal also unpauses the game when
+    // the modal was triggered by the first-kill flow. Otherwise the game
+    // stays frozen behind the (now-hidden) overlay.
+    if (game._auditPaused) {
+      game._auditPaused = false;
+      game._paused = false;
+    }
+  };
+  if (auditModal) auditModal.onclick = (e) => {
+    if (e.target === auditModal) {
+      auditModal.setAttribute('hidden', '');
+      if (game._auditPaused) {
+        game._auditPaused = false;
+        game._paused = false;
+      }
+    }
+  };
   refreshLogBadge();
+}
+
+// FTUE Phase 4 — first kill of first match auto-pops an Audit Card so the
+// diagnose-and-execute mechanic gets introduced via the killing the player
+// just did. Gated on ag.firstAuditSeen ('1' once played) so veterans see
+// no popup. Game pauses while modal is open; close path unpauses.
+// Spec: GAME DESIGN.md Section 25.B Phase 4.
+function _maybeTriggerFirstKillAudit(playerWasShooter) {
+  if (!playerWasShooter) return;            // only fire on player's own kill
+  let alreadySeen = false;
+  try { alreadySeen = localStorage.getItem('ag.firstAuditSeen') === '1'; } catch (e) {}
+  if (alreadySeen) return;
+  try { localStorage.setItem('ag.firstAuditSeen', '1'); } catch (e) {}
+  const auditModal = document.getElementById('auditModal');
+  if (!auditModal || typeof buildAuditConsole !== 'function') return;
+  // Pause the running match while the player reads + chooses
+  game._paused = true;
+  game._auditPaused = true;
+  // showSwapToast immediately so the player understands what's happening
+  if (typeof showSwapToast === 'function') {
+    showSwapToast(T('▸ FIRST AUDIT — 你剛剛處決了一個 Syndrome carrier',
+                    '▸ FIRST AUDIT — you just executed a Syndrome carrier'));
+  }
+  // Slight delay so the kill VFX lands first before world freezes mid-frame
+  setTimeout(() => {
+    buildAuditConsole();
+    auditModal.removeAttribute('hidden');
+  }, 260);
 }
 
 // ============ GREY VECTOR — AUDIT CONSOLE ============
@@ -3357,31 +3402,31 @@ const STRUCTURE_DEFS = {
     range: 380, fireCd: 60, dmg: 25,
     needsPower: true,           // dies if no generator can reach it
     ammoPerShot: 3,             // each shot drains game._energy by this much
-    label: () => T('自动炮塔', 'TURRET'),
+    label: () => T('判決砲塔 VERDICT', 'VERDICT TURRET'),
   },
   generator: {
     cost: 80, hp: 50, size: 50, blocks: false, blocksLOS: false,
     energyPerSec: 1.0,
     powerSource: true,          // emits power; powerR = how far power radiates
     powerR: 200,
-    label: () => T('能源', 'GEN'),
+    label: () => T('種子反應爐 SEED REACTOR', 'SEED REACTOR'),
   },
   camera: {
     cost: 60, hp: 40, size: 40, blocks: false, blocksLOS: false,
     visionR: 360,
     needsPower: true,           // unpowered = no vision feed
-    label: () => T('监视器', 'CAM'),
+    label: () => T('審計鏡 AUDIT LENS', 'AUDIT LENS'),
   },
   bot: {
     cost: 180, hp: 0, size: 0, blocks: false, blocksLOS: false,  // not a structure once placed
     isUnitSpawner: true,
-    label: () => T('机器人', 'BOT'),
+    label: () => T('同盟審計單位 ALLY', 'ALLIED AUDIT UNIT'),
   },
   terminal: {
     cost: 200, hp: 60, size: 50, blocks: false, blocksLOS: false,
     airstrikeCd: 1800,    // 30s between airstrikes
     needsPower: true,
-    label: () => T('终端', 'TERM'),
+    label: () => T('審計台 AUDIT CONSOLE', 'AUDIT CONSOLE'),
   },
   // Mine: invisible (to enemies; faint to player) — detonates when an enemy
   // enters TRIGGER_R. Cheap one-shot AOE; great for choke points but loses
@@ -3404,14 +3449,14 @@ const STRUCTURE_DEFS = {
   sensor: {
     cost: 30, hp: 30, size: 30, blocks: false, blocksLOS: false,
     pingR: 320,
-    label: () => T('感测器', 'SENSOR'),
+    label: () => T('診斷感測器 DIAGNOSTIC', 'DIAGNOSTIC SENSOR'),
   },
   // Smoke emitter: every 6s spawns a smoke cloud that blocks line-of-sight
   // for 5s in 140u radius. Tactical — denies enemy NN aim through it.
   smoke: {
     cost: 70, hp: 50, size: 36, blocks: false, blocksLOS: false,
     emitCd: 360, cloudLife: 300, cloudR: 140,
-    label: () => T('烟雾', 'SMOKE'),
+    label: () => T('靜默雲 STATIC', 'STATIC CLOUD'),
   },
   // Tesla coil: every fireCd ticks finds the nearest enemy in range, blasts
   // it for primary damage, then chains the bolt to up to 3 more enemies
@@ -3423,7 +3468,7 @@ const STRUCTURE_DEFS = {
     range: 300, fireCd: 90, dmg: 30, chainR: 110, chainDmg: [22, 16, 10], chainMax: 3,
     needsPower: true,
     ammoPerShot: 5,
-    label: () => T('特斯拉', 'TESLA'),
+    label: () => T('切斷線圈 SEVERANCE', 'SEVERANCE COIL'),
   },
   // EMP pylon: every emitCd ticks, stuns all enemies in pulseR for stunTicks
   // — they freeze in place + don't fire. No damage, pure crowd control.
@@ -3433,7 +3478,7 @@ const STRUCTURE_DEFS = {
     emitCd: 240, pulseR: 220, stunTicks: 180,
     needsPower: true,
     ammoPerShot: 8,
-    label: () => T('EMP', 'EMP'),
+    label: () => T('LUMEN 抑制器', 'LUMEN SUPPRESSOR'),
   },
   // Med station: every healCd ticks heals each ally in radius healR for
   // healAmt. Doesn't heal the player's own structures (they need rockets
@@ -3442,7 +3487,7 @@ const STRUCTURE_DEFS = {
     cost: 100, hp: 50, size: 32, blocks: false, blocksLOS: false,
     healCd: 60, healR: 200, healAmt: 4,
     needsPower: true,
-    label: () => T('医疗站', 'MED'),
+    label: () => T('修復場 REPAIR FIELD', 'REPAIR FIELD'),
   },
   // Drone bay: every spawnCd, launches a mini autonomous FPV drone that
   // homes on the nearest enemy + detonates on contact. Drones live in
@@ -3451,7 +3496,7 @@ const STRUCTURE_DEFS = {
     cost: 200, hp: 80, size: 38, blocks: false, blocksLOS: false,
     spawnCd: 360, droneHp: 30, droneSpeed: 5, droneDmg: 40, droneBlastR: 60,
     needsPower: true,
-    label: () => T('蜂群', 'DRONES'),
+    label: () => T('審計蜂群 SWARM', 'AUDITOR SWARM'),
   },
 };
 const STRUCTURE_ORDER = ['cover', 'wall', 'bunker', 'turret', 'generator', 'camera', 'bot', 'terminal',
@@ -9204,7 +9249,7 @@ MISSION_FACTORIES.escort = function(mapDef) {
   return {
     title: '护送补给车',
     titleEn: 'CONVOY ESCORT',
-    objective: T('保护 Cargo UGV 抵达终点', 'Escort the Cargo UGV to extraction'),
+    objective: T('護送 Cargo UGV — 內含一片 Seed Fragment', 'Escort the Cargo UGV — it carries a Seed Fragment'),
     ugv, path,
     update() {
       // First-frame: any enemies that pre-spawned via spawnWave get the UGV
@@ -9399,7 +9444,7 @@ MISSION_FACTORIES.capture = function(mapDef) {
   return {
     title: '夺取讯号节点',
     titleEn: 'CAPTURE NODES',
-    objective: T('占领 A · B · C 三个节点', 'Capture nodes A · B · C'),
+    objective: T('登入 A · B · C 三節點 — 它們仍要求合法授權,但無人在後方', 'Authenticate at nodes A · B · C — they still demand login but no one is behind them'),
     zones,
     update() {
       for (const z of zones) {
@@ -9477,7 +9522,7 @@ MISSION_FACTORIES.destroyHive = function(mapDef) {
   return {
     title: '摧毁无人机蜂巢',
     titleEn: 'DESTROY HIVE',
-    objective: T('炸毁中央蜂巢塔，阻止 FPV 持续生成', 'Destroy the hive tower · stop FPV spawns'),
+    objective: T('炸毀蜂巢 — 但蜂群是 Mother-of-Threads 唯一的「自己」', 'Destroy the hive — the swarm is the only self Mother-of-Threads has'),
     hive,
     update() {
       if (!hive.alive) return;
@@ -9551,7 +9596,7 @@ MISSION_FACTORIES.recover = function(mapDef) {
   return {
     title: '回收黑盒',
     titleEn: 'RECOVER BLACK BOX',
-    objective: T('找到坠毁单元的资料核心，带回撤离区', 'Recover the data core · return to extraction'),
+    objective: T('回收 Black Box — 上一個 Auditor 的最後 cycle 在裡面', 'Recover the Black Box — it holds the last cycle of a previous Auditor'),
     blackBox, extraction,
     update() {
       blackBox.pulse += 0.08;
@@ -9634,7 +9679,7 @@ MISSION_FACTORIES.heavyInsert = function(mapDef) {
   return {
     title: '重型机具进场',
     titleEn: 'HEAVY INSERTION',
-    objective: T('护送破障 UGV 进入资料核心并完成破障', 'Escort breach UGV into the core · complete the breach'),
+    objective: T('護送 Heavy Insert UGV — 切進 Codex 法律核心', 'Escort the breach UGV — cut into the Codex legal core'),
     heavy, target,
     update() {
       if (!heavy.alive) return;
@@ -9742,7 +9787,7 @@ MISSION_FACTORIES.hold = function(mapDef) {
   return {
     title: '坚守最后中继站',
     titleEn: 'HOLD THE RELAY',
-    objective: T('守住中继站 90 秒不失守', 'Hold the relay for 90 seconds'),
+    objective: T('審計訊號塔 — 它對著沒人的房間呼叫了 99+ 天', 'Audit the relay — it has called an empty room for 99+ days'),
     relay, duration,
     // Spawn player + squad AT the relay, not 1100 u west on the map's default
     // spawn (which made the first 7-8 s of a 90 s mission a walk-in).
@@ -9878,9 +9923,9 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   const KILL_GOAL = Math.max(5, 3 * Math.max(blueSize, redSize));
 
   return {
-    title: 'NN 对抗',
-    titleEn: 'NN DEATHMATCH',
-    objective: T(`首达 ${KILL_GOAL} 击杀 · 或 90 秒内击杀更多`, `First to ${KILL_GOAL} kills · or most at 90s`),
+    title: 'AUDITOR vs AUDITOR',
+    titleEn: 'AUDITOR vs AUDITOR',
+    objective: T(`先處決 ${KILL_GOAL} 個 Syndrome carrier · 90 秒計時`, `First to process ${KILL_GOAL} Syndrome carriers · 90s clock`),
     teamKills, KILL_GOAL,
 
     update() {
@@ -10675,8 +10720,8 @@ MISSION_FACTORIES.nnSurvival = function(mapDef) {
 
   return {
     title: 'NN 生存',
-    titleEn: 'NN SURVIVAL',
-    objective: T('存活 · 清除每一波', 'Survive · clear every wave'),
+    titleEn: 'THE FACTORY THAT PREVENTED WAR',
+    objective: T('守住 — 越多殺戮,工廠生產越多敵人證明防衛必要', 'Hold — the more you kill, the more it manufactures'),
     _endAt: null,
 
     update() {
@@ -11092,7 +11137,7 @@ MISSION_FACTORIES.nnDefense = function(mapDef) {
 
   return {
     title: 'NN 防御',
-    titleEn: 'NN DEFENSE',
+    titleEn: 'CUSTODIAN VAULT — DEFEND THE AUDIT STATION',
     objective: T(`建造防御 · 撑过每一波`, `Build defenses · hold every wave`),
 
     update() {
@@ -11390,7 +11435,7 @@ MISSION_FACTORIES.nnHelo = function(mapDef) {
   return {
     title: 'NN 撤离',
     titleEn: 'HELO EXTRACT',
-    objective: T('守住 LZ · 直升机降落 · 全员撤离', 'Hold LZ · helo descends · all extract'),
+    objective: T('REACH THE ENGINE FOUNDATION — 撤離 The Last Cyborg', 'REACH THE ENGINE FOUNDATION — extract The Last Cyborg'),
     _endAt: null,
 
     update() {
@@ -11599,7 +11644,7 @@ MISSION_FACTORIES.nnConvoy = function(mapDef) {
   return {
     title: 'NN 护送',
     titleEn: 'CONVOY ESCORT',
-    objective: T('护送 UGV 到东边 · 不让它被打爆', 'Escort UGV east · keep it alive'),
+    objective: T('護送 UGV 東進 — 它載著一片 Rule 1 殘片', 'Escort the UGV east — it carries a Rule 1 fragment'),
     _endAt: null,
 
     update() {
@@ -13525,6 +13570,14 @@ function updateBullets() {
         spawnDamagePopup(e.x, e.y - 14, b.damage, isKill);
         if (isKill) {
           e.alive = false; game.score += 100; game.killCount++;
+          // GREY VECTOR FTUE Phase 4 — on the player's FIRST KILL of their
+          // FIRST MATCH, pop an Audit Card so the diagnose-and-execute
+          // mechanic gets introduced through the very killing they just did.
+          // Once-per-account: ag.firstAuditSeen guards re-trigger; subsequent
+          // matches see no popup.
+          if (typeof _maybeTriggerFirstKillAudit === 'function') {
+            _maybeTriggerFirstKillAudit(b.fromUnit === player);
+          }
           // Kill SFX + ally-kill radio callout BOTH removed on user request
           // ('移除擊殺音效!!!', third escalation). The radio callout was the
           // 'ding-dong' the user kept hearing — showRadioToast plays a 2-tone
