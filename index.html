@@ -2376,6 +2376,11 @@ function _wireFooterModals() {
 // Spec: GAME DESIGN.md Section 25.B Phase 4.
 function _maybeTriggerFirstKillAudit(playerWasShooter) {
   if (!playerWasShooter) return;            // only fire on player's own kill
+  // FTUE freeze — user '別一開始就要搞文書工作'. The Audit Card auto-popup
+  // mid-tutorial reads as paperwork interrupting a training-ground flow.
+  // Skip while the tutorial owns the screen; veterans can still trigger the
+  // Audit Console manually via the lobby footer button.
+  if (game._ftue && game._ftue.active) return;
   let alreadySeen = false;
   try { alreadySeen = localStorage.getItem('ag.firstAuditSeen') === '1'; } catch (e) {}
   if (alreadySeen) return;
@@ -3096,13 +3101,12 @@ function _ftueAdvance(reason) {
     // the user's '只有我自己一個獨立個體' really lands. Each step transition
     // adds the minimum new content needed for the next step.
     if (advancingFromIdx === 0) {
-      // Player just learned to move → spawn the first enemy for the
-      // first-kill moment. Allies stay absent; the player is alone.
-      _ftueSpawnFirstEnemy();
-    } else if (advancingFromIdx === 4) {
-      // Player just placed their first structure → drop two more enemies
-      // so the streak-of-3 step has actual targets.
-      _ftueSpawnStreakEnemies();
+      // Player just moved → bring in BRAVO + CHARLIE so the next steps
+      // (TAB squad order, pawn-swap to ally) have actual targets. No
+      // enemies in this training-ground FTUE — the user said
+      // '訓練場 … 大部分未解鎖 … 別一開始就要搞文書工作', so combat
+      // is deferred to a real match later.
+      _ftueSpawnTutorialAllies();
     }
     if (game._ftue.idx >= game._ftue.steps.length) {
       // Done — mark seen, deactivate
@@ -3116,23 +3120,58 @@ function _ftueAdvance(reason) {
 }
 // Public hooks — called from the relevant gameplay sites
 function _ftueOnMove()       { if (game._ftue?.active) { game._ftue.flags.moved = true; _ftueAdvance('move'); } }
-function _ftueOnKill()       {
-  if (!game._ftue?.active) return;
-  game._ftue.flags.kill++;
-  _ftueAdvance('kill');                                 // step 1 advance
-  // Step 5 backup advance: count kills regardless of the 4-second kill-
-  // streak window. User reported step 5 stuck because the streak counter
-  // resets between kills if pacing exceeds 4 s ('明明還在教程 … 任務也
-  // 沒往下推進'). Counting raw kills since step entry guarantees advance.
-  if (game._ftue.idx === 5) {
-    game._ftue.flags.step5Kills = (game._ftue.flags.step5Kills || 0) + 1;
-    if (game._ftue.flags.step5Kills >= 3) _ftueAdvance('streak3');
-  }
-}
+function _ftueOnKill()       { if (game._ftue?.active) { game._ftue.flags.kill++; _ftueAdvance('kill'); } }
 function _ftueOnAuditClose() { if (game._ftue?.active) { game._ftue.flags.auditClose = true; _ftueAdvance('auditClose'); } }
 function _ftueOnBuildOpen()  { if (game._ftue?.active) { game._ftue.flags.buildOpen = true; _ftueAdvance('buildOpen'); } }
-function _ftueOnPlace()      { if (game._ftue?.active) { game._ftue.flags.place++;     _ftueAdvance('place'); } }
+function _ftueOnPlace()      { if (game._ftue?.active) { game._ftue.flags.place++; _ftueAdvance('place'); } }
 function _ftueOnStreak3()    { if (game._ftue?.active) { game._ftue.flags.streak = 3; _ftueAdvance('streak3'); } }
+// Generic key-press hook — used for the new training-ground sequence
+// where each step waits for ONE specific key. Spec: user request
+// '訓練場 游標 wasd  tab-123 123 q e g 視野錐 x shift b 輪盤 wall'.
+// Caller passes the lowercased key; we route to _ftueAdvance with a
+// synthetic reason like 'key:q' so step matching is exact.
+function _ftueOnKeyPress(k) {
+  if (!game._ftue?.active) return;
+  _ftueAdvance('key:' + k);
+}
+function _ftueOnSquadOrder(orderId) {
+  if (!game._ftue?.active) return;
+  _ftueAdvance('order:' + orderId);
+}
+function _ftueOnPawnSwap() {
+  if (!game._ftue?.active) return;
+  _ftueAdvance('pawnswap');
+}
+// Spawn 2 allies near the player so squad-order and pawn-swap steps
+// have a target. Fired from _ftueAdvance after the movement step so
+// step 0 still feels solo.
+function _ftueSpawnTutorialAllies() {
+  if (typeof allies === 'undefined' || typeof NN_ARENA === 'undefined') return;
+  const baseX = player.x, baseY = player.y;
+  const slots = [
+    { callsign: 'BRAVO',   ox: -90, oy: 70,  weapon: 'RIFLE', chassis: 'humanoid', style: 'elite' },
+    { callsign: 'CHARLIE', ox:  90, oy: 70,  weapon: 'SMG',   chassis: 'wolf',     style: 'cqb' },
+  ];
+  for (const s of slots) {
+    const a = {
+      callsign: s.callsign,
+      offsetX: s.ox, offsetY: s.oy,
+      x: baseX + s.ox, y: baseY + s.oy,
+      angle: 0, gunAngle: 0, gunRecoil: 0, swayPhase: Math.random() * Math.PI*2,
+      alive: true, walkPhase: Math.random() * Math.PI*2,
+      fireCd: 0, target: null,
+      lookPhase: Math.random() * Math.PI*2,
+      team: 0,
+      _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+      _weapon: WEAPONS[s.weapon] || WEAPONS.RIFLE,
+      _nnDifficulty: s.style,
+      _respawnAt: null,
+      _invulnUntil: (typeof game !== 'undefined' && game.time != null) ? game.time + 90 : 90,
+    };
+    applyChassisToUnit(a, s.chassis, 2.5, 80, 13);
+    allies.push(a);
+  }
+}
 
 // FTUE enemy spawns are CURATED, not random. User: '不要單一元素 …
 // 你可以隨機,或者是你為它們精心安排'. Each FTUE encounter is staged so
@@ -3233,44 +3272,84 @@ function _scheduleFirstMatchToasts() {
   // already set in startNNSkirmish but the units it covered are gone now.
   // No structures pre-placed here — relay-style outpost (gen + medstation)
   // belongs to campaign relay, not the FTUE skirmish path.
+  // Mechanics-first training-ground sequence per user spec:
+  //   訓練場 → 游標+wasd → tab-123 → 123 → q e g → 視野錐+x+shift+b → 輪盤+wall
+  // Each step waits for ONE specific input. Combat / Audit Card paperwork
+  // is deferred — '別一開始就要搞文書工作'.
   game._ftue.steps = zh ? [
     { speaker: 'LUMEN', advance: 'move',
-      text: '「V-07,聽得到嗎? 上次你掉到 12% — Mote 推了你一下,你才醒過來。」',
-      hint: 'WASD · 開始移動' },
-    { speaker: 'LUMEN', advance: 'kill',
-      text: '「Red Grid 的巡邏進場了。 處決一個 Syndrome carrier。」',
-      hint: '滑鼠瞄準 · 按住左鍵射擊' },
-    { speaker: 'LUMEN', advance: 'auditClose',
-      text: '「你剛剛處決了一個。 Audit Card 自動跳出。 選一個處置 — 不對的後果你會記得。」',
-      hint: '從 6 個 Audit Action 選一個' },
+      text: '「V-07,訓練場上線。 先試試移動 — WASD。」',
+      hint: 'WASD · 移動' },
+    { speaker: 'LUMEN', advance: 'key:tab',
+      text: '「按 TAB 進指令模式 — 螢幕底會亮出隊伍指令格。」',
+      hint: 'TAB · 進入指令視角' },
+    { speaker: 'LUMEN', advance: 'order:rally',
+      text: '「按 1 對隊伍下『集合』令。 BRAVO 跟 CHARLIE 會跑來你身邊。」',
+      hint: '1 · RALLY 集合' },
+    { speaker: 'LUMEN', advance: 'key:tab',
+      text: '「再按 TAB 退回戰術視角。」',
+      hint: 'TAB · 回戰術' },
+    { speaker: 'LUMEN', advance: 'pawnswap',
+      text: '「戰術下 1-3 = 直接接管隊友的身體。 按 2 接管 BRAVO。」',
+      hint: '2 · 接管 BRAVO' },
+    { speaker: 'LUMEN', advance: 'key:q',
+      text: '「Q 召出偵察 UAV — 看穿牆後。」',
+      hint: 'Q · UAV 偵察' },
+    { speaker: 'LUMEN', advance: 'key:e',
+      text: '「E 發射 FPV 自殺機 — 對遠目標精準爆破。」',
+      hint: 'E · FPV 無人機' },
+    { speaker: 'LUMEN', advance: 'key:g',
+      text: '「G 投擲手雷 — 角落清場。」',
+      hint: 'G · 手雷' },
+    { speaker: 'LUMEN', advance: 'key:x',
+      text: '「視野錐標出 NN 看不到的地方。 X 切換主/副武器。」',
+      hint: 'X · 切換武器' },
+    { speaker: 'LUMEN', advance: 'sprint',
+      text: '「Shift 衝刺 — 體力會跑,別一直按。」',
+      hint: '走路時按住 Shift' },
     { speaker: 'LUMEN', advance: 'buildOpen',
-      text: '「你還沒設置任何審計站。 子彈不能釐清任何事 — 建築才能。 200⚡ 備用,按 B 開建造。」',
+      text: '「B 開建造輪盤。 大部分模塊還沒解鎖 — 先看 WALL。」',
       hint: 'B · 開建造輪盤' },
     { speaker: 'LUMEN', advance: 'place',
-      text: '「審計基礎設施上線中。 蓋一個 — 任何一個都行。 你蓋的,就是你變成什麼。」',
-      hint: '從輪盤選一個 · 點地圖放置' },
-    { speaker: 'MOTE', advance: 'streak3',
-      text: 'PATH FOUND. 連殺 3 個 → Diagnose-and-Execute. 對症出手,不是亂打。',
-      hint: '處決 3 個 Syndrome carrier' },
+      text: '「從輪盤選 WALL,點地放下一面牆。 訓練結束後其餘模塊逐步解鎖。」',
+      hint: '輪盤 → WALL → 點地放置' },
   ] : [
     { speaker: 'LUMEN', advance: 'move',
-      text: '"V-07, do you read? Last cycle you dropped to 12%. Mote pushed you. That\'s how you woke."',
-      hint: 'WASD · start moving' },
-    { speaker: 'LUMEN', advance: 'kill',
-      text: '"A Red Grid patrol just entered. Execute one Syndrome carrier."',
-      hint: 'Mouse to aim · hold LMB to fire' },
-    { speaker: 'LUMEN', advance: 'auditClose',
-      text: '"You just executed one. The Audit Card auto-pops. Pick a verdict — the wrong one stays with you."',
-      hint: 'Pick one of 6 Audit Actions' },
+      text: '"V-07. Training ground online. Try moving — WASD."',
+      hint: 'WASD · move' },
+    { speaker: 'LUMEN', advance: 'key:tab',
+      text: '"Press TAB for command view — squad order strip lights up at the bottom."',
+      hint: 'TAB · command view' },
+    { speaker: 'LUMEN', advance: 'order:rally',
+      text: '"Press 1 to call RALLY. BRAVO and CHARLIE will run to you."',
+      hint: '1 · RALLY' },
+    { speaker: 'LUMEN', advance: 'key:tab',
+      text: '"TAB again to return to tactical."',
+      hint: 'TAB · back to tactical' },
+    { speaker: 'LUMEN', advance: 'pawnswap',
+      text: '"In tactical, 1-3 = take over an ally\'s body. Press 2 to swap to BRAVO."',
+      hint: '2 · take BRAVO' },
+    { speaker: 'LUMEN', advance: 'key:q',
+      text: '"Q deploys a recon UAV — see past walls."',
+      hint: 'Q · UAV' },
+    { speaker: 'LUMEN', advance: 'key:e',
+      text: '"E fires an FPV kamikaze drone — precise blast at range."',
+      hint: 'E · FPV drone' },
+    { speaker: 'LUMEN', advance: 'key:g',
+      text: '"G throws a grenade — clear corners."',
+      hint: 'G · grenade' },
+    { speaker: 'LUMEN', advance: 'key:x',
+      text: '"Vision cone shows what NN can\'t see. X swaps primary / secondary."',
+      hint: 'X · swap weapon' },
+    { speaker: 'LUMEN', advance: 'sprint',
+      text: '"Shift to sprint — stamina drains, pace yourself."',
+      hint: 'Shift while moving' },
     { speaker: 'LUMEN', advance: 'buildOpen',
-      text: '"You haven\'t built any audit stations. Bullets clarify nothing — architecture audits. 200⚡ ready. Press B."',
-      hint: 'B · open build radial' },
+      text: '"B opens the build radial. Most modules are locked — focus on WALL."',
+      hint: 'B · build radial' },
     { speaker: 'LUMEN', advance: 'place',
-      text: '"Audit infrastructure coming online. Place one — anything. What you build is what you become."',
-      hint: 'Pick from the radial · click ground to place' },
-    { speaker: 'MOTE', advance: 'streak3',
-      text: 'PATH FOUND. Streak of 3 → Diagnose-and-Execute. Strike on diagnosis, not noise.',
-      hint: 'Execute 3 Syndrome carriers in chain' },
+      text: '"Pick WALL from the radial, click ground to place. Other modules unlock as you progress."',
+      hint: 'Radial → WALL → click to place' },
   ];
   // Show the first step after a small delay so the match has loaded in
   setTimeout(() => {
@@ -4653,6 +4732,7 @@ function swapPlayerToAlly(idx) {
   // Pawn-swap auto-dismisses the death recap — player wants to see the
   // new body, not stare at the killer card.
   if (typeof dismissDeathRecap === 'function') dismissDeathRecap();
+  if (typeof _ftueOnPawnSwap === 'function') _ftueOnPawnSwap();
 
   // Snapshot ally body before we overwrite the slot
   const targetCallsign  = a.callsign;
@@ -5475,11 +5555,27 @@ window.addEventListener('keydown', e => {
     // recall / pause already handled above). Keys we deliberately gate:
     //   q = UAV recon, e = FPV drone, g = grenade, b = build, tab = command,
     //   x = weapon swap, u = upgrade, v = aim assist, n = dev skip
+    // Lock table for the mechanics-first sequence:
+    //   step 0 (move)            → only WASD + R + Esc/P + H
+    //   step 1+ (TAB tutorial)   → + TAB
+    //   step 5+ (Q tutorial)     → + Q
+    //   step 6+ (E tutorial)     → + E
+    //   step 7+ (G tutorial)     → + G
+    //   step 8+ (X tutorial)     → + X
+    //   step 10+ (B tutorial)    → + B
+    //   FTUE done                → all
+    // V (aim assist), U (upgrade), N (dev) stay locked until FTUE done
+    // — these aren't in the user-spec teaching sequence.
     const lockedAtThisStep = {
-      q: lvl < 5, e: lvl < 5, g: lvl < 5,
-      b: lvl < 3,             // build unlocked at the build-tutorial step
-      tab: lvl < 5, x: lvl < 5, u: lvl < 4,
-      v: lvl < 1, n: lvl < 99,
+      tab: lvl < 1,
+      q:   lvl < 5,
+      e:   lvl < 6,
+      g:   lvl < 7,
+      x:   lvl < 8,
+      b:   lvl < 10,
+      u:   lvl < 99,
+      v:   lvl < 99,
+      n:   lvl < 99,
     };
     if (lockedAtThisStep[k]) {
       // Surface a soft hint the first time the player pokes a locked key
@@ -5491,8 +5587,8 @@ window.addEventListener('keydown', e => {
     }
   }
   if (game.state === 'playing') {
-    if (k === 'q') toggleDrone();
-    else if (k === 'e') launchFPV();
+    if (k === 'q') { if (typeof _ftueOnKeyPress === 'function') _ftueOnKeyPress('q'); toggleDrone(); }
+    else if (k === 'e') { if (typeof _ftueOnKeyPress === 'function') _ftueOnKeyPress('e'); launchFPV(); }
     else if (k === 'h') {
       // Recall to spawn — defensive escape hatch. If the player ends up
       // outside the playable area (wandered into the void corner of
@@ -5523,6 +5619,7 @@ window.addEventListener('keydown', e => {
     }
     else if (k === 'tab') {
       e.preventDefault();
+      if (typeof _ftueOnKeyPress === 'function') _ftueOnKeyPress('tab');
       // Toggle COMMAND ↔ TACTICAL. Earlier this was silent — user
       // pressed TAB and the mode swapped, the squad strip drew at
       // the bottom of the screen, but with no toast/beep many users
@@ -5540,9 +5637,9 @@ window.addEventListener('keydown', e => {
       }
     }
     else if (k === 'r') startReload();
-    else if (k === 'g') throwGrenade();
+    else if (k === 'g') { if (typeof _ftueOnKeyPress === 'function') _ftueOnKeyPress('g'); throwGrenade(); }
     else if (k === 'b') toggleBuildMode();
-    else if (k === 'x') swapPlayerWeapon();
+    else if (k === 'x') { if (typeof _ftueOnKeyPress === 'function') _ftueOnKeyPress('x'); swapPlayerWeapon(); }
     else if (k === 'u') upgradeNearestModule();
     // 1-9 + 0 = power-user shortcut to pick a module. Works whether the
     // radial is open (closes it) or in placing mode (just swaps kind).
@@ -8851,6 +8948,7 @@ function issueSquadOrder(id) {
   if (typeof showSwapToast === 'function') showSwapToast(`▶ ${label}`);
   if (typeof showRadioToast === 'function') showRadioToast('CMD', `"${radio}"`);
   if (typeof playRadioBeep === 'function') playRadioBeep(880, 0.12);
+  if (typeof _ftueOnSquadOrder === 'function') _ftueOnSquadOrder(id);
 }
 function _squadOrderActive() {
   return game._squadOrder && game.time < game._squadOrder.expiresAt;
@@ -13590,6 +13688,9 @@ function updatePlayer() {
   const wantsSprint = shiftHeld && moving && player.stamina > 0
                      && (!player._spentToZero || player.stamina >= STAMINA_RECOVERY_MIN);
   player.sprinting = wantsSprint;
+  if (player.sprinting && typeof _ftueAdvance === 'function') {
+    _ftueAdvance('sprint');
+  }
 
   if (player.sprinting) {
     player.stamina = Math.max(0, player.stamina - STAMINA_DRAIN_PER_F);
@@ -14418,18 +14519,17 @@ function updateCamera() {
     camera.targetScale = 1;
     camera.targetRotation = 0;
   }
-  // FTUE custom cinematography — pull the camera back during the early
-  // tutorial steps so the empty NN_ARENA reads as 'I'm alone in this
-  // space'. Steps closer in as enemies drop in.
-  //   step 0 (alone)        scale 0.78   wide breathing room
-  //   step 1 (1 enemy)      scale 0.88   slight pull-out so target visible
-  //   step 2-3 (audit/build) scale 0.95
-  //   step 4+ / done         scale 1.0   normal
+  // FTUE custom cinematography — wider during early steps (alone /
+  // squad arriving), pulls in as gameplay layers reveal.
+  //   step 0     (alone)              scale 0.78
+  //   step 1-4   (TAB / squad / swap) scale 0.88   (allies on map, framed wide)
+  //   step 5-9   (specials + sprint)  scale 0.95
+  //   step 10+   (build phase)        scale 1.00
   if (game._ftue && game._ftue.active && game.mode === 'tactical') {
     const lvl = game._ftue.idx;
     if      (lvl === 0) camera.targetScale = 0.78;
-    else if (lvl === 1) camera.targetScale = 0.88;
-    else if (lvl <= 3)  camera.targetScale = 0.95;
+    else if (lvl <= 4)  camera.targetScale = 0.88;
+    else if (lvl <= 9)  camera.targetScale = 0.95;
   }
   camera.scale += (camera.targetScale - camera.scale) * 0.1;
   let rotDiff = camera.targetRotation - camera.rotation;
@@ -16848,11 +16948,11 @@ function renderHUD() {
   // overlap the HTML overlay (the user reported '兩個視窗會重疊').
   const _endCard = document.getElementById('nnEndCard');
   const _endCardVisible = _endCard && _endCard.style.display === 'flex';
-  // FTUE: hide mission objective panel + compass until after the audit
-  // step (idx >= 3). Player just learned move/kill/audit — no need for
-  // objective text yet.
-  if (mission && mission.renderHUD && !_endCardVisible && _ftueLvl >= 3) mission.renderHUD();
-  if (mission && (game.mode === 'tactical' || game.mode === 'command') && _ftueLvl >= 3) drawObjectiveCompass();
+  // FTUE: hide mission objective panel + compass during the entire
+  // training-ground sequence (steps 0-11). User: '不應該有其他功能或顯示
+  // 其他選項'. Once FTUE finishes (_ftueLvl = 99), the panel comes back.
+  if (mission && mission.renderHUD && !_endCardVisible && _ftueLvl >= 99) mission.renderHUD();
+  if (mission && (game.mode === 'tactical' || game.mode === 'command') && _ftueLvl >= 99) drawObjectiveCompass();
 
   // ----- Compact bottom command bar: HP + Ammo + UAV in one slim row -----
   const barH = 54;
@@ -16918,10 +17018,10 @@ function renderHUD() {
     ctx.fillRect(barX + 396 + i*18, barY + 30, 14, 10);
   }
 
-  // FTUE: minimap doesn't appear until step 4 (after the player has placed
-  // their first structure — '一步步解鎖全部'). Skip directly to the rest
-  // of the HUD overlays for earlier steps.
-  if (_ftueLvl < 4) {
+  // FTUE: minimap doesn't appear until step 10 (build-radial tutorial).
+  // Player needs spatial awareness to plan placements; before that the
+  // training is pure key-press flow and minimap would just clutter.
+  if (_ftueLvl < 10) {
     // continue to crosshair + mode overlay below; just skip the minimap block
     if (game._nnMode && !game._buildShopDrawnThisFrame) {
       drawDefenseShop();
