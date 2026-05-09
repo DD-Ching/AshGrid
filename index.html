@@ -2888,7 +2888,15 @@ function showRadioToast(label, text, ttl = 5500) {
   document.body.appendChild(el);
   // Audio: short static burst + 2-tone beep so the channel feels physical.
   // Sounds layered: BEEP at 1320 Hz, then static under it for ~0.4s.
-  if (typeof playRadioBeep === 'function') {
+  // FTUE/01 §A.5: during the prologue the 2-tone ding-dong is BANNED.
+  // Lumen lines play the static-only ladder (volume + duration boosted)
+  // so the voice is "broken radio over a long carrier" not "UI ding".
+  const inFtue = (typeof _ftueNarr !== 'undefined' && _ftueNarr.running);
+  if (inFtue) {
+    if (typeof playRadioStatic === 'function') {
+      playRadioStatic(0.70, 0.50);   // +50% duration, +56% volume (vs 0.45 / 0.32)
+    }
+  } else if (typeof playRadioBeep === 'function') {
     playRadioBeep(1320, 0.16);
     setTimeout(() => playRadioBeep(880, 0.10), 70);
     playRadioStatic(0.45, 0.32);
@@ -3107,32 +3115,47 @@ function _ftueNarrOverlay() {
   if (el) return el;
   el = document.createElement('div');
   el.id = 'ftueNarr';
+  // §A.3 palette: pure black background, GREY VECTOR cream foreground.
+  // §A.7 fontstack — Courier New / Menlo / monospace only.
+  // §A.6 — overlay-level transition is 0.6s on background-color so
+  // scene-to-scene fades read as deliberate, not snappy.
   el.style.cssText =
     'position:fixed;inset:0;z-index:9000;' +
-    'background:#000;color:#e8e2d4;' +
+    'background:#0A0A0A;color:#E8E4D8;' +
     "font-family:'Courier New',Menlo,monospace;" +
     'display:flex;flex-direction:column;' +
     'justify-content:center;align-items:center;' +
     'padding:40px;box-sizing:border-box;overflow:hidden;' +
     'user-select:none;cursor:default;' +
-    'transition:background 200ms;';
+    'transition:background-color 0.6s linear, opacity 0.6s linear;';
   el.innerHTML = '' +
-    '<div id="ftueNarrTop" style="position:absolute;top:24px;left:32px;right:32px;' +
-    'font-size:11px;letter-spacing:3px;color:#7a7466;text-transform:uppercase;"></div>' +
-    '<div id="ftueNarrCenter" style="text-align:center;max-width:780px;line-height:1.7;' +
-    'font-size:18px;letter-spacing:1px;white-space:pre-wrap;"></div>' +
-    '<div id="ftueNarrSub" style="position:absolute;bottom:48px;left:0;right:0;' +
-    'text-align:center;font-size:13px;letter-spacing:2px;color:#a09780;' +
+    // §A.2 vignette layer — sits BELOW text/chips. Updated via _ftueSetVignette
+    '<div id="ftueNarrVignette" style="position:absolute;inset:0;pointer-events:none;' +
+    'z-index:1;transition:background 1.2s ease-in-out;background:' +
+    'radial-gradient(circle at 50% 50%, rgba(10,10,10,0) 0%, rgba(10,10,10,0) 60px,' +
+    ' rgba(10,10,10,0.85) 220px, rgba(10,10,10,0.98) 380px);"></div>' +
+    // Top stamp (CYCLE #347 etc) — §A.3 #6B6B6B grey for non-priority chrome
+    '<div id="ftueNarrTop" style="position:absolute;top:24px;left:32px;right:32px;z-index:5;' +
+    'font-size:11px;letter-spacing:3px;color:#6B6B6B;text-transform:uppercase;"></div>' +
+    // Center text — §A.3 #E8E4D8 cream
+    '<div id="ftueNarrCenter" style="text-align:center;max-width:780px;line-height:1.7;z-index:5;' +
+    'font-size:18px;letter-spacing:1px;white-space:pre-wrap;color:#E8E4D8;"></div>' +
+    // Sub bar — §A.3 #6B6B6B grey, italic for radio voice
+    '<div id="ftueNarrSub" style="position:absolute;bottom:48px;left:0;right:0;z-index:5;' +
+    'text-align:center;font-size:13px;letter-spacing:2px;color:#6B6B6B;' +
     'opacity:0.85;font-style:italic;white-space:pre-wrap;"></div>' +
-    '<div id="ftueNarrChip" style="position:absolute;bottom:22%;left:50%;' +
-    'transform:translateX(-50%);display:none;"></div>' +
-    '<div id="ftueNarrCta" style="position:absolute;bottom:80px;left:50%;' +
-    'transform:translateX(-50%);display:none;">' +
+    // Chip slot — fades in/out per §A.6
+    '<div id="ftueNarrChip" style="position:absolute;bottom:22%;left:50%;z-index:5;' +
+    'transform:translateX(-50%);opacity:0;transition:opacity 0.4s ease-in-out;' +
+    'pointer-events:none;"></div>' +
+    // CTA — §A.3 #C8261C (NOT the orange-red #c8442e the previous build used)
+    '<div id="ftueNarrCta" style="position:absolute;bottom:80px;left:50%;z-index:5;' +
+    'transform:translateX(-50%);display:none;opacity:0;transition:opacity 1.2s linear;">' +
     '<button id="ftueNarrCtaBtn" type="button" style="' +
-    'background:#c8442e;color:#f4ecd8;border:none;' +
+    'background:#0A0A0A;color:#C8261C;border:1px solid #C8261C;' +
     'padding:14px 36px;font-family:inherit;font-size:14px;' +
     'letter-spacing:6px;cursor:pointer;font-weight:bold;' +
-    'box-shadow:3px 3px 0 #5a1010;">ENTER ▶</button>' +
+    'box-shadow:none;">[ 進入 ▶ ]</button>' +
     '</div>';
   document.body.appendChild(el);
   return el;
@@ -3141,32 +3164,116 @@ function _ftueNarrSetTop(t)    { const el = document.getElementById('ftueNarrTop
 function _ftueNarrSetCenter(t) { const el = document.getElementById('ftueNarrCenter'); if (el) el.textContent = t; }
 function _ftueNarrSetSub(t)    { const el = document.getElementById('ftueNarrSub');    if (el) el.textContent = t; }
 function _ftueNarrAppendCenter(t) { const el = document.getElementById('ftueNarrCenter'); if (el) el.textContent += t; }
+
+// §A.6 chip animation: 0.4s fade in / 1.5s hold / 0.6s fade out.
+// §A.3 color: #C8261C red on black (not the orange-red #c8442e the
+// previous build used).
 function _ftueNarrShowChip(text) {
   const el = document.getElementById('ftueNarrChip');
   if (!el) return;
-  // Larger + pulse animation so the chip pulls the eye away from the
-  // dialog text. The animation is the existing ftue-pulse keyframe (CSS
-  // around line 1022) — opacity ramp 0.25 ↔ 0.85 plus a 2px nudge so
-  // the chip "breathes". Mobile users see the same.
-  el.innerHTML = '<span style="background:#c8442e;color:#f4ecd8;' +
+  el.innerHTML = '<span style="background:#0A0A0A;color:#E8E4D8;' +
+    'border:1px solid #C8261C;' +
     "font:bold 18px 'Courier New',monospace;padding:12px 22px;letter-spacing:5px;" +
-    'box-shadow:4px 4px 0 #5a1010;display:inline-block;' +
-    'animation:ftue-pulse 1.4s ease-in-out infinite;">' + text + '</span>';
+    'display:inline-block;">' + text + '</span>';
   el.style.display = 'block';
+  // Force a reflow so opacity transition kicks in after we flip from 0 → 1
+  void el.offsetWidth;
+  el.style.opacity = '1';
 }
 function _ftueNarrHideChip() {
   const el = document.getElementById('ftueNarrChip');
-  if (el) el.style.display = 'none';
+  if (!el) return;
+  el.style.opacity = '0';
+  setTimeout(() => {
+    if (el && el.style.opacity === '0') el.style.display = 'none';
+  }, 600);
+}
+function _ftueNarrFlashChip() {
+  const chip = document.getElementById('ftueNarrChip');
+  if (!chip) return;
+  chip.style.opacity = '0.3';
+  setTimeout(() => { chip.style.opacity = '1'; }, 300);
+}
+
+// §A.2 vignette + radius vision. Driven by Seed Integrity progression
+// per FTUE/01 §A.2 table:
+//   S1 41% → 140 px (just Mote eye)
+//   S2 50% → 220 px
+//   S3 ~60 → 260 px
+//   S4 70% → 300 px
+//   S5 87% → 380 px
+// The transition itself is the story — Seed is healing, world becomes
+// readable.
+function _ftueSetVignette(radiusPx) {
+  const v = document.getElementById('ftueNarrVignette');
+  if (!v) return;
+  // Two stops: clear at 0..(radius * 0.4), partly dark at radius, fully
+  // black at the screen-corners distance. The "clear" zone is intentionally
+  // small — most of the screen is dim.
+  const innerClear = Math.round(radiusPx * 0.4);
+  const outerBlack = Math.max(radiusPx + 200, 600);
+  v.style.background =
+    'radial-gradient(circle at 50% 50%,' +
+    ' rgba(10,10,10,0) 0%,' +
+    ` rgba(10,10,10,0) ${innerClear}px,` +
+    ` rgba(26,10,10,0.55) ${radiusPx}px,` +
+    ` rgba(10,10,10,0.94) ${radiusPx + 80}px,` +
+    ` rgba(10,10,10,0.98) ${outerBlack}px)`;
 }
 
 async function _ftueTypeCenter(text, perChar) {
-  if (perChar == null) perChar = 22;
+  if (perChar == null) perChar = 22;   // §A.6 — 22 ms / char (slower than legacy 18)
   const el = document.getElementById('ftueNarrCenter');
   if (!el) return;
   for (let i = 0; i < text.length; i++) {
     if (_ftueNarr.skipFlag) { el.textContent += text.slice(i); return; }
     el.textContent += text[i];
     await _wait(perChar);
+  }
+}
+
+// §A.5 Lumen radio helper — replaces direct showRadioToast calls in scenes.
+// showRadioToast itself is patched (above, near line ~2890) to skip the
+// 2-tone beep when _ftueNarr.running is true. This wrapper just enforces
+// the §A.1 i18n contract: pass both halves, _r picks the right one.
+function _ftueRadio(speakerZh, speakerEn, lineZh, lineEn, ttl) {
+  if (typeof showRadioToast !== 'function') return;
+  if (ttl == null) ttl = 4500;
+  try {
+    const speaker = _r(speakerZh, speakerEn);
+    const line    = _r(lineZh, lineEn);
+    showRadioToast(speaker, line, ttl);
+  } catch (e) {}
+}
+
+// §A.1 language check — runs once at the very top of startNarrativeFTUE.
+// Default: zh (the user is a Chinese-speaking player). If localStorage
+// already has 'en' set, leave it alone but show a 1.5 s zh-available toast.
+// Fallback: if no lang set yet, force 'zh'.
+function _ftueLangCheck() {
+  // §A.1 — first-time FTUE players (ag.firstMatch !== '1') ALWAYS get zh,
+  // regardless of what the boot-time `setLang(getLang())` defaulted to.
+  // Returning players keep whatever language they set in the lobby.
+  let firstSession = true;
+  try { firstSession = localStorage.getItem('ag.firstMatch') !== '1'; } catch (e) {}
+  let lang = null;
+  try { lang = localStorage.getItem('ag.lang'); } catch (e) {}
+  if (firstSession) {
+    // Force zh — overrides any boot-time setLang('en') default.
+    try {
+      if (typeof setLang === 'function') setLang('zh');
+      else localStorage.setItem('ag.lang', 'zh');
+    } catch (e) {}
+    _ftueNarrLog('LANG', 'first FTUE session → forced zh per §A.1');
+    return;
+  }
+  if (lang === 'en') {
+    // Returning player who chose en — honour it, but flash "ZH AVAILABLE".
+    _ftueNarrLog('LANG', 'returning player chose en — showing zh-available toast');
+    if (typeof showRadioToast === 'function') {
+      try { showRadioToast('[STATIC]', 'LANG: ZH AVAILABLE — 設定切換', 1500); }
+      catch (e) {}
+    }
   }
 }
 
@@ -3177,8 +3284,6 @@ function _ftueWaitKey(keys, timeoutMs) {
   return new Promise((resolve) => {
     const set = new Set((keys || []).map(k => String(k).toLowerCase()));
     let done = false;
-    // onKey declared first so `finish` can reference it without TDZ when
-    // the dev skip path resolves before the listener is wired up.
     const onKey = (e) => {
       if (_ftueNarr.skipFlag) return finish();
       const k = (e.key || '').toLowerCase();
@@ -3190,16 +3295,32 @@ function _ftueWaitKey(keys, timeoutMs) {
       window.removeEventListener('keydown', onKey);
       resolve();
     };
-    // Dev skip — short-circuit before adding the listener if skipFlag is
-    // already on at call time. removeEventListener with an unregistered
-    // handler is a no-op, so finish() is safe even on the early path.
     if (_ftueNarr.skipFlag) { finish(); return; }
     window.addEventListener('keydown', onKey);
     if (timeoutMs > 0) setTimeout(finish, timeoutMs);
   });
 }
 
+// QA-only hold — does NOT respect skip flag. Used so dev can pause
+// at iconic moments (BUILD=AUDIT, scene-end, etc.) for screenshots
+// even when the rest of the prologue is racing through with skip on.
+function _ftueQaHold(label) {
+  return new Promise((resolve) => {
+    _ftueNarrLog('QA-PAUSE', label || 'press any key to advance');
+    const onKey = (e) => {
+      const k = (e.key || '').toLowerCase();
+      if (k === 'enter' || k === ' ' || k === 'arrowright' || k === 'n') {
+        e.preventDefault();
+        window.removeEventListener('keydown', onKey);
+        resolve();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+  });
+}
+
 // Heartbeat tone — low sine pulse, quick decay. Used in S1.
+// §A.5: heartbeat is one of the few audio cues allowed during FTUE.
 function _ftueNarrHeartbeat(vol) {
   if (vol == null) vol = 0.35;
   if (typeof getAC !== 'function') return;
@@ -3339,231 +3460,235 @@ function _ftueNarrFlashChip() {
 }
 
 // ============================================================
-// MVP 5 SCENES — per FTUE/01 §1
+// MVP 5 SCENES — per FTUE/01 §1, §A-compliant
+//
+// All player-visible strings flow through _r(zh, en) so the FTUE plays
+// in the player's preferred language (zh by default per §A.1).
+// All colors use the §A.3 six-color palette (#0A0A0A / #1A1A1A /
+// #C8261C / #E63D33 / #E8E4D8 / #6B6B6B). Vignette radius transitions
+// per §A.2 (140 → 220 → 260 → 300 → 380 px) match Seed Integrity
+// recovery — the screen literally clears as V-07 wakes up.
+// Audio is static-only per §A.5 (showRadioToast suppresses beep when
+// _ftueNarr.running is true).
+// Animation timings hit §A.6 (0.6s fades, 22ms typing, chip 0.4s in
+// / 1.5s hold / 0.6s out, big-title 1.2s in / 2s hold / 1.5s out).
 // ============================================================
 
-// ---- S1: 黑暗 (0:00 - 0:12) ----
-// 12 seconds. Black + heartbeat + Seed countdown + MOTE PROXIMITY DETECTED.
+// ---- S1: 黑暗(0:00 - 0:12) ----
+// Pure black + heartbeat + Seed Integrity 41% → 28% + MOTE PROXIMITY.
 async function _ftueScene1_Blackness() {
-  _ftueNarrLog('SCENE', 'S1 — Blackness (0:00-0:12)');
+  _ftueNarrLog('SCENE', 'S1 — 黑暗 (0:00-0:12)');
   _ftueMark('s1Reached');
   const el = _ftueNarrOverlay();
-  el.style.background = '#000';
+  el.style.background = '#0A0A0A';
+  _ftueSetVignette(140);   // §A.2 — Seed 41% → narrow vision
   _ftueNarrSetTop('');
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
-  // Cycle stamp in the top corner — sets the scene that THIS is a reboot.
-  _ftueNarrSetTop('CYCLE #347 · VECTOR-7 STANDBY');
-  // 0:00–0:02 silent
-  await _wait(2000);
-  if (_ftueNarr.skipFlag) return;
-  // 0:02 heartbeat #1 + first SEED reading
+  // 0:00–0:03 silent
+  await _wait(3000);
+  // 0:03 heartbeat #1
   _ftueNarrHeartbeat(0.30);
-  await _ftueTypeCenter('> CYCLE #347 — INITIATING', 22);
+  await _wait(2000);
+  // (Removed early skip-flag returns — they were leftover from the SSoT 9-scene
+  // version and made dev-skip exit S1 before any text rendered, leaving QA
+  // unable to screenshot the boot lines / MOTE PROXIMITY moment.)
+  // 0:05 first line — typed character by character
+  _ftueNarrSetTop(_r('週期 #347 · VECTOR-7 待機', 'CYCLE #347 · VECTOR-7 STANDBY'));
+  await _ftueTypeCenter(_r('> 週期 #347 — 啟動', '> CYCLE #347 — INITIATING'));
   await _wait(500);
-  // Per MVP §6: reuse the INTRO.bootLines content for verisimilitude. Tinted
-  // by their classes (ok / warn / err) the same way the legacy INTRO does.
-  if (typeof INTRO === 'object' && INTRO.script) {
-    const lang = (typeof getLang === 'function') ? getLang() : 'en';
-    const s = (INTRO.script[lang] || INTRO.script.en);
-    const bootColor = { ok: '#84c0a0', warn: '#e8c060', err: '#c8442e' };
-    const bootLines = (s && s.bootLines) || [];
-    for (let i = 0; i < bootLines.length; i++) {
-      if (_ftueNarr.skipFlag) break;
-      const [klass, txt] = bootLines[i];
-      const center = document.getElementById('ftueNarrCenter');
-      if (!center) break;
-      const line = document.createElement('div');
-      line.style.cssText = `color:${bootColor[klass] || '#e8e2d4'};` +
-        'font-size:14px;letter-spacing:2px;margin-top:6px;';
-      center.appendChild(line);
-      // Type the line directly into the new sub-element so we don't fight
-      // ftueNarrCenter's textContent. _ftueTypeCenter would walk the
-      // wrong element here.
-      const target = line;
-      for (let c = 0; c < txt.length; c++) {
-        if (_ftueNarr.skipFlag) { target.textContent += txt.slice(c); break; }
-        target.textContent += txt[c];
-        await _wait(14);
-      }
-      await _wait(110);
-    }
-  } else {
-    // Fallback if INTRO has been stripped — keep the original cascade.
-    await _ftueTypeCenter('\n> SEED INTEGRITY  ████░░░░░░  41%', 22);
-    _ftueNarrHeartbeat(0.40);
-    await _wait(1100);
-    _ftueNarrAppendCenter('\n> → 36% → 33% → 28%');
-  }
-  // Second heartbeat — louder
-  _ftueNarrHeartbeat(0.48);
+  await _ftueTypeCenter('\n' + _r(
+    '> 種子完整度  ████░░░░░░  41%',
+    '> SEED INTEGRITY  ████░░░░░░  41%'));
+  // 0:07 heartbeat #2 — louder
+  _ftueNarrHeartbeat(0.42);
   await _wait(900);
-  // MOTE PROXIMITY DETECTED — the line that names Mote for the first time
+  // 0:08 cascade 36 → 33 → 28
+  _ftueNarrAppendCenter('\n> → 36% → 33% → 28%');
+  _ftueNarrHeartbeat(0.50);
+  await _wait(1400);
+  // 0:10 MOTE PROXIMITY DETECTED — §A.3 #C8261C red, NOT #c8442e orange
   const center = document.getElementById('ftueNarrCenter');
   if (center) {
     const span = document.createElement('div');
-    span.style.cssText = 'color:#c8442e;font-size:16px;margin-top:18px;' +
+    span.style.cssText = 'color:#C8261C;font-size:16px;margin-top:18px;' +
       'letter-spacing:4px;font-weight:bold;animation:ftue-pulse 1.2s ease-in-out infinite;';
-    span.textContent = '> MOTE PROXIMITY DETECTED';
+    span.textContent = _r('> 偵測到 MOTE 接近', '> MOTE PROXIMITY DETECTED');
     center.appendChild(span);
   }
   await _wait(1500);
-  // Red flash transition
-  el.style.background = '#5a1010';
-  await _wait(160);
-  el.style.background = '#000';
+  // 0:11 short red flash via overlay bg fade (§A.6 timing — 0.6s)
+  el.style.background = '#1A0606';
+  await _wait(400);
+  el.style.background = '#0A0A0A';
   _ftueMark('s2Reached');
 }
 
-// ---- S2: 跟著走 + 第一個敵人 (0:12 - 1:00) ----
-// 48 seconds. Mote walks → Red Grid → LMB fire → reload + Mote tackle.
-// THIS COMMIT: text-driven placeholder with MVP narrative beats and the
-// 4 chips (WASD / MOUSE / LMB / R). The actual scripted-gameplay
-// implementation (Mote sprite + Red Grid NN + camera 0.55) lands in a
-// follow-up commit per the MVP 1-week budget.
+// ---- S2: 跟著走 + 第一個敵人(0:12 - 1:00) ----
 async function _ftueScene2_FollowAndFirstEnemy() {
-  _ftueNarrLog('SCENE', 'S2 — Follow + first enemy (0:12-1:00)');
+  _ftueNarrLog('SCENE', 'S2 — 跟著走 + 第一個敵人');
   const el = _ftueNarrOverlay();
-  el.style.background = '#0c0a08';
+  el.style.background = '#0A0A0A';
+  _ftueSetVignette(220);   // §A.2 — Seed 50%, vision opens slightly
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
-  await _wait(500);
+  await _wait(600);   // §A.6 — fade-in beat
   // 0:14 [SUBJECT MOTE: WAITING]
-  _ftueNarrSetSub('[SUBJECT MOTE: WAITING]');
+  _ftueNarrSetSub(_r('[目標 MOTE:等待中]', '[SUBJECT MOTE: WAITING]'));
   await _wait(1500);
   // 0:18 Mote walks → WASD chip
-  await _ftueTypeCenter('Three metres ahead, low to the floor — a single red eye.\nThree-legged. The fourth limb is a soldering iron.\nIt watches you, then turns and limps left.', 22);
+  await _ftueTypeCenter(_r(
+    '前方三公尺,貼近地面 — 一隻紅眼。\n三條腿,第四肢是焊接過的金屬。\n它看了你一眼,轉身,瘸著朝左走。',
+    'Three metres ahead, low to the floor — a single red eye.\nThree-legged. The fourth limb is a soldering iron.\nIt watches you, then turns and limps left.'
+  ));
   await _wait(1500);
   _ftueNarrShowChip('W A S D');
   await _ftueWaitKeyAFK(['w','a','s','d'], 5000, 18000);
   _ftueNarrHideChip();
-  // 0:23 MOUSE → AIM (sub line)
-  _ftueNarrSetSub('MOUSE → AIM');
+  // 0:23 MOUSE → AIM
+  _ftueNarrSetSub(_r('滑鼠 → 瞄準', 'MOUSE → AIM'));
   await _wait(2200);
-  // 0:30 Mote stops, looks back
+  // 0:30 Mote stops
   _ftueNarrSetCenter('');
-  await _ftueTypeCenter('Mote stops at the corner. Turns. Waits.', 22);
+  await _ftueTypeCenter(_r(
+    'Mote 停在轉角。轉頭。等你。',
+    'Mote stops at the corner. Turns. Waits.'
+  ));
   await _wait(1800);
-  // 0:35 Red Grid patrol appears
-  _ftueNarrSetSub('[CONTACT — RED GRID PATROL]');
+  // 0:35 Red Grid
+  _ftueNarrSetSub(_r('[接觸 — 紅網巡邏者]', '[CONTACT — RED GRID PATROL]'));
   await _wait(800);
-  await _ftueTypeCenter('\n\nA Red Grid patrol robot rounds the corner.\nIt has not seen you. It is walking toward Mote.', 22);
+  await _ftueTypeCenter('\n\n' + _r(
+    '一台紅網巡邏機從轉角繞出來。\n它還沒看到你。它正朝 Mote 走過去。',
+    'A Red Grid patrol robot rounds the corner.\nIt has not seen you. It is walking toward Mote.'
+  ));
   await _wait(1500);
-  // 0:38 LMB chip + HP/ammo reveal
-  _ftueNarrShowChip('[LMB] · FIRE');
-  await _ftueWaitKeyAFK([' '], 4500, 12000);   // space = proxy for click
+  // 0:38 LMB chip
+  _ftueNarrShowChip(_r('[滑鼠左鍵] · 開火', '[LMB] · FIRE'));
+  await _ftueWaitKeyAFK([' '], 4500, 12000);
   _ftueNarrHideChip();
   _ftueMark('firstShot');
-  // 0:50 Reload moment — gun "jams"
+  // 0:50 mag dry → R
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
-  await _ftueTypeCenter("MAG DRY. Gun freezes for half a second.\nThe Red Grid is still standing.", 22);
+  await _ftueTypeCenter(_r(
+    '彈匣空了。 槍卡了半秒。\n紅網還站著。',
+    'MAG DRY. Gun freezes for half a second.\nThe Red Grid is still standing.'
+  ));
   await _wait(1500);
-  _ftueNarrShowChip('[R] · RELOAD');
+  _ftueNarrShowChip(_r('[R] · 換彈', '[R] · RELOAD'));
   await _ftueWaitKeyAFK(['r'], 4500, 10000);
   _ftueNarrHideChip();
   _ftueMark('firstReload');
   // 0:53 Mote tackles
   _ftueNarrSetCenter('');
-  await _ftueTypeCenter('Mote launches at the leg.\nBites. Tears. Drops to the floor as the patrol explodes.\nMote limps back, more obvious now.', 22);
+  await _ftueTypeCenter(_r(
+    'Mote 撲向它的腿。\n咬。 撕。 在巡邏機爆炸的瞬間倒回地上。\nMote 拐回來,瘸得更明顯。',
+    'Mote launches at the leg.\nBites. Tears. Drops to the floor as the patrol explodes.\nMote limps back, more obvious now.'
+  ));
   await _wait(2200);
-  // 0:58 Lumen first transmission — plays real radio beep + static via the
-  // legacy showRadioToast (still wired). The toast's visual lands behind
-  // the FTUE overlay (lower z-index), but the AUDIO comes through, which
-  // is what we want for ambiance.
-  _ftueNarrSetSub('▸ Lumen · ...one down. mote helped. it always does.');
-  if (typeof showRadioToast === 'function') {
-    try { showRadioToast('Lumen', '...one down. mote helped. it always does.', 4500); }
-    catch (e) {}
-  }
+  // 0:58 Lumen first transmission — §A.5 static-only via _ftueRadio
+  _ftueNarrSetSub('▸ Lumen · ' + _r(
+    '...一個倒了。 Mote 幫了你。 它總是這樣。',
+    '...one down. mote helped. it always does.'
+  ));
+  _ftueRadio('Lumen', 'Lumen',
+    '...一個倒了。 Mote 幫了你。 它總是這樣。',
+    '...one down. mote helped. it always does.', 4500);
   if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
   await _wait(2200);
   _ftueNarrSetSub('');
 }
 
-// ---- S3: 看清楚 (1:00 - 1:30) ----
-// 30 seconds. Q UAV + see swarm + DO NOT ENGAGE.
+// ---- S3: 看清楚(1:00 - 1:30) ----
 async function _ftueScene3_ScoutSwarm() {
-  _ftueNarrLog('SCENE', 'S3 — Scout the swarm (1:00-1:30)');
+  _ftueNarrLog('SCENE', 'S3 — 看清楚');
+  _ftueSetVignette(260);   // §A.2 — vision opening up
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
-  await _wait(500);
-  await _ftueTypeCenter('You move past the dead patrol. Mote keeps to your right.\nThe corridor opens up ahead.', 22);
+  await _wait(600);   // §A.6 fade beat
+  await _ftueTypeCenter(_r(
+    '你越過那台殘骸。 Mote 貼在你右邊。\n走廊在前方變寬。',
+    'You move past the dead patrol. Mote keeps to your right.\nThe corridor opens up ahead.'
+  ));
   await _wait(1800);
-  _ftueNarrSetSub('[MULTIPLE CONTACT — UNCLEAR COUNT]');
+  _ftueNarrSetSub(_r('[多重接觸 — 數量未知]', '[MULTIPLE CONTACT — UNCLEAR COUNT]'));
   await _wait(1500);
-  _ftueNarrShowChip('[Q] · AUDIT VISION');
+  _ftueNarrShowChip(_r('[Q] · UAV 偵察', '[Q] · AUDIT VISION'));
   await _ftueWaitKeyAFK(['q'], 4500, 14000);
   _ftueNarrHideChip();
   _ftueMark('firstUav');
-  // UAV view — describe the swarm
   _ftueNarrSetCenter('');
-  await _ftueTypeCenter('UAV up. The corridor floor is a moving carpet.\nIron Swarm — twelve units. Maybe more behind the wall.', 22);
-  _ftueNarrSetSub('[CONTACT: 12]\n[DO NOT ENGAGE]');
+  await _ftueTypeCenter(_r(
+    'UAV 升空。 走廊地面整片在動。\n鐵蜂群 — 十二隻。 牆後可能還有更多。',
+    'UAV up. The corridor floor is a moving carpet.\nIron Swarm — twelve units. Maybe more behind the wall.'
+  ));
+  _ftueNarrSetSub(_r('[接觸:12]\n[勿正面交戰]', '[CONTACT: 12]\n[DO NOT ENGAGE]'));
   await _wait(2800);
-  // Lumen — same dual-channel pattern (overlay text + real radio audio)
-  _ftueNarrSetSub('▸ Lumen · too many. cover behind the wall. wait for the breach.');
-  if (typeof showRadioToast === 'function') {
-    try { showRadioToast('Lumen', 'too many. cover behind the wall. wait for the breach.', 4500); }
-    catch (e) {}
-  }
+  _ftueNarrSetSub('▸ Lumen · ' + _r(
+    '太多。 退到牆後。 等破口。',
+    'too many. cover behind the wall. wait for the breach.'
+  ));
+  _ftueRadio('Lumen', 'Lumen',
+    '太多。 退到牆後。 等破口。',
+    'too many. cover behind the wall. wait for the breach.', 4500);
   await _wait(2800);
   _ftueNarrSetSub('');
 }
 
-// ---- S4: 破口 (1:30 - 2:30) — the most important 60 seconds ----
-// Countdown + B + Wall + BUILD = AUDIT moment.
+// ---- S4: 破口(1:30 - 2:30) — 最重要的 60 秒 ----
 async function _ftueScene4_Breach() {
-  _ftueNarrLog('SCENE', 'S4 — Breach (1:30-2:30)');
+  _ftueNarrLog('SCENE', 'S4 — 破口');
+  _ftueSetVignette(300);   // §A.2 — Seed 70%, almost fully visible
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
-  await _wait(500);
-  await _ftueTypeCenter('A breach in the wall — two metres wide.\nBeyond it, dust. A heavy UGV grinds toward you.', 22);
+  await _wait(600);
+  await _ftueTypeCenter(_r(
+    '牆上一道兩公尺寬的破口。\n外頭塵土。 一台重型 UGV 正輾過來。',
+    'A breach in the wall — two metres wide.\nBeyond it, dust. A heavy UGV grinds toward you.'
+  ));
   await _wait(1800);
-  // Real DOM countdown timer per MVP §7 — top-right, big red, monospace.
-  // Replaces the simple ftueNarrTop text version. Pulses when ≤10s.
+  // §A.3-compliant DOM countdown timer — #C8261C red, monospace
   let cdEl = document.getElementById('ftueNarrCountdown');
   if (!cdEl) {
     cdEl = document.createElement('div');
     cdEl.id = 'ftueNarrCountdown';
     cdEl.style.cssText =
-      'position:absolute;top:36px;right:48px;' +
-      "font-family:'Courier New',monospace;color:#c8442e;" +
+      'position:absolute;top:36px;right:48px;z-index:6;' +
+      "font-family:'Courier New',monospace;color:#C8261C;" +
       'font-size:64px;letter-spacing:4px;font-weight:bold;' +
-      'text-shadow:0 0 12px rgba(200,68,46,0.6);' +
+      'text-shadow:0 0 12px rgba(200,38,28,0.6);' +
       'min-width:180px;text-align:right;line-height:1;';
     const overlay = document.getElementById('ftueNarr');
     if (overlay) overlay.appendChild(cdEl);
   }
   const cdLabel = document.createElement('div');
-  cdLabel.style.cssText = 'font-size:12px;letter-spacing:5px;color:#a0584c;margin-bottom:4px;';
-  cdLabel.textContent = 'IMPACT';
+  cdLabel.style.cssText = 'font-size:12px;letter-spacing:5px;color:#6B6B6B;margin-bottom:4px;';
+  cdLabel.textContent = _r('衝擊', 'IMPACT');
   cdEl.appendChild(cdLabel);
   const cdValue = document.createElement('div');
   cdValue.id = 'ftueNarrCdValue';
   cdValue.textContent = '25s';
   cdEl.appendChild(cdValue);
-  _ftueNarrSetSub('[INCOMING — HEAVY UGV]');
-  // Run the countdown asynchronously so chips can show simultaneously
+  _ftueNarrSetSub(_r('[來襲 — 重型 UGV]', '[INCOMING — HEAVY UGV]'));
   let countdownAlive = true;
   let secs = 25;
   const tickCD = () => {
     if (!countdownAlive) return;
     if (_ftueNarr.skipFlag) {
       countdownAlive = false;
-      if (cdEl) { cdEl.remove(); }
+      if (cdEl) cdEl.remove();
       return;
     }
     cdValue.textContent = secs + 's';
     if (secs <= 10) {
-      // Switch to faster pulse + brighter on the urgency window
       cdValue.style.animation = 'ftue-pulse 0.5s ease-in-out infinite';
-      cdValue.style.color = '#ff6444';
-      cdValue.style.textShadow = '0 0 16px rgba(255,100,68,0.8)';
+      cdValue.style.color = '#E63D33';
+      cdValue.style.textShadow = '0 0 16px rgba(230,61,51,0.8)';
     }
     if (secs <= 0) { countdownAlive = false; return; }
     secs--;
@@ -3571,18 +3696,19 @@ async function _ftueScene4_Breach() {
   };
   tickCD();
   await _wait(2200);
-  _ftueNarrShowChip('[B] · BUILD');
+  _ftueNarrShowChip(_r('[B] · 建造', '[B] · BUILD'));
   await _ftueWaitKeyAFK(['b'], 4500, 16000);
   _ftueNarrHideChip();
   _ftueMark('firstBuild');
-  // Wheel description (placeholder for actual wheel UI)
   _ftueNarrSetCenter('');
-  await _ftueTypeCenter('The build wheel opens.\nTwelve slots. Eleven greyed out — LOCKED.\n\n[LOCKED] VERDICT TURRET ── COMPLETE 1 CYCLE TO UNLOCK\n[LOCKED] AUDIT CONSOLE   ── EVIDENCE-BASED EVOLUTION\n\nOnly WALL is lit.', 22);
-  _ftueNarrShowChip('CLICK · WALL');
+  await _ftueTypeCenter(_r(
+    '建造輪盤展開。\n十二格。 十一格灰 — 鎖定。\n\n[鎖定] 裁決砲塔   ── 完成 1 個 cycle 解鎖\n[鎖定] 審計終端   ── 證據驅動的演化\n\n只剩 WALL 是亮的。',
+    'The build wheel opens.\nTwelve slots. Eleven greyed out — LOCKED.\n\n[LOCKED] VERDICT TURRET ── COMPLETE 1 CYCLE TO UNLOCK\n[LOCKED] AUDIT CONSOLE   ── EVIDENCE-BASED EVOLUTION\n\nOnly WALL is lit.'
+  ));
+  _ftueNarrShowChip(_r('點擊 · WALL', 'CLICK · WALL'));
   await _ftueWaitKeyAFK([' ', 'enter'], 5000, 14000);
   _ftueNarrHideChip();
   _ftueMark('firstWall');
-  // Wall lands → countdown halts and the DOM timer disappears
   countdownAlive = false;
   const cdNode = document.getElementById('ftueNarrCountdown');
   if (cdNode) {
@@ -3593,36 +3719,50 @@ async function _ftueScene4_Breach() {
   _ftueNarrSetTop('');
   _ftueNarrSetSub('');
   _ftueNarrSetCenter('');
-  await _ftueTypeCenter('The wall drops into place.\nDust kicks up.\nThe UGV slams into it and stops.', 22);
+  await _ftueTypeCenter(_r(
+    '牆塊落下,卡在缺口。\n灰塵翻上來。\nUGV 撞上去停了下來。',
+    'The wall drops into place.\nDust kicks up.\nThe UGV slams into it and stops.'
+  ));
   await _wait(1800);
-  // Lumen — first time CLEAR (no static). Real radio toast triggers audio
-  // beep so the ear actually hears the moment Lumen breaks through.
-  _ftueNarrSetSub('▸ Lumen · there it is.\n▸ Lumen · that is not killing — that is auditing.\n▸ Lumen · build to think. kill is just the last 0.5 seconds.');
-  if (typeof showRadioToast === 'function') {
-    try {
-      showRadioToast('Lumen [CLEAR]', 'there it is. that is not killing — that is auditing.', 4500);
-      setTimeout(() => {
-        try { showRadioToast('Lumen', 'build to think. kill is just the last 0.5 seconds.', 4500); }
-        catch (e) {}
-      }, 1700);
-    } catch (e) {}
-  }
+  // Lumen — first time CLEAR (no static-as-distortion; §A.5 still no beep)
+  _ftueNarrSetSub('▸ Lumen · ' + _r(
+    '就是這個。\n這不是殺戮 — 是審計。\n建造,才是思考。 殺,只是最後 0.5 秒。',
+    'there it is.\nthat is not killing — that is auditing.\nbuild to think. kill is just the last 0.5 seconds.'
+  ));
+  _ftueRadio('Lumen [清晰]', 'Lumen [CLEAR]',
+    '就是這個。 這不是殺戮 — 是審計。',
+    'there it is. that is not killing — that is auditing.', 4500);
+  setTimeout(() => {
+    _ftueRadio('Lumen', 'Lumen',
+      '建造,才是思考。 殺,只是最後 0.5 秒。',
+      'build to think. kill is just the last 0.5 seconds.', 4500);
+  }, 1700);
   await _wait(3500);
-  // BUILD = AUDIT stamp
+  // BUILD = AUDIT big stamp — §A.6 timing: 1.2s fade-in / 2s hold / 1.5s out
   _ftueNarrSetSub('');
   _ftueNarrSetCenter('');
   const center = document.getElementById('ftueNarrCenter');
   if (center) {
-    center.style.transition = 'opacity 1.6s';
+    center.style.transition = 'opacity 1.2s linear';
     center.style.opacity = '0';
-    center.textContent = 'BUILD = AUDIT\n───────────\n建築即審計';
+    center.textContent = _r('建造 = 審計\n───────────\nBUILD = AUDIT', 'BUILD = AUDIT\n───────────\n建造 = 審計');
     center.style.fontSize = '32px';
     center.style.letterSpacing = '6px';
+    center.style.color = '#E8E4D8';
     void center.offsetWidth;
     center.style.opacity = '1';
   }
-  await _wait(2400);
+  // QA pause point — when sessionStorage.ag._ftueNarrPauseAtBuildEquals='1',
+  // hold here so the BUILD=AUDIT stamp is screenshot-stable instead of
+  // being raced past by the dev-skip flag.
+  try {
+    if (sessionStorage.getItem('ag._ftueNarrPauseAtBuildEquals') === '1') {
+      await _ftueQaHold('BUILD=AUDIT stamp');
+    }
+  } catch (e) {}
+  await _wait(2000);   // hold
   if (center) {
+    center.style.transition = 'opacity 1.5s linear';
     center.style.opacity = '0';
     setTimeout(() => {
       if (!center) return;
@@ -3630,31 +3770,32 @@ async function _ftueScene4_Breach() {
       center.style.letterSpacing = '1px';
       center.textContent = '';
       center.style.opacity = '1';
-      center.style.transition = 'none';
-    }, 900);
+      center.style.transition = '';
+    }, 1500);
   }
-  await _wait(1100);
-  _ftueNarrSetSub('▸ Lumen · cover mote. she earned it.');
-  if (typeof showRadioToast === 'function') {
-    try { showRadioToast('Lumen', 'cover mote. she earned it.', 4500); }
-    catch (e) {}
-  }
+  await _wait(1700);
+  _ftueNarrSetSub('▸ Lumen · ' + _r(
+    '保護 Mote。 它值得。',
+    'cover mote. she earned it.'
+  ));
+  _ftueRadio('Lumen', 'Lumen',
+    '保護 Mote。 它值得。',
+    'cover mote. she earned it.', 4500);
   if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
   await _wait(2400);
   _ftueNarrSetSub('');
 }
 
-// ---- S5: 出口 + ENTER → first NN match (2:30 - 3:00) ----
+// ---- S5: 出口(2:30 - 3:00) ----
 async function _ftueScene5_Exit() {
-  _ftueNarrLog('SCENE', 'S5 — Exit (2:30-3:00)');
+  _ftueNarrLog('SCENE', 'S5 — 出口');
+  _ftueSetVignette(380);   // §A.2 — Seed 87%, full vision
   const el = _ftueNarrOverlay();
-  // Procedural exit-vector-field BG: rust-coloured sky gradient + black ground
-  // line + a distant red tower silhouette + 3 hung relay-drone dots.
-  // Inline SVG so we don't need a shipped asset file (per MVP §6 — the
-  // referenced exit-vector-field.svg isn't in the repo today).
-  el.style.background = 'linear-gradient(to bottom,' +
-    '#3a1612 0%, #5a201c 22%, #6a2820 38%, #401410 60%, #1a0a08 78%, #050402 100%)';
-  // Drop a backdrop layer with the tower + drones + horizon
+  // §A.3 palette: rust-toned dark gradient (NOT bright orange).
+  // The procedural exit-vector-field SVG layer renders below the text.
+  el.style.background =
+    'linear-gradient(to bottom,' +
+    '#1A0808 0%, #2A0E0C 22%, #401612 38%, #2A0E0C 60%, #1A0808 78%, #0A0404 100%)';
   let bg = document.getElementById('ftueNarrExitBg');
   if (!bg) {
     bg = document.createElement('div');
@@ -3663,39 +3804,38 @@ async function _ftueScene5_Exit() {
     bg.innerHTML =
       '<svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" ' +
       'style="width:100%;height:100%;display:block;">' +
-        // Horizon glow
         '<defs>' +
           '<radialGradient id="ftueExitGlow" cx="50%" cy="62%" r="40%">' +
-            '<stop offset="0%" stop-color="#ff5a3a" stop-opacity="0.55"/>' +
-            '<stop offset="100%" stop-color="#ff5a3a" stop-opacity="0"/>' +
+            // §A.3 #E63D33 red (NOT bright orange)
+            '<stop offset="0%" stop-color="#E63D33" stop-opacity="0.45"/>' +
+            '<stop offset="100%" stop-color="#E63D33" stop-opacity="0"/>' +
           '</radialGradient>' +
           '<linearGradient id="ftueExitGround" x1="0" y1="0" x2="0" y2="1">' +
-            '<stop offset="0%" stop-color="#1a0a08"/>' +
+            '<stop offset="0%" stop-color="#0A0404"/>' +
             '<stop offset="100%" stop-color="#000"/>' +
           '</linearGradient>' +
         '</defs>' +
-        // Glow behind the tower
         '<ellipse cx="800" cy="560" rx="650" ry="120" fill="url(#ftueExitGlow)"/>' +
-        // Far red tower silhouette
-        '<rect x="780" y="200" width="40" height="380" fill="#0a0604"/>' +
-        '<rect x="772" y="200" width="56" height="14" fill="#0a0604"/>' +
-        // Tower red beacons (pulsing via animate)
-        '<circle cx="800" cy="240" r="6" fill="#ff4022">' +
+        // Tower silhouette — §A.3 #1A1A1A main-black
+        '<rect x="780" y="200" width="40" height="380" fill="#1A1A1A"/>' +
+        '<rect x="772" y="200" width="56" height="14" fill="#1A1A1A"/>' +
+        // Tower beacons — §A.3 #C8261C
+        '<circle cx="800" cy="240" r="6" fill="#C8261C">' +
           '<animate attributeName="opacity" values="0.4;1;0.4" dur="1.6s" repeatCount="indefinite"/>' +
         '</circle>' +
-        '<circle cx="800" cy="320" r="4" fill="#ff4022" opacity="0.7"/>' +
-        '<circle cx="800" cy="400" r="4" fill="#ff4022" opacity="0.5"/>' +
-        // Three relay drones hung in the air
-        '<g fill="#1a1612" stroke="#3a2820" stroke-width="1">' +
+        '<circle cx="800" cy="320" r="4" fill="#C8261C" opacity="0.7"/>' +
+        '<circle cx="800" cy="400" r="4" fill="#C8261C" opacity="0.5"/>' +
+        // Relay drones — §A.3 #1A1A1A on dark
+        '<g fill="#1A1A1A" stroke="#1A1A1A" stroke-width="1">' +
           '<circle cx="380"  cy="250" r="14"/>' +
-          '<line x1="380" y1="0" x2="380" y2="236" stroke="#1a1612" stroke-width="1" opacity="0.4"/>' +
+          '<line x1="380" y1="0" x2="380" y2="236" stroke="#1A1A1A" stroke-width="1" opacity="0.4"/>' +
           '<circle cx="1180" cy="180" r="12"/>' +
-          '<line x1="1180" y1="0" x2="1180" y2="168" stroke="#1a1612" stroke-width="1" opacity="0.4"/>' +
+          '<line x1="1180" y1="0" x2="1180" y2="168" stroke="#1A1A1A" stroke-width="1" opacity="0.4"/>' +
           '<circle cx="640"  cy="320" r="10"/>' +
-          '<line x1="640" y1="0" x2="640" y2="310" stroke="#1a1612" stroke-width="1" opacity="0.4"/>' +
+          '<line x1="640" y1="0" x2="640" y2="310" stroke="#1A1A1A" stroke-width="1" opacity="0.4"/>' +
         '</g>' +
-        // Fiber Wasp web — six thin diagonal lines between buildings
-        '<g stroke="#3a2018" stroke-width="0.6" opacity="0.5">' +
+        // Fiber Wasp web — §A.3 grey threads
+        '<g stroke="#6B6B6B" stroke-width="0.6" opacity="0.4">' +
           '<line x1="100"  y1="640" x2="1500" y2="690"/>' +
           '<line x1="200"  y1="700" x2="1400" y2="650"/>' +
           '<line x1="300"  y1="660" x2="1300" y2="700"/>' +
@@ -3703,10 +3843,9 @@ async function _ftueScene5_Exit() {
           '<line x1="450"  y1="630" x2="1450" y2="710"/>' +
           '<line x1="700"  y1="730" x2="1100" y2="610"/>' +
         '</g>' +
-        // Foreground ground line
         '<rect x="0" y="600" width="1600" height="300" fill="url(#ftueExitGround)"/>' +
-        // Glass shards (procedural)
-        '<g fill="#ff5a3a" opacity="0.3">' +
+        // Glass shards — §A.3 #C8261C dim
+        '<g fill="#C8261C" opacity="0.25">' +
           '<polygon points="120,750 130,720 145,755"/>' +
           '<polygon points="380,810 395,780 410,815"/>' +
           '<polygon points="720,790 730,765 750,800"/>' +
@@ -3714,7 +3853,6 @@ async function _ftueScene5_Exit() {
           '<polygon points="1380,770 1395,740 1415,775"/>' +
         '</g>' +
       '</svg>';
-    // Insert as FIRST child so all the text/chip elements render on top.
     if (el.firstChild) el.insertBefore(bg, el.firstChild);
     else el.appendChild(bg);
   }
@@ -3723,29 +3861,45 @@ async function _ftueScene5_Exit() {
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
   await _wait(700);
-  await _ftueTypeCenter('You shoulder the steel door open.\n\nThe vector field stretches outward —\nrust-coloured sky, glass underfoot, three relay drones hung like punctuation.\nFour kilometres out, a red tower pulses.\n\nMote sits beside you and does not follow.', 22);
+  await _ftueTypeCenter(_r(
+    '你扛開那道鋼門。\n\n向量場朝外延伸 —\n鏽色天空,腳下碎玻璃,三具中繼無人機掛在空中像句點。\n四公里外,一座紅色塔在跳動。\n\nMote 在你身邊坐下,沒有跟出來。',
+    'You shoulder the steel door open.\n\nThe vector field stretches outward —\nrust-coloured sky, glass underfoot, three relay drones hung like punctuation.\nFour kilometres out, a red tower pulses.\n\nMote sits beside you and does not follow.'
+  ));
   await _wait(1800);
-  _ftueNarrSetSub('▸ Lumen · V-07. you remember the way.');
-  if (typeof showRadioToast === 'function') {
-    try { showRadioToast('Lumen', 'V-07. you remember the way.', 4000); }
-    catch (e) {}
-  }
+  _ftueNarrSetSub('▸ Lumen · ' + _r(
+    'V-07。 你還記得路。',
+    'V-07. you remember the way.'
+  ));
+  _ftueRadio('Lumen', 'Lumen',
+    'V-07。 你還記得路。',
+    'V-07. you remember the way.', 4000);
   await _wait(1700);
-  _ftueNarrSetSub('▸ Lumen · cycle 347 begins now.');
-  if (typeof showRadioToast === 'function') {
-    try { showRadioToast('Lumen', 'cycle 347 begins now.', 4000); }
-    catch (e) {}
-  }
+  _ftueNarrSetSub('▸ Lumen · ' + _r(
+    '週期 347 現在開始。',
+    'cycle 347 begins now.'
+  ));
+  _ftueRadio('Lumen', 'Lumen',
+    '週期 347 現在開始。',
+    'cycle 347 begins now.', 4000);
   await _wait(1400);
   _ftueNarrSetCenter('');
-  await _ftueTypeCenter('CYCLE #347\nAUDIT IN PROGRESS\n...\nREADY?', 28);
+  await _ftueTypeCenter(_r(
+    '週期 #347\n審計進行中\n...\n準備好了?',
+    'CYCLE #347\nAUDIT IN PROGRESS\n...\nREADY?'
+  ), 28);
   await _wait(900);
-  // Restore Seed Integrity to 87 visually (purely flavour — sets ag.seedIntegrity)
   try { localStorage.setItem('ag.seedIntegrity', '87'); } catch (e) {}
   if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
-  // CTA
+  // CTA — §A.6 fade in 1.2s
   const cta = document.getElementById('ftueNarrCta');
-  if (cta) cta.style.display = 'block';
+  if (cta) {
+    cta.style.display = 'block';
+    void cta.offsetWidth;
+    cta.style.opacity = '1';
+  }
+  // Update CTA button label per current language
+  const ctaBtn = document.getElementById('ftueNarrCtaBtn');
+  if (ctaBtn) ctaBtn.textContent = _r('[ 進入 ▶ ]', '[ ENTER ▶ ]');
   await new Promise((resolve) => {
     const btn = document.getElementById('ftueNarrCtaBtn');
     const onResolve = () => {
@@ -3774,6 +3928,9 @@ async function startNarrativeFTUE() {
   }
   _ftueNarr.running = true;
   _ftueNarrLog('START', '3-min MVP prologue begin' + (_ftueNarr.skipFlag ? ' (DEV SKIP ON)' : ''));
+  // §A.1 — language check before any visible string. Sets default zh if no
+  // preference, shows "ZH AVAILABLE" toast if the player previously chose en.
+  _ftueLangCheck();
   // Reset MVP marks for a clean run (keeps `skipped` if it existed, since
   // that's a one-shot sticky flag the player chose).
   try { localStorage.removeItem('ag.ftue'); } catch (e) {}
@@ -3786,11 +3943,22 @@ async function startNarrativeFTUE() {
   if (typeof game !== 'undefined') game._paused = true;
   _ftueNarrOverlay();
   const t0 = Date.now();
+  // Scene-end pause hook for QA/screenshot capture. When sessionStorage
+  // ag._ftueNarrPauseEachScene === '1', wait between scenes until the
+  // dev presses any key on the FTUE overlay. Off in production.
+  const pauseEnabled = (() => {
+    try { return sessionStorage.getItem('ag._ftueNarrPauseEachScene') === '1'; }
+    catch (e) { return false; }
+  })();
+  const sceneHold = async (sceneId) => {
+    if (!pauseEnabled) return;
+    await _ftueQaHold(`scene-end ${sceneId}`);
+  };
   try {
-    await _ftueScene1_Blackness();             _ftueNarr.sceneIdx = 1;
-    await _ftueScene2_FollowAndFirstEnemy();   _ftueNarr.sceneIdx = 2;
-    await _ftueScene3_ScoutSwarm();            _ftueNarr.sceneIdx = 3;
-    await _ftueScene4_Breach();                _ftueNarr.sceneIdx = 4;
+    await _ftueScene1_Blackness();             _ftueNarr.sceneIdx = 1; await sceneHold('S1');
+    await _ftueScene2_FollowAndFirstEnemy();   _ftueNarr.sceneIdx = 2; await sceneHold('S2');
+    await _ftueScene3_ScoutSwarm();            _ftueNarr.sceneIdx = 3; await sceneHold('S3');
+    await _ftueScene4_Breach();                _ftueNarr.sceneIdx = 4; await sceneHold('S4');
     await _ftueScene5_Exit();                  _ftueNarr.sceneIdx = 5;
   } catch (err) {
     console.error('[FTUE-NARR] crashed', err);
