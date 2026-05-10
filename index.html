@@ -3722,9 +3722,19 @@ function _ftueScriptedTick() {
   f.effectiveVisionRadius = f.visionRadius
     + Math.sin(f.breathPhase * Math.PI / 1.2) * 4
     - hpPenalty;
-  // Drive Mote AI
+  // Drive Mote AI + pet animation tick (Mission 1)
   for (const a of allies) {
-    if (a && a._ftueMote && a.alive) _ftueUpdateMote(a);
+    if (!a || !a.alive) continue;
+    if (a._ftueMote) {
+      _ftueUpdateMote(a);
+      // Pet behaviors (idle wander / head tilt / nuzzle / hum / look back)
+      if (typeof _missionMotePetTick === 'function') {
+        try { _missionMotePetTick(a, 0.016); } catch (e) {}
+      }
+    } else if (a._ftueBravo || a._ftueCharlie) {
+      // BRAVO-7 / CHARLIE-3 use the same FOLLOW_PLAYER state machine
+      _ftueUpdateMote(a);
+    }
   }
 }
 
@@ -3914,327 +3924,770 @@ function _ftueNarrFlashChip() {
 }
 
 // ============================================================
-// MVP 5 SCENES — per FTUE/01 §1, §A-compliant
+// MISSION 1 — "第一次甦醒,第一次死,第一次反擊"
+// 8-scene narrative-driven Chapter 1 mission per FTUE/03 spec.
 //
-// All player-visible strings flow through _r(zh, en) so the FTUE plays
-// in the player's preferred language (zh by default per §A.1).
-// All colors use the §A.3 six-color palette (#0A0A0A / #1A1A1A /
-// #C8261C / #E63D33 / #E8E4D8 / #6B6B6B). Vignette radius transitions
-// per §A.2 (140 → 220 → 260 → 300 → 380 px) match Seed Integrity
-// recovery — the screen literally clears as V-07 wakes up.
-// Audio is static-only per §A.5 (showRadioToast suppresses beep when
-// _ftueNarr.running is true).
-// Animation timings hit §A.6 (0.6s fades, 22ms typing, chip 0.4s in
-// / 1.5s hold / 0.6s out, big-title 1.2s in / 2s hold / 1.5s out).
+// Replaces the previous 5-scene MVP scaffold (S1-S5). Adds:
+//   - Dynamic vision system (space affordance × Seed)
+//   - Mote pet AI (idle wander, head tilt, look back, nuzzle)
+//   - SVG sprite render (v-07 / mote / hollow-31)
+//   - Death-revival cinematic (S5 → S6)
+//   - UAV memory effect (enemies outlined 30s post-UAV)
+//   - Recruitment system (E-rescue + G-SED)
+//   - BUILD = VERDICT title card with game._paused = true (timeScale=0 surrogate)
+//   - WebAudio synth bank (no 2-tone beep)
+//
+// Per FTUE/01 §A: zh default, 5-color palette, vision-hole, monospace, no UI beep.
 // ============================================================
 
-// ---- S1: 黑暗(0:00 - 0:12) ----
-// Pure black + heartbeat + Seed Integrity 41% → 28% + MOTE PROXIMITY.
-async function _ftueScene1_Blackness() {
-  _ftueNarrLog('SCENE', 'S1 — 黑暗 (0:00-0:12)');
+// ---- SVG sprite loader (top-down character art per FTUE/02 §3.1) ----
+const _missionSprites = { v07: null, mote: null, hollow31: null, _ready: false };
+function _missionLoadSprites() {
+  if (_missionSprites._ready) return;
+  const list = [
+    { key: 'v07',     path: 'Assets/Characters/v-07.svg' },
+    { key: 'mote',    path: 'Assets/Characters/mote.svg' },
+    { key: 'hollow31',path: 'Assets/Characters/hollow-31.svg' },
+  ];
+  let loaded = 0;
+  for (const s of list) {
+    const img = new Image();
+    img.onload  = () => { loaded++; if (loaded === list.length) _missionSprites._ready = true; };
+    img.onerror = () => { _missionNarrLog('SPRITE-FAIL', s.path); loaded++; };
+    img.src = s.path;
+    _missionSprites[s.key] = img;
+  }
+}
+_missionLoadSprites();
+
+// ---- WebAudio synth bank (CREDITS.md describes recipes) ----
+// All sounds are synthesised in-engine — no 2-tone beep, no external samples.
+function _missionAudio_static(vol, durSec) {
+  // Filtered white noise burst — Lumen radio static
+  if (typeof getAC !== 'function') return;
+  let ac; try { ac = getAC(); } catch (e) { return; }
+  if (!ac) return;
+  vol = vol == null ? 0.4 : vol;
+  durSec = durSec == null ? 0.7 : durSec;
+  const buf = ac.createBuffer(1, ac.sampleRate * durSec, ac.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.45;
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const filter = ac.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 1200;
+  filter.Q.value = 0.5;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, ac.currentTime);
+  g.gain.linearRampToValueAtTime(vol, ac.currentTime + 0.04);
+  g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + durSec);
+  src.connect(filter); filter.connect(g); g.connect(ac.destination);
+  src.start();
+  src.stop(ac.currentTime + durSec);
+}
+function _missionAudio_thud(vol) {
+  if (typeof getAC !== 'function') return;
+  let ac; try { ac = getAC(); } catch (e) { return; }
+  if (!ac) return;
+  vol = vol == null ? 0.5 : vol;
+  const now = ac.currentTime;
+  // Low-pass noise + 40 Hz sine for chest-thud feel
+  const buf = ac.createBuffer(1, ac.sampleRate * 0.4, ac.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.6;
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 200; f.Q.value = 0.7;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(vol, now + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  src.connect(f); f.connect(g); g.connect(ac.destination);
+  src.start(now); src.stop(now + 0.4);
+  // Sine 40 Hz layer
+  const o = ac.createOscillator(); const og = ac.createGain();
+  o.type = 'sine'; o.frequency.value = 40;
+  og.gain.setValueAtTime(0, now);
+  og.gain.linearRampToValueAtTime(vol * 0.7, now + 0.01);
+  og.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+  o.connect(og); og.connect(ac.destination);
+  o.start(now); o.stop(now + 0.5);
+}
+function _missionAudio_sed(vol) {
+  // SED bomb — sine 220 Hz with FM ring-mod 18 Hz, 600 ms decay
+  if (typeof getAC !== 'function') return;
+  let ac; try { ac = getAC(); } catch (e) { return; }
+  if (!ac) return;
+  vol = vol == null ? 0.4 : vol;
+  const now = ac.currentTime;
+  const carrier = ac.createOscillator(); carrier.type = 'sine'; carrier.frequency.value = 220;
+  const mod     = ac.createOscillator(); mod.type     = 'sine'; mod.frequency.value     = 18;
+  const modGain = ac.createGain();         modGain.gain.value = 80;
+  mod.connect(modGain); modGain.connect(carrier.frequency);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(vol, now + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+  carrier.connect(g); g.connect(ac.destination);
+  mod.start(now); carrier.start(now);
+  mod.stop(now + 0.65); carrier.stop(now + 0.65);
+}
+function _missionAudio_footstep(vol, kind) {
+  // kind: 'concrete' | 'mech-hound' | 'hollow-31'
+  if (typeof getAC !== 'function') return;
+  let ac; try { ac = getAC(); } catch (e) { return; }
+  if (!ac) return;
+  vol = vol == null ? 0.25 : vol;
+  const now = ac.currentTime;
+  const buf = ac.createBuffer(1, ac.sampleRate * 0.12, ac.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.6;
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const f = ac.createBiquadFilter();
+  if (kind === 'mech-hound') {
+    f.type = 'highpass'; f.frequency.value = 2200; f.Q.value = 1.2;
+  } else if (kind === 'hollow-31') {
+    f.type = 'lowpass';  f.frequency.value = 220;  f.Q.value = 0.8;
+    vol *= 1.4;
+  } else {
+    f.type = 'bandpass'; f.frequency.value = 800;  f.Q.value = 0.9;
+  }
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(vol, now + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  src.connect(f); f.connect(g); g.connect(ac.destination);
+  src.start(now); src.stop(now + 0.12);
+}
+
+// ---- Space-affordance vision multipliers (FTUE/03 §2.1) ----
+const SPACE_MULT = {
+  TIGHT_CORRIDOR: 0.5,
+  CORRIDOR:       0.75,
+  ROOM:           1.0,
+  HALL:           1.5,
+  WAREHOUSE:      1.9,
+  OUTDOOR_VAST:   2.5,
+};
+function _missionSeedMultiplier() {
+  let seed = 50;
+  try { seed = parseInt(AG.get('seedIntegrity') || '50', 10); } catch (e) {}
+  if (seed < 30)  return 0.7;
+  if (seed < 60)  return 0.85;
+  if (seed >= 90) return 1.1;
+  return 1.0;
+}
+
+// ---- MISSION1 state extension (lives on game._ftueScripted) ----
+function _missionInitState() {
+  const f = game._ftueScripted;
+  if (!f) return;
+  f.mission         = 'm1';
+  f.spaceType       = 'TIGHT_CORRIDOR';
+  f.spaceTransitionT = 0;     // ms timestamp of the last space change
+  // Pet AI
+  f.motePetTimer    = Date.now() + 6000;
+  f.motePetState    = 'IDLE_BREATHE';
+  // Eye trail (head positions over last 0.6s)
+  f.moteTrail       = [];
+  // UAV memory
+  f.uavMemoryUntil  = 0;       // game.time when memory expires
+  f.uavTagged       = new Set(); // enemy refs tagged for outline
+  // Recruitment
+  f.alliedWreckage  = null;     // {x, y, hp, rescued: false}
+  f.sentinelTarget  = null;     // ref to Sentinel that can be SED'd
+  // Death/revival
+  f.diedInS5        = false;
+  // Allies recruited (BRAVO-7 / CHARLIE-3)
+  f.bravo7          = null;
+  f.charlie3        = null;
+}
+
+// Set spaceType for the current scene; vision lerp picks it up via target.
+function _missionSetSpace(spaceType) {
+  const f = game._ftueScripted;
+  if (!f) return;
+  f.spaceType = spaceType;
+  f.spaceTransitionT = Date.now();
+  const base = 200;
+  const sm = SPACE_MULT[spaceType] || 1.0;
+  const seedM = _missionSeedMultiplier();
+  f.targetVisionRadius = base * sm * seedM;
+  if (f.cameraScaleTarget == null) f.cameraScaleTarget = 0.55;
+  _missionNarrLog('SPACE', `${spaceType} (× ${sm}) → vision target ${Math.round(f.targetVisionRadius)} px`);
+}
+
+function _missionNarrLog(kind, msg) {
+  try { console.log(`[M1 ${kind}] ${msg}`); } catch (e) {}
+  if (typeof _ftueNarr !== 'undefined' && _ftueNarr.log) {
+    _ftueNarr.log.push(`[M1 ${kind}] ${msg}`);
+    if (_ftueNarr.log.length > 60) _ftueNarr.log.shift();
+  }
+}
+
+// ---- Mote pet AI extension (idle wander / head tilt / nuzzle / trail) ----
+// Called from _ftueUpdateMote per frame for any Mote in non-combat states.
+function _missionMotePetTick(m, dt) {
+  const f = game._ftueScripted;
+  if (!f) return;
+  // Track head position for eye-trail effect
+  f.moteTrail = f.moteTrail || [];
+  f.moteTrail.push({ x: m.x + Math.cos(m.angle || 0) * 6, y: m.y + Math.sin(m.angle || 0) * 6, t: Date.now() });
+  const trailWindow = 600;
+  while (f.moteTrail.length && Date.now() - f.moteTrail[0].t > trailWindow) f.moteTrail.shift();
+  // Idle wander state machine — only fires when Mote is in IDLE-ish state
+  const idleStates = new Set(['WAITING','PET_WAITING','FOLLOW_PLAYER','SIT_AT_WALL','SIT_AT_PLAYER_SIDE']);
+  if (!idleStates.has(m._moteState)) return;
+  const now = Date.now();
+  if (now < (f.motePetTimer || 0)) return;
+  // Pick next pet behavior
+  const distToPlayer = Math.hypot(player.x - m.x, player.y - m.y);
+  const playerStill = (Math.abs(player._velX || 0) + Math.abs(player._velY || 0)) < 0.3;
+  let next = 'IDLE_BREATHE';
+  const r = Math.random();
+  if (playerStill && distToPlayer < 200 && r < 0.35) {
+    next = 'NUZZLE';   // Move toward player + camera shake
+  } else if (r < 0.55) {
+    next = 'IDLE_HEAD_TILT';   // Brief rotation
+  } else if (r < 0.75) {
+    next = 'IDLE_LOOK_BACK';   // Face player for 0.5s
+  } else if (r < 0.90) {
+    next = 'IDLE_PAW';         // Small bounce
+  } else {
+    next = 'IDLE_HUM';         // Low audio cue
+  }
+  f.motePetState = next;
+  f.motePetTimer = now + 5000 + Math.floor(Math.random() * 10000);   // 5-15s next
+  _missionNarrLog('PET', `Mote → ${next}`);
+  if (next === 'NUZZLE') {
+    // Walk toward player
+    m._petTargetX = player.x;
+    m._petTargetY = player.y;
+    if (typeof game !== 'undefined') game.shakeMag = Math.max(game.shakeMag || 0, 4);
+  } else if (next === 'IDLE_HUM') {
+    _missionAudio_static(0.12, 0.3);
+  }
+  // IDLE_HEAD_TILT / IDLE_LOOK_BACK / IDLE_PAW are visual-only via render hook.
+}
+
+// Render override — draw V-07 SVG for player, Mote SVG for Mote.
+// Called during the per-frame world render (after the existing humanoid pass).
+function _missionRenderSprites(ctx) {
+  const f = game._ftueScripted;
+  if (!f || !_missionSprites._ready) return;
+  // Player V-07
+  if (player && player.alive) {
+    const img = _missionSprites.v07;
+    if (img && img.complete && img.naturalWidth > 0) {
+      const SCALE = 0.10;       // SVG is 240×360; scale to ~24×36 world units
+      const w = img.naturalWidth * SCALE;
+      const h = img.naturalHeight * SCALE;
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.rotate((player.angle || 0) + Math.PI / 2);   // SVG is head-up
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+      // Player glow (FTUE/03 §2.3 — V-07 is also a light source)
+      const pulse = 0.16 + 0.04 * Math.sin((game.time || 0) * 0.04);
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      const grad = ctx.createRadialGradient(player.x, player.y, 6, player.x, player.y, 60);
+      grad.addColorStop(0, 'rgba(232, 228, 216, 0.3)');
+      grad.addColorStop(1, 'rgba(232, 228, 216, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(player.x - 60, player.y - 60, 120, 120);
+      ctx.restore();
+    }
+  }
+  // Mote
+  for (const a of allies) {
+    if (!a || !a._ftueMote || !a.alive) continue;
+    const img = _missionSprites.mote;
+    if (!(img && img.complete && img.naturalWidth > 0)) continue;
+    const SCALE = 0.085;        // SVG is 360×240; scale to ~30×20 world units
+    const w = img.naturalWidth * SCALE;
+    const h = img.naturalHeight * SCALE;
+    ctx.save();
+    ctx.translate(a.x, a.y);
+    let petTilt = 0;
+    if (f.motePetState === 'IDLE_HEAD_TILT') {
+      petTilt = Math.sin((Date.now() - (f.motePetTimer - 12000)) * 0.012) * 15 * Math.PI / 180;
+    } else if (f.motePetState === 'IDLE_LOOK_BACK') {
+      const dx = player.x - a.x, dy = player.y - a.y;
+      ctx.rotate(Math.atan2(dy, dx) + Math.PI / 2);
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+      continue;
+    }
+    ctx.rotate((a.angle || 0) + petTilt);
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
+    ctx.restore();
+    // Eye-trail (FTUE/03 §2.4)
+    if (f.moteTrail && f.moteTrail.length > 1) {
+      ctx.save();
+      for (let i = 0; i < f.moteTrail.length - 1; i++) {
+        const t0 = f.moteTrail[i], t1 = f.moteTrail[i + 1];
+        const age = (Date.now() - t0.t) / 600;
+        ctx.globalAlpha = (1 - age) * 0.5;
+        ctx.strokeStyle = '#C8261C';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(t0.x, t0.y);
+        ctx.lineTo(t1.x, t1.y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+  // UAV memory outline (FTUE/03 §3 S6 — enemies tagged outlined for 30s)
+  if (f.uavMemoryUntil > (game.time || 0) && f.uavTagged) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(200, 38, 28, 0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    for (const e of enemies) {
+      if (e && e.alive && f.uavTagged.has(e)) {
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, (e.radius || 14) + 8, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+}
+
+// ---- Recruitment system (FTUE/03 §5) ----
+// Allied wreckage (E to revive)
+function _missionSpawnAlliedWreckage(x, y) {
+  const f = game._ftueScripted;
+  if (!f) return null;
+  f.alliedWreckage = { x, y, rescued: false };
+  return f.alliedWreckage;
+}
+// Spawn BRAVO-7 ally (rescued from wreckage)
+function _missionSpawnBravo7(x, y) {
+  const m = {
+    callsign: 'BRAVO-7',
+    x, y, angle: 0, gunAngle: 0, gunRecoil: 0, swayPhase: 0,
+    alive: true, walkPhase: 0, fireCd: 60, target: null, lookPhase: 0,
+    team: 0, _useNN: false, _ftueAlly: true,
+    _moteState: 'FOLLOW_PLAYER',     // Reuse Mote AI follow path
+    _ftueBravo: true,
+    _weapon: WEAPONS.RIFLE, _respawnAt: null,
+    _invulnUntil: Number.MAX_SAFE_INTEGER, _ftueInvuln: true,
+  };
+  applyChassisToUnit(m, 'humanoid', 0, 80, 13);
+  allies.push(m);
+  if (game._ftueScripted) game._ftueScripted.bravo7 = m;
+  _missionNarrLog('SPAWN', 'BRAVO-7 rescued at (' + Math.round(x) + ',' + Math.round(y) + ')');
+  return m;
+}
+// Spawn Sentinel (G-SED target)
+function _missionSpawnSentinel(x, y) {
+  const e = _ftueSpawnEnemy(x, y, 'sentinel');
+  if (e) {
+    e.callsign = 'SENTINEL';
+    e.hp = 30; e.maxHp = 30;
+    if (game._ftueScripted) game._ftueScripted.sentinelTarget = e;
+  }
+  return e;
+}
+// Convert a Sentinel to CHARLIE-3 ally (G-SED hit)
+function _missionSEDConvert(sentinel) {
+  if (!sentinel || !sentinel.alive) return;
+  // Move to allies
+  const idx = enemies.indexOf(sentinel);
+  if (idx >= 0) enemies.splice(idx, 1);
+  sentinel.team = 0;
+  sentinel.callsign = 'CHARLIE-3';
+  sentinel._ftueCharlie = true;
+  sentinel._useNN = false;
+  sentinel._moteState = 'FOLLOW_PLAYER';
+  sentinel._invulnUntil = Number.MAX_SAFE_INTEGER;
+  sentinel._ftueInvuln = true;
+  allies.push(sentinel);
+  if (game._ftueScripted) game._ftueScripted.charlie3 = sentinel;
+  _missionAudio_sed(0.45);
+  _missionNarrLog('SED', 'Sentinel → CHARLIE-3');
+}
+
+// Detect E proximity-press for the Allied wreckage. Hooked from a polling
+// loop inside scene S4. Returns true if the player rescued this tick.
+function _missionTryRescue() {
+  const f = game._ftueScripted;
+  if (!f || !f.alliedWreckage || f.alliedWreckage.rescued) return false;
+  const w = f.alliedWreckage;
+  if (Math.hypot(player.x - w.x, player.y - w.y) > 60) return false;
+  if (!keys || !keys['e']) return false;
+  w.rescued = true;
+  _missionSpawnBravo7(w.x, w.y);
+  if (typeof bumpMoteAffinity === 'function') bumpMoteAffinity(10);
+  _missionAudio_static(0.4, 1.0);
+  return true;
+}
+
+// Detect G-SED throw at Sentinel.
+function _missionTrySED() {
+  const f = game._ftueScripted;
+  if (!f || !f.sentinelTarget || f.sentinelTarget.team === 0) return false;
+  if (!keys || !keys['g']) return false;
+  // Single-fire toggle so holding G doesn't re-convert
+  if (f._gWasDown) return false;
+  f._gWasDown = true;
+  _missionSEDConvert(f.sentinelTarget);
+  if (typeof bumpMoteAffinity === 'function') bumpMoteAffinity(5);
+  return true;
+}
+function _missionGRelease() {
+  const f = game._ftueScripted;
+  if (!f) return;
+  if (!keys || !keys['g']) f._gWasDown = false;
+}
+
+// ============================================================
+// 8 SCENES per FTUE/03 §1
+// ============================================================
+
+async function _missionScene1_Black() {
+  _missionNarrLog('SCENE', 'S1 — 黑暗甦醒 (0:00-0:25)');
   _ftueMark('s1Reached');
   const el = _ftueNarrOverlay();
-  el.style.background = '#0A0A0A';
-  _ftueSetVignette(140);   // §A.2 — Seed 41% → narrow vision
-  _ftueNarrSetTop('');
+  if (el) {
+    el.style.background = '#0A0A0A';
+    el.style.pointerEvents = '';
+  }
+  const vEl = document.getElementById('ftueNarrVignette');
+  if (vEl) vEl.style.background = 'transparent';
+  _ftueNarrSetTop(_r('週期 #347 · VECTOR-7 待機', 'CYCLE #347 · VECTOR-7 STANDBY'));
   _ftueNarrSetCenter('');
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
-  // 0:00–0:03 silent
-  await _wait(3000);
-  // 0:03 heartbeat #1
-  _ftueNarrHeartbeat(0.30);
-  await _wait(2000);
-  // (Removed early skip-flag returns — they were leftover from the SSoT 9-scene
-  // version and made dev-skip exit S1 before any text rendered, leaving QA
-  // unable to screenshot the boot lines / MOTE PROXIMITY moment.)
-  // 0:05 first line — typed character by character
-  _ftueNarrSetTop(_r('週期 #347 · VECTOR-7 待機', 'CYCLE #347 · VECTOR-7 STANDBY'));
+  await _wait(5000); if (_ftueNarr.skipFlag) return;
+  _missionAudio_thud(0.3); await _wait(3000);
   await _ftueTypeCenter(_r('> 週期 #347 — 啟動', '> CYCLE #347 — INITIATING'));
-  await _wait(500);
-  await _ftueTypeCenter('\n' + _r(
-    '> 種子完整度  ████░░░░░░  41%',
-    '> SEED INTEGRITY  ████░░░░░░  41%'));
-  // 0:07 heartbeat #2 — louder
-  _ftueNarrHeartbeat(0.42);
-  await _wait(900);
-  // 0:08 cascade 36 → 33 → 28
+  await _wait(800);
+  _ftueNarrAppendCenter(_r('\n> 種子完整度 ████░░░░░░ 41%', '\n> SEED INTEGRITY ████░░░░░░ 41%'));
+  _missionAudio_thud(0.4); await _wait(2400);
   _ftueNarrAppendCenter('\n> → 36% → 33% → 28%');
-  _ftueNarrHeartbeat(0.50);
-  await _wait(1400);
-  // 0:10 MOTE PROXIMITY DETECTED — §A.3 #C8261C red, NOT #c8442e orange
-  const center = document.getElementById('ftueNarrCenter');
-  if (center) {
-    const span = document.createElement('div');
-    span.style.cssText = 'color:#C8261C;font-size:16px;margin-top:18px;' +
-      'letter-spacing:4px;font-weight:bold;animation:ftue-pulse 1.2s ease-in-out infinite;';
-    span.textContent = _r('> 偵測到 MOTE 接近', '> MOTE PROXIMITY DETECTED');
-    center.appendChild(span);
+  _missionAudio_thud(0.5); await _wait(2400);
+  _missionAudio_static(0.3, 0.5); await _wait(1500);
+  const cEl = document.getElementById('ftueNarrCenter');
+  if (cEl) {
+    const s = document.createElement('div');
+    s.style.cssText = 'color:#C8261C;font-size:16px;margin-top:18px;letter-spacing:4px;font-weight:bold;animation:ftue-pulse 1.2s ease-in-out infinite;';
+    s.textContent = _r('> 偵測到 MOTE 接近', '> MOTE PROXIMITY DETECTED');
+    cEl.appendChild(s);
   }
-  await _wait(1500);
-  // 0:11 short red flash via overlay bg fade (§A.6 timing — 0.6s)
-  el.style.background = '#1A0606';
-  await _wait(400);
-  el.style.background = '#0A0A0A';
+  await _wait(2500);
+  if (el) { el.style.background = '#1A0606'; await _wait(400); el.style.background = '#0A0A0A'; }
   _ftueMark('s2Reached');
 }
 
-// ---- S2: 跟 Mote 走 + 第一個敵人 (0:12 - 1:00) — canvas-based ----
-async function _ftueScene2_FollowAndFirstEnemy() {
-  _ftueNarrLog('SCENE', 'S2 — canvas (Mote + Red Grid)');
-  // 1. Drop the DOM background — canvas behind shows through. The chip /
-  //    sub / center text float above the canvas via fixed-position children.
+async function _missionScene2_TightAwakening() {
+  _missionNarrLog('SCENE', 'S2 — 維修角落 (0:25-1:00)');
   const overlay = document.getElementById('ftueNarr');
-  if (overlay) {
-    overlay.style.background = 'transparent';
-    overlay.style.pointerEvents = 'none';
-  }
-  // 2. Mount scripted FTUE state on canvas
+  if (overlay) { overlay.style.background = 'transparent'; overlay.style.pointerEvents = 'none'; }
   _ftueStartScripted();
-  // The DOM ftueNarrVignette belongs to the S1 / S5 overlay path —
-  // disable it during canvas FTUE so the canvas-level vision hole isn't
-  // double-darkened by a DOM gradient.
-  const vEl = document.getElementById('ftueNarrVignette');
-  if (vEl) vEl.style.background = 'transparent';
-  const f = game._ftueScripted;
-  if (!f) return;
-  f.sceneIdx = 2;
-  f.targetVisionRadius = 160;     // §A.2 Seed 50%
-  f.visionRadius = 100;            // start tight, lerp out
-  // 3. Spawn Mote in WAITING (eye visible at edge of vision)
-  const mote = _ftueSpawnMote(-90, -50);
-  // 4. Top stamp persists, sub bar shows scene marker
+  _missionInitState();
+  AG.set('seedIntegrity', '50');
+  _missionSetSpace('TIGHT_CORRIDOR');
+  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.55;
+  if (typeof camera !== 'undefined') camera.targetScale = 0.55;
+  // Spawn Mote nearby
+  const mote = _ftueSpawnMote(-60, -30);
+  if (mote) mote._moteState = 'PET_WAITING';
   _ftueNarrSetTop(_r('週期 #347 · VECTOR-7 待機', 'CYCLE #347 · VECTOR-7 STANDBY'));
   _ftueNarrSetCenter('');
   _ftueNarrSetSub(_r('[目標 MOTE:等待中]', '[SUBJECT MOTE: WAITING]'));
-  _ftueNarrHideChip();
-  // Tighten camera in (S2 is the closest)
-  if (typeof camera !== 'undefined') { camera.targetScale = 0.55; }
-  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.55;
   await _wait(2000);
-  // 5. WASD chip — visible but the player will likely move on instinct
-  //    once Mote starts walking
   _ftueNarrShowChip('W A S D');
-  // 6. After 4s, Mote starts walking left along scripted path
-  setTimeout(() => {
-    if (!mote || !mote.alive) return;
-    mote._moteState = 'FOLLOW_PATH';
-    mote._moteWaypoints = [
-      { x: player.x - 220, y: player.y - 30 },
-      { x: player.x - 380, y: player.y - 30 },
-      { x: player.x - 380, y: player.y + 60 },
-    ];
-    mote._moteWaypointIdx = 0;
-  }, 4000);
-  // 7. Wait for player WASD (or AFK timeout)
-  await _ftueWaitKeyAFK(['w','a','s','d'], 5000, 22000);
+  // Wait for REAL keydown (e.isTrusted) — no auto-fire
+  await _missionWaitTrustedKey(['w','a','s','d'], 60000);
   _ftueNarrHideChip();
   _ftueMark('firstMove');
-  // 8. After Mote reaches wp3, spawn the Red Grid in player's blind spot
+  _ftueNarrSetSub(_r('「跟上來。」', '"follow."'));
+  await _wait(2200);
+  // Mote walks scripted path leftward
+  if (mote) {
+    mote._moteState = 'FOLLOW_PATH';
+    mote._moteWaypoints = [
+      { x: player.x - 200, y: player.y },
+      { x: player.x - 320, y: player.y - 30 },
+    ];
+    mote._moteWaypointIdx = 0;
+  }
   await _wait(4000);
+  _ftueNarrSetSub('');
+}
+
+async function _missionScene3_FirstEnemy() {
+  _missionNarrLog('SCENE', 'S3 — 走廊 (1:00-1:50)');
+  const f = game._ftueScripted; if (!f) return;
+  _missionSetSpace('CORRIDOR');
+  if (typeof camera !== 'undefined') camera.targetScale = 0.65;
+  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.65;
+  await _wait(800);
   _ftueNarrSetSub(_r('[接觸 — 紅網巡邏者]', '[CONTACT — RED GRID PATROL]'));
-  // Spawn enemy ~480 px to the side — outside the 160 px vision circle.
-  // The player will see it as it approaches Mote / the player.
-  const enemy = _ftueSpawnEnemy(player.x - 460, player.y - 40, 'redgrid');
-  // §A.4: HUD stays hidden — DOM sub-bar + chips convey state. Spec §1
-  // S2 0:38 wants HP+ammo reveal, but the lobby chrome attached to them
-  // (top-left status panel, mission card, pause buttons) violates §A.4
-  // ('沒有既有 lobby UI'). For MVP we keep all hudShow flags false →
-  // renderHUD bails. A bespoke mini-HUD comes in a follow-up.
-  await _wait(1500);
+  _missionAudio_footstep(0.3, 'concrete');
+  const enemy = _ftueSpawnEnemy(player.x - 480, player.y - 20, 'redgrid');
+  if (enemy) { enemy.hp = 45; enemy.maxHp = 45; enemy.callsign = 'RED-GRID-1'; }
+  await _wait(1800);
   _ftueNarrShowChip(_r('[滑鼠左鍵] · 開火', '[LMB] · FIRE'));
-  // 9. Combat loop — wait for the enemy to die. Track player firing /
-  //    reload markers + trigger Mote tackle when the player reloads.
-  const combatStart = Date.now();
-  let firstShotMarked = false;
-  let firstReloadMarked = false;
-  let chargeFired = false;
-  while (enemy && enemy.alive && (Date.now() - combatStart) < 30000) {
+  // Combat loop — wait for kill or timeout
+  const start = Date.now();
+  let firstShotMarked = false, firstReloadMarked = false, chargeFired = false;
+  while (enemy && enemy.alive && (Date.now() - start) < 30000) {
     if (_ftueNarr.skipFlag) break;
     await _wait(120);
     if (player.ammo < player.maxAmmo && !firstShotMarked) {
-      firstShotMarked = true;
-      _ftueMark('firstShot');
-      _ftueNarrHideChip();
+      firstShotMarked = true; _ftueMark('firstShot'); _ftueNarrHideChip();
+      _missionAudio_static(0.18, 0.18);
     }
     if (player.reloading && !firstReloadMarked) {
-      firstReloadMarked = true;
-      _ftueMark('firstReload');
+      firstReloadMarked = true; _ftueMark('firstReload');
     }
     if (player.ammo === 0 && !player.reloading && !chargeFired) {
-      // Mag dry — show R chip (timeScale slow-mo not implemented to keep
-      // engine simple; reload chip still teaches the key)
       _ftueNarrShowChip(_r('[R] · 換彈', '[R] · RELOAD'));
     }
-    if (player.reloading && !chargeFired && mote && mote.alive) {
-      // Trigger Mote tackle during reload window
-      mote._moteState = 'CHARGE_ENEMY';
-      mote._moteStateT = Date.now();
+    if (player.reloading && !chargeFired && f.moteRef && f.moteRef.alive) {
+      f.moteRef._moteState = 'CHARGE_ENEMY';
+      f.moteRef._moteStateT = Date.now();
       chargeFired = true;
       _ftueNarrHideChip();
     }
   }
-  // 10. Force-kill if combat dragged on
-  if (enemy && enemy.alive) {
-    enemy.alive = false;
-    if (typeof createExplosion === 'function') createExplosion(enemy.x, enemy.y, 'small');
-  }
+  if (enemy && enemy.alive) { enemy.alive = false; }
   _ftueNarrHideChip();
-  // 11. Lumen first transmission — static-only, no beep (§A.5)
-  _ftueNarrSetSub('▸ Lumen · ' + _r(
-    '...一個倒了。 Mote 又幫了你。 它總是這樣。',
-    '...one down. mote helped you. again.'
-  ));
-  _ftueRadio('Lumen', 'Lumen',
-    '...一個倒了。 Mote 又幫了你。 它總是這樣。',
-    '...one down. mote helped you. again.', 4500);
-  if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
+  _missionAudio_static(0.4, 1.0);
+  _ftueNarrSetSub('▸ Lumen · ' + _r('「...一個倒了。 Mote 又救了你。」', '"...one down. mote saved you."'));
+  if (typeof bumpMoteAffinity === 'function') bumpMoteAffinity(5);
   await _wait(3500);
   _ftueNarrSetSub('');
 }
 
-// ---- S3: 看清楚 (1:00 - 1:30) — Q UAV + swarm ----
-async function _ftueScene3_ScoutSwarm() {
-  _ftueNarrLog('SCENE', 'S3 — Q UAV + swarm');
-  const f = game._ftueScripted;
-  if (!f) return;
-  f.sceneIdx = 3;
-  f.targetVisionRadius = 220;     // §A.2 Seed 60%
-  if (typeof camera !== 'undefined') camera.targetScale = 0.65;
-  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.65;
-  _ftueNarrSetCenter('');
-  _ftueNarrSetSub('');
-  _ftueNarrHideChip();
-  await _wait(1200);
-  _ftueNarrSetSub(_r('[多重接觸 — 數量不明]', '[MULTIPLE CONTACT — UNCLEAR COUNT]'));
-  // Spawn 8 swarm-tier enemies far away in a cluster (in the blind zone).
-  // They're invisible to player (outside vision radius). When Q hits, vision
-  // expands to 1200 and they reveal.
-  const swarmCenter = { x: player.x + 480, y: player.y };
-  for (let i = 0; i < 12; i++) {
-    const ang = (i / 12) * Math.PI * 2;
-    const r = 60 + Math.random() * 80;
-    const e = _ftueSpawnEnemy(
-      swarmCenter.x + Math.cos(ang) * r,
-      swarmCenter.y + Math.sin(ang) * r,
-      'swarm'
-    );
-    if (e) e._stunUntil = Number.MAX_SAFE_INTEGER;  // keep them frozen — no aggro
-    f.swarmRefs.push(e);
-  }
-  await _wait(2000);
-  _ftueNarrShowChip(_r('[Q] · UAV 偵察', '[Q] · AUDIT VISION'));
-  // Wait for Q press
-  await _ftueWaitKeyAFK(['q'], 4500, 14000);
-  _ftueNarrHideChip();
-  _ftueMark('firstUav');
-  // UAV moment — vision expands to 1200, camera zooms out
-  f.targetVisionRadius = 1200;
-  if (typeof camera !== 'undefined') camera.targetScale = 0.28;
-  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.28;
-  _ftueNarrSetSub('');
-  _ftueNarrSetCenter(_r('[接觸:12]\n[勿正面交戰]', '[CONTACT: 12]\n[DO NOT ENGAGE]'));
-  // Style the center as red big text for the UAV moment
-  const center = document.getElementById('ftueNarrCenter');
-  if (center) {
-    center.style.color = '#C8261C';
-    center.style.fontSize = '24px';
-    center.style.letterSpacing = '4px';
-    center.style.fontWeight = 'bold';
-  }
-  await _wait(4500);
-  // Lumen tells you to stand down
-  _ftueNarrSetSub('▸ Lumen · ' + _r(
-    '太多了。 退到掩體後。 等破口開。',
-    'too many. cover behind the wall. wait for the breach.'
-  ));
-  _ftueRadio('Lumen', 'Lumen',
-    '太多了。 退到掩體後。 等破口開。',
-    'too many. cover behind the wall. wait for the breach.', 4500);
-  await _wait(3000);
-  // Vision contracts back, swarm despawns + Mote pushes player to S4
-  f.targetVisionRadius = 220;
-  if (typeof camera !== 'undefined') camera.targetScale = 0.65;
-  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.65;
-  // Despawn swarm
-  for (const e of f.swarmRefs) { if (e) e.alive = false; }
-  f.swarmRefs.length = 0;
-  // Reset center style for next scene
-  if (center) {
-    center.style.color = '#E8E4D8';
-    center.style.fontSize = '18px';
-    center.style.letterSpacing = '1px';
-    center.style.fontWeight = 'normal';
-  }
-  _ftueNarrSetCenter('');
+async function _missionScene4_Warehouse() {
+  _missionNarrLog('SCENE', 'S4 — 倉庫 + 殘骸救援 (1:50-2:50)');
+  const f = game._ftueScripted; if (!f) return;
+  _missionSetSpace('WAREHOUSE');
+  if (typeof camera !== 'undefined') camera.targetScale = 0.45;
+  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.45;
+  await _wait(1000);
+  // Spawn Allied wreckage 200 px ahead of player
+  _missionSpawnAlliedWreckage(player.x + 200, player.y);
+  _ftueNarrSetSub(_r('[發現倒下的診斷者]', '[Allied diagnostician — down]'));
   await _wait(1500);
-  _ftueNarrSetSub(_r('[Mote 知道路。 跟上。]', '[mote knows the way. follow.]'));
-  await _wait(2500);
+  _ftueNarrShowChip(_r('走近 + [E] 修復', 'APPROACH + [E] revive'));
+  // Wait for rescue (E near wreckage) OR 25s to skip
+  const rescueStart = Date.now();
+  while ((Date.now() - rescueStart) < 25000 && !f.alliedWreckage.rescued) {
+    if (_ftueNarr.skipFlag) break;
+    if (_missionTryRescue()) {
+      _ftueMark('firstSalvage');
+      _ftueNarrHideChip();
+      _ftueNarrSetSub('▸ Lumen · ' + _r('「BRAVO-7 上線。 他記得你。」', '"BRAVO-7 online. he remembers you."'));
+      await _wait(2500);
+      break;
+    }
+    await _wait(120);
+  }
+  _ftueNarrHideChip();
+  // SED opportunity — spawn Sentinel
+  _ftueNarrSetSub(_r('[巡邏者 — Sentinel]', '[CONTACT — Sentinel]'));
+  const sentinel = _missionSpawnSentinel(player.x + 300, player.y + 80);
+  if (sentinel) { sentinel._stunUntil = Number.MAX_SAFE_INTEGER; }
+  await _wait(1500);
+  _ftueNarrShowChip(_r('[G] · SED 彈 → 招降', '[G] · SED → recruit'));
+  // Wait for SED hit
+  const sedStart = Date.now();
+  while ((Date.now() - sedStart) < 20000) {
+    if (_ftueNarr.skipFlag) break;
+    _missionGRelease();
+    if (_missionTrySED()) {
+      _ftueMark('firstSED');
+      _ftueNarrHideChip();
+      _ftueNarrSetSub('▸ Lumen · ' + _r('「CHARLIE-3 是你的了。」', '"CHARLIE-3 is yours."'));
+      await _wait(2500);
+      break;
+    }
+    await _wait(120);
+  }
+  _ftueNarrHideChip();
+  // If sentinel never converted, kill it so it doesn't bleed into S5
+  if (sentinel && sentinel.alive && sentinel.team === 1) sentinel.alive = false;
   _ftueNarrSetSub('');
 }
 
-// ---- S4: 破口 (1:30 - 2:30) — countdown + B + wall + BUILD = AUDIT ----
-async function _ftueScene4_Breach() {
-  _ftueNarrLog('SCENE', 'S4 — countdown + B + wall + BUILD = AUDIT');
-  const f = game._ftueScripted;
-  if (!f) return;
-  f.sceneIdx = 4;
-  f.targetVisionRadius = 280;     // §A.2 Seed 70%
-  if (typeof camera !== 'undefined') camera.targetScale = 0.7;
-  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.7;
-  _ftueNarrSetCenter('');
+async function _missionScene5_HallDeath() {
+  _missionNarrLog('SCENE', 'S5 — 大廳盲區 + 死亡 (2:50-3:25)');
+  const f = game._ftueScripted; if (!f) return;
+  _missionSetSpace('HALL');
+  if (typeof camera !== 'undefined') camera.targetScale = 0.55;
+  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.55;
+  await _wait(1000);
+  _ftueNarrSetSub('▸ Lumen · ' + _r('「等等。 太靜了。」', '"wait. too quiet."'));
+  await _wait(2500);
+  // 4-enemy ambush from blind spots
+  const cx = player.x, cy = player.y;
+  const hound  = _ftueSpawnEnemy(cx + 240, cy - 60, 'mech-hound');
+  if (hound)  { hound.hp = 80;  hound.maxHp = 80;  hound.callsign = 'MECH-HOUND'; }
+  const grid   = _ftueSpawnEnemy(cx - 240, cy - 100, 'redgrid');
+  if (grid)   { grid.hp = 45;   grid.maxHp = 45; }
+  const heavy  = _ftueSpawnEnemy(cx + 280, cy + 200, 'hollow31');
+  if (heavy)  { heavy.hp = 200; heavy.maxHp = 200; heavy.callsign = 'HOLLOW-31'; }
+  const sent2  = _ftueSpawnEnemy(cx - 200, cy + 180, 'sentinel');
+  if (sent2)  { sent2.hp = 30;  sent2.maxHp = 30; }
+  _ftueNarrSetSub(_r('[多重接觸 — 四方位]', '[CONTACT — multiple — all directions]'));
+  _missionAudio_footstep(0.4, 'mech-hound');
+  await _wait(2000);
+  // Force-die after 8 seconds (cinematic certainty per spec)
+  const trapStart = Date.now();
+  while ((Date.now() - trapStart) < 8000 && player.alive) {
+    if (_ftueNarr.skipFlag) break;
+    await _wait(150);
+  }
+  // Cinematic death
+  player.alive = false;
+  player.hp = 0;
+  f.diedInS5 = true;
+  AG.set('seedIntegrity', '0');
+  const el = _ftueNarrOverlay();
+  if (el) { el.style.background = '#1A0404'; el.style.pointerEvents = ''; }
   _ftueNarrSetSub('');
+  _ftueNarrSetCenter('');
+  _missionAudio_thud(0.6); _missionAudio_static(0.5, 1.5);
+  await _wait(600);
+  // Big red death text
+  const cEl = document.getElementById('ftueNarrCenter');
+  if (cEl) {
+    cEl.style.color = '#C8261C';
+    cEl.style.fontSize = '32px';
+    cEl.style.fontWeight = 'bold';
+    cEl.style.letterSpacing = '6px';
+  }
+  await _ftueTypeCenter(_r('種子完整度 0%', 'SEED INTEGRITY 0%'), 32);
+  await _wait(800);
+  _ftueNarrAppendCenter('\n' + _r('週期 #347 結束', 'CYCLE #347 ENDED'));
+  await _wait(1200);
+  _ftueNarrAppendCenter('\n...');
+  await _wait(1000);
+  if (cEl) { cEl.style.color = '#E8E4D8'; cEl.style.fontSize = '20px'; }
+  await _ftueTypeCenter('\n' + _r('或者是這樣?', 'or did it?'), 32);
+  await _wait(2500);
+  // Reset center style for S6
+  if (cEl) {
+    cEl.style.color = '#E8E4D8';
+    cEl.style.fontSize = '18px';
+    cEl.style.fontWeight = 'normal';
+    cEl.style.letterSpacing = '1px';
+  }
+}
+
+async function _missionScene6_RevivalUav() {
+  _missionNarrLog('SCENE', 'S6 — 復活 + UAV 反查 (3:25-4:15)');
+  const f = game._ftueScripted; if (!f) return;
+  // Revival cinematic — at least 6s
+  const el = document.getElementById('ftueNarr');
+  if (el) { el.style.background = '#000'; el.style.pointerEvents = ''; }
+  _ftueNarrSetCenter('');
+  _ftueNarrSetTop('');
+  _ftueNarrSetSub('');
+  _missionAudio_thud(0.3);
+  await _wait(2000);
+  await _ftueTypeCenter(_r('週期 #347 — 重啟', 'CYCLE #347 — REBOOT'), 32);
+  await _wait(900);
+  _ftueNarrAppendCenter('\n' + _r('種子完整度 87% — 重新分配', 'SEED INTEGRITY 87% — REALLOCATED'));
+  _missionAudio_static(0.4, 1.0);
+  await _wait(1200);
+  _ftueNarrAppendCenter('\n');
+  await _ftueTypeCenter('\n' + _r('Mote 把你拖回來了', 'mote dragged you back.'), 38);
+  AG.set('seedIntegrity', '87');
+  await _wait(2200);
+  // Revive player + restore overlay transparent
+  player.alive = true;
+  player.hp = player.maxHp;
+  player.ammo = player.maxAmmo;
+  if (el) { el.style.background = 'transparent'; el.style.pointerEvents = 'none'; }
+  _ftueNarrSetCenter('');
+  _missionSetSpace('HALL');
+  await _wait(800);
+  _ftueNarrSetSub('▸ Lumen · ' + _r('「不要再衝。 按 [Q] UAV,從上面看清楚。」', '"don\'t rush again. press [Q] for UAV."'));
+  _missionAudio_static(0.4, 1.4);
+  await _wait(2500);
+  _ftueNarrShowChip(_r('[Q] · UAV 偵察', '[Q] · UAV scout'));
+  await _missionWaitTrustedKey(['q'], 25000);
   _ftueNarrHideChip();
+  _ftueMark('firstUav');
+  // UAV moment — vision expands, all enemies tagged for memory
+  if (game._ftueScripted) {
+    f.targetVisionRadius = 1200;
+    f.cameraScaleTarget = 0.28;
+    f.uavTagged = new Set();
+    for (const e of enemies) { if (e.alive) f.uavTagged.add(e); }
+  }
+  _ftueNarrSetCenter(_r('[診斷模式 — 看穿盲區]', '[DIAGNOSTIC MODE — see past blind spots]'));
+  const cEl = document.getElementById('ftueNarrCenter');
+  if (cEl) { cEl.style.color = '#C8261C'; cEl.style.fontSize = '22px'; cEl.style.letterSpacing = '4px'; }
+  await _wait(5000);
+  if (cEl) { cEl.style.color = '#E8E4D8'; cEl.style.fontSize = '18px'; cEl.style.letterSpacing = '1px'; }
+  // UAV ends — vision contracts but enemies stay tagged for 30s memory
+  if (game._ftueScripted) {
+    f.targetVisionRadius = 200 * SPACE_MULT.HALL * _missionSeedMultiplier();
+    f.cameraScaleTarget = 0.55;
+    f.uavMemoryUntil = (game.time || 0) + 30 * 60;   // 30 sec @ 60fps
+  }
+  _ftueNarrSetCenter('');
+  _ftueNarrSetSub(_r('[UAV 記憶 — 敵人位置 outline 30s]', '[UAV MEMORY — enemies outlined 30s]'));
+  await _wait(2000);
+  // Auto-clear remaining enemies after 8s for pacing (cinematic counter-attack)
+  const cleanStart = Date.now();
+  while ((Date.now() - cleanStart) < 8000) {
+    if (_ftueNarr.skipFlag) break;
+    if (enemies.filter(e => e.alive).length === 0) break;
+    await _wait(150);
+  }
+  for (const e of enemies) e.alive = false;
+  _missionAudio_thud(0.5);
+  _ftueNarrSetSub('▸ Lumen · ' + _r('「你會看了。 這就是 cycle 給你的禮物。」', '"you see now. that\'s what cycles give."'));
+  await _wait(3000);
+  _ftueNarrSetSub('');
+  if (typeof bumpMoteAffinity === 'function') bumpMoteAffinity(10);
+}
+
+async function _missionScene7_BreachWall() {
+  _missionNarrLog('SCENE', 'S7 — 破口蓋牆 (4:15-5:00)');
+  const f = game._ftueScripted; if (!f) return;
+  _missionSetSpace('ROOM');
+  if (typeof camera !== 'undefined') camera.targetScale = 0.65;
+  if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.65;
   await _wait(1500);
   _ftueNarrSetSub(_r('[警告 — 重型 UGV 接近 — 撞擊倒數 25 秒]', '[INCOMING — HEAVY UGV — IMPACT 25s]'));
-  // Countdown timer DOM (top-right, big red, monospace)
+  // DOM countdown
   let cdEl = document.getElementById('ftueNarrCountdown');
   if (!cdEl) {
     cdEl = document.createElement('div');
     cdEl.id = 'ftueNarrCountdown';
-    cdEl.style.cssText =
-      'position:fixed;top:36px;right:48px;z-index:9100;' +
-      "font-family:'Courier New',monospace;color:#C8261C;" +
-      'font-size:64px;letter-spacing:4px;font-weight:bold;' +
-      'text-shadow:0 0 12px rgba(200,38,28,0.6);' +
-      'min-width:180px;text-align:right;line-height:1;';
+    cdEl.style.cssText = 'position:fixed;top:36px;right:48px;z-index:9100;font-family:"Courier New",monospace;color:#C8261C;font-size:64px;letter-spacing:4px;font-weight:bold;text-shadow:0 0 12px rgba(200,38,28,0.6);min-width:180px;text-align:right;line-height:1;';
     document.body.appendChild(cdEl);
   }
-  cdEl.innerHTML = '<div style="font-size:12px;letter-spacing:5px;color:#6B6B6B;margin-bottom:4px;">' +
-    _r('衝擊', 'IMPACT') + '</div><div id="ftueNarrCdValue">25s</div>';
-  let countdownAlive = true;
-  let secs = 25;
-  const tickCD = () => {
-    if (!countdownAlive) return;
-    if (_ftueNarr.skipFlag) { countdownAlive = false; if (cdEl) cdEl.remove(); return; }
-    const v = document.getElementById('ftueNarrCdValue');
-    if (v) {
-      v.textContent = secs + 's';
-      if (secs <= 10) {
-        v.style.animation = 'ftue-pulse 0.5s ease-in-out infinite';
-        v.style.color = '#E63D33';
-      }
-    }
-    if (secs <= 0) { countdownAlive = false; return; }
-    secs--;
-    setTimeout(tickCD, 1000);
+  cdEl.innerHTML = '<div style="font-size:12px;letter-spacing:5px;color:#6B6B6B;margin-bottom:4px;">' + _r('衝擊', 'IMPACT') + '</div><div id="ftueNarrCdValue">25s</div>';
+  let cdAlive = true, secs = 25;
+  const tick = () => {
+    if (!cdAlive) return;
+    if (_ftueNarr.skipFlag) { cdAlive = false; if (cdEl) cdEl.remove(); return; }
+    const v = document.getElementById('ftueNarrCdValue'); if (v) v.textContent = secs + 's';
+    if (secs <= 0) { cdAlive = false; return; }
+    secs--; setTimeout(tick, 1000);
   };
-  tickCD();
-  await _wait(2200);
+  tick();
+  await _wait(2000);
   _ftueNarrShowChip(_r('[B] · 建造', '[B] · BUILD'));
-  // Wait for B press. The waitKey listener no longer eats the event, so
-  // the global keydown handler at line ~6711 fires toggleBuildMode()
-  // naturally and the radial wheel opens. We don't need to call it
-  // ourselves (and trying to — under the wrong name `toggleBuildRadial`
-  // — was the silent-no-wheel bug the user hit).
-  await _ftueWaitKeyAFK(['b'], 4500, 16000);
+  await _missionWaitTrustedKey(['b'], 18000);
   _ftueNarrHideChip();
   _ftueMark('firstBuild');
-  await _wait(400);
+  await _wait(800);
   _ftueNarrShowChip(_r('選擇 牆 → 點地面放置', 'PICK WALL → CLICK GROUND'));
-  // Wait for an ACTUAL wall (game._structures grows from the existing
-  // build pipeline). Skip-flag + 16s timeout escape so the prologue
-  // never gets stuck.
+  // Wait for actual structure placed
   const wallStart = Date.now();
   const startCount = (game._structures && game._structures.length) || 0;
   while ((Date.now() - wallStart) < 16000) {
@@ -4245,162 +4698,84 @@ async function _ftueScene4_Breach() {
   }
   _ftueNarrHideChip();
   _ftueMark('firstWall');
-  // Force-close build mode if the player got stuck inside it (skip path)
   if (typeof buildMode !== 'undefined') {
-    buildMode.active = false;
-    buildMode.radialOpen = false;
+    buildMode.active = false; buildMode.radialOpen = false;
   }
-  // Stop countdown — wall placed (visually)
-  countdownAlive = false;
+  cdAlive = false;
   if (cdEl) {
     cdEl.style.transition = 'opacity 600ms';
     cdEl.style.opacity = '0';
     setTimeout(() => { try { cdEl.remove(); } catch (e) {} }, 700);
   }
-  _ftueNarrSetSub('');
+  _missionAudio_thud(0.65);
   await _wait(1500);
-  // Lumen first CLEAR voice — three lines
-  _ftueNarrSetSub('▸ Lumen · ' + _r('就是這個。', 'there it is.'));
-  _ftueRadio('Lumen [清晰]', 'Lumen [CLEAR]',
-    '就是這個。', 'there it is.', 3500);
-  await _wait(1700);
-  _ftueNarrSetSub('▸ Lumen · ' + _r('這不是擊殺 — 這是審計。', 'that is not killing — that is auditing.'));
-  _ftueRadio('Lumen', 'Lumen',
-    '這不是擊殺 — 這是審計。', 'that is not killing — that is auditing.', 3500);
-  await _wait(1700);
-  _ftueNarrSetSub('▸ Lumen · ' + _r('建造才能思考。 擊殺只是最後 0.5 秒。',
-    'build to think. kill is just the last 0.5 seconds.'));
-  _ftueRadio('Lumen', 'Lumen',
-    '建造才能思考。 擊殺只是最後 0.5 秒。',
-    'build to think. kill is just the last 0.5 seconds.', 3500);
-  await _wait(2000);
-  // BIG_TITLE_CARD — vision expands to ~1200, timeScale paused via _paused,
-  // big text fades in 1.2s + holds 2s + fades out 1.5s (§A.6)
-  _ftueNarrSetSub('');
-  const oldRadius = f.targetVisionRadius;
-  f.targetVisionRadius = 1200;
+  _ftueNarrSetSub('▸ Lumen · ' + _r('「就是這個。 這不是擊殺 — 這是裁決。」', '"there it is. not killing — verdicting."'));
+  _missionAudio_static(0.5, 1.5);
+  await _wait(3500);
+  // BUILD = VERDICT title — game._paused = true (timeScale=0 surrogate per spec)
   game._paused = true;
-  const center = document.getElementById('ftueNarrCenter');
-  if (center) {
-    center.style.transition = 'opacity 1.2s linear';
-    center.style.opacity = '0';
-    center.innerHTML =
-      '<div style="font-size:56px;font-weight:bold;letter-spacing:8px;color:#E8E4D8;">' +
-      _r('建造 = 審計', 'BUILD = AUDIT') +
-      '</div>' +
-      '<div style="margin:18px auto;width:240px;height:1px;background:#C8261C;"></div>' +
-      '<div style="font-size:28px;letter-spacing:4px;color:#E8E4D8;">' +
-      _r('建築即審計', 'CONSTRUCTION IS AUDIT') +
-      '</div>';
-    void center.offsetWidth;
-    center.style.opacity = '1';
+  if (game._ftueScripted) {
+    f.targetVisionRadius = 1200;
   }
-  await _wait(2000);
-  if (center) {
-    center.style.transition = 'opacity 1.5s linear';
-    center.style.opacity = '0';
+  _ftueNarrSetSub('');
+  _ftueNarrSetCenter('');
+  const cEl = document.getElementById('ftueNarrCenter');
+  if (cEl) {
+    cEl.style.transition = 'opacity 1.2s linear';
+    cEl.style.opacity = '0';
+    cEl.innerHTML = '<div style="font-size:56px;font-weight:bold;letter-spacing:8px;color:#E8E4D8;">' + _r('建造 = 裁決', 'BUILD = VERDICT') + '</div><div style="margin:18px auto;width:240px;height:1px;background:#C8261C;"></div><div style="font-size:28px;letter-spacing:4px;color:#E8E4D8;">' + _r('建築即裁決', 'CONSTRUCTION IS VERDICT') + '</div>';
+    void cEl.offsetWidth;
+    cEl.style.opacity = '1';
+  }
+  await _wait(2500);     // Hold per spec — must be ≥ 2.5s
+  if (cEl) {
+    cEl.style.transition = 'opacity 1.5s linear';
+    cEl.style.opacity = '0';
   }
   await _wait(1700);
-  if (center) {
-    center.innerHTML = '';
-    center.style.opacity = '1';
-    center.style.transition = '';
+  if (cEl) {
+    cEl.innerHTML = '';
+    cEl.style.transition = '';
+    cEl.style.opacity = '1';
+    cEl.style.fontSize = '18px';
+    cEl.style.letterSpacing = '1px';
+    cEl.style.color = '#E8E4D8';
   }
-  // Resume game + collapse vision back
   game._paused = false;
-  f.targetVisionRadius = oldRadius;
-  // Mote sits at the wall
+  if (game._ftueScripted) {
+    f.targetVisionRadius = 200 * SPACE_MULT.ROOM * _missionSeedMultiplier();
+  }
+  await _wait(1000);
+  _ftueNarrSetSub('▸ Lumen · ' + _r('「掩護 Mote。 她值得。」', '"cover mote. she earned it."'));
   if (f.moteRef) {
     f.moteRef._moteState = 'SIT_AT_WALL';
     f.moteRef._moteStateT = Date.now();
   }
-  await _wait(1500);
-  _ftueNarrSetSub('▸ Lumen · ' + _r('掩護 Mote。 她值得。', 'cover mote. she earned it.'));
-  _ftueRadio('Lumen', 'Lumen', '掩護 Mote。 她值得。', 'cover mote. she earned it.', 4000);
-  if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
+  if (typeof bumpMoteAffinity === 'function') bumpMoteAffinity(5);
   await _wait(2800);
   _ftueNarrSetSub('');
 }
 
-// ---- S5: 出口 (2:30 - 3:00) — door + exit-vector-field + ENTER ----
-async function _ftueScene5_Exit() {
-  _ftueNarrLog('SCENE', 'S5 — exit + ENTER');
+async function _missionScene8_ExitTower() {
+  _missionNarrLog('SCENE', 'S8 — 出口紅塔 (5:00-5:30)');
   const f = game._ftueScripted;
-  if (f) {
-    f.sceneIdx = 5;
-    f.targetVisionRadius = 360;   // §A.2 Seed 87%
-  }
-  // After a beat, vision expands hugely + we tear down scripted state
-  // and switch the overlay to opaque exit-field BG.
-  await _wait(1500);
   if (f) f.targetVisionRadius = 1400;
   if (typeof camera !== 'undefined') camera.targetScale = 0.32;
   if (game._ftueScripted) game._ftueScripted.cameraScaleTarget = 0.32;
   await _wait(1600);
-  // Tear down scripted state — return canvas to menu, then mount the
-  // exit-field overlay BG over the top.
   _ftueEndScripted();
+  // Build exit overlay (procedural red-tower SVG)
   const el = _ftueNarrOverlay();
-  // Restore opacity for overlay + paint exit-field SVG bg
-  el.style.background =
-    'linear-gradient(to bottom,' +
-    '#1A0808 0%, #2A0E0C 22%, #401612 38%, #2A0E0C 60%, #1A0808 78%, #0A0404 100%)';
+  el.style.background = 'linear-gradient(to bottom, #1A0808 0%, #2A0E0C 22%, #401612 38%, #2A0E0C 60%, #1A0808 78%, #0A0404 100%)';
   el.style.pointerEvents = '';
   let bg = document.getElementById('ftueNarrExitBg');
   if (!bg) {
     bg = document.createElement('div');
     bg.id = 'ftueNarrExitBg';
     bg.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:0;opacity:0;transition:opacity 1.6s linear;';
-    bg.innerHTML =
-      '<svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" ' +
-      'style="width:100%;height:100%;display:block;">' +
-        '<defs>' +
-          '<radialGradient id="ftueExitGlow" cx="50%" cy="62%" r="40%">' +
-            '<stop offset="0%" stop-color="#E63D33" stop-opacity="0.45"/>' +
-            '<stop offset="100%" stop-color="#E63D33" stop-opacity="0"/>' +
-          '</radialGradient>' +
-          '<linearGradient id="ftueExitGround" x1="0" y1="0" x2="0" y2="1">' +
-            '<stop offset="0%" stop-color="#0A0404"/>' +
-            '<stop offset="100%" stop-color="#000"/>' +
-          '</linearGradient>' +
-        '</defs>' +
-        '<ellipse cx="800" cy="560" rx="650" ry="120" fill="url(#ftueExitGlow)"/>' +
-        '<rect x="780" y="200" width="40" height="380" fill="#1A1A1A"/>' +
-        '<rect x="772" y="200" width="56" height="14" fill="#1A1A1A"/>' +
-        '<circle cx="800" cy="240" r="6" fill="#C8261C">' +
-          '<animate attributeName="opacity" values="0.4;1;0.4" dur="1.6s" repeatCount="indefinite"/>' +
-        '</circle>' +
-        '<circle cx="800" cy="320" r="4" fill="#C8261C" opacity="0.7"/>' +
-        '<circle cx="800" cy="400" r="4" fill="#C8261C" opacity="0.5"/>' +
-        '<g fill="#1A1A1A" stroke="#1A1A1A" stroke-width="1">' +
-          '<circle cx="380"  cy="250" r="14"/>' +
-          '<line x1="380" y1="0" x2="380" y2="236" stroke="#1A1A1A" stroke-width="1" opacity="0.4"/>' +
-          '<circle cx="1180" cy="180" r="12"/>' +
-          '<line x1="1180" y1="0" x2="1180" y2="168" stroke="#1A1A1A" stroke-width="1" opacity="0.4"/>' +
-          '<circle cx="640"  cy="320" r="10"/>' +
-          '<line x1="640" y1="0" x2="640" y2="310" stroke="#1A1A1A" stroke-width="1" opacity="0.4"/>' +
-        '</g>' +
-        '<g stroke="#6B6B6B" stroke-width="0.6" opacity="0.4">' +
-          '<line x1="100"  y1="640" x2="1500" y2="690"/>' +
-          '<line x1="200"  y1="700" x2="1400" y2="650"/>' +
-          '<line x1="300"  y1="660" x2="1300" y2="700"/>' +
-          '<line x1="500"  y1="710" x2="1200" y2="640"/>' +
-          '<line x1="450"  y1="630" x2="1450" y2="710"/>' +
-          '<line x1="700"  y1="730" x2="1100" y2="610"/>' +
-        '</g>' +
-        '<rect x="0" y="600" width="1600" height="300" fill="url(#ftueExitGround)"/>' +
-        '<g fill="#C8261C" opacity="0.25">' +
-          '<polygon points="120,750 130,720 145,755"/>' +
-          '<polygon points="380,810 395,780 410,815"/>' +
-          '<polygon points="720,790 730,765 750,800"/>' +
-          '<polygon points="1050,820 1065,790 1085,825"/>' +
-          '<polygon points="1380,770 1395,740 1415,775"/>' +
-        '</g>' +
-      '</svg>';
-    if (el.firstChild) el.insertBefore(bg, el.firstChild);
-    else el.appendChild(bg);
+    bg.innerHTML = '<svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;display:block;"><defs><radialGradient id="ftueExitGlow" cx="50%" cy="62%" r="40%"><stop offset="0%" stop-color="#E63D33" stop-opacity="0.45"/><stop offset="100%" stop-color="#E63D33" stop-opacity="0"/></radialGradient><linearGradient id="ftueExitGround" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0A0404"/><stop offset="100%" stop-color="#000"/></linearGradient></defs><ellipse cx="800" cy="560" rx="650" ry="120" fill="url(#ftueExitGlow)"/><rect x="780" y="200" width="40" height="380" fill="#1A1A1A"/><rect x="772" y="200" width="56" height="14" fill="#1A1A1A"/><circle cx="800" cy="240" r="6" fill="#C8261C"><animate attributeName="opacity" values="0.4;1;0.4" dur="1.6s" repeatCount="indefinite"/></circle><circle cx="800" cy="320" r="4" fill="#C8261C" opacity="0.7"/><circle cx="800" cy="400" r="4" fill="#C8261C" opacity="0.5"/><g fill="#1A1A1A" stroke="#1A1A1A" stroke-width="1"><circle cx="380" cy="250" r="14"/><line x1="380" y1="0" x2="380" y2="236" stroke="#1A1A1A" stroke-width="1" opacity="0.4"/><circle cx="1180" cy="180" r="12"/><line x1="1180" y1="0" x2="1180" y2="168" stroke="#1A1A1A" stroke-width="1" opacity="0.4"/><circle cx="640" cy="320" r="10"/><line x1="640" y1="0" x2="640" y2="310" stroke="#1A1A1A" stroke-width="1" opacity="0.4"/></g><g stroke="#6B6B6B" stroke-width="0.6" opacity="0.4"><line x1="100" y1="640" x2="1500" y2="690"/><line x1="200" y1="700" x2="1400" y2="650"/><line x1="300" y1="660" x2="1300" y2="700"/><line x1="500" y1="710" x2="1200" y2="640"/><line x1="450" y1="630" x2="1450" y2="710"/><line x1="700" y1="730" x2="1100" y2="610"/></g><rect x="0" y="600" width="1600" height="300" fill="url(#ftueExitGround)"/><g fill="#C8261C" opacity="0.25"><polygon points="120,750 130,720 145,755"/><polygon points="380,810 395,780 410,815"/><polygon points="720,790 730,765 750,800"/><polygon points="1050,820 1065,790 1085,825"/><polygon points="1380,770 1395,740 1415,775"/></g></svg>';
+    if (el.firstChild) el.insertBefore(bg, el.firstChild); else el.appendChild(bg);
   }
-  // Fade in BG
   void bg.offsetWidth;
   bg.style.opacity = '1';
   _ftueNarrSetTop('');
@@ -4408,34 +4783,23 @@ async function _ftueScene5_Exit() {
   _ftueNarrSetSub('');
   _ftueNarrHideChip();
   await _wait(1800);
-  _ftueNarrSetSub('▸ Lumen · ' + _r('V-07。 你還記得路。', 'V-07. you remember the way.'));
-  _ftueRadio('Lumen', 'Lumen', 'V-07。 你還記得路。', 'V-07. you remember the way.', 4000);
+  _ftueNarrSetSub('▸ Lumen · ' + _r('「V-07。 你還記得路。」', '"V-07. you remember the way."'));
+  _missionAudio_static(0.4, 1.5);
   await _wait(1700);
-  _ftueNarrSetSub('▸ Lumen · ' + _r('週期 347 從現在開始。', 'cycle 347 begins now.'));
-  _ftueRadio('Lumen', 'Lumen', '週期 347 從現在開始。', 'cycle 347 begins now.', 4000);
+  _ftueNarrSetSub('▸ Lumen · ' + _r('「週期 347 從現在開始。」', '"cycle 347 begins now."'));
   await _wait(1500);
-  // Big title card
   _ftueNarrSetCenter('');
   await _ftueTypeCenter(_r('週期 #347\n審計進行中\n...\n準備好?', 'CYCLE #347\nAUDIT IN PROGRESS\n...\nREADY?'), 28);
   await _wait(900);
   AG.set('seedIntegrity', '87');
-  if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
-  // Show CTA
+  if (typeof bumpMoteAffinity === 'function') bumpMoteAffinity(5);
   const cta = document.getElementById('ftueNarrCta');
-  if (cta) {
-    cta.style.display = 'block';
-    void cta.offsetWidth;
-    cta.style.opacity = '1';
-  }
+  if (cta) { cta.style.display = 'block'; void cta.offsetWidth; cta.style.opacity = '1'; }
   const ctaBtn = document.getElementById('ftueNarrCtaBtn');
   if (ctaBtn) ctaBtn.textContent = _r('[ 進入 ▶ ]', '[ ENTER ▶ ]');
   await new Promise((resolve) => {
     const btn = document.getElementById('ftueNarrCtaBtn');
-    const onResolve = () => {
-      window.removeEventListener('keydown', onKey);
-      if (btn) btn.onclick = null;
-      resolve();
-    };
+    const onResolve = () => { window.removeEventListener('keydown', onKey); if (btn) btn.onclick = null; resolve(); };
     const onKey = (e) => {
       if (_ftueNarr.skipFlag) return onResolve();
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onResolve(); }
@@ -4443,7 +4807,31 @@ async function _ftueScene5_Exit() {
     window.addEventListener('keydown', onKey);
     if (btn) btn.onclick = onResolve;
   });
-  _ftueMark('s5Entered');
+  _ftueMark('s8Entered');
+}
+
+// ---- Trusted-keydown helper (no auto-fire per FTUE/03 §6 pacing rule 1) ----
+// Only resolves when a REAL keydown (e.isTrusted === true) matches `keys`.
+// Times out at `totalTimeoutMs` and resolves anyway so the prologue can
+// never soft-lock — but the firstX instrument only marks on real input.
+function _missionWaitTrustedKey(keys, totalTimeoutMs) {
+  if (totalTimeoutMs == null) totalTimeoutMs = 30000;
+  return new Promise((resolve) => {
+    const set = new Set((keys || []).map(k => String(k).toLowerCase()));
+    let done = false;
+    const onKey = (e) => {
+      if (done) return;
+      if (_ftueNarr.skipFlag) { done = true; window.removeEventListener('keydown', onKey); resolve(); return; }
+      if (!e.isTrusted) return;     // §6 rule 1 — no synthetic events
+      const k = (e.key || '').toLowerCase();
+      if (set.has(k)) { done = true; window.removeEventListener('keydown', onKey); resolve(); }
+    };
+    if (_ftueNarr.skipFlag) { resolve(); return; }
+    window.addEventListener('keydown', onKey);
+    if (totalTimeoutMs > 0) setTimeout(() => {
+      if (done) return; done = true; window.removeEventListener('keydown', onKey); resolve();
+    }, totalTimeoutMs);
+  });
 }
 
 // ============================================================
@@ -4484,13 +4872,17 @@ async function startNarrativeFTUE() {
     await _ftueQaHold(`scene-end ${sceneId}`);
   };
   try {
-    await _ftueScene1_Blackness();             _ftueNarr.sceneIdx = 1; await sceneHold('S1');
-    await _ftueScene2_FollowAndFirstEnemy();   _ftueNarr.sceneIdx = 2; await sceneHold('S2');
-    await _ftueScene3_ScoutSwarm();            _ftueNarr.sceneIdx = 3; await sceneHold('S3');
-    await _ftueScene4_Breach();                _ftueNarr.sceneIdx = 4; await sceneHold('S4');
-    await _ftueScene5_Exit();                  _ftueNarr.sceneIdx = 5;
+    // Mission 1 — 8 scenes per FTUE/03 §1 (replaces v1 5-scene MVP).
+    await _missionScene1_Black();          _ftueNarr.sceneIdx = 1; await sceneHold('S1');
+    await _missionScene2_TightAwakening(); _ftueNarr.sceneIdx = 2; await sceneHold('S2');
+    await _missionScene3_FirstEnemy();     _ftueNarr.sceneIdx = 3; await sceneHold('S3');
+    await _missionScene4_Warehouse();      _ftueNarr.sceneIdx = 4; await sceneHold('S4');
+    await _missionScene5_HallDeath();      _ftueNarr.sceneIdx = 5; await sceneHold('S5');
+    await _missionScene6_RevivalUav();     _ftueNarr.sceneIdx = 6; await sceneHold('S6');
+    await _missionScene7_BreachWall();     _ftueNarr.sceneIdx = 7; await sceneHold('S7');
+    await _missionScene8_ExitTower();      _ftueNarr.sceneIdx = 8;
   } catch (err) {
-    console.error('[FTUE-NARR] crashed', err);
+    console.error('[M1] crashed', err);
   }
   // Total time spent in the prologue
   _ftueMarkSet('totalSec', Math.round((Date.now() - t0) / 1000));
@@ -15968,6 +16360,13 @@ function render() {
   if (game._ftueScripted && allies && allies.length) {
     for (const a of allies) {
       if (a && a._ftueMote && a.alive) _ftueDrawMoteOverlay(ctx, a);
+    }
+    // Mission 1 — V-07 + Mote SVG sprites + UAV memory outlines.
+    // Drawn AFTER the legacy ally pass so SVGs sit on top of the
+    // procedural humanoid (which is still drawn underneath but is
+    // mostly hidden by the SVG bounds + dark theme).
+    if (typeof _missionRenderSprites === 'function') {
+      try { _missionRenderSprites(ctx); } catch (e) {}
     }
   }
 
