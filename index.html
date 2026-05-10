@@ -3076,7 +3076,27 @@ function _ftueRevealed(key) {
   // first enemy contact; minimap NEVER shows during FTUE.
   return !!(f.hudShow && f.hudShow[key]);
 }
-function _ftueKeyLocked(_k) { return false; }
+// Lock disruptive keys during scripted FTUE. Player gets a "稍後解鎖"
+// toast (handled in the keydown handler). Per-key reasoning:
+//   tab — switches to command view, breaks cinematic camera
+//   h   — recall to spawn, would teleport out of scripted positioning
+//   u   — upgrade module, no upgradeable modules in FTUE arena
+//   x   — swap weapon, FTUE only ships one weapon (RIFLE)
+//   v   — aim assist toggle, harmless but adds ambient noise
+//   1-7 — squad orders / pawn-swap; FTUE has scripted Mote/BRAVO/CHARLIE
+//         AI, manual squad commands break scripted behaviour. Number
+//         keys still work for build-radial pick because that gate fires
+//         BEFORE this lock check (see keydown handler).
+const _FTUE_LOCKED_KEYS = new Set(['tab','h','u','x','v','1','2','3','4','5','6','7']);
+function _ftueKeyLocked(k) {
+  // Only locks during scripted (canvas) FTUE — S1 and S8 are pure DOM
+  // overlay and have their own input handling.
+  if (typeof game === 'undefined' || !game._ftueScripted) return false;
+  // Allow 1-9 + 0 inside build-radial mode (handled separately in keydown
+  // handler before this check). Belt-and-braces: don't lock '0'.
+  if (k === '0') return false;
+  return _FTUE_LOCKED_KEYS.has(k);
+}
 function _ftueCameraScale() {
   const f = (typeof game !== 'undefined') ? game._ftueScripted : null;
   if (f && f.cameraScaleTarget != null) return f.cameraScaleTarget;
@@ -3496,9 +3516,23 @@ function _ftueEndScripted() {
     game.mode = 'tactical';
     game._paused = false;
   }
-  // Tear down the DOM countdown timer if S4 left it dangling.
+  // Snap camera scale + rotation so the post-FTUE NN match doesn't
+  // inherit a 1-frame artifact (FTUE often ends at scale 0.32 / vision
+  // 1400 px; the priority table corrects on the next updateCamera()
+  // tick but not before the first frame). Same for rotation.
+  if (typeof camera !== 'undefined') {
+    camera.scale = 1;
+    camera.targetScale = 1;
+    camera.rotation = 0;
+    camera.targetRotation = 0;
+  }
+  // Tear down the DOM countdown timer if S4/S7 left it dangling.
   const cd = document.getElementById('ftueNarrCountdown');
   if (cd) cd.remove();
+  // Tear down the exit-vector-field SVG bg layer if S8 mounted it
+  // (it lives inside the overlay div, but let's be defensive).
+  const exitBg = document.getElementById('ftueNarrExitBg');
+  if (exitBg) exitBg.remove();
   game._ftueScripted = null;
   game.state = 'menu';
   _ftueNarrLog('SCRIPTED', 'ended — handed back to menu (full cleanup)');
@@ -5594,6 +5628,11 @@ const STAGE_HINTS = {
                      en: '⚡ 200⚡ to spend — press B to build turrets / walls' },
 };
 function showStageHint(id) {
+  // Suppress during scripted FTUE — Mission 1 has its own scripted
+  // chips/sub-bar narrative; firing a generic stage hint on top would
+  // be both redundant and break the cinematic. Stage hints resume in
+  // post-FTUE NN matches as designed.
+  if (typeof game !== 'undefined' && game._ftueScripted) return;
   const def = STAGE_HINTS[id];
   if (!def) return;
   if (_hintsSeen().has(id)) return;
@@ -14173,7 +14212,10 @@ function drawDefenseStatusPill() {
   ctx.textAlign = 'left';
   ctx.fillText(`${def.label()}`, x + 12, y + 16);
   ctx.font = '9px monospace';
-  ctx.fillStyle = can ? '#FFD24A' : COLORS.gray;
+  // §A.3 — yellow #FFD24A is banned during FTUE; use cream for affordable.
+  ctx.fillStyle = can
+    ? ((game._ftueScripted) ? COLORS.cream : '#FFD24A')
+    : COLORS.gray;
   const cur = Math.floor(game._energy || 0);
   ctx.fillText(`${def.cost}⚡ / ${cur}⚡`, x + 12, y + 30);
   // Hint right-aligned
@@ -14247,7 +14289,9 @@ function drawBuildRadial() {
     ctx.fillText(def.label(), lx, ly - 4);
     // Cost
     ctx.font = '10px monospace';
-    ctx.fillStyle = isHover ? COLORS.cream : (can ? '#FFD24A' : COLORS.gray);
+    // §A.3 — yellow swap during FTUE
+    const costColor = (game._ftueScripted) ? COLORS.cream : '#FFD24A';
+    ctx.fillStyle = isHover ? COLORS.cream : (can ? costColor : COLORS.gray);
     ctx.fillText(`${def.cost}⚡`, lx, ly + 12);
     ctx.textAlign = 'left';
   }
@@ -14260,7 +14304,8 @@ function drawBuildRadial() {
   ctx.strokeStyle = COLORS.cream;
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  ctx.fillStyle = '#FFD24A';
+  // §A.3 — center energy reading: cream during FTUE, yellow otherwise
+  ctx.fillStyle = (game._ftueScripted) ? COLORS.cream : '#FFD24A';
   ctx.font = 'bold 18px monospace';
   ctx.textAlign = 'center';
   ctx.fillText(`${Math.floor(game._energy || 0)}⚡`, g.cx, g.cy - 2);
@@ -17657,11 +17702,13 @@ function renderBuildPreview() {
     // First cell is already paid (placed on mousedown); count budget for the rest
     const affordable = 1 + Math.max(0, Math.floor(energy / cost));
     ctx.save();
+    // §A.3 — green leak suppressed during FTUE.
+    const okColor = (game._ftueScripted) ? '#E8E4D8' : '#3FE63F';
     for (let i = 0; i < cells.length; i++) {
       const c = cells[i];
       const willPlace = i < affordable;
       ctx.globalAlpha = willPlace ? 0.55 : 0.30;
-      ctx.fillStyle = willPlace ? '#3FE63F' : COLORS.red;
+      ctx.fillStyle = willPlace ? okColor : COLORS.red;
       ctx.fillRect(c.cx - r, c.cy - r, def.size, def.size);
     }
     // Center stroke from start to end
@@ -17706,11 +17753,14 @@ function renderBuildPreview() {
     ctx.restore();
     return;
   }
+  // §A.3 palette swap: during FTUE, OK preview uses cream (#E8E4D8)
+  // instead of green (#3FE63F). Green is banned per §A.3 + §A.4.
+  const okColor = (game._ftueScripted) ? '#E8E4D8' : '#3FE63F';
   ctx.globalAlpha = inReach ? 0.55 : 0.18;
-  ctx.fillStyle = (ok && inReach) ? '#3FE63F' : COLORS.red;
+  ctx.fillStyle = (ok && inReach) ? okColor : COLORS.red;
   ctx.fillRect(gx - r, gy - r, def.size, def.size);
   ctx.globalAlpha = inReach ? 0.9 : 0.5;
-  ctx.strokeStyle = (ok && inReach) ? '#3FE63F' : COLORS.red;
+  ctx.strokeStyle = (ok && inReach) ? okColor : COLORS.red;
   ctx.lineWidth = inReach ? 2 : 1;
   ctx.strokeRect(gx - r, gy - r, def.size, def.size);
   // Reach ring around the player so the player sees the placement boundary.
@@ -20551,7 +20601,11 @@ function loop() {
   }
   updateCamera();
   render();
-  if (game._paused) drawPauseOverlay();
+  // Pause overlay uses cream UI; suppress during scripted FTUE. The
+  // scripted FTUE intentionally sets game._paused = true for the
+  // BUILD = VERDICT title card (S7), and we don't want the lobby
+  // overlay drawing on top of the cinematic title.
+  if (game._paused && !game._ftueScripted) drawPauseOverlay();
   requestAnimationFrame(loop);
 }
 loop();
