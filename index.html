@@ -5614,16 +5614,26 @@ function toggleBuildMode() {
   if (game._energy == null) game._energy = 100;
   if (!game._structures) game._structures = [];
   if (!buildMode.active) {
+    // CLOSED → open wheel
     buildMode.active = true;
     buildMode.radialOpen = true;
     // FTUE: opening the build radial advances step 3 → step 4 (place one)
     if (typeof _ftueOnBuildOpen === 'function') _ftueOnBuildOpen();
   } else if (buildMode.radialOpen) {
-    // Radial already open → another B closes it (keep placing mode armed)
-    buildMode.radialOpen = false;
+    // WHEEL OPEN → close wheel; if a kind is already armed, stay in
+    // placing mode (so the player can re-place after a wheel preview).
+    // If no kind picked yet, exit cleanly.
+    if (buildMode.kind) {
+      buildMode.radialOpen = false;
+    } else {
+      exitBuildMode();
+    }
   } else {
-    // Already placing → reopen radial to switch module
-    buildMode.radialOpen = true;
+    // PLACING-MODE ARMED → next B exits entirely. Per user feedback
+    // ('我不想要一直在待放置的階段...再按一次 B 就是回去正常的選項'),
+    // pressing B a third time is the cancel/exit, not "reopen wheel".
+    // To re-pick a different module: exit, then press B again to open.
+    exitBuildMode();
   }
   buildMode._dragStart = null;
   buildMode._dragEnd   = null;
@@ -7609,7 +7619,11 @@ window.addEventListener('mousedown', e => {
     return;
   }
   // Build mode (Defense): radial-open vs placing-mode click handlers.
-  if (buildMode.active && game.state === 'playing' && !game._paused) {
+  // Gated on tactical mode — placing while in UAV / FPV view is a bug
+  // ('我可以透過 UAV 來放置耶' — that's not intended). Player must come
+  // back to tactical (press Q/E to exit) before placing.
+  if (buildMode.active && game.state === 'playing' && !game._paused
+      && game.mode === 'tactical') {
     if (buildMode.radialOpen) {
       // Click inside the radial picks the highlighted wedge. Outside the
       // radial closes it without changing selection (acts as a soft cancel).
@@ -7630,6 +7644,15 @@ window.addEventListener('mousedown', e => {
     const SNAP = 30;
     const gx = Math.round(wp.x / SNAP) * SNAP;
     const gy = Math.round(wp.y / SNAP) * SNAP;
+    // Range check: player can't reach infinitely. Cap at 200 px world
+    // distance from player center to placement cell — about 6-7 grid
+    // cells (arm + lean). User feedback: '手不能無限長'.
+    const REACH = 200;
+    if (player.alive && Math.hypot(gx - player.x, gy - player.y) > REACH) {
+      showSwapToast(T('太远 · 走近一点', 'Too far · step closer'));
+      e.preventDefault();
+      return;
+    }
     if (isWallKind(buildMode.kind)) {
       buildMode._dragStart = { gx, gy };
       buildMode._dragEnd   = { gx, gy };
@@ -7748,7 +7771,10 @@ if (touchInput.enabled) {
       // 4a) Defense radial picker — tap a wedge to select; tap dead-zone
       // or outside to soft-cancel. Must come BEFORE the stick logic so the
       // tap doesn't get consumed as a movement input.
-      if (buildMode.active && buildMode.radialOpen && game.state === 'playing' && !game._paused) {
+      // Tactical-mode only: UAV / FPV view never places structures.
+      if (buildMode.active && buildMode.radialOpen
+          && game.state === 'playing' && !game._paused
+          && game.mode === 'tactical') {
         const picked = _radialKindUnderCursor(t.clientX, t.clientY);
         if (picked) {
           buildMode.kind = picked;
@@ -7761,11 +7787,20 @@ if (touchInput.enabled) {
         continue;
       }
       // 4a2) Defense placing-mode tap — drop a structure at the snapped cell
-      if (buildMode.active && !buildMode.radialOpen && game.state === 'playing' && !game._paused) {
+      if (buildMode.active && !buildMode.radialOpen
+          && game.state === 'playing' && !game._paused
+          && game.mode === 'tactical') {
         const wp = screenToWorld(t.clientX, t.clientY);
         const SNAP = 30;
         const gx = Math.round(wp.x / SNAP) * SNAP;
         const gy = Math.round(wp.y / SNAP) * SNAP;
+        // Range check (mirrors the mouse path) — 200 px reach.
+        const REACH = 200;
+        if (player.alive && Math.hypot(gx - player.x, gy - player.y) > REACH) {
+          showSwapToast(T('太远 · 走近一点', 'Too far · step closer'));
+          hit = true;
+          continue;
+        }
         // Walls support drag-line on touch too: record anchor + place first
         if (isWallKind(buildMode.kind)) {
           buildMode._dragStart = { gx, gy };
@@ -16417,14 +16452,47 @@ function renderBuildPreview() {
     return;
   }
 
+  // Range check — out-of-reach cells render dim red so the player sees
+  // why their click won't land. 200 px reach (~6-7 grid cells).
+  // Per user feedback: '手不能無限長'.
+  const inReach = !player.alive ||
+    Math.hypot(gx - player.x, gy - player.y) <= 200;
+  // UAV / FPV view: no placement, full red strike-through preview.
+  const wrongMode = (game.mode !== 'tactical');
   ctx.save();
-  ctx.globalAlpha = 0.55;
-  ctx.fillStyle = ok ? '#3FE63F' : COLORS.red;
+  if (wrongMode) {
+    // Dim cross-hatched preview to communicate "not here".
+    ctx.globalAlpha = 0.20;
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(gx - r, gy - r, def.size, def.size);
+    ctx.globalAlpha = 0.4;
+    ctx.strokeStyle = COLORS.red;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(gx - r, gy - r); ctx.lineTo(gx + r, gy + r);
+    ctx.moveTo(gx + r, gy - r); ctx.lineTo(gx - r, gy + r);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  ctx.globalAlpha = inReach ? 0.55 : 0.18;
+  ctx.fillStyle = (ok && inReach) ? '#3FE63F' : COLORS.red;
   ctx.fillRect(gx - r, gy - r, def.size, def.size);
-  ctx.globalAlpha = 0.9;
-  ctx.strokeStyle = ok ? '#3FE63F' : COLORS.red;
-  ctx.lineWidth = 2;
+  ctx.globalAlpha = inReach ? 0.9 : 0.5;
+  ctx.strokeStyle = (ok && inReach) ? '#3FE63F' : COLORS.red;
+  ctx.lineWidth = inReach ? 2 : 1;
   ctx.strokeRect(gx - r, gy - r, def.size, def.size);
+  // Reach ring around the player so the player sees the placement boundary.
+  if (player.alive) {
+    ctx.globalAlpha = 0.10;
+    ctx.strokeStyle = COLORS.red;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 200, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   // For turret: show range
   if (buildMode.kind === 'turret') {
     ctx.globalAlpha = 0.18;
