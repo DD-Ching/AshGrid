@@ -3494,13 +3494,33 @@ function _ftueStartScripted() {
 function _ftueEndScripted() {
   const f = game._ftueScripted;
   if (!f) return;
-  // Clear arrays so the post-FTUE NN match starts clean
+  // Clear gameplay arrays so the post-FTUE NN match starts clean
   enemies.length = 0; allies.length = 0;
   if (typeof bullets !== 'undefined') bullets.length = 0;
   if (typeof enemyBullets !== 'undefined') enemyBullets.length = 0;
+  if (typeof explosions !== 'undefined') explosions.length = 0;
+  if (typeof muzzleFlashes !== 'undefined') muzzleFlashes.length = 0;
+  if (typeof damagePopups !== 'undefined') damagePopups.length = 0;
+  // Reset FTUE-only side effects so the next NN match doesn't inherit
+  // them: build mode, drone, FPV, camera-scale override, paused flag.
+  if (typeof buildMode !== 'undefined') {
+    buildMode.active = false;
+    buildMode.radialOpen = false;
+    buildMode._dragStart = null;
+    buildMode._dragEnd = null;
+  }
+  if (typeof drone !== 'undefined') drone.deployed = false;
+  if (typeof fpv !== 'undefined')   fpv.active = false;
+  if (typeof game !== 'undefined') {
+    game.mode = 'tactical';
+    game._paused = false;
+  }
+  // Tear down the DOM countdown timer if S4 left it dangling.
+  const cd = document.getElementById('ftueNarrCountdown');
+  if (cd) cd.remove();
   game._ftueScripted = null;
   game.state = 'menu';
-  _ftueNarrLog('SCRIPTED', 'ended — handed back to menu');
+  _ftueNarrLog('SCRIPTED', 'ended — handed back to menu (full cleanup)');
 }
 
 // Spawn the Mote ally — uses the existing ally sprite path but flagged
@@ -3568,7 +3588,12 @@ function _ftueUpdateMote(m) {
   if (!m || !m.alive) return;
   const f = game._ftueScripted;
   const nowMs = Date.now();
-  const dt = (nowMs - (m._lastMoteT || nowMs)) / 1000;
+  // Clamp dt to 100ms max — protects against tab-hide / resume (which
+  // produces multi-second wall-clock jumps that would teleport Mote
+  // across the whole map). Game tick runs at ~60 Hz so 100ms is 6
+  // frames worth, plenty of margin for a slow frame.
+  const rawDt = (nowMs - (m._lastMoteT || nowMs)) / 1000;
+  const dt = Math.max(0, Math.min(0.1, rawDt));
   m._lastMoteT = nowMs;
   // Eye pulse phase (used by render)
   m._moteEyePulseT += dt;
@@ -3622,11 +3647,15 @@ function _ftueUpdateMote(m) {
       const dx = tgt.x - m.x, dy = tgt.y - m.y, d = Math.hypot(dx, dy);
       const speed = 220;
       if (d < 60) {
-        // Bite — knock 60 HP off the enemy
+        // Bite — knock 60 HP off the enemy. Mote's kill credit is
+        // sequestered: the player's game.score / game.killCount stay
+        // unchanged so the post-FTUE first NN match's leaderboard
+        // and stats don't inherit FTUE-only events. Mote affinity is
+        // bumped via the scene orchestrator (S2 +5).
         tgt.hp -= 60;
         if (tgt.hp <= 0) {
           tgt.alive = false;
-          if (typeof game !== 'undefined') { game.score += 100; game.killCount++; }
+          tgt._killedByMote = true;     // tracked for FTUE event hooks
           if (typeof createExplosion === 'function') createExplosion(tgt.x, tgt.y, 'small');
         }
         m._moteState = 'HURT';
@@ -3847,24 +3876,47 @@ async function _ftueWaitKeyAFK(keys, afkMs, totalTimeoutMs) {
   if (afkMs == null) afkMs = 5000;
   if (totalTimeoutMs == null) totalTimeoutMs = 30000;
   const start = Date.now();
+  // Single keydown listener for the WHOLE call — not per-segment. The
+  // previous Promise.race-of-_ftueWaitKey approach attached a fresh
+  // keydown handler per segment AND when _wait won the race the
+  // _ftueWaitKey loser kept its listener attached. Across S2/S3/S4
+  // those orphan listeners stacked up and could fire spuriously in
+  // unrelated scenes. Single listener attached here, removed in finally.
   let pressed = false;
-  const innerWait = (ms) => Promise.race([
-    _ftueWaitKey(keys, ms).then(() => { pressed = true; }),
-    _wait(ms),
-  ]);
-  await innerWait(afkMs);
-  if (pressed || _ftueNarr.skipFlag) return;
-  // Re-flash chip — caller is expected to re-show it
-  _ftueNarrFlashChip();
-  await innerWait(afkMs);
-  if (pressed || _ftueNarr.skipFlag) return;
-  // Final nag
-  const sub = document.getElementById('ftueNarrSub');
-  const oldSub = sub ? sub.textContent : '';
-  _ftueNarrSetSub('[V-07: AWAITING INPUT]');
-  const remaining = Math.max(0, totalTimeoutMs - (Date.now() - start));
-  await innerWait(remaining);
-  if (sub) _ftueNarrSetSub(oldSub);
+  const set = new Set((keys || []).map(k => String(k).toLowerCase()));
+  const onKey = (e) => {
+    if (_ftueNarr.skipFlag) { pressed = true; return; }
+    const k = (e.key || '').toLowerCase();
+    if (set.has(k)) pressed = true;
+  };
+  window.addEventListener('keydown', onKey);
+  try {
+    if (_ftueNarr.skipFlag) return;
+    // Phase 1: wait afkMs
+    const phaseEnd1 = start + afkMs;
+    while (Date.now() < phaseEnd1 && !pressed && !_ftueNarr.skipFlag) {
+      await _wait(60);
+    }
+    if (pressed || _ftueNarr.skipFlag) return;
+    // Phase 2: re-flash chip + wait another afkMs
+    _ftueNarrFlashChip();
+    const phaseEnd2 = phaseEnd1 + afkMs;
+    while (Date.now() < phaseEnd2 && !pressed && !_ftueNarr.skipFlag) {
+      await _wait(60);
+    }
+    if (pressed || _ftueNarr.skipFlag) return;
+    // Phase 3: AWAITING INPUT sub-bar + remaining ceiling
+    const sub = document.getElementById('ftueNarrSub');
+    const oldSub = sub ? sub.textContent : '';
+    _ftueNarrSetSub('[V-07: AWAITING INPUT]');
+    const phaseEnd3 = start + totalTimeoutMs;
+    while (Date.now() < phaseEnd3 && !pressed && !_ftueNarr.skipFlag) {
+      await _wait(60);
+    }
+    if (sub) _ftueNarrSetSub(oldSub);
+  } finally {
+    window.removeEventListener('keydown', onKey);
+  }
 }
 function _ftueNarrFlashChip() {
   const chip = document.getElementById('ftueNarrChip');
@@ -5643,6 +5695,43 @@ function exitBuildMode() {
   buildMode.radialOpen = false;
   buildMode._dragStart = null;
   buildMode._dragEnd   = null;
+}
+
+// ============ BUILD PLACEMENT HELPERS (deduped) ============
+// Build-mode constants. Magic numbers used to be inline at every callsite,
+// which made it brittle to tune (changing 200 → 240 px reach meant
+// hunting 4 places). Centralised here.
+const BUILD_REACH_PX = 200;
+const BUILD_SNAP_PX  = 30;
+
+// Single source of truth for "is the player allowed to place / interact
+// with the build wheel right now?". Used by mouse + touch + render.
+// Keeps the predicate honest: any new gate (e.g. a future
+// game._buildLock) only updates this one place.
+function _canBuildPlace() {
+  return buildMode.active
+      && game.state === 'playing'
+      && !game._paused
+      && game.mode === 'tactical';     // §A.4 — UAV / FPV view doesn't place
+}
+
+// Snap a screen pixel to the build grid + check it's within reach of the
+// player. Returns null if out of reach or player is dead. Otherwise an
+// object the caller can place at: { gx, gy }. Toast-on-fail is opt-in via
+// `withToast`. Used by mouse + touch + FTUE wall-placement watcher so
+// they can't drift apart.
+function _snapAndCheckPlace(screenX, screenY, withToast) {
+  if (!player || !player.alive) return null;
+  const wp = screenToWorld(screenX, screenY);
+  const gx = Math.round(wp.x / BUILD_SNAP_PX) * BUILD_SNAP_PX;
+  const gy = Math.round(wp.y / BUILD_SNAP_PX) * BUILD_SNAP_PX;
+  if (Math.hypot(gx - player.x, gy - player.y) > BUILD_REACH_PX) {
+    if (withToast && typeof showSwapToast === 'function') {
+      showSwapToast(T('太远 · 走近一点', 'Too far · step closer'));
+    }
+    return null;
+  }
+  return { gx, gy };
 }
 
 // ============ GRENADES ============
@@ -7619,45 +7708,31 @@ window.addEventListener('mousedown', e => {
     return;
   }
   // Build mode (Defense): radial-open vs placing-mode click handlers.
-  // Gated on tactical mode — placing while in UAV / FPV view is a bug
-  // ('我可以透過 UAV 來放置耶' — that's not intended). Player must come
-  // back to tactical (press Q/E to exit) before placing.
-  if (buildMode.active && game.state === 'playing' && !game._paused
-      && game.mode === 'tactical') {
+  // _canBuildPlace() centralises the gate (state / paused / mode);
+  // _snapAndCheckPlace() centralises grid snap + 200 px reach check.
+  if (_canBuildPlace()) {
     if (buildMode.radialOpen) {
       // Click inside the radial picks the highlighted wedge. Outside the
-      // radial closes it without changing selection (acts as a soft cancel).
+      // radial closes it without changing selection (soft cancel).
       const picked = _radialKindUnderCursor(e.clientX, e.clientY);
       if (picked) {
         buildMode.kind = picked;
         buildMode.radialOpen = false;
         showSwapToast(`${T('已选', 'Selected')}: ${STRUCTURE_DEFS[picked].label()}`);
       } else {
-        // Click on the dead zone or outside ring → just close
         buildMode.radialOpen = false;
       }
       e.preventDefault();
       return;
     }
-    // Placing mode (radial closed): drop a structure at the snapped cell.
-    const wp = screenToWorld(e.clientX, e.clientY);
-    const SNAP = 30;
-    const gx = Math.round(wp.x / SNAP) * SNAP;
-    const gy = Math.round(wp.y / SNAP) * SNAP;
-    // Range check: player can't reach infinitely. Cap at 200 px world
-    // distance from player center to placement cell — about 6-7 grid
-    // cells (arm + lean). User feedback: '手不能無限長'.
-    const REACH = 200;
-    if (player.alive && Math.hypot(gx - player.x, gy - player.y) > REACH) {
-      showSwapToast(T('太远 · 走近一点', 'Too far · step closer'));
-      e.preventDefault();
-      return;
-    }
-    if (isWallKind(buildMode.kind)) {
-      buildMode._dragStart = { gx, gy };
-      buildMode._dragEnd   = { gx, gy };
-      placeStructure(buildMode.kind, gx, gy);
-    } else {
+    // Placing mode — single helper does snap + reach + toast on fail.
+    const cell = _snapAndCheckPlace(e.clientX, e.clientY, true);
+    if (cell) {
+      const { gx, gy } = cell;
+      if (isWallKind(buildMode.kind)) {
+        buildMode._dragStart = { gx, gy };
+        buildMode._dragEnd   = { gx, gy };
+      }
       placeStructure(buildMode.kind, gx, gy);
     }
     e.preventDefault();
@@ -7769,12 +7844,9 @@ if (touchInput.enabled) {
         if (hit) continue;
       }
       // 4a) Defense radial picker — tap a wedge to select; tap dead-zone
-      // or outside to soft-cancel. Must come BEFORE the stick logic so the
-      // tap doesn't get consumed as a movement input.
-      // Tactical-mode only: UAV / FPV view never places structures.
-      if (buildMode.active && buildMode.radialOpen
-          && game.state === 'playing' && !game._paused
-          && game.mode === 'tactical') {
+      // or outside to soft-cancel. Must come BEFORE the stick logic so
+      // the tap doesn't get consumed as a movement input.
+      if (_canBuildPlace() && buildMode.radialOpen) {
         const picked = _radialKindUnderCursor(t.clientX, t.clientY);
         if (picked) {
           buildMode.kind = picked;
@@ -7786,27 +7858,15 @@ if (touchInput.enabled) {
         hit = true;
         continue;
       }
-      // 4a2) Defense placing-mode tap — drop a structure at the snapped cell
-      if (buildMode.active && !buildMode.radialOpen
-          && game.state === 'playing' && !game._paused
-          && game.mode === 'tactical') {
-        const wp = screenToWorld(t.clientX, t.clientY);
-        const SNAP = 30;
-        const gx = Math.round(wp.x / SNAP) * SNAP;
-        const gy = Math.round(wp.y / SNAP) * SNAP;
-        // Range check (mirrors the mouse path) — 200 px reach.
-        const REACH = 200;
-        if (player.alive && Math.hypot(gx - player.x, gy - player.y) > REACH) {
-          showSwapToast(T('太远 · 走近一点', 'Too far · step closer'));
-          hit = true;
-          continue;
-        }
-        // Walls support drag-line on touch too: record anchor + place first
-        if (isWallKind(buildMode.kind)) {
-          buildMode._dragStart = { gx, gy };
-          buildMode._dragEnd   = { gx, gy };
-          placeStructure(buildMode.kind, gx, gy);
-        } else {
+      // 4a2) Defense placing-mode tap — single helper does snap + reach.
+      if (_canBuildPlace() && !buildMode.radialOpen) {
+        const cell = _snapAndCheckPlace(t.clientX, t.clientY, true);
+        if (cell) {
+          const { gx, gy } = cell;
+          if (isWallKind(buildMode.kind)) {
+            buildMode._dragStart = { gx, gy };
+            buildMode._dragEnd   = { gx, gy };
+          }
           placeStructure(buildMode.kind, gx, gy);
         }
         hit = true;
@@ -16453,10 +16513,10 @@ function renderBuildPreview() {
   }
 
   // Range check — out-of-reach cells render dim red so the player sees
-  // why their click won't land. 200 px reach (~6-7 grid cells).
-  // Per user feedback: '手不能無限長'.
+  // why their click won't land. Same constant as the click/touch path
+  // (BUILD_REACH_PX) so they can never disagree.
   const inReach = !player.alive ||
-    Math.hypot(gx - player.x, gy - player.y) <= 200;
+    Math.hypot(gx - player.x, gy - player.y) <= BUILD_REACH_PX;
   // UAV / FPV view: no placement, full red strike-through preview.
   const wrongMode = (game.mode !== 'tactical');
   ctx.save();
@@ -16989,7 +17049,12 @@ function renderWorld() {
   // Allies (squad)
   for (const a of allies) {
     if (!a.alive) continue;
-    const aInvuln = a._invulnUntil != null && game.time < a._invulnUntil;
+    // Spawn-invuln pulse-flicker is the visual cue for "just respawned,
+    // can't be killed yet". Mote during FTUE is permanently invulnerable
+    // (per FTUE/01 §4.3) but flickering it forever looks like the unit
+    // is broken. _ftueMote allies render solid.
+    const aInvuln = !a._ftueMote
+                  && a._invulnUntil != null && game.time < a._invulnUntil;
     if (aInvuln) ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
     drawHumanoid(a.x, a.y, a.angle, a.walkPhase, COLORS.creamDark, false, a);
     if (aInvuln) ctx.globalAlpha = 1;
