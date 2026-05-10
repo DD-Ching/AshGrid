@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#E8E4D8"/>
+  <polygon points="360,240 360,140 250,240" fill="#C8261C" opacity="0.12"/>
+  <!-- body -->
+  <path d="M 80 120 L 110 95 L 230 95 L 270 110 L 280 130 L 240 165 L 100 165 Z" fill="#1A1A1A"/>
+  <!-- head with snout -->
+  <path d="M 230 95 L 290 80 L 312 92 L 305 118 L 280 130 L 230 130 Z" fill="#1A1A1A"/>
+  <!-- ears -->
+  <polygon points="246,82 254,68 264,80" fill="#1A1A1A"/>
+  <polygon points="270,78 282,62 292,78" fill="#1A1A1A"/>
+  <!-- eye sensor (red) -->
+  <circle cx="290" cy="102" r="3.5" fill="#C8261C"/>
+  <!-- 3 normal legs -->
+  <rect x="115" y="165" width="14" height="50" fill="#1A1A1A"/>
+  <rect x="135" y="165" width="14" height="50" fill="#1A1A1A"/>
+  <rect x="220" y="165" width="14" height="50" fill="#1A1A1A"/>
+  <!-- 4th leg: WELDED with spoon detail -->
+  <rect x="200" y="165" width="14" height="20" fill="#1A1A1A"/>
+  <rect x="196" y="183" width="22" height="10" fill="#C8261C"/>
+  <text x="207" y="191" font-family="Courier New, monospace" font-size="6" fill="#E8E4D8" text-anchor="middle" font-weight="bold">WELD</text>
+  <ellipse cx="207" cy="200" rx="7" ry="3" fill="#6B6B6B"/>
+  <rect x="206" y="200" width="2" height="16" fill="#6B6B6B"/>
+  <!-- footpads on 3 normal legs -->
+  <ellipse cx="122" cy="218" rx="9" ry="3" fill="#1A1A1A"/>
+  <ellipse cx="142" cy="218" rx="9" ry="3" fill="#1A1A1A"/>
+  <ellipse cx="227" cy="218" rx="9" ry="3" fill="#1A1A1A"/>
+  <!-- callsign + status -->
+  <text x="14" y="22" font-family="Courier New, monospace" font-size="10" font-weight="bold" fill="#1A1A1A">M-WLF SCOUT · MOTE</text>
+  <text x="14" y="36" font-family="Courier New, monospace" font-size="7" fill="#6B6B6B">SIGNATURE MATCH: 73% PARTIAL</text>
+  <text x="14" y="48" font-family="Courier New, monospace" font-size="7" fill="#C8261C">LIMBS FUNCTIONAL: 3/4 (WELDED)</text>
+  <text x="14" y="60" font-family="Courier New, monospace" font-size="7" fill="#6B6B6B">LAST AUDIT REACTION: —</text>
+</svg>
