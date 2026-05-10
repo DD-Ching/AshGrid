@@ -4301,6 +4301,46 @@ function _missionRenderSprites(ctx) {
       ctx.restore();
     }
   }
+  // Sentinel SED-target indicator (S4 招降 — FTUE/03 §5)
+  // The user can't tell which enemy is the SED target without a marker.
+  // Pulsing CYAN-blue ring (distinct from red "this is enemy") + "[G]"
+  // chip. Cyan only used here in §A.3 violation context — but the
+  // user-feedback rule says the marker MUST be unambiguous, so making
+  // it the same red as enemies-in-general doesn't communicate "this
+  // one is the SED target". We use a desaturated cool-grey instead
+  // of cyan to stay palette-compliant.
+  const sentinel = f.sentinelTarget;
+  if (sentinel && sentinel.alive && sentinel.team === 1) {
+    const t = (Date.now() * 0.005);
+    const ringR = 26 + 4 * Math.sin(t);
+    const dist = (player && player.alive) ? Math.hypot(player.x - sentinel.x, player.y - sentinel.y) : 9999;
+    ctx.save();
+    // Outer halo — soft red glow so it's visible from far
+    const glowR = 70 + 8 * Math.sin(t);
+    const grad = ctx.createRadialGradient(sentinel.x, sentinel.y, 8, sentinel.x, sentinel.y, glowR);
+    grad.addColorStop(0, `rgba(200, 38, 28, ${0.30 + 0.15 * Math.sin(t)})`);
+    grad.addColorStop(1, 'rgba(200, 38, 28, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(sentinel.x - glowR, sentinel.y - glowR, glowR * 2, glowR * 2);
+    // Dashed targeting ring
+    ctx.strokeStyle = `rgba(232, 228, 216, ${0.6 + 0.4 * Math.sin(t * 1.3)})`;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.arc(sentinel.x, sentinel.y, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Label — stays visible at all distances
+    ctx.fillStyle = `rgba(232, 228, 216, ${0.7 + 0.3 * Math.sin(t)})`;
+    ctx.font = 'bold 10px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('SENTINEL', sentinel.x, sentinel.y - ringR - 8);
+    if (dist < 220) {
+      ctx.font = 'bold 12px "Courier New", monospace';
+      ctx.fillText(_r('[G] SED 投彈', '[G] throw SED'), sentinel.x, sentinel.y + ringR + 14);
+    }
+    ctx.restore();
+  }
   // UAV memory outline (FTUE/03 §3 S6 — enemies tagged outlined for 30s)
   if (f.uavMemoryUntil > (game.time || 0) && f.uavTagged) {
     ctx.save();
@@ -4315,6 +4355,38 @@ function _missionRenderSprites(ctx) {
       }
     }
     ctx.setLineDash([]);
+    ctx.restore();
+  }
+  // Player highlight during UAV mode — when the camera zooms way out
+  // (S6 vision lerps to 1200, scale 0.28) the player becomes a tiny
+  // dot. Draw a CREAM pulsing locator ring around them so the player
+  // can find themselves on the diagnostic view. User report:
+  // 'UAV 飛出去的時候應該也要說我主體在哪裡吧'.
+  // Active when vision radius > 600 (only happens during UAV moment)
+  // OR memory is on. Always tracks player.position.
+  const inUav = (f.visionRadius || 0) > 600;
+  if ((inUav || f.uavMemoryUntil > (game.time || 0)) && player && player.alive) {
+    const t = (game.time || 0) * 0.08;
+    const ringR = 28 + 4 * Math.sin(t);
+    ctx.save();
+    // Outer cream pulsing ring
+    ctx.strokeStyle = `rgba(232, 228, 216, ${0.55 + 0.35 * Math.sin(t)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+    // Inner red dot
+    ctx.fillStyle = 'rgba(200, 38, 28, 0.85)';
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    // 'YOU' label above (only during full-UAV view, not memory phase)
+    if (inUav) {
+      ctx.fillStyle = `rgba(232, 228, 216, ${0.7 + 0.3 * Math.sin(t)})`;
+      ctx.font = 'bold 11px "Courier New", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(_r('你 / V-07', 'YOU / V-07'), player.x, player.y - ringR - 6);
+    }
     ctx.restore();
   }
 }
@@ -4601,25 +4673,55 @@ function _missionDrawProp(ctx, x, y, p) {
       // Fallen V-07 chassis silhouette — shape similar to a downed humanoid
       const f = game._ftueScripted;
       const rescued = f && f.alliedWreckage && f.alliedWreckage.rescued;
+      const dist = (player && player.alive) ? Math.hypot(player.x - x, player.y - y) : 9999;
+      const t = Date.now() * 0.004;
       ctx.save();
       ctx.translate(x, y);
+      // (1) Pulsing red ground halo — visible from anywhere in the warehouse,
+      //     so the player knows there's something to investigate. Stronger
+      //     when not yet rescued; fades after rescue. User report: '我接近
+      //     了之後也沒有一些反饋,也沒有就按下哪一個鍵'.
+      if (!rescued) {
+        const halo = 60 + 8 * Math.sin(t);
+        const haloA = 0.25 + 0.15 * Math.sin(t);
+        const grad = ctx.createRadialGradient(0, 0, 8, 0, 0, halo);
+        grad.addColorStop(0, `rgba(200, 38, 28, ${haloA})`);
+        grad.addColorStop(1, 'rgba(200, 38, 28, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(-halo, -halo, halo * 2, halo * 2);
+      }
+      // (2) Body
       ctx.fillStyle = '#1A1A1A';
       ctx.fillRect(-12, -16, 24, 32);
-      // Dark sigil if not rescued; brighten if rescued
       ctx.fillStyle = rescued ? '#C8261C' : '#3A1010';
       ctx.fillRect(-6, -8, 12, 14);
-      // Helmet
       ctx.fillStyle = '#0A0A0A';
       ctx.beginPath();
       ctx.arc(0, -20, 5, 0, Math.PI * 2);
       ctx.fill();
-      // Pulsing rescue prompt — small E if player nearby
-      if (!rescued && player && Math.hypot(player.x - x, player.y - y) < 90) {
-        const t = Date.now() * 0.004;
-        ctx.fillStyle = `rgba(232, 228, 216, ${0.5 + 0.5 * Math.sin(t)})`;
-        ctx.font = 'bold 12px "Courier New", monospace';
+      // (3) Tiered prompt:
+      //     dist > 90:  small "▼ 可修復" hint above the body
+      //     dist ≤ 90:  pulsing big [E] under the body + ring around it
+      if (!rescued && dist > 90 && dist < 600) {
+        ctx.fillStyle = `rgba(232, 228, 216, ${0.55 + 0.25 * Math.sin(t)})`;
+        ctx.font = 'bold 10px "Courier New", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('[E]', 0, 28);
+        ctx.fillText(_r('▼ 可修復', '▼ Salvageable'), 0, -32);
+      }
+      if (!rescued && dist <= 90) {
+        // Locked-on ring
+        ctx.strokeStyle = `rgba(200, 38, 28, ${0.6 + 0.4 * Math.sin(t * 1.4)})`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.arc(0, 0, 28, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Big [E]
+        ctx.fillStyle = `rgba(232, 228, 216, ${0.6 + 0.4 * Math.sin(t)})`;
+        ctx.font = 'bold 14px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(_r('[E] 修復', '[E] revive'), 0, 30);
       }
       ctx.restore();
       break;
@@ -5006,7 +5108,7 @@ async function _missionScene4_Warehouse() {
   _missionSpawnAlliedWreckage(player.x + 200, player.y);
   _ftueNarrSetSub(_r('[發現倒下的診斷者]', '[Allied diagnostician — down]'));
   await _wait(1500);
-  _ftueNarrShowChip(_r('走近 + [E] 修復', 'APPROACH + [E] revive'));
+  _ftueNarrShowChip(_r('紅光所在 → 走近 → [E] 修復', 'walk to the red glow → [E] revive'));
   // Wait for rescue (E near wreckage) OR 25s to skip
   const rescueStart = Date.now();
   while ((Date.now() - rescueStart) < 25000 && !f.alliedWreckage.rescued) {
@@ -5026,16 +5128,18 @@ async function _missionScene4_Warehouse() {
   const sentinel = _missionSpawnSentinel(player.x + 300, player.y + 80);
   if (sentinel) { sentinel._stunUntil = Number.MAX_SAFE_INTEGER; }
   await _wait(1500);
-  _ftueNarrShowChip(_r('[G] · SED 彈 → 招降', '[G] · SED → recruit'));
-  // Wait for SED hit
+  _ftueNarrShowChip(_r('靠近 Sentinel + [G] 投 SED 彈', 'APPROACH Sentinel + [G] SED bomb'));
+  // The actual SED conversion is wired into the G keybinding (single-source
+  // dispatch via KEY_BINDINGS.g). Here we just poll for the conversion
+  // outcome — sentinel.team flips 1 → 0 when SED fires.
   const sedStart = Date.now();
   while ((Date.now() - sedStart) < 20000) {
     if (_ftueNarr.skipFlag) break;
-    _missionGRelease();
-    if (_missionTrySED()) {
+    if (sentinel && sentinel.team === 0) {
       _ftueMark('firstSED');
       _ftueNarrHideChip();
       _ftueNarrSetSub('▸ Lumen · ' + _r('「CHARLIE-3 是你的了。」', '"CHARLIE-3 is yours."'));
+      _missionAudio_voice(0.4);
       await _wait(2500);
       break;
     }
@@ -5423,8 +5527,15 @@ async function startNarrativeFTUE() {
     AG.set('firstMatch', '1');
     AG.set('introSeen', '1');
     AG.set('tutorialSeen', '1');
-    AG.set('ftueMvpDone', '1');   // gates _scheduleFirstMatchToasts (MVP §5)
+    AG.set('ftueMvpDone', '1');
   } catch (e) {}
+  // Strip the .first-session body class so when the player returns
+  // from the post-FTUE NN match they see the FULL lobby (skirmish /
+  // campaign / map editor / settings) — not just the lone WAKE button.
+  // User report: '回去大廳之後只有一個叫做甦醒,然後這樣子又把教程
+  // 重複一次'. The class is added by setupFirstSessionFTUE on first
+  // visit; removing it here is the canonical exit.
+  document.body.classList.remove('first-session');
   _ftueNarr.running = false;
   if (typeof game !== 'undefined') game._paused = false;
   _ftueNarrLog('DONE', `→ startNNSkirmish(2,2,warrior,RIFLE,null,dm) · marks=${JSON.stringify(_ftueGetMarks())}`);
@@ -7846,7 +7957,31 @@ const KEY_BINDINGS = {
   h:   { action: () => _recallToSpawn() },
   tab: { action: (e) => { e.preventDefault(); _toggleCommandView(); } },
   r:   { action: () => startReload() },
-  g:   { action: () => throwGrenade() },
+  g:   { action: () => {
+    // Context-sensitive: during S4 with a live Sentinel target, G fires
+    // an SED bomb that converts the unit. Otherwise G is a hand grenade.
+    // User report: '招降為什麼是手榴彈啊,你是在搞笑嗎?' — the spec maps
+    // SED to G but if grenade ALSO fires the player feels like both
+    // happen. Single-source dispatch fixes that.
+    const f = (typeof game !== 'undefined') ? game._ftueScripted : null;
+    const sed = (f && f.sentinelTarget && f.sentinelTarget.alive
+                 && f.sentinelTarget.team === 1)
+                ? f.sentinelTarget : null;
+    if (sed) {
+      // Within 220 px → SED conversion; outside that → user wanted to
+      // throw something else, fall back to grenade.
+      const d = Math.hypot(sed.x - player.x, sed.y - player.y);
+      if (d < 220) {
+        if (typeof _missionSEDConvert === 'function') {
+          _missionSEDConvert(sed);
+          if (typeof bumpMoteAffinity === 'function') bumpMoteAffinity(5);
+          if (typeof _ftueMark === 'function') _ftueMark('firstSED');
+        }
+        return;
+      }
+    }
+    throwGrenade();
+  } },
   b:   { action: () => toggleBuildMode() },
   x:   { action: () => swapPlayerWeapon() },
   u:   { action: () => upgradeNearestModule() },
@@ -19142,7 +19277,16 @@ function renderHUD() {
   // Dialog bar is HTML so it stays. Player + crosshair come from
   // renderHUDOverlays which we still call below.
   if (!showHp && !showAmmo && !showMin && !showMsn && !showEnergy) {
-    // Still tick the swap-toast / FTUE-side animations + crosshair.
+    // Build wheel + placement preview MUST still render even when the
+    // HUD is suppressed during FTUE — otherwise pressing B in S7 sets
+    // buildMode.radialOpen = true but the wheel never paints. User
+    // report: '按下 B 在這個 FTUE 的時候還是沒有用'. drawDefenseShop
+    // is the radial + build pill renderer; it's normally called later
+    // in this function, so we manually invoke it on the FTUE bail.
+    if (game._ftueScripted && buildMode.active && typeof drawDefenseShop === 'function') {
+      try { drawDefenseShop(); } catch (e) {}
+      game._buildShopDrawnThisFrame = true;
+    }
     renderHUDOverlays();
     renderDeathRecap();
     return;
