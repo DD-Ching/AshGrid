@@ -2687,7 +2687,7 @@ function getSeedIntegrity() {
 }
 function setSeedIntegrity(v) {
   const next = Math.max(0, Math.min(100, v|0));
-  try { localStorage.setItem('ag.seedIntegrity', String(next)); } catch (e) {}
+  AG.set('seedIntegrity', next);
   return next;
 }
 
@@ -2829,7 +2829,7 @@ function dismissIntro() {
   _introSkipFlag = true;
   const intro = document.getElementById('intro');
   if (intro) intro.setAttribute('hidden', '');
-  try { localStorage.setItem('ag.introSeen', '1'); } catch (e) {}
+  AG.set('introSeen', '1');
   game._paused = false;
   // First-session routing is handled by setupFirstSessionFTUE() now —
   // it auto-fires startNarrativeFTUE on load. dismissIntro just closes
@@ -3064,8 +3064,8 @@ function _ftueLog(kind, msg) {
 }
 function _ftueIsActive() { return false; }
 function _ftueIsFirstSession() {
-  try { return localStorage.getItem('ag.firstMatch') !== '1'; }
-  catch (e) { return true; }
+  // First session = ag.firstMatch is anything other than '1'.
+  return !AG.bool('firstMatch');
 }
 function _ftueCurStep() { return null; }
 function _ftueRevealed(key) {
@@ -3105,7 +3105,7 @@ function _ftueSpawnTarget() {}
 function _ftueStart() {}
 function _scheduleFirstMatchToasts() {}
 function _finalizeFtue() {
-  try { localStorage.setItem('ag.firstMatch', '1'); } catch (e) {}
+  AG.set('firstMatch', '1');
 }
 
 // ============ NARRATIVE FTUE — 9-scene 5-minute prologue ============
@@ -3269,7 +3269,7 @@ function _ftueLangCheck() {
   // regardless of what the boot-time `setLang(getLang())` defaulted to.
   // Returning players keep whatever language they set in the lobby.
   let firstSession = true;
-  try { firstSession = localStorage.getItem('ag.firstMatch') !== '1'; } catch (e) {}
+  firstSession = !AG.bool('firstMatch');
   let lang = null;
   try { lang = localStorage.getItem('ag.lang'); } catch (e) {}
   if (firstSession) {
@@ -4430,7 +4430,7 @@ async function _ftueScene5_Exit() {
   _ftueNarrSetCenter('');
   await _ftueTypeCenter(_r('週期 #347\n審計進行中\n...\n準備好?', 'CYCLE #347\nAUDIT IN PROGRESS\n...\nREADY?'), 28);
   await _wait(900);
-  try { localStorage.setItem('ag.seedIntegrity', '87'); } catch (e) {}
+  AG.set('seedIntegrity', '87');
   if (typeof bumpMoteAffinity === 'function') { try { bumpMoteAffinity(5); } catch (e) {} }
   // Show CTA
   const cta = document.getElementById('ftueNarrCta');
@@ -4511,10 +4511,10 @@ async function startNarrativeFTUE() {
   const overlay = document.getElementById('ftueNarr');
   if (overlay) overlay.remove();
   try {
-    localStorage.setItem('ag.firstMatch', '1');
-    localStorage.setItem('ag.introSeen', '1');
-    localStorage.setItem('ag.tutorialSeen', '1');
-    localStorage.setItem('ag.ftueMvpDone', '1');   // gates _scheduleFirstMatchToasts (MVP §5)
+    AG.set('firstMatch', '1');
+    AG.set('introSeen', '1');
+    AG.set('tutorialSeen', '1');
+    AG.set('ftueMvpDone', '1');   // gates _scheduleFirstMatchToasts (MVP §5)
   } catch (e) {}
   _ftueNarr.running = false;
   if (typeof game !== 'undefined') game._paused = false;
@@ -4847,6 +4847,96 @@ const COLORS = {
 };
 
 const WORLD = { w: 3200, h: 3200 };
+
+// ============ AG localStorage SCHEMA ============
+// Single source of truth for all `localStorage.ag.*` keys. Replaces 79
+// scattered `localStorage.{get,set,remove}Item('ag.X')` callsites. All
+// access flows through one of:
+//   AG.get(key)        → typed value or AG.DEFAULTS[key]
+//   AG.set(key, value) → string-coerced for plain strings, JSON for objects
+//   AG.remove(key)     → unset
+//   AG.bool(key)       → '1' / '0' coerced to true / false
+// Throwing tolerantly per pattern used throughout the codebase
+// (Safari private mode, quota errors, etc.).
+//
+// Why: previously a typo like `ag.firtMatch` silently wrote a phantom
+// key. Adding a new flag meant chasing 30+ callsites. Now: register the
+// key in AG.DEFAULTS, use AG.get/set, the rest is automatic.
+const AG = (() => {
+  const DEFAULTS = {
+    // ---- Lobby / language ----
+    lang:               null,        // 'zh' | 'en' | null (no preference)
+    muted:              '0',
+    aimAssist:          '1',
+    minimapCollapsed:   '0',
+    // ---- Progression ----
+    firstMatch:         '0',         // '1' once first NN match completed
+    firstAuditSeen:     '0',
+    introSeen:          '0',
+    tutorialSeen:       '0',
+    unlockAll:          '1',
+    // ---- FTUE ----
+    ftueMvpDone:        '0',         // '1' once startNarrativeFTUE finished
+    ftue:               null,        // JSON: { s1Reached, firstMove, ... }
+    seedIntegrity:      null,        // string number 41-87
+    moteAffinity:       null,        // string number
+    cycleNum:           null,        // '347'+
+    dayNum:             '14',
+    // ---- Stats / scores (JSON) ----
+    stats:              null,
+    survivalScores:     null,
+    defenseScores:      null,
+    achievements:       null,
+    auditChoices:       null,
+    chassisUsed:        null,
+    buildCount:         null,
+    hintsSeen:          null,
+    logsRead:           null,
+    // ---- Lobby / editor ----
+    lobbyConfig:        null,
+    customMaps:         null,
+    customMap:          null,
+    editorSlots:        null,
+  };
+  function _full(key) { return 'ag.' + key; }
+  return {
+    DEFAULTS,
+    get(key) {
+      try {
+        const v = localStorage.getItem(_full(key));
+        return v == null ? DEFAULTS[key] : v;
+      } catch (e) { return DEFAULTS[key]; }
+    },
+    set(key, value) {
+      try {
+        if (value == null) { localStorage.removeItem(_full(key)); return; }
+        localStorage.setItem(_full(key), String(value));
+      } catch (e) {}
+    },
+    remove(key) {
+      try { localStorage.removeItem(_full(key)); } catch (e) {}
+    },
+    bool(key) { return AG.get(key) === '1'; },
+    // Read+parse JSON (with fallback to provided default if parse fails).
+    json(key, fallback) {
+      try {
+        const raw = localStorage.getItem(_full(key));
+        if (raw == null) return (fallback === undefined ? null : fallback);
+        return JSON.parse(raw);
+      } catch (e) { return (fallback === undefined ? null : fallback); }
+    },
+    // Wipe every ag.* key (used by ?reset=1 / ?fresh=1).
+    wipeAll() {
+      try {
+        for (const k of Object.keys(localStorage)) {
+          if (k.startsWith('ag.')) localStorage.removeItem(k);
+        }
+      } catch (e) {}
+    },
+  };
+})();
+// Expose for QA console: window.AG.get('firstMatch') etc.
+try { window.AG = AG; } catch (e) {}
 
 // ============ STATE ============
 const game = {
@@ -8116,7 +8206,7 @@ if (_nnBtn) {
 const _tutorialDoneBtn = document.getElementById('tutorialDoneBtn');
 if (_tutorialDoneBtn) {
   _tutorialDoneBtn.onclick = () => {
-    try { localStorage.setItem('ag.tutorialSeen', '1'); } catch (e) {}
+    AG.set('tutorialSeen', '1');
     document.getElementById('tutorial').classList.add('hidden');
     document.getElementById('nnLobby').classList.remove('hidden');
   };
@@ -8285,7 +8375,7 @@ document.getElementById('lobbyStartBtn').onclick = () => {
 // trigger startNarrativeFTUE on the post-redirect load.
 (function setupFirstSessionFTUE() {
   let firstSeen = false;
-  try { firstSeen = localStorage.getItem('ag.firstMatch') === '1'; } catch (e) {}
+  firstSeen = AG.bool('firstMatch');
   if (!firstSeen) document.body.classList.add('first-session');
 
   // The legacy WAKE button is now a manual "replay narrative prologue"
