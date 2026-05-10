@@ -2385,7 +2385,6 @@ function _wireFooterModals() {
       game._auditPaused = false;
       game._paused = false;
       // FTUE: closing the first-kill audit modal advances step 2 → step 3
-      if (typeof _ftueOnAuditClose === 'function') _ftueOnAuditClose();
     }
   };
   if (auditModal) auditModal.onclick = (e) => {
@@ -3089,17 +3088,6 @@ function _ftueHide() {
   if (el) el.setAttribute('hidden', '');
 }
 function _ftueEvent(_name) {}
-function _ftueOnMove() {}
-function _ftueOnKill() {}
-function _ftueOnAuditClose() {}
-function _ftueOnBuildOpen() {}
-function _ftueOnPlace() {}
-function _ftueOnStreak3() {}
-function _ftueOnKeyPress(_k) {}
-function _ftueOnSquadOrder(_o) {}
-function _ftueOnPawnSwap() {}
-function _ftueAdvance(_r) {}
-function _ftueDialog(_s, _t, _h) {}
 function _ftueSpawnAllies() {}
 function _ftueSpawnTarget() {}
 function _ftueStart() {}
@@ -5217,7 +5205,6 @@ function placeStructure(kind, wx, wy) {
   game._energy -= def.cost;
   showSwapToast(T(`部署 ${def.label()}`, `Deployed ${def.label()}`));
   // FTUE: first placement advances step 4 → step 5 (streak training)
-  if (typeof _ftueOnPlace === 'function') _ftueOnPlace();
   // Cumulative build counter — feeds the ARCHITECT achievement
   try {
     const total = (parseInt(localStorage.getItem('ag.buildCount') || '0', 10) || 0) + 1;
@@ -5760,7 +5747,6 @@ function toggleBuildMode() {
     buildMode.active = true;
     buildMode.radialOpen = true;
     // FTUE: opening the build radial advances step 3 → step 4 (place one)
-    if (typeof _ftueOnBuildOpen === 'function') _ftueOnBuildOpen();
   } else if (buildMode.radialOpen) {
     // WHEEL OPEN → close wheel; if a kind is already armed, stay in
     // placing mode (so the player can re-place after a wheel preview).
@@ -6040,7 +6026,6 @@ function swapPlayerToAlly(idx) {
   // Pawn-swap auto-dismisses the death recap — player wants to see the
   // new body, not stare at the killer card.
   if (typeof dismissDeathRecap === 'function') dismissDeathRecap();
-  if (typeof _ftueOnPawnSwap === 'function') _ftueOnPawnSwap();
 
   // Snapshot ally body before we overwrite the slot
   const targetCallsign  = a.callsign;
@@ -6835,27 +6820,132 @@ let currentMap = null;
 const keys = {};
 const mouse = { x: 0, y: 0, worldX: 0, worldY: 0, down: false };
 
+// ============ KEY BINDINGS ============
+// Single source of truth for all keyboard input. Each binding row knows
+// the key, the action it fires, and whether it should respect mode/state
+// gates. Adding a new key = one new row, not 6 places in a switch chain.
+//
+// Why: the previous 235-line keydown body had 14 `else if (k === 'X')`
+// branches each with its own typeof guards (`if (typeof _ftueOnKeyPress
+// === 'function') _ftueOnKeyPress(k)`), some with embedded multi-line
+// blocks (the H/recall path was 18 lines inline). Hard to scan, easy
+// to drop a guard, FTUE typeof noise everywhere.
+
+// --- Action helpers (extracted from inline keydown blocks) ---
+function _recallToSpawn() {
+  if (!player.alive) return;
+  let sx = null, sy = null;
+  if (game._nnMode && game._nnSpawnBlue) {
+    sx = game._nnSpawnBlue.x; sy = game._nnSpawnBlue.y;
+  } else if (typeof currentMap !== 'undefined' && currentMap && currentMap.playerSpawn) {
+    sx = currentMap.playerSpawn.x; sy = currentMap.playerSpawn.y;
+  } else {
+    sx = WORLD.w / 2; sy = WORLD.h / 2;
+  }
+  player.x = sx; player.y = sy;
+  player._velX = 0; player._velY = 0;
+  player._invulnUntil = game.time + 60;
+  if (typeof showSwapToast === 'function') {
+    showSwapToast(T('▶ 回到出生點', '▶ RECALL TO SPAWN'));
+  }
+  if (typeof playRadioBeep === 'function') playRadioBeep(990, 0.10);
+}
+
+function _toggleCommandView() {
+  game.mode = (game.mode === 'command') ? 'tactical' : 'command';
+  const inCmd = (game.mode === 'command');
+  if (typeof showSwapToast === 'function') {
+    showSwapToast(inCmd
+      ? T('▶ 指令模式 · 1-7 下令', '▶ COMMAND MODE · 1-7 to order')
+      : T('◀ 戰術視角', '◀ TACTICAL VIEW'));
+  }
+  if (typeof playRadioBeep === 'function') {
+    playRadioBeep(inCmd ? 1320 : 660, 0.10);
+  }
+}
+
+function _toggleAimAssist() {
+  player._aimAssist = !player._aimAssist;
+  AG.set('aimAssist', player._aimAssist ? '1' : '0');
+  showMessage(`AIM-ASSIST · ${player._aimAssist ? T('开启', 'ON') : T('关闭', 'OFF')}`, 60);
+}
+
+function _pickBuildModuleByNumber(eKey) {
+  // 0-9 → module index 9, 0..8 (so '0' acts as a tenth slot)
+  const idx = eKey === '0' ? 9 : (parseInt(eKey, 10) - 1);
+  if (STRUCTURE_ORDER[idx]) buildMode.kind = STRUCTURE_ORDER[idx];
+  buildMode.radialOpen = false;
+  buildMode._dragStart = null;
+  buildMode._dragEnd   = null;
+}
+
+function _handleNumberKey(eKey) {
+  // COMMAND mode + NN: 1-7 issue squad orders.
+  if (eKey >= '1' && eKey <= '7' && game.mode === 'command' && game._nnMode) {
+    const orderById = { '1': 'rally', '2': 'spread', '3': 'attack', '4': 'defend',
+                        '5': 'protect', '6': 'suppress', '7': 'retreat' };
+    const id = orderById[eKey];
+    if (id) issueSquadOrder(id);
+    return;
+  }
+  // Otherwise: 1-6 are pawn-swap (NN) or mission-jump (campaign).
+  if (eKey >= '1' && eKey <= '6') {
+    if (game._nnMode) {
+      const allyIdx = parseInt(eKey, 10) - 2;       // '2' → ally[0], etc.
+      if (allyIdx >= 0 && allyIdx < allies.length) {
+        swapPlayerToAlly(allyIdx);
+      } else if (eKey === '1') {
+        // '1' is reserved for self in this layout. Surface a hint so
+        // the player learns the TAB+1 squad-order path.
+        if (typeof showSwapToast === 'function') {
+          showSwapToast(T('1 = 自己 · 按 TAB 後 1 → 集合',
+                         '1 = SELF · press TAB then 1 to RALLY'));
+        }
+      } else if (allyIdx >= allies.length) {
+        if (typeof showSwapToast === 'function') {
+          showSwapToast(T(`沒有 ${eKey} 號隊友`, `No ally in slot ${eKey}`));
+        }
+      }
+    } else {
+      // Campaign — 1-6 jumps directly to mission idx.
+      const idx = parseInt(eKey, 10);
+      if (idx <= MISSIONS.length) {
+        game.wave = idx - 1;
+        startNextWave();
+      }
+    }
+  }
+}
+
+// Single-key in-match bindings. Each row: {action: (e)=>void}.
+// Keys not listed fall through to the number-key + dev branches below.
+const KEY_BINDINGS = {
+  q:   { action: () => toggleDrone() },
+  e:   { action: () => launchFPV() },
+  h:   { action: () => _recallToSpawn() },
+  tab: { action: (e) => { e.preventDefault(); _toggleCommandView(); } },
+  r:   { action: () => startReload() },
+  g:   { action: () => throwGrenade() },
+  b:   { action: () => toggleBuildMode() },
+  x:   { action: () => swapPlayerWeapon() },
+  u:   { action: () => upgradeNearestModule() },
+  v:   { action: () => _toggleAimAssist() },
+};
+
 window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   keys[k] = true;
   if (e.key === 'Tab') e.preventDefault();
-  // Esc / P: pause toggle. Works regardless of pause state — pressing Esc
-  // again from inside the pause overlay resumes; the overlay has a separate
-  // "退出主菜单 / EXIT TO MENU" button for actually leaving the match.
-  // (Earlier we hijacked Esc to also exit build mode, but that confused
-  //  players who expected the universal "pause" behaviour. Build mode now
-  //  exits via right-click / contextmenu instead.)
+  // Pause toggle works regardless of pause state — Esc again resumes.
+  // The pause overlay has its own EXIT-TO-MENU button.
   if ((e.key === 'Escape' || k === 'p') && game.state === 'playing') {
     togglePause();
     return;
   }
-  // While paused, swallow all other hotkeys
+  // While paused, swallow all other hotkeys.
   if (game._paused) return;
-  // FTUE key lock — driven by the data-driven _ftueKeyLocked accessor.
-  // Each step's unlockKeys list (FTUE_STEPS at top of file) decides what's
-  // unlocked at that step. Always-OK keys (WASD / R / Shift / numbers /
-  // H / Esc / P) live in _FTUE_ALWAYS_OK_KEYS and are never locked.
-  // No more magic-number lvl checks — re-ordering steps just works.
+  // FTUE key lock — _ftueKeyLocked() returns false outside FTUE; the new
+  // canvas-FTUE doesn't lock keys (gameplay is already constrained).
   if (typeof _ftueKeyLocked === 'function' && _ftueKeyLocked(k)
       && game.state === 'playing') {
     if (typeof showSwapToast === 'function' && !game._ftueLockToastTick) {
@@ -6864,121 +6954,27 @@ window.addEventListener('keydown', e => {
     }
     return;
   }
-  if (game.state === 'playing') {
-    if (k === 'q') { if (typeof _ftueOnKeyPress === 'function') _ftueOnKeyPress('q'); toggleDrone(); }
-    else if (k === 'e') { if (typeof _ftueOnKeyPress === 'function') _ftueOnKeyPress('e'); launchFPV(); }
-    else if (k === 'h') {
-      // Recall to spawn — defensive escape hatch. If the player ends up
-      // outside the playable area (wandered into the void corner of
-      // WORLD, got pushed through a wall, weird respawn placement…),
-      // pressing H teleports them back to the active map's spawn point
-      // so the run isn't soft-locked. Same shape in NN / campaign / skirmish:
-      //   campaign      → currentMap.playerSpawn
-      //   NN skirmish   → game._nnSpawnBlue (wherever blue spawned this match)
-      //   editor/menu   → ignored (state guard above already excludes them)
-      // User report: '戰役模式 我被卡在地圖外了...中繼站'.
-      let sx = null, sy = null;
-      if (game._nnMode && game._nnSpawnBlue) {
-        sx = game._nnSpawnBlue.x; sy = game._nnSpawnBlue.y;
-      } else if (typeof currentMap !== 'undefined' && currentMap && currentMap.playerSpawn) {
-        sx = currentMap.playerSpawn.x; sy = currentMap.playerSpawn.y;
-      } else {
-        sx = WORLD.w / 2; sy = WORLD.h / 2;
-      }
-      if (player.alive) {
-        player.x = sx; player.y = sy;
-        player._velX = 0; player._velY = 0;
-        player._invulnUntil = game.time + 60;
-        if (typeof showSwapToast === 'function') {
-          showSwapToast(T('▶ 回到出生點', '▶ RECALL TO SPAWN'));
-        }
-        if (typeof playRadioBeep === 'function') playRadioBeep(990, 0.10);
-      }
-    }
-    else if (k === 'tab') {
-      e.preventDefault();
-      if (typeof _ftueOnKeyPress === 'function') _ftueOnKeyPress('tab');
-      // Toggle COMMAND ↔ TACTICAL. Earlier this was silent — user
-      // pressed TAB and the mode swapped, the squad strip drew at
-      // the bottom of the screen, but with no toast/beep many users
-      // didn't realise anything happened. Now we surface a toast +
-      // a beep so the mode change is unambiguous.
-      game.mode = (game.mode === 'command') ? 'tactical' : 'command';
-      const inCmd = (game.mode === 'command');
-      if (typeof showSwapToast === 'function') {
-        showSwapToast(inCmd
-          ? T('▶ 指令模式 · 1-7 下令', '▶ COMMAND MODE · 1-7 to order')
-          : T('◀ 戰術視角', '◀ TACTICAL VIEW'));
-      }
-      if (typeof playRadioBeep === 'function') {
-        playRadioBeep(inCmd ? 1320 : 660, 0.10);
-      }
-    }
-    else if (k === 'r') startReload();
-    else if (k === 'g') { if (typeof _ftueOnKeyPress === 'function') _ftueOnKeyPress('g'); throwGrenade(); }
-    else if (k === 'b') toggleBuildMode();
-    else if (k === 'x') { if (typeof _ftueOnKeyPress === 'function') _ftueOnKeyPress('x'); swapPlayerWeapon(); }
-    else if (k === 'u') upgradeNearestModule();
-    // 1-9 + 0 = power-user shortcut to pick a module. Works whether the
-    // radial is open (closes it) or in placing mode (just swaps kind).
-    // Pawn-swap fallback below only runs OUTSIDE build mode.
-    else if (buildMode.active && ((e.key >= '1' && e.key <= '9') || e.key === '0')) {
-      const idx = e.key === '0' ? 9 : (parseInt(e.key) - 1);
-      if (STRUCTURE_ORDER[idx]) buildMode.kind = STRUCTURE_ORDER[idx];
-      buildMode.radialOpen = false;
-      buildMode._dragStart = null;
-      buildMode._dragEnd   = null;
-      e.preventDefault();
-      return;
-    }
-    else if (k === 'v') {
-      player._aimAssist = !player._aimAssist;
-      try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (err) {}
-      showMessage(`AIM-ASSIST · ${player._aimAssist ? T('开启', 'ON') : T('关闭', 'OFF')}`, 60);
-    }
-    // Number keys: in COMMAND mode (TAB), 1-7 issue squad orders. Outside
-    // command mode, 1-4 still pawn-swap (NN mode) or jump-mission (campaign).
-    else if (e.key >= '1' && e.key <= '7' && game.mode === 'command' && game._nnMode) {
-      const orderById = { '1':'rally', '2':'spread', '3':'attack', '4':'defend',
-                          '5':'protect', '6':'suppress', '7':'retreat' };
-      const id = orderById[e.key];
-      if (id) issueSquadOrder(id);
-    }
-    else if (e.key >= '1' && e.key <= '6') {
-      if (game._nnMode) {
-        const allyIdx = parseInt(e.key) - 2;   // '2' → ally[0], etc.
-        if (allyIdx >= 0 && allyIdx < allies.length) {
-          swapPlayerToAlly(allyIdx);
-        } else if (e.key === '1') {
-          // '1' is reserved for self in this layout (2→ally[0], 3→ally[1]…),
-          // so a bare '1' would otherwise silently no-op. Surface a one-line
-          // hint so the player learns the TAB+1 squad-order path instead of
-          // assuming the keys are broken. ('按下tab 123無反饋' report.)
-          if (typeof showSwapToast === 'function') {
-            showSwapToast(T('1 = 自己 · 按 TAB 後 1 → 集合', '1 = SELF · press TAB then 1 to RALLY'));
-          }
-        } else if (allyIdx >= allies.length) {
-          // Index past the end of the lineup — no such ally slot. Tell them
-          // instead of silently dropping the keypress.
-          if (typeof showSwapToast === 'function') {
-            showSwapToast(T(`沒有 ${e.key} 號隊友`, `No ally in slot ${e.key}`));
-          }
-        }
-      } else {
-        const idx = parseInt(e.key);
-        if (idx <= MISSIONS.length) {
-          game.wave = idx - 1; // startNextWave will increment to idx
-          startNextWave();
-        }
-      }
-    }
-    // Dev: skip current mission (treat as success)
-    else if (k === 'n') {
-      if (mission && mission.status === 'active') {
-        mission.status = 'success';
-        onMissionSuccess();
-      }
-    }
+  // All gameplay key paths require state=playing.
+  if (game.state !== 'playing') return;
+  // Build-radial number shortcut (0-9): power-user pick a module without
+  // touching the wheel. Wins over 1-7 squad / 1-6 pawn-swap below.
+  if (buildMode.active && ((e.key >= '1' && e.key <= '9') || e.key === '0')) {
+    _pickBuildModuleByNumber(e.key);
+    e.preventDefault();
+    return;
+  }
+  // Single-key bindings (Q/E/H/TAB/R/G/B/X/U/V) — table-driven.
+  const binding = KEY_BINDINGS[k];
+  if (binding) { binding.action(e); return; }
+  // Number keys (1-7): squad orders / pawn-swap / mission-jump.
+  if (e.key >= '1' && e.key <= '7') {
+    _handleNumberKey(e.key);
+    return;
+  }
+  // Dev: skip current mission (treat as success).
+  if (k === 'n' && mission && mission.status === 'active') {
+    mission.status = 'success';
+    onMissionSuccess();
   }
 });
 
@@ -10300,7 +10296,6 @@ function issueSquadOrder(id) {
   if (typeof showSwapToast === 'function') showSwapToast(`▶ ${label}`);
   if (typeof showRadioToast === 'function') showRadioToast('CMD', `"${radio}"`);
   if (typeof playRadioBeep === 'function') playRadioBeep(880, 0.12);
-  if (typeof _ftueOnSquadOrder === 'function') _ftueOnSquadOrder(id);
 }
 function _squadOrderActive() {
   return game._squadOrder && game.time < game._squadOrder.expiresAt;
@@ -15054,9 +15049,6 @@ function updatePlayer() {
   const wantsSprint = shiftHeld && moving && player.stamina > 0
                      && (!player._spentToZero || player.stamina >= STAMINA_RECOVERY_MIN);
   player.sprinting = wantsSprint;
-  if (player.sprinting && typeof _ftueAdvance === 'function') {
-    _ftueAdvance('sprint');
-  }
 
   if (player.sprinting) {
     player.stamina = Math.max(0, player.stamina - STAMINA_DRAIN_PER_F);
@@ -15078,7 +15070,6 @@ function updatePlayer() {
     player.y += my * player.speed * speedMul;
     player.walkPhase += 0.22 * speedMul;
     // FTUE step 0 → step 1 advance: detected first WASD movement
-    if (typeof _ftueOnMove === 'function') _ftueOnMove();
     // Footprint trail — every ~30 ticks while moving (any NN / campaign mode)
     if (game.time % 30 === 0) emitFootprint(player);
   }
@@ -15447,7 +15438,6 @@ function updateBullets() {
             _maybeTriggerFirstKillAudit(b.fromUnit === player);
           }
           // FTUE: a player kill advances step 1 → step 2 (Audit Card popup)
-          if (b.fromUnit === player && typeof _ftueOnKill === 'function') _ftueOnKill();
           // Kill SFX + ally-kill radio callout BOTH removed on user request
           // ('移除擊殺音效!!!', third escalation). The radio callout was the
           // 'ding-dong' the user kept hearing — showRadioToast plays a 2-tone
@@ -15488,7 +15478,6 @@ function updateBullets() {
             unlockAchievement('killstreak3');
             if (player._killStreak >= 5) unlockAchievement('killstreak5');
             // FTUE: 3-streak advances the final tutorial step
-            if (typeof _ftueOnStreak3 === 'function') _ftueOnStreak3();
           } else {
             triggerShake(2, 4);
           }
