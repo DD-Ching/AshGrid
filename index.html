@@ -3953,10 +3953,62 @@ function _missionLoadSprites() {
 }
 _missionLoadSprites();
 
-// ---- WebAudio synth bank (CREDITS.md describes recipes) ----
-// All sounds are synthesised in-engine — no 2-tone beep, no external samples.
+// ---- Mission 1 audio bank — Mixkit CC0-equivalent samples ----
+// All cues live in /audio/*.mp3 (downloaded from Mixkit, see audio/CREDITS.md
+// for full attribution + license terms). Replaces the previous WebAudio
+// synth recipes — the synth versions still ship as a silent fallback if a
+// file 404s (e.g. when the static server isn't serving /audio/).
+const _missionAudioCues = {
+  'heartbeat-slow':       null,    // S1 ambient pulse
+  'heartbeat-fast':       null,    // S1 escalation
+  'bearing-hum':          null,    // Mote / ambient mech
+  'static-radio':         null,    // Lumen voice carrier
+  'broken-voice':         null,    // Lumen distorted speech
+  'footstep-concrete':    null,    // V-07 footstep
+  'footstep-mech-hound':  null,    // Mech-Hound (fast/light)
+  'footstep-hollow31':    null,    // Hollow-31 (slow/heavy)
+  'ugv-rumble':           null,    // Heavy UGV approach loop
+  'gunshot':              null,    // Muzzle flash
+  'explosion':            null,    // Boom + debris
+  'thud-wood':            null,    // Wall thud (light)
+  'thud-bomb':            null,    // Wall thud (heavy)
+  'sed-electric':         null,    // SED bomb electromagnetic ping
+  'title-drum':           null,    // BUILD = VERDICT cinematic accent
+};
+
+function _missionGetAudio(name) {
+  if (!(name in _missionAudioCues)) return null;
+  if (_missionAudioCues[name]) return _missionAudioCues[name];
+  try {
+    const a = new Audio('audio/' + name + '.mp3');
+    a.preload = 'auto';
+    _missionAudioCues[name] = a;
+    return a;
+  } catch (e) { return null; }
+}
+
+// Play a cue. Clones the Audio element so overlapping plays don't clip
+// each other (e.g. two heartbeats close together). Volume clamped 0-1.
+function _missionPlayCue(name, vol) {
+  vol = vol == null ? 0.5 : Math.max(0, Math.min(1, vol));
+  const src = _missionGetAudio(name);
+  if (!src) return false;
+  try {
+    const clone = src.cloneNode(true);
+    clone.volume = vol;
+    const p = clone.play();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+    return true;
+  } catch (e) { return false; }
+}
+
+// ---- WebAudio synth bank (silent fallback) ----
+// These keep the same names so all existing callsites in scenes work
+// regardless of whether files load. If the file plays, we early-return.
+// Otherwise the synth recipe runs (matches the previous behaviour).
 function _missionAudio_static(vol, durSec) {
-  // Filtered white noise burst — Lumen radio static
+  if (_missionPlayCue('static-radio', vol == null ? 0.5 : vol)) return;
+  // Synth fallback — filtered white noise burst
   if (typeof getAC !== 'function') return;
   let ac; try { ac = getAC(); } catch (e) { return; }
   if (!ac) return;
@@ -3965,27 +4017,26 @@ function _missionAudio_static(vol, durSec) {
   const buf = ac.createBuffer(1, ac.sampleRate * durSec, ac.sampleRate);
   const data = buf.getChannelData(0);
   for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.45;
-  const src = ac.createBufferSource();
-  src.buffer = buf;
+  const src = ac.createBufferSource(); src.buffer = buf;
   const filter = ac.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.value = 1200;
-  filter.Q.value = 0.5;
+  filter.type = 'lowpass'; filter.frequency.value = 1200; filter.Q.value = 0.5;
   const g = ac.createGain();
   g.gain.setValueAtTime(0, ac.currentTime);
   g.gain.linearRampToValueAtTime(vol, ac.currentTime + 0.04);
   g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + durSec);
   src.connect(filter); filter.connect(g); g.connect(ac.destination);
-  src.start();
-  src.stop(ac.currentTime + durSec);
+  src.start(); src.stop(ac.currentTime + durSec);
 }
+
 function _missionAudio_thud(vol) {
+  // Use 'thud-bomb' for the heavy wall-thud + dust per FTUE/03 §A.5.
+  if (_missionPlayCue('thud-bomb', vol == null ? 0.55 : vol)) return;
+  // Synth fallback
   if (typeof getAC !== 'function') return;
   let ac; try { ac = getAC(); } catch (e) { return; }
   if (!ac) return;
   vol = vol == null ? 0.5 : vol;
   const now = ac.currentTime;
-  // Low-pass noise + 40 Hz sine for chest-thud feel
   const buf = ac.createBuffer(1, ac.sampleRate * 0.4, ac.sampleRate);
   const data = buf.getChannelData(0);
   for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.6;
@@ -3997,7 +4048,6 @@ function _missionAudio_thud(vol) {
   g.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
   src.connect(f); f.connect(g); g.connect(ac.destination);
   src.start(now); src.stop(now + 0.4);
-  // Sine 40 Hz layer
   const o = ac.createOscillator(); const og = ac.createGain();
   o.type = 'sine'; o.frequency.value = 40;
   og.gain.setValueAtTime(0, now);
@@ -4006,8 +4056,10 @@ function _missionAudio_thud(vol) {
   o.connect(og); og.connect(ac.destination);
   o.start(now); o.stop(now + 0.5);
 }
+
 function _missionAudio_sed(vol) {
-  // SED bomb — sine 220 Hz with FM ring-mod 18 Hz, 600 ms decay
+  if (_missionPlayCue('sed-electric', vol == null ? 0.5 : vol)) return;
+  // Synth fallback
   if (typeof getAC !== 'function') return;
   let ac; try { ac = getAC(); } catch (e) { return; }
   if (!ac) return;
@@ -4025,8 +4077,14 @@ function _missionAudio_sed(vol) {
   mod.start(now); carrier.start(now);
   mod.stop(now + 0.65); carrier.stop(now + 0.65);
 }
+
 function _missionAudio_footstep(vol, kind) {
   // kind: 'concrete' | 'mech-hound' | 'hollow-31'
+  let cue = 'footstep-concrete';
+  if (kind === 'mech-hound') cue = 'footstep-mech-hound';
+  else if (kind === 'hollow-31' || kind === 'hollow31') cue = 'footstep-hollow31';
+  if (_missionPlayCue(cue, vol == null ? 0.35 : vol)) return;
+  // Synth fallback (same as previous)
   if (typeof getAC !== 'function') return;
   let ac; try { ac = getAC(); } catch (e) { return; }
   if (!ac) return;
@@ -4039,7 +4097,7 @@ function _missionAudio_footstep(vol, kind) {
   const f = ac.createBiquadFilter();
   if (kind === 'mech-hound') {
     f.type = 'highpass'; f.frequency.value = 2200; f.Q.value = 1.2;
-  } else if (kind === 'hollow-31') {
+  } else if (kind === 'hollow-31' || kind === 'hollow31') {
     f.type = 'lowpass';  f.frequency.value = 220;  f.Q.value = 0.8;
     vol *= 1.4;
   } else {
@@ -4052,6 +4110,17 @@ function _missionAudio_footstep(vol, kind) {
   src.connect(f); f.connect(g); g.connect(ac.destination);
   src.start(now); src.stop(now + 0.12);
 }
+
+// New explicit cues (no synth fallback — file-only)
+function _missionAudio_heartbeat(vol, fast) {
+  _missionPlayCue(fast ? 'heartbeat-fast' : 'heartbeat-slow', vol == null ? 0.55 : vol);
+}
+function _missionAudio_gunshot(vol)   { _missionPlayCue('gunshot',   vol == null ? 0.45 : vol); }
+function _missionAudio_explosion(vol) { _missionPlayCue('explosion', vol == null ? 0.55 : vol); }
+function _missionAudio_titleDrum(vol) { _missionPlayCue('title-drum', vol == null ? 0.50 : vol); }
+function _missionAudio_voice(vol)     { _missionPlayCue('broken-voice', vol == null ? 0.45 : vol); }
+function _missionAudio_ugvRumble(vol) { _missionPlayCue('ugv-rumble', vol == null ? 0.30 : vol); }
+function _missionAudio_bearing(vol)   { _missionPlayCue('bearing-hum', vol == null ? 0.18 : vol); }
 
 // ---- Space-affordance vision multipliers (FTUE/03 §2.1) ----
 const SPACE_MULT = {
