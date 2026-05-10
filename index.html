@@ -3382,20 +3382,13 @@ function _renderFtueVision(ctx, screenX, screenY, clearR) {
                                      screenX, screenY, outerR);
   g.addColorStop(0, 'rgba(10,10,10,0)');
   g.addColorStop(clearR / outerR, 'rgba(10,10,10,0)');
-  g.addColorStop(1, 'rgba(10,10,10,0.99)');
+  g.addColorStop(1, 'rgba(10,10,10,1.0)');                // outside FULLY dark
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W_, H_);
   ctx.restore();
-  // 2. Faint red rim — sells "this is your light source"
-  ctx.save();
-  const rim = ctx.createRadialGradient(screenX, screenY, clearR * 0.85,
-                                       screenX, screenY, clearR * 1.05);
-  rim.addColorStop(0, 'rgba(200, 38, 28, 0)');
-  rim.addColorStop(0.5, 'rgba(200, 38, 28, 0.10)');
-  rim.addColorStop(1, 'rgba(200, 38, 28, 0)');
-  ctx.fillStyle = rim;
-  ctx.fillRect(0, 0, W_, H_);
-  ctx.restore();
+  // (Red rim glow removed — was 0.10 alpha leak. §A.2 hard-rejection
+  //  criterion: '視野圈外看得到任何東西 → 必須完全黑'. The vision is
+  //  pure black outside the cleared circle now.)
 }
 
 // Scripted-FTUE state holder. Mounted on game._ftueScripted while the
@@ -4253,6 +4246,473 @@ function _missionRenderSprites(ctx) {
       }
     }
     ctx.setLineDash([]);
+    ctx.restore();
+  }
+}
+
+
+// ============================================================
+// MISSION 1 — Per-scene environment props (FTUE/03 §3 + §4.1)
+// Procedural canvas renders, anchored on NN_ARENA center (600, 600).
+// Drawn in WORLD-space before entity sprites; vision-cutout handles cull.
+// ============================================================
+
+const M1_SCENE_PROPS = {
+  S2: {
+    floor:  { tint: '#0E0E0E' },
+    props: [
+      { type: 'oil-drum',     x: -180, y: -90 },
+      { type: 'oil-drum',     x:  180, y:  80 },
+      { type: 'rebar',        x:  -10, y: -40 },
+      { type: 'water-drip',   x:  -30, y: -90, period: 1400 },
+      { type: 'graffiti',     x: -210, y:  60, text: 'DO NOT BECOME A SKILL', color: '#6B6B6B', alpha: 0.55 },
+    ],
+    lights: [{ x: 0, y: -110, broken: true }],
+  },
+  S3: {
+    floor:  { tint: '#0F0F0F' },
+    props: [
+      { type: 'ugv-wreck',    x:   60, y:   0 },
+      { type: 'rebar-pile',   x:  350, y:  30 },
+      { type: 'graffiti',     x:  100, y:  90, text: 'RULE 1 ≠ RULE 2', color: '#C8261C', alpha: 0.45 },
+      { type: 'verdict-card', x: -300, y:  60 },
+    ],
+    lights: [
+      { x: -200, y: -90, flicker: true },
+      { x:    0, y: -90, broken:  true },
+      { x:  200, y: -90, stable:  true, brightness: 0.65 },
+    ],
+  },
+  S4: {
+    floor:  { tint: '#0F0F0F' },
+    props: [
+      // 6 columns 2x3 grid (warehouse layout)
+      { type: 'column',       x: -260, y: -160 },
+      { type: 'column',       x:    0, y: -160 },
+      { type: 'column',       x:  260, y: -160 },
+      { type: 'column',       x: -260, y:  160 },
+      { type: 'column',       x:    0, y:  160 },
+      { type: 'column',       x:  260, y:  160 },
+      { type: 'allied-wreck', x:  200, y:    0 },   // matches _missionSpawnAlliedWreckage
+      { type: 'crate',        x: -340, y: -250 },
+      { type: 'crate',        x:  340, y:  250 },
+      { type: 'ugv-burnt',    x: -380, y:   60 },
+      { type: 'graffiti',     x: -310, y:    0, text: 'AUDITOR #2837 SEVERED HERE', color: '#6B6B6B', alpha: 0.5 },
+    ],
+    lights: [
+      { x: -200, y: -240, stable: true, brightness: 0.55 },
+      { x:    0, y: -240, stable: true, brightness: 0.55 },
+      { x:  200, y: -240, stable: true, brightness: 0.55 },
+      { x: -100, y:  240, flicker: true },
+      { x:  100, y:  240, flicker: true },
+    ],
+  },
+  S5: {
+    floor:  { tint: '#0E0E0E' },
+    props: [
+      // 4 BIG columns at quadrants — the blind-spot trap
+      { type: 'column',        x: -130, y: -130, big: true },
+      { type: 'column',        x:  130, y: -130, big: true },
+      { type: 'column',        x: -130, y:  130, big: true },
+      { type: 'column',        x:  130, y:  130, big: true },
+      { type: 'audit-shrine',  x:    0, y:    0 },
+      { type: 'crate',         x: -340, y: -220 },
+      { type: 'crate',         x:  300, y:  220 },
+      { type: 'half-wall',     x: -380, y:    0, w: 14, h: 100 },
+      { type: 'half-wall',     x:  380, y:    0, w: 14, h: 100 },
+    ],
+    lights: [
+      { x: -200, y: -200, broken: true },
+      { x:  200, y:  200, broken: true },
+    ],
+  },
+  S6: 'INHERIT_S5',     // S6 reuses S5 hall (per spec §3 S6)
+  S7: {
+    floor: { tint: '#0F0F0F' },
+    props: [
+      { type: 'breach',        x:  240, y:    0, w: 90, h: 240 },
+      { type: 'vehicle-wreck', x: -180, y:  120 },
+      { type: 'build-node',    x:  180, y:    0 },
+    ],
+    lights: [
+      { x:    0, y: -200, flicker: true },
+      { x:  -90, y:  200, stable: true, brightness: 0.4 },
+    ],
+  },
+  S8: 'NONE',           // S8 uses opaque exit overlay; no canvas props
+};
+
+function _missionRenderEnvProps(ctx) {
+  const f = game._ftueScripted;
+  if (!f) return;
+  const sceneIdx = (typeof _ftueNarr !== 'undefined') ? _ftueNarr.sceneIdx : 0;
+  const sceneKey = 'S' + sceneIdx;
+  let cfg = M1_SCENE_PROPS[sceneKey];
+  if (cfg === 'INHERIT_S5') cfg = M1_SCENE_PROPS.S5;
+  if (!cfg || cfg === 'NONE') return;
+  // Anchor at NN_ARENA center so prop layouts stay scene-centric.
+  const cx = (typeof NN_ARENA !== 'undefined') ? NN_ARENA.x0 + NN_ARENA.w / 2 : 600;
+  const cy = (typeof NN_ARENA !== 'undefined') ? NN_ARENA.y0 + NN_ARENA.h / 2 : 600;
+  // Floor tint — soft re-paint over the COLORS.floor base
+  if (cfg.floor && cfg.floor.tint) {
+    ctx.save();
+    ctx.fillStyle = cfg.floor.tint;
+    ctx.globalAlpha = 0.6;
+    ctx.fillRect(cx - 700, cy - 700, 1400, 1400);
+    ctx.restore();
+  }
+  // Lights pass first (background glow)
+  if (cfg.lights) {
+    for (const L of cfg.lights) {
+      _missionDrawLight(ctx, cx + L.x, cy + L.y, L);
+    }
+  }
+  // Props
+  if (cfg.props) {
+    for (const p of cfg.props) {
+      _missionDrawProp(ctx, cx + p.x, cy + p.y, p);
+    }
+  }
+}
+
+function _missionDrawLight(ctx, x, y, L) {
+  // Fluorescent ceiling strip — 80×8 px housing + light cone below it
+  ctx.save();
+  ctx.fillStyle = '#3A3A3A';
+  ctx.fillRect(x - 40, y - 4, 80, 8);
+  let alpha = 0.7;
+  if (L.broken)  alpha = 0.10;
+  else if (L.flicker) {
+    const t = Date.now();
+    alpha = 0.4 + 0.5 * Math.abs(Math.sin(t * 0.018));
+    if (Math.random() < 0.05) alpha *= 0.2;
+  } else if (L.stable) alpha = (L.brightness != null ? L.brightness : 0.7);
+  // Cone below the strip — soft warm glow
+  const grad = ctx.createRadialGradient(x, y, 4, x, y, 110);
+  grad.addColorStop(0, `rgba(232, 228, 216, ${alpha * 0.55})`);
+  grad.addColorStop(1, 'rgba(232, 228, 216, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(x - 110, y - 110, 220, 220);
+  // Hot core on the strip itself if not broken
+  if (!L.broken) {
+    ctx.fillStyle = `rgba(255, 248, 220, ${Math.min(1, alpha + 0.1)})`;
+    ctx.fillRect(x - 38, y - 3, 76, 6);
+  }
+  ctx.restore();
+}
+
+function _missionDrawProp(ctx, x, y, p) {
+  switch (p.type) {
+    case 'oil-drum': {
+      ctx.save();
+      ctx.fillStyle = '#2A1A1A';
+      ctx.fillRect(x - 10, y - 12, 20, 24);
+      ctx.fillStyle = '#C8261C';
+      ctx.globalAlpha = 0.55;
+      ctx.fillRect(x - 10, y - 5, 20, 1);     // rust streak
+      ctx.fillRect(x - 10, y + 4, 20, 1);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#0A0A0A';
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(x - 10, y - 12, 20, 24);
+      ctx.restore();
+      break;
+    }
+    case 'rebar': {
+      ctx.save();
+      ctx.strokeStyle = '#6B6B6B';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y - 50);
+      ctx.lineTo(x + 4, y + 30);
+      ctx.stroke();
+      // Welded ring at top
+      ctx.fillStyle = '#3A3A3A';
+      ctx.beginPath();
+      ctx.arc(x, y - 50, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      break;
+    }
+    case 'water-drip': {
+      // Animated drop (period in ms) — appears, falls, splashes.
+      const t = (Date.now() % (p.period || 1400)) / (p.period || 1400);
+      ctx.save();
+      if (t < 0.7) {
+        const fy = y + (t / 0.7) * 18;
+        ctx.fillStyle = 'rgba(180, 200, 220, 0.6)';
+        ctx.beginPath();
+        ctx.arc(x, fy, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Splash ring
+        const r = (t - 0.7) / 0.3 * 8;
+        ctx.strokeStyle = `rgba(180, 200, 220, ${0.5 - r / 16})`;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.arc(x, y + 18, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      // Persistent puddle below
+      ctx.fillStyle = 'rgba(40, 60, 70, 0.35)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + 18, 8, 2.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      break;
+    }
+    case 'graffiti': {
+      ctx.save();
+      ctx.font = 'bold 11px "Courier New", monospace';
+      ctx.fillStyle = p.color || '#6B6B6B';
+      ctx.globalAlpha = p.alpha != null ? p.alpha : 0.5;
+      ctx.textAlign = 'left';
+      ctx.fillText(p.text, x, y);
+      ctx.restore();
+      break;
+    }
+    case 'verdict-card': {
+      // Stencil of a Verdict Card — a square with a sigil scribbled out.
+      ctx.save();
+      ctx.strokeStyle = '#1A1A1A';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - 14, y - 18, 28, 36);
+      ctx.fillStyle = 'rgba(200, 38, 28, 0.4)';
+      ctx.beginPath();
+      ctx.moveTo(x - 12, y - 16); ctx.lineTo(x + 12, y + 16);
+      ctx.moveTo(x + 12, y - 16); ctx.lineTo(x - 12, y + 16);
+      ctx.stroke();
+      ctx.restore();
+      break;
+    }
+    case 'ugv-wreck': {
+      // Tipped UGV — chassis + wheel
+      ctx.save();
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fillRect(x - 30, y - 12, 60, 24);
+      ctx.fillStyle = '#0A0A0A';
+      ctx.beginPath();
+      ctx.arc(x - 20, y + 8, 8, 0, Math.PI * 2);
+      ctx.arc(x + 20, y + 8, 8, 0, Math.PI * 2);
+      ctx.fill();
+      // Slow-rotating wheel
+      const a = (Date.now() * 0.0008) % (Math.PI * 2);
+      ctx.strokeStyle = '#3A3A3A';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x - 20 + Math.cos(a) * 6, y + 8 + Math.sin(a) * 6);
+      ctx.lineTo(x - 20 - Math.cos(a) * 6, y + 8 - Math.sin(a) * 6);
+      ctx.stroke();
+      // Burn smear
+      ctx.fillStyle = 'rgba(200, 38, 28, 0.18)';
+      ctx.fillRect(x - 8, y - 10, 16, 4);
+      ctx.restore();
+      break;
+    }
+    case 'rebar-pile': {
+      ctx.save();
+      ctx.strokeStyle = '#6B6B6B';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 5; i++) {
+        const ox = -20 + i * 9 + Math.sin(i) * 4;
+        const oy = -20 + Math.cos(i * 1.7) * 14;
+        ctx.beginPath();
+        ctx.moveTo(x + ox, y + oy);
+        ctx.lineTo(x + ox + 30, y + oy + 8);
+        ctx.stroke();
+      }
+      // Concrete chunks
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fillRect(x - 6, y + 8, 18, 8);
+      ctx.fillRect(x + 14, y - 4, 10, 6);
+      ctx.restore();
+      break;
+    }
+    case 'allied-wreck': {
+      // Fallen V-07 chassis silhouette — shape similar to a downed humanoid
+      const f = game._ftueScripted;
+      const rescued = f && f.alliedWreckage && f.alliedWreckage.rescued;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fillRect(-12, -16, 24, 32);
+      // Dark sigil if not rescued; brighten if rescued
+      ctx.fillStyle = rescued ? '#C8261C' : '#3A1010';
+      ctx.fillRect(-6, -8, 12, 14);
+      // Helmet
+      ctx.fillStyle = '#0A0A0A';
+      ctx.beginPath();
+      ctx.arc(0, -20, 5, 0, Math.PI * 2);
+      ctx.fill();
+      // Pulsing rescue prompt — small E if player nearby
+      if (!rescued && player && Math.hypot(player.x - x, player.y - y) < 90) {
+        const t = Date.now() * 0.004;
+        ctx.fillStyle = `rgba(232, 228, 216, ${0.5 + 0.5 * Math.sin(t)})`;
+        ctx.font = 'bold 12px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('[E]', 0, 28);
+      }
+      ctx.restore();
+      break;
+    }
+    case 'column': {
+      const sz = p.big ? 80 : 40;
+      ctx.save();
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fillRect(x - sz / 2, y - sz / 2, sz, sz);
+      ctx.strokeStyle = '#0A0A0A';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - sz / 2, y - sz / 2, sz, sz);
+      // Red paint hint at the top
+      ctx.fillStyle = '#C8261C';
+      ctx.globalAlpha = 0.25;
+      ctx.fillRect(x - sz / 2, y - sz / 2, sz, 2);
+      ctx.restore();
+      break;
+    }
+    case 'crate': {
+      ctx.save();
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fillRect(x - 30, y - 40, 60, 80);
+      ctx.strokeStyle = '#3A3A3A';
+      ctx.lineWidth = 0.6;
+      // Slats
+      for (let i = 0; i < 5; i++) {
+        ctx.beginPath();
+        ctx.moveTo(x - 28, y - 36 + i * 16);
+        ctx.lineTo(x + 28, y - 36 + i * 16);
+        ctx.stroke();
+      }
+      ctx.restore();
+      break;
+    }
+    case 'ugv-burnt': {
+      ctx.save();
+      ctx.fillStyle = '#0A0A0A';
+      ctx.fillRect(x - 40, y - 20, 80, 40);
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fillRect(x - 36, y - 16, 16, 32);
+      ctx.fillRect(x + 20, y - 16, 16, 32);
+      // Ember glow
+      ctx.fillStyle = 'rgba(200, 38, 28, 0.30)';
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      break;
+    }
+    case 'audit-shrine': {
+      // Broken Audit Station — looks like a small altar
+      ctx.save();
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fillRect(x - 40, y - 30, 80, 60);
+      ctx.fillStyle = '#C8261C';
+      ctx.globalAlpha = 0.55;
+      ctx.fillRect(x - 14, y - 22, 28, 16);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#3A3A3A';
+      ctx.fillRect(x - 18, y + 8, 36, 4);
+      // Scratched
+      ctx.strokeStyle = '#0A0A0A';
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(x - 30, y - 18); ctx.lineTo(x + 30, y - 12);
+      ctx.moveTo(x - 30, y - 12); ctx.lineTo(x + 30, y - 6);
+      ctx.stroke();
+      ctx.restore();
+      break;
+    }
+    case 'half-wall': {
+      ctx.save();
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fillRect(x - p.w / 2, y - p.h / 2, p.w, p.h);
+      ctx.strokeStyle = '#0A0A0A';
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(x - p.w / 2, y - p.h / 2, p.w, p.h);
+      ctx.restore();
+      break;
+    }
+    case 'breach': {
+      // A jagged hole in a wall, with red exterior glow beyond it
+      const w = p.w || 80, h = p.h || 240;
+      ctx.save();
+      // The wall itself
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fillRect(x - 6, y - h / 2, 12, h);
+      // Cut a jagged hole in the wall
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath();
+      ctx.moveTo(x - 8, y - 40);
+      ctx.lineTo(x + 8, y - 50);
+      ctx.lineTo(x + 12, y - 20);
+      ctx.lineTo(x - 8, y + 0);
+      ctx.lineTo(x + 14, y + 30);
+      ctx.lineTo(x - 6, y + 50);
+      ctx.lineTo(x + 8, y + 70);
+      ctx.lineTo(x - 12, y + 80);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      // Red glow beyond the breach (dawn outside)
+      const grad = ctx.createRadialGradient(x + 60, y, 0, x + 60, y, 100);
+      grad.addColorStop(0, 'rgba(230, 61, 51, 0.4)');
+      grad.addColorStop(1, 'rgba(230, 61, 51, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(x, y - 100, 200, 200);
+      ctx.restore();
+      break;
+    }
+    case 'vehicle-wreck': {
+      ctx.save();
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fillRect(x - 40, y - 16, 80, 32);
+      ctx.fillStyle = '#0A0A0A';
+      ctx.fillRect(x - 38, y - 14, 14, 28);
+      ctx.fillStyle = '#3A1010';
+      ctx.fillRect(x + 18, y - 14, 22, 28);
+      ctx.restore();
+      break;
+    }
+    case 'build-node': {
+      // Glowing 4-corner marker for "place wall here"
+      const t = Date.now() * 0.005;
+      const a = 0.45 + 0.4 * Math.sin(t);
+      ctx.save();
+      ctx.strokeStyle = `rgba(200, 38, 28, ${a})`;
+      ctx.lineWidth = 2;
+      const r = 22;
+      // 4 L-shaped corners
+      [[ -1, -1 ], [ 1, -1 ], [ -1, 1 ], [ 1, 1 ]].forEach(([sx, sy]) => {
+        ctx.beginPath();
+        ctx.moveTo(x + sx * r, y + sy * r - sy * 8);
+        ctx.lineTo(x + sx * r, y + sy * r);
+        ctx.lineTo(x + sx * r - sx * 8, y + sy * r);
+        ctx.stroke();
+      });
+      ctx.restore();
+      break;
+    }
+  }
+}
+
+// ---- Hollow-31 sprite render dispatch (was missing in the prev commit) ----
+// Patch _missionRenderSprites to also draw the hollow-31 SVG over enemies
+// flagged with callsign 'HOLLOW-31'. Called by render() during scripted FTUE.
+function _missionRenderHeavyEnemies(ctx) {
+  const f = game._ftueScripted;
+  if (!f || !_missionSprites._ready) return;
+  const img = _missionSprites.hollow31;
+  if (!(img && img.complete && img.naturalWidth > 0)) return;
+  const SCALE = 0.10;
+  const w = img.naturalWidth * SCALE;
+  const h = img.naturalHeight * SCALE;
+  for (const e of enemies) {
+    if (!e || !e.alive) continue;
+    if (e.callsign !== 'HOLLOW-31') continue;
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    ctx.rotate((e.angle || 0) + Math.PI / 2);
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
     ctx.restore();
   }
 }
@@ -16355,18 +16815,22 @@ function render() {
   // the radial picker is on top of the world).
   if (buildMode.active && !buildMode.radialOpen
       && game.state === 'playing' && !game._paused) renderBuildPreview();
+  // Mission 1 environment props — render FIRST so entities draw on top.
+  // (FTUE/03 §3 + §4.1: per-scene columns, lights, crates, graffiti.)
+  if (game._ftueScripted && typeof _missionRenderEnvProps === 'function') {
+    try { _missionRenderEnvProps(ctx); } catch (e) {}
+  }
   // Mote red-eye glow + Mote ALERT pulse — drawn in WORLD-space so it
   // tracks the Mote sprite under the camera transform.
   if (game._ftueScripted && allies && allies.length) {
     for (const a of allies) {
       if (a && a._ftueMote && a.alive) _ftueDrawMoteOverlay(ctx, a);
     }
-    // Mission 1 — V-07 + Mote SVG sprites + UAV memory outlines.
-    // Drawn AFTER the legacy ally pass so SVGs sit on top of the
-    // procedural humanoid (which is still drawn underneath but is
-    // mostly hidden by the SVG bounds + dark theme).
     if (typeof _missionRenderSprites === 'function') {
       try { _missionRenderSprites(ctx); } catch (e) {}
+    }
+    if (typeof _missionRenderHeavyEnemies === 'function') {
+      try { _missionRenderHeavyEnemies(ctx); } catch (e) {}
     }
   }
 
