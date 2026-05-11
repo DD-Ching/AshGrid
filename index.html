@@ -7624,9 +7624,16 @@ NN_MAP_VARIANTS.push({
 // variant gets picked even if NN loading takes longer than the previous
 // Math.random hack's 800 ms window.
 let _forceVariantId = null;
-// arena-mp: map editor cut, no custom maps. Stub returns null so the
-// 'custom' variant + pickMapForMode's hasSavedCustom branch degrade cleanly.
+// arena-mp: map editor cut, no custom maps. Stubs:
 function getAnyNonEmptyMap() { return null; }
+// Normalize spawn entries (single {x,y} → array, or pass array through).
+// Used by startNNSkirmish + NN_MAP_VARIANTS spawn pickers.
+function _normalizeSpawnList(spawn) {
+  if (!spawn) return [];
+  if (Array.isArray(spawn)) return spawn.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number');
+  if (typeof spawn.x === 'number' && typeof spawn.y === 'number') return [{ x: spawn.x, y: spawn.y }];
+  return [];
+}
 function pickMapForMode(mode) {
   if (_forceVariantId) {
     const idx = NN_MAP_VARIANTS.findIndex(v => v.id === _forceVariantId);
@@ -13740,6 +13747,35 @@ function drawDrone(x, y, color, phase) {
   ctx.restore();
 }
 
+
+// arena-mp: no campaign waypoints; compass is a no-op.
+function drawObjectiveCompass() {}
+function collectMissionWaypoints() { return []; }
+
+// Shared HUD helper for the objective panel (used by mission.renderHUD)
+function drawObjectivePanel(lines) {
+  const w = 300, h = 36 + lines.length * 17;
+  const x = W()/2 - w/2, y = 54;
+  drawHUDPanel(x, y, w, h, null);
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(x + 10, y + 8, 28, 12);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('MSN', x + 24, y + 17);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 11px sans-serif';
+  const title = (missionTitle(mission) || '').toUpperCase();
+  ctx.fillText(title, x + 46, y + 17);
+  ctx.fillStyle = 'rgba(26, 26, 26, 0.18)';
+  ctx.fillRect(x + 10, y + 26, w - 20, 1);
+  ctx.fillStyle = COLORS.black;
+  ctx.font = '10px monospace';
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], x + 10, y + 40 + i * 16);
+  }
+}
 
 // ============ DEFENSE BUILD UI (radial + status pill) ============
 // Status pill — bottom-center, current structure + cost + hint.
