@@ -157,28 +157,28 @@ const NN_MAP_VARIANTS = [
     ],
     modes: ['dm', 'sniper', 'survival', 'helo'],
   },
-  // ============ Phase 13/15: industrial zone — flagship dm variant ============
+  // ============ Phase 13/15/16: industrial zone — flagship dm variant ============
   // User feedback (screenshot of empty arena): '可能這裡曾經是一個工廠、工業區
   // 被規劃過 · 有街道、有大樓、有室內'. Phase 15 (user '工業區?剛剛不是有
-  // 請你把這個地圖規劃大豐富一點嗎?'): the 4-warehouse layout was too sparse,
-  // so this is a real factory district — 6 warehouses on a 3×2 grid, 2
-  // vertical alleys + 1 wide horizontal boulevard (factory sits at the
-  // crossroads), interior partitions inside every warehouse so each one
-  // splits into 2 rooms with their own peek crates, and industrial debris
-  // scattered across the alleys + boulevard so traversal isn't pure
-  // sightline. Each warehouse has 2-3 door gaps facing the alley grid.
+  // 請你把這個地圖規劃大豐富一點嗎?'): expanded to 6 warehouses. Phase 16
+  // (user '这个地图可能可以再大十倍五倍 · 现在完全几乎一样的东西的概念'):
+  // arena bumped to 1800×1800 (2.25× area) and the layout is now a true
+  // 3×3 block grid with 8 warehouses around an open central plaza housing
+  // the capturable factory. Two horizontal streets (y≈480-720, 1080-1320)
+  // and two vertical streets (x≈480-720, 1080-1320), all 240u wide so the
+  // squad + UAV can manoeuvre. Each warehouse is 360×360, has 2-3 door
+  // gaps facing the streets, an interior partition splitting it into 2
+  // rooms, and 2 peek crates inside.
   //
   // Doorway openings are 90u wide — slightly wider than the NN training
   // pillars-variant so the trained PPO can still path through without
   // jamming on the door frame. Walls use the existing 'building' kind
   // (HP 220 after Phase 8 doubling) so they take a few rockets to breach.
   //
-  // Layout (1200×1200 arena, factory at (600, 600)):
-  //   [NW(140-380,120-380)] [N(440-740,120-340)] [NE(800-1060,120-380)]
-  //                              [factory at center]
-  //   [SW(140-380,820-1080)] [S(440-740,860-1080)] [SE(800-1060,820-1080)]
-  //   Vertical alleys at x≈380-440 + 740-800 (60u wide each)
-  //   Horizontal boulevard at y≈380-820 (440u — open central combat ring)
+  // Layout (1800×1800 arena, factory auto-placed at (900, 900)):
+  //   [NW(120-480,120-480)] [N(720-1080,120-480)] [NE(1320-1680,120-480)]
+  //   [W (120-480,720-1080)] [factory central]    [E (1320-1680,720-1080)]
+  //   [SW(120-480,1320-1680)] [S(720-1080,1320-1680)] [SE(1320-1680,1320-1680)]
   { id: 'industrial', name: '工业区 INDUSTRIAL ZONE',
     walls: () => {
       const out = [];
@@ -210,90 +210,118 @@ const NN_MAP_VARIANTS = [
           out.push({ x: x2 - T, y: d.right + D/2, w: T, h: y2 - (d.right + D/2), kind: 'building' });
         } else out.push({ x: x2 - T, y: y1, w: T, h: y2 - y1, kind: 'building' });
       };
-      // ------- Six warehouses on a 3x2 grid -------
-      // Corner warehouses — doors face the boulevard + neighbouring alley
-      // NW: doors S (to boulevard) + E (to W-alley)
-      building(140, 120, 380, 380, { bottom: 260, right: 250 });
-      // N : doors S + L + R (3 ways — it's the middle of the row, traffic
-      // funnels through it)
-      building(440, 120, 740, 340, { bottom: 590, left: 230, right: 230 });
-      // NE: doors S + W
-      building(800, 120, 1060, 380, { bottom: 940, left: 950 });
-      // SW: doors N + E
-      building(140, 820, 380, 1080, { top: 260, right: 950 });
-      // S : doors N + L + R (mirror of N)
-      building(440, 860, 740, 1080, { top: 590, left: 970, right: 970 });
-      // SE: doors N + W
-      building(800, 820, 1060, 1080, { top: 940, left: 950 });
-      // ------- Interior partitions (1 short wall per warehouse) -------
+      // Bounding helper — keeps door params inside the warehouse so a stray
+      // out-of-range value can't extrude the wall past the perimeter (the
+      // Phase 15 right-side wall trap bug). doors.{left|right} are y values
+      // expected inside [y1, y2]; doors.{top|bottom} are x values expected
+      // inside [x1, x2]. Anything outside that range silently seals that
+      // side (no door), which is the safer failure mode than '785u wall
+      // shooting into the boulevard'.
+      const safeBuilding = (x1, y1, x2, y2, doors) => {
+        const d = doors || {};
+        const safe = { ...d };
+        if (safe.top != null    && (safe.top    < x1 + D/2 || safe.top    > x2 - D/2)) delete safe.top;
+        if (safe.bottom != null && (safe.bottom < x1 + D/2 || safe.bottom > x2 - D/2)) delete safe.bottom;
+        if (safe.left != null   && (safe.left   < y1 + D/2 || safe.left   > y2 - D/2)) delete safe.left;
+        if (safe.right != null  && (safe.right  < y1 + D/2 || safe.right  > y2 - D/2)) delete safe.right;
+        building(x1, y1, x2, y2, safe);
+      };
+      // ------- Eight warehouses on a 3x3 grid (centre cell = factory) ------
+      // Each warehouse is 360×360. Streets between are 240u wide so the
+      // squad + UAV can comfortably move around. Doors face the streets;
+      // corners get 2 doors, edges get 3.
+      // NW corner — doors S + E
+      safeBuilding( 120,  120,  480,  480, { bottom: 300, right: 300 });
+      // N edge — doors S + L + R
+      safeBuilding( 720,  120, 1080,  480, { bottom: 900, left: 300, right: 300 });
+      // NE corner — doors S + W
+      safeBuilding(1320,  120, 1680,  480, { bottom: 1500, left: 300 });
+      // W edge — doors N + S + R
+      safeBuilding( 120,  720,  480, 1080, { top: 300, bottom: 300, right: 900 });
+      // (centre cell at (720,720)→(1080,1080) is open — factory sits here)
+      // E edge — doors N + S + L
+      safeBuilding(1320,  720, 1680, 1080, { top: 1500, bottom: 1500, left: 900 });
+      // SW corner — doors N + E
+      safeBuilding( 120, 1320,  480, 1680, { top: 300, right: 1500 });
+      // S edge — doors N + L + R
+      safeBuilding( 720, 1320, 1080, 1680, { top: 900, left: 1500, right: 1500 });
+      // SE corner — doors N + W
+      safeBuilding(1320, 1320, 1680, 1680, { top: 1500, left: 1500 });
+      // ------- Interior partitions — 1 short wall per warehouse ------
       // Each splits the warehouse into 2 rooms with a wide gap so the NN
-      // can still traverse. Partitions don't touch the perimeter — there's
-      // always a 70u edge clearance.
+      // can still traverse. Partition stays inside the perimeter with a
+      // 70u edge clearance and a ~90u door gap built into its short span.
       const partition = (x1, y1, x2, y2) => {
-        // Treat as a thin building strip. Either horizontal (y1==y2-ish)
-        // or vertical (x1==x2-ish); pick wider side as the long axis.
         const horiz = Math.abs(x2 - x1) >= Math.abs(y2 - y1);
         if (horiz) out.push({ x: x1, y: y1, w: x2 - x1, h: T, kind: 'building' });
         else       out.push({ x: x1, y: y1, w: T, h: y2 - y1, kind: 'building' });
       };
-      // NW warehouse — horizontal partition with a gap centered
-      partition(170, 250, 290, 250);
-      // N warehouse — vertical partition (offices vs hall)
-      partition(590, 150, 590, 240);
-      // NE warehouse — horizontal partition
-      partition(890, 250, 1030, 250);
-      // SW warehouse — horizontal partition
-      partition(170, 950, 290, 950);
-      // S warehouse — vertical partition
-      partition(590, 960, 590, 1050);
-      // SE warehouse — horizontal partition
-      partition(890, 950, 1030, 950);
-      // ------- Interior crates (one per room, 2 per warehouse) -------
-      // NW: room A + room B
-      out.push({ x: 200, y: 180, w: 50, h: 50, kind: 'cover' });
-      out.push({ x: 310, y: 320, w: 50, h: 50, kind: 'cover' });
-      // N
-      out.push({ x: 500, y: 200, w: 50, h: 50, kind: 'cover' });
-      out.push({ x: 660, y: 250, w: 50, h: 50, kind: 'cover' });
-      // NE
-      out.push({ x: 850, y: 180, w: 50, h: 50, kind: 'cover' });
-      out.push({ x: 960, y: 320, w: 50, h: 50, kind: 'cover' });
-      // SW
-      out.push({ x: 200, y: 880, w: 50, h: 50, kind: 'cover' });
-      out.push({ x: 310, y: 1020, w: 50, h: 50, kind: 'cover' });
-      // S
-      out.push({ x: 500, y: 920, w: 50, h: 50, kind: 'cover' });
-      out.push({ x: 660, y: 1000, w: 50, h: 50, kind: 'cover' });
-      // SE
-      out.push({ x: 850, y: 880, w: 50, h: 50, kind: 'cover' });
-      out.push({ x: 960, y: 1020, w: 50, h: 50, kind: 'cover' });
-      // ------- Alley + boulevard debris -------
-      // W vertical alley (x≈380-440) — small crate stack midway
-      out.push({ x: 395, y: 220, w: 40, h: 50, kind: 'cover' });
-      out.push({ x: 395, y: 920, w: 40, h: 50, kind: 'cover' });
-      // E vertical alley (x≈740-800)
-      out.push({ x: 755, y: 220, w: 40, h: 50, kind: 'cover' });
-      out.push({ x: 755, y: 920, w: 40, h: 50, kind: 'cover' });
-      // Boulevard cover — sparse industrial debris breaking up the long
-      // sightline through y=380-820. Pieces avoid the centre 80u so they
-      // never overlap the factory or its captureR ring.
-      out.push({ x: 250, y: 470, w: 60, h: 30, kind: 'cover' });   // W boulevard
-      out.push({ x: 250, y: 700, w: 60, h: 30, kind: 'cover' });
-      out.push({ x: 880, y: 470, w: 60, h: 30, kind: 'cover' });   // E boulevard
-      out.push({ x: 880, y: 700, w: 60, h: 30, kind: 'cover' });
-      out.push({ x: 440, y: 420, w: 40, h: 80, kind: 'cover' });   // mid pillars
-      out.push({ x: 720, y: 420, w: 40, h: 80, kind: 'cover' });
-      out.push({ x: 440, y: 700, w: 40, h: 80, kind: 'cover' });
-      out.push({ x: 720, y: 700, w: 40, h: 80, kind: 'cover' });
-      // A pair of oblique cover stacks NE + SW of factory — flanking lanes
-      out.push({ x: 700, y: 500, w: 50, h: 50, kind: 'cover' });
-      out.push({ x: 450, y: 660, w: 50, h: 50, kind: 'cover' });
+      partition( 150,  300,  340,  300);    // NW horizontal
+      partition( 900,  150,  900,  340);    // N  vertical
+      partition(1460,  300, 1650,  300);    // NE horizontal
+      partition( 150,  900,  340,  900);    // W  horizontal
+      partition(1460,  900, 1650,  900);    // E  horizontal
+      partition( 150, 1500,  340, 1500);    // SW horizontal
+      partition( 900, 1500,  900, 1650);    // S  vertical (mirror of N)
+      partition(1460, 1500, 1650, 1500);    // SE horizontal
+      // ------- Interior crates — 2 per warehouse (one per room) -------
+      // Each placed away from the partition + perimeter so it's a real
+      // peek anchor, not crammed against a wall.
+      const interiorCrates = [
+        [ 200,  200], [ 380,  400],          // NW
+        [ 800,  200], [ 980,  400],          // N
+        [1400,  200], [1580,  400],          // NE
+        [ 200,  800], [ 380, 1000],          // W
+        [1400,  800], [1580, 1000],          // E
+        [ 200, 1400], [ 380, 1600],          // SW
+        [ 800, 1400], [ 980, 1600],          // S
+        [1400, 1400], [1580, 1600],          // SE
+      ];
+      for (const [cx, cy] of interiorCrates) {
+        out.push({ x: cx - 25, y: cy - 25, w: 50, h: 50, kind: 'cover' });
+      }
+      // ------- Alley + plaza debris -------
+      // Streets between warehouses (4 alleys + central plaza). Crates sit
+      // in mid-alley so the lanes aren't pure sniper sightlines. Spaced so
+      // they don't block the spawn paths.
+      const alleyCrates = [
+        // Vertical alley between NW + N (x≈480-720)
+        [ 600,  220], [ 600,  380],
+        // Vertical alley between N + NE (x≈1080-1320)
+        [1200,  220], [1200,  380],
+        // Vertical alley between SW + S
+        [ 600, 1420], [ 600, 1580],
+        // Vertical alley between S + SE
+        [1200, 1420], [1200, 1580],
+        // Horizontal alley between NW + W (y≈480-720)
+        [ 220,  600], [ 380,  600],
+        // Horizontal alley between NE + E
+        [1420,  600], [1580,  600],
+        // Horizontal alley between W + SW (y≈1080-1320)
+        [ 220, 1200], [ 380, 1200],
+        // Horizontal alley between E + SE
+        [1420, 1200], [1580, 1200],
+      ];
+      for (const [cx, cy] of alleyCrates) {
+        out.push({ x: cx - 20, y: cy - 20, w: 40, h: 40, kind: 'cover' });
+      }
+      // Central plaza — sparse cover around the factory. Avoids the 90u
+      // captureR ring so capture isn't obstructed; positioned at the 4
+      // diagonals so any approach has SOMETHING to break the sightline.
+      const plazaCrates = [
+        [ 760,  760], [1040,  760],
+        [ 760, 1040], [1040, 1040],
+      ];
+      for (const [cx, cy] of plazaCrates) {
+        out.push({ x: cx - 25, y: cy - 25, w: 50, h: 50, kind: 'cover' });
+      }
       return out;
     },
-    // Spawn in the boulevard, between the corner warehouses (clear of all
-    // walls — perimeter starts at x=140 W / x=1060 E, and the W warehouse
-    // perimeter is y=120-380 + y=820-1080, so y=600 is the boulevard).
-    spawn: { blue: { x: 230, y: 600 }, red: { x: 970, y: 600 } },
+    // Spawn in the W / E horizontal alleys, away from any warehouse wall
+    // (W warehouse is x=120-480; E warehouse is x=1320-1680). Spawn anchors
+    // sit in the central horizontal corridor y≈720-1080 between W↔centre
+    // and E↔centre so the player drops into the field, not a doorway.
+    spawn: { blue: { x: 580, y: 900 }, red: { x: 1220, y: 900 } },
     modes: ['dm', 'helo', 'duel'],
   },
   // ========= Indoor variants — single-room interiors with cover =========

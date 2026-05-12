@@ -3666,8 +3666,8 @@ const NN = {
   },
   modelPath: 'ai_arena/onnx/model.onnx',  // legacy fallback
   // Constants must match the Python combat_env exactly
-  WORLD_W: 1200,
-  WORLD_H: 1200,
+  WORLD_W: 1800,                                // Phase 16: matches NN_ARENA bump
+  WORLD_H: 1800,
   PLAYER_HP: 100,
   PLAYER_SPEED: 2.8,
   FIRE_CD: 8,
@@ -7644,6 +7644,16 @@ function renderWorld() {
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
     ctx.fillText(a.callsign, a.x, a.y - 22);
+    // Phase 16 — SEED chip on allies. The player needs to see ally SEED
+    // values too (their squad bots train up over time + the recruit-gate
+    // diff includes them, e.g. for swap targets). Match enemy SEED label
+    // style for consistency.
+    if (game._nnMode) {
+      const _aSeed = Math.floor(a._seed || 0);
+      ctx.font = 'bold 9px monospace';
+      ctx.fillStyle = COLORS.black;
+      ctx.fillText(`SEED ${_aSeed}`, a.x, a.y - 34);
+    }
     ctx.textAlign = 'left';
     // HP bar
     if (a.hp < a.maxHp) {

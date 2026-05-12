@@ -497,7 +497,13 @@ const ARENA_MAP_INDEX = MAPS.length - 1;
 // The PPO model was trained in a 1200×1200 world. We embed a 1200×1200
 // play area inside the JS world's top-left so the NN's spatial
 // normalisation matches its training. AI + player are clamped here.
-const NN_ARENA = { x0: 0, y0: 0, w: 1200, h: 1200 };
+// Phase 16: arena expanded from 1200×1200 → 1800×1800 (2.25× area, 1.5×
+// linear) per user request — '这个地图可能可以再大十倍五倍 · 现在完全几乎
+// 一样的东西的概念'. NN.WORLD_W / NN.WORLD_H below are bumped to match so
+// the trained PPO's obs normalization tracks the new bounds. The model
+// was trained on 1200×1200 so spatial reasoning is slightly stretched —
+// acceptable given user feedback that '敌人现在不是那么聪明'.
+const NN_ARENA = { x0: 0, y0: 0, w: 1800, h: 1800 };
 MAPS.push({
   id: 'nnArena',
   name: 'NN 竞技场',
