@@ -52,7 +52,6 @@
 <script src="js/chassis.js"></script>
 <script src="js/death_recap.js"></script>
 <script src="js/mote_affinity.js"></script>
-<script src="js/ftue_stubs.js"></script>
 <script src="js/stage_hints.js"></script>
 <script src="js/pawn_swap.js"></script>
 <script src="js/global_stats.js"></script>
@@ -1644,37 +1643,10 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 // ?reset=tutorial — wipe AND opt into gated tutorial mode (only DM at the
 //                   start, things unlock per match). The 'opt-in' bit is
 //                   ag.unlockAll === '0'.
-// ?ftue=1         — DEV: re-arm the first-time-user flow + skip the
-//                   intro overlay + auto-fire the WAKE button so the
-//                   tutorial starts immediately. Pairs with a live monitor
-//                   panel (top-right) showing current FTUE step + flags.
-//                   Designed for `open ?ftue=1` from a shell so the dev
-//                   can watch tutorial progress without clicking anything.
+// (arena-mp: ?ftue=1 dev harness removed — the FTUE it re-armed is cut.)
 // In every case the redirect strips the flag so refreshing won't loop.
 (function () {
   const sp = new URLSearchParams(location.search);
-  // ?ftue=1 — DEV harness. PROCESSED FIRST so the localStorage + session
-  // Storage flags are committed BEFORE the fresh handler does its
-  // strip-and-redirect dance. Otherwise `?fresh=1&ftue=1` lost the ftue
-  // flag in the redirect and the dev never saw the auto-start (user
-  // report: '並沒有...被擋住了?'). Both storages persist across the
-  // fresh redirect, so the post-load wiring still picks them up.
-  if (sp.get('ftue') === '1') {
-    try {
-      // Wipe progress flags so the narrative prologue (startNarrativeFTUE)
-      // re-arms even on a returning player. Both storages survive the
-      // ?fresh=1 redirect, so post-redirect setupFirstSessionFTUE() picks
-      // up the autoStart flag and dispatches the prologue.
-      localStorage.removeItem('ag.firstMatch');
-      localStorage.removeItem('ag.firstAuditSeen');
-      localStorage.removeItem('ag.tutorialSeen');
-      localStorage.removeItem('ag.introSeen');
-      sessionStorage.setItem('ag._ftueDevAutoStart', '1');
-      // ag._ftueDevMonitor disabled in canvas-FTUE — the panel was a
-      // visible lobby-UI leak per §A.4. Reset only for this turn:
-      sessionStorage.removeItem('ag._ftueDevMonitor');
-    } catch (e) {}
-  }
   // fresh=1 has its own async flow — must finish before stripping the flag,
   // otherwise the page would reload to '/' on a still-cached SW response.
   if (sp.get('fresh') === '1') {
@@ -2043,13 +2015,8 @@ function showRadioToast(label, text, ttl = 5500) {
 //     _dirCardinal(dx, dy) · _tickDynamicRadio()
 // _tickDynamicRadio is called from update() each frame.
 
-// ============ FTUE — Compat no-op stubs (arena-mp) ============
-// → Moved to js/ftue_stubs.js. Declares globally:
-//     ftue · _ftueLog · _ftueIsActive · _ftueIsFirstSession ·
-//     _ftueCurStep · _ftueRevealed · _ftueKeyLocked · _ftueCameraScale ·
-//     _ftueShowCurrent · _ftueHide · _ftueEvent · _ftueSpawnAllies ·
-//     _ftueSpawnTarget · _ftueStart · _scheduleFirstMatchToasts ·
-//     _finalizeFtue
+// (arena-mp: FTUE stubs deleted entirely — js/ftue_stubs.js + all
+// callers gone. Audited via grep + Chrome MCP, no live references.)
 
 // ============ STAGE HINTS ============
 // → Moved to js/stage_hints.js. Declares globally:

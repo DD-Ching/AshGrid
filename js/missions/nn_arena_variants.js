@@ -20,18 +20,8 @@ const NN_MAP_VARIANTS = [
   //  - a short E-W wall line (step 4 'place a structure beside it')
   //  - both spawn anchors aligned on the long axis so the camera doesn't
   //    have to pan
-  // Hidden from the regular pool (modes: []) — only ever picked via
-  // _forceVariantId from the FTUE flow.
-  { id: 'ftue',     name: 'FTUE · 教學',
-    walls: () => [
-      { x: 540, y: 200, w: 120, h: 30, kind: 'building' },
-      { x: 540, y: 970, w: 120, h: 30, kind: 'building' },
-      { x: 200, y: 540, w: 30,  h: 120, kind: 'building' },
-      { x: 970, y: 540, w: 30,  h: 120, kind: 'building' },
-    ],
-    spawn: { blue: [{ x: 200, y: 600 }], red: [{ x: 1000, y: 600 }] },
-    modes: [],   // never rolls in the regular variant pool
-  },
+  // (arena-mp: 'ftue' variant deleted — was only picked via _forceVariantId
+  // from the cut FTUE flow.)
   { id: 'open',     name: '开阔 OPEN',
     walls: () => [],
     modes: ['dm', 'duel', 'sniper'],
