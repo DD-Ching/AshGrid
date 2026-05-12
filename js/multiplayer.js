@@ -30,14 +30,21 @@ const MP_ROOM_CAP        = 20;        // Phase 27: rollover threshold per user
 const MP_PRESENCE_TTL_MS = 30000;     // peers without a heartbeat in 30s
                                       // are treated as gone for matchmaking
 const MP_HEARTBEAT_MS    = 10000;     // PUT /rooms/<room>/<peer> every 10s
-// Trystero was renamed: trystero/firebase → @trystero-p2p/firebase. The old
-// path throws 'Importing from "trystero/firebase" is deprecated' on the
-// latest release. We also PIN the version (@0.24.0) because esm.sh's
-// floating "latest" rewrites broke the nested /idb/ import chain in this
-// project — surfacing as 'Failed to fetch dynamically imported module' or
-// 'does not provide an export named u' bundling errors. The pinned URL
-// resolves all nested imports cleanly and lets the browser cache the bundle.
-const MP_TRYSTERO_CDN = 'https://esm.sh/@trystero-p2p/firebase@0.24.0';
+// Phase 32 — downgrade to trystero@0.21.4 (pre-rewrite stable). v0.23+
+// dropped simple-peer-light for a custom WebRTC layer + split into the
+// @trystero-p2p/* packages. Empirically the v0.24 firebase strategy
+// completes the announce step but the discovery → SDP-exchange step
+// never fires (confirmed by probing Firebase: 3 peer announces in room
+// but ALL per-peer inbox paths are null — zero offers sent). v0.21.4
+// was the last release before the rewrite; we tested issue#118-style
+// problems before and it worked. The 'trystero/firebase deprecated'
+// warning only fires on the package's latest (0.24); pinning to 0.21.4
+// gives us a clean import.
+//
+// If 0.21.4 ALSO can't connect → it's network-side (TURN required, or
+// the two browsers are on incompatible NAT). Use `?turn=...` URL or
+// window.MP_TURN to inject working credentials.
+const MP_TRYSTERO_CDN = 'https://esm.sh/trystero@0.21.4/firebase';
 const MP_SEND_HZ      = 20;          // position broadcasts per second per peer
 const MP_LERP_K       = 0.25;        // remote interpolation rate
 
@@ -168,37 +175,11 @@ async function _mpConnect() {
     ],
   };
   console.log('[mp] iceServers count:', rtcConfig.iceServers.length, MP_TURN_CREDS ? '· TURN configured' : '· STUN-only (no TURN)');
-  // Trystero v0.23+ takes a callbacks object as the 3rd arg. We use:
-  //   onJoinError       — surface signaling/admission failures (was silent)
-  //   onPeerHandshake   — fires when WebRTC transport actually connects,
-  //                       BEFORE the peer becomes 'active'. This is the
-  //                       diagnostic anchor: if it never fires for a peer
-  //                       we know it's a NAT traversal failure, not a
-  //                       signaling/Firebase issue.
-  //   handshakeTimeoutMs — bumped to 20s for slow mobile / cross-region.
+  // Phase 32 — v0.21.4 uses the 2-arg form: joinRoom(config, roomId).
+  // No callbacks object (that's v0.23+). Diagnostics now come purely
+  // from onPeerJoin / getPos receive logs further down.
   try {
-    _mpState.room = joinRoom(
-      { appId: MP_FIREBASE_URL, rtcConfig },
-      roomName,
-      {
-        onJoinError: (details) => {
-          console.error('[mp] room join FAILED:', details);
-          if (typeof showSwapToast === 'function') {
-            const msg = (details && details.code) || JSON.stringify(details).slice(0, 40);
-            showSwapToast('✗ 多人連線失敗 · ' + msg);
-          }
-        },
-        onPeerHandshake: async (peerId, send, receive, isInitiator) => {
-          console.log('[mp/handshake] peer', peerId.slice(0, 6),
-            'transport connected · initiator:', isInitiator);
-          if (typeof showSwapToast === 'function') {
-            showSwapToast('✓ WebRTC 握手成功 · ' + peerId.slice(0, 6));
-          }
-          return true;     // accept the peer
-        },
-        handshakeTimeoutMs: 20000,
-      }
-    );
+    _mpState.room = joinRoom({ appId: MP_FIREBASE_URL, rtcConfig }, roomName);
   } catch (e) {
     _mpState.loadError = String(e);
     console.error('[mp] joinRoom failed:', e);
