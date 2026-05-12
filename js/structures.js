@@ -781,6 +781,34 @@ function exitBuildMode() {
 // hunting 4 places). Centralised here.
 const BUILD_REACH_PX = 200;
 const BUILD_SNAP_PX  = 30;
+// arena-mp: these constants + the Bresenham line walker were defined inside
+// the (now-cut) Map Editor module, but drag-to-line wall PREVIEW + PLACE in
+// build mode still relies on them. Restored here so wall drag doesn't throw
+// 'ReferenceError: _editorLineCells is not defined' on every render.
+const EDITOR_BLOCK = 60;     // editor used 60u snap; build mode passes finer step
+const EDITOR_WALL_STEP = 18; // ~18u wall thickness; kept for any remaining refs
+
+// Bresenham cell-walker from (ax,ay) to (bx,by) snapped to `step`. Used by
+// build mode's drag-line wall preview + placement so a long drag ghosts (and
+// then places) a continuous line of wall segments rather than just endpoints.
+function _editorLineCells(ax, ay, bx, by, step) {
+  const s = step || EDITOR_BLOCK;
+  const cells = [];
+  let x0 = Math.round(ax / s), y0 = Math.round(ay / s);
+  const x1 = Math.round(bx / s), y1 = Math.round(by / s);
+  const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+  let safety = 4096;
+  while (safety-- > 0) {
+    cells.push({ cx: x0 * s, cy: y0 * s });
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = err * 2;
+    if (e2 > -dy) { err -= dy; x0 += sx; }
+    if (e2 <  dx) { err += dx; y0 += sy; }
+  }
+  return cells;
+}
 
 // Single source of truth for "is the player allowed to place / interact
 // with the build wheel right now?". Used by mouse + touch + render.
