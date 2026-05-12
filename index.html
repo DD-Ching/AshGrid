@@ -6104,6 +6104,20 @@ function updateBullets() {
 function createExplosion(x, y, size) {
   const radius = size === 'big' ? 90 : size === 'medium' ? 65 : 35;
   const numParts = size === 'big' ? 24 : size === 'medium' ? 14 : 7;
+  // Phase 17: per-particle stable colour. Previously particles flickered
+  // 50/50 between black and red on every frame — looked like a single
+  // colour blur. Now each particle picks its colour once at birth from a
+  // weighted palette that reads as fire: hot cream/yellow core sparks
+  // (15%), vivid orange-red flame (45%), constructivist red embers (25%),
+  // black ash smoke (15%). User feedback: '爆炸的火焰要鮮紅一點 · 不要全部
+  // 都一個顏色'.
+  const pickParticleColor = () => {
+    const r = Math.random();
+    if (r < 0.15) return '#FFDC9A';        // hot cream-yellow spark
+    if (r < 0.60) return '#F2402E';        // vivid orange-red flame
+    if (r < 0.85) return '#C8261C';        // constructivist red ember
+    return '#1A1A1A';                      // black ash
+  };
   explosions.push({
     x, y, radius, life: 35, maxLife: 35,
     particles: Array.from({length: numParts}, () => ({
@@ -6112,6 +6126,7 @@ function createExplosion(x, y, size) {
       vy: (Math.random()-0.5)*10,
       size: 3 + Math.random()*8,
       angle: Math.random()*Math.PI*2,
+      color: pickParticleColor(),
     })),
   });
   if (size !== 'small') {
@@ -7702,21 +7717,44 @@ function renderWorld() {
     ctx.restore();
   }
 
-  // Explosions
+  // Explosions — three layered blooms (outer red glow, mid orange flame,
+  // hot cream-yellow core) so the fireball reads as fire instead of a
+  // single red blob. Particles use per-particle stable colours (set in
+  // createExplosion) for variety. User: '爆炸的火焰要鮮紅一點 · 不要全部
+  // 都一個顏色'.
   for (const e of explosions) {
     const t = e.life / e.maxLife;
-    ctx.fillStyle = COLORS.red;
-    ctx.globalAlpha = t * 0.55;
+    // Outer red glow — biggest, softest, longest-lived. Same as before.
+    ctx.fillStyle = '#C8261C';
+    ctx.globalAlpha = t * 0.50;
     ctx.beginPath();
     ctx.arc(e.x, e.y, e.radius * (1-t)*1.4, 0, Math.PI*2);
     ctx.fill();
+    // Mid orange-red flame — visible most of the explosion's life.
+    ctx.fillStyle = '#F2402E';
+    ctx.globalAlpha = t * 0.78;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius * (1-t)*0.95, 0, Math.PI*2);
+    ctx.fill();
+    // Hot cream-yellow core — only visible during the first ~40% of the
+    // explosion's life (the "flash" moment). Adds the bright initiation
+    // beat the user asked for.
+    if (t > 0.60) {
+      ctx.fillStyle = '#FFDC9A';
+      ctx.globalAlpha = (t - 0.60) / 0.40 * 0.85;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.radius * (1-t)*0.55, 0, Math.PI*2);
+      ctx.fill();
+    }
 
     ctx.globalAlpha = t;
     for (const p of e.particles) {
       ctx.save();
       ctx.translate(e.x + p.x, e.y + p.y);
       ctx.rotate(p.angle);
-      ctx.fillStyle = Math.random() < 0.5 ? COLORS.black : COLORS.red;
+      // Use the colour locked in at particle birth — no more per-frame
+      // 50/50 flicker that washed out as a single colour blur.
+      ctx.fillStyle = p.color || '#C8261C';
       ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
       ctx.restore();
     }
