@@ -47,9 +47,16 @@ const STRUCTURE_DEFS = {
   // team. While owned, spawns +1 ally for that team every productionTicks
   // (30 sec) up to ARENA_SQUAD_CAP (5). Contested (both teams in radius)
   // pauses the capture timer. _team: 'neutral' | 'blue' | 'red'.
+  // Phase 12: blue-owned factory ALSO acts as a power source for built
+  // needsPower modules in powerR. Without a generator nearby, turrets
+  // were dead weight on the player's first match — capturing a factory
+  // now drops a free 280u power radius so the loop "fight → capture →
+  // build turret on top" actually works. Red/neutral factories give no
+  // power (gated in recomputePowerGrid by _team).
   'factory': {
     cost: -1, hp: 500, size: 60, blocks: true, blocksLOS: false,
     captureR: 90, captureTicks: 5 * 60, productionTicks: 30 * 60,
+    powerSource: true, powerR: 280,
     label: () => T('機器工廠', 'BOT FACTORY'),
   },
   // 3-tier cover ladder (all line-drag-able). Phase 8 (user feedback
@@ -335,12 +342,21 @@ function recomputePowerGrid() {
   const structs = game._structures || [];
   for (const s of structs) s._powered = false;
   for (const w of wallLines)  w._powered = false;
-  const gens = structs.filter(s => s.kind === 'generator' && s.hp > 0);
+  // Phase 12: any STRUCTURE_DEFS entry with powerSource=true is a source.
+  // Generators (player-built) always count; factories only count when
+  // owned by blue (captured) so the player gets a free power radius as
+  // a reward for capture. Each source uses its own powerR field.
+  const gens = structs.filter(s => {
+    const def = STRUCTURE_DEFS[s.kind];
+    if (!def || !def.powerSource || s.hp <= 0) return false;
+    if (s._isFactory) return s._team === 'blue';
+    return true;
+  });
   if (gens.length === 0) return;
   const liveWalls = wallLines.filter(w => w.hp > 0);
   const queue = [];
   for (const g of gens) {
-    const R = STRUCTURE_DEFS.generator.powerR || 200;
+    const R = STRUCTURE_DEFS[g.kind]?.powerR || 200;
     g._powered = true;
     for (const w of liveWalls) {
       if (w._powered) continue;
@@ -357,10 +373,10 @@ function recomputePowerGrid() {
   }
   const WIRE_REACH = 60;
   for (const s of structs) {
-    if (s.kind === 'generator' || s.hp <= 0) continue;
+    if (STRUCTURE_DEFS[s.kind]?.powerSource || s.hp <= 0) continue;
     if (!STRUCTURE_DEFS[s.kind]?.needsPower) { s._powered = true; continue; }
     for (const g of gens) {
-      const R = STRUCTURE_DEFS.generator.powerR || 200;
+      const R = STRUCTURE_DEFS[g.kind]?.powerR || 200;
       if (Math.hypot(g.x - s.x, g.y - s.y) <= R) { s._powered = true; break; }
     }
     if (s._powered) continue;
