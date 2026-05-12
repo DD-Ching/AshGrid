@@ -1,390 +1,303 @@
-// ============ MULTIPLAYER (Trystero / WebRTC P2P) ============
-// Phase 20a — minimum viable PvP. Lazy-loads Trystero from esm.sh, joins a
-// room over Firebase RTDB signalling, then peer-to-peer broadcasts the
-// player's position / angle / name 20 times per second. Remote players are
-// rendered with interpolation. No combat yet (Phase 20b will add bullets +
-// HP + death). User: '我是想要像 Wings.io 一樣 · 大家可以互相打 · 這是我想要
-// 的這個遊戲的核心'.
+// ============ MULTIPLAYER (PartyKit / Cloudflare Workers + DO) ============
+// Phase 33 — pivot from Trystero P2P to a relay server on Cloudflare
+// Workers + Durable Objects (via PartyKit). The Trystero v0.24 firebase
+// strategy refused to complete its SDP exchange step (3 peers announced
+// to /__trystero__/<room> but ZERO per-peer inboxes ever populated),
+// and downgrading to v0.21.4 didn't help either. After 5 phases of
+// firefighting NAT / TURN / version regressions we decided P2P was the
+// wrong tool for an .io-style realtime PvP: wings.io itself uses an
+// authoritative server, not P2P. So do agar / slither / krunker.
+//
+// Architecture now:
+//   - One Durable Object per room (PartyKit handles the mapping).
+//   - Each browser opens a WebSocket to wss://<host>/parties/main/<room>.
+//   - PartyKit assigns a stable connection.id which we use as the peer's
+//     selfId — replaces Trystero's selfId.
+//   - The server (server/party/server.js) is a broadcast relay: every
+//     message a client sends gets fanned out to the other connections
+//     in the same room, tagged with the sender's id.
+//   - Same message shape as before (pos / fire / kill / emote / ping)
+//     so the rendering side and the local game logic don't change.
+//   - No NAT traversal, no TURN, no STUN, no Trystero quirks.
+//     Either you can open a WebSocket or you can't — and you can.
 //
 // Activation: append ?mp=1 to the URL. Optional ?room=foo to coordinate
 // with friends. Without ?mp=1 the file does nothing (single-player mode
 // keeps working identically).
 //
-// Cost model: Firebase free tier handles the signalling exchange only —
-// once two peers connect, all gameplay traffic flows P2P. So 8-player
-// .io match = effectively zero infrastructure cost.
+// Cost: Cloudflare Workers Free = 100k req/day + 13ms CPU per req.
+// Durable Objects Free = 1M req/mo + 400k GB-s. For an .io hobby game
+// that handles dozens of concurrent rooms this is effectively infinite.
 //
 // Classic-script. Declares globally:
 //   _mpState · _mpConnect() · _mpSendInput() · _mpTickRemote()
-//   _mpRenderRemote() · _mpIsActive() · _mpPeerCount()
+//   _mpTickRemoteBullets() · _mpTickPings() · _mpRenderRemote()
+//   _mpRenderRemoteBullets() · _mpRenderHUD() · _mpRenderEmotes()
+//   _mpRenderPings() · _mpIsActive() · _mpPeerCount()
+//   _mpBroadcastFire() · _mpTriggerEmote() · _mpTriggerPing()
+//   _mpRespawnLocalPlayer()
+//   MP_EMOTES
 //
 // External deps (resolved at call-time):
-//   player · COLORS · ctx · drawHumanoid · getOperatorName · T ·
-//   showSwapToast
+//   player · COLORS · ctx · drawHumanoid · getOperatorName · _lbBumpDeath
+//   showSwapToast · NN_ARENA · game
 
-const MP_FIREBASE_URL = 'https://ashgo-1bfec-default-rtdb.asia-southeast1.firebasedatabase.app';
-const MP_DEFAULT_ROOM = 'ashgrid-main';
-const MP_ROOM_CAP        = 20;        // Phase 27: rollover threshold per user
-                                      // '20-30 才會開第二間 · 以下都希望
-                                      // 他們能遇到 · 不要平行世界'
-const MP_PRESENCE_TTL_MS = 30000;     // peers without a heartbeat in 30s
-                                      // are treated as gone for matchmaking
-const MP_HEARTBEAT_MS    = 10000;     // PUT /rooms/<room>/<peer> every 10s
-// Phase 32 — downgrade to trystero@0.21.4 (pre-rewrite stable). v0.23+
-// dropped simple-peer-light for a custom WebRTC layer + split into the
-// @trystero-p2p/* packages. Empirically the v0.24 firebase strategy
-// completes the announce step but the discovery → SDP-exchange step
-// never fires (confirmed by probing Firebase: 3 peer announces in room
-// but ALL per-peer inbox paths are null — zero offers sent). v0.21.4
-// was the last release before the rewrite; we tested issue#118-style
-// problems before and it worked. The 'trystero/firebase deprecated'
-// warning only fires on the package's latest (0.24); pinning to 0.21.4
-// gives us a clean import.
+// Resolution order for the PartyKit host:
+//   1. ?ws=<host> URL param (test against a different deploy)
+//   2. window.MP_PARTYKIT_HOST (paste into console for quick swaps)
+//   3. localhost auto-detect for `npx partykit dev` workflow
+//   4. PRODUCTION_HOST constant — edit this AFTER your first deploy.
 //
-// If 0.21.4 ALSO can't connect → it's network-side (TURN required, or
-// the two browsers are on incompatible NAT). Use `?turn=...` URL or
-// window.MP_TURN to inject working credentials.
-const MP_TRYSTERO_CDN = 'https://esm.sh/trystero@0.21.4/firebase';
-const MP_SEND_HZ      = 20;          // position broadcasts per second per peer
-const MP_LERP_K       = 0.25;        // remote interpolation rate
+// First-time setup: see server/README.md. The TL;DR is:
+//   cd server && npm install
+//   npx partykit login          # one-time, opens a browser
+//   npx partykit deploy         # prints the URL — paste into below
+const PRODUCTION_HOST = 'ashgrid-mp.dd-ching.partykit.dev';   // TODO: replace after deploy
+const MP_SEND_HZ = 20;
+const MP_LERP_K  = 0.25;
+
+function _mpResolveHost() {
+  try {
+    const params = new URLSearchParams(location.search);
+    const q = params.get('ws');
+    if (q) return q;
+  } catch (e) {}
+  if (typeof window !== 'undefined' && window.MP_PARTYKIT_HOST) {
+    return String(window.MP_PARTYKIT_HOST);
+  }
+  if (typeof location !== 'undefined' &&
+      (location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+    return 'localhost:1999';
+  }
+  return PRODUCTION_HOST;
+}
 
 const _mpState = {
   enabled:        false,
   roomName:       null,
-  room:           null,
-  send:           null,
-  sendFire:       null,
-  sendKill:       null,
+  ws:             null,
   myId:           null,
-  remotePlayers:  new Map(),         // peerId → { x, y, targetX, targetY, angle, name }
+  remotePlayers:  new Map(),     // peerId → { x, y, targetX, targetY, angle, name, emote? }
   lastSendAt:     0,
+  reconnectTimer: null,
+  reconnectDelay: 1000,
   loadError:      null,
+  // Surface-area shim: index.html reads `_mpState.room.getPeers()` to
+  // count connected peers. With Trystero gone, expose a tiny adapter
+  // that returns the same shape ({peerId: connection}).
+  get room() {
+    return {
+      getPeers: () => {
+        const out = {};
+        for (const id of _mpState.remotePlayers.keys()) out[id] = true;
+        return out;
+      },
+    };
+  },
 };
-// Phase 20b — remote bullets fired by other peers. Each entry is a bullet
-// the *other* side sees flying; the local player is the only entity it can
-// damage (we don't propagate hits to NN bots — those run independently on
-// each client). Tick + render alongside the normal bullets[] array.
+// Remote bullets fired by other peers. Each entry is a bullet the
+// *other* side sees flying; the local player is the only entity it
+// can damage. Same shape as before so the rendering + collision
+// code didn't have to change.
 const _mpRemoteBullets = [];
-// Phase 20c — kill feed + peer scoreboard. Map: peerId → kill count.
+// Kill feed + peer scoreboard.
 const _mpScoreboard = new Map();
-const _mpKillFeed = [];               // [{ killer, victim, weapon, at }, ...]
-// Phase 24 — emotes + pings. Emotes are a chat-bubble char that floats
-// over the sender for ~3 sec. Pings are world-coord markers that pulse
-// for ~4 sec so squad mates can call out a position without typing.
-// Both go P2P via Trystero so latency is human-fast.
+const _mpKillFeed = [];
+// Emotes + pings.
 const MP_EMOTES = ['GG', 'LOL', 'GO!', '!', '?'];
 let _mpMyEmoteIdx = 0;
 let _mpLastEmoteAt = 0;
 let _mpLastPingAt = 0;
-const _mpPings = [];                  // [{ x, y, peerId, life, maxLife }]
+const _mpPings = [];
 
 function _mpIsActive() { return !!_mpState.enabled; }
 function _mpPeerCount() { return _mpState.enabled ? (_mpState.remotePlayers.size + 1) : 0; }
 
-// Phase 27 — auto-matchmaking. Pick the smallest room number that's
-// under MP_ROOM_CAP so everyone clusters in one room until traffic
-// justifies a second. URL ?room= overrides this entirely (private games).
-async function _mpPickRoom() {
-  try {
-    const r = await fetch(`${MP_FIREBASE_URL}/rooms.json`);
-    if (!r.ok) return MP_DEFAULT_ROOM;
-    const data = (await r.json()) || {};
-    const now = Date.now();
-    const counts = {};
-    for (const [roomName, peers] of Object.entries(data)) {
-      let alive = 0;
-      for (const p of Object.values(peers || {})) {
-        if (p && p.ts && (now - p.ts) < MP_PRESENCE_TTL_MS) alive++;
-      }
-      counts[roomName] = alive;
-    }
-    // Default room first — everyone funnels there until it hits MP_ROOM_CAP.
-    if ((counts[MP_DEFAULT_ROOM] || 0) < MP_ROOM_CAP) return MP_DEFAULT_ROOM;
-    // Roll over to ashgrid-2, ashgrid-3, ... — first non-full room wins.
-    let n = 2;
-    while ((counts[`ashgrid-${n}`] || 0) >= MP_ROOM_CAP) {
-      n++;
-      if (n > 50) break;        // sanity stop
-    }
-    return `ashgrid-${n}`;
-  } catch (e) {
-    return MP_DEFAULT_ROOM;
-  }
-}
-
 async function _mpConnect() {
   if (_mpState.enabled) return;
-  // Activation gate. ?mp=1 in URL is the opt-in. Single-player path is
-  // 100% untouched when the flag is absent.
   const params = new URLSearchParams(location.search);
   if (params.get('mp') !== '1') return;
-  // Phase 27: auto-pick room when URL doesn't specify one, so all
-  // unrouted MP players land in the same room until it fills.
-  const roomName = params.get('room') || await _mpPickRoom();
+  const roomName = params.get('room') || 'ashgrid-main';
   _mpState.roomName = roomName;
-  // Lazy ESM import — Trystero is ESM-only and brings firebase as a
-  // dependency. esm.sh handles transitive deps so this single import
-  // pulls everything in. Browser cache makes subsequent matches instant.
-  let joinRoom, selfId;
+
+  const host = _mpResolveHost();
+  const proto = (host.startsWith('localhost') || host.startsWith('127.0.0.1'))
+    ? 'ws' : 'wss';
+  const url = `${proto}://${host}/parties/main/${encodeURIComponent(roomName)}`;
+  _mpOpen(url);
+}
+
+function _mpOpen(url) {
+  console.log('[mp] connecting to', url);
+  let ws;
   try {
-    console.log('[mp] loading Trystero from CDN…');
-    const trystero = await import(MP_TRYSTERO_CDN);
-    joinRoom = trystero.joinRoom;
-    selfId = trystero.selfId;       // module-level in @trystero-p2p (was room.selfId in old API)
+    ws = new WebSocket(url);
   } catch (e) {
     _mpState.loadError = String(e);
-    console.error('[mp] failed to load Trystero:', e);
+    console.error('[mp] WebSocket constructor threw:', e);
     if (typeof showSwapToast === 'function') {
-      showSwapToast('多人連線失敗 · MP load failed');
+      showSwapToast('多人連線失敗 · ' + String(e).slice(0, 40));
     }
     return;
   }
-  console.log('[mp] joining room:', roomName, 'via', MP_FIREBASE_URL);
-  // Phase 31 — Trystero/issues#118 + community reports (2025-2026) confirm
-  // that the old free OpenRelay static credentials (`openrelayproject` /
-  // `openrelayproject`) STOPPED WORKING on most networks. Worse, leaving
-  // dead TURN servers in the iceServers list HURTS connection time because
-  // ICE tries each candidate in order — failing TURNs trigger 30-sec
-  // timeouts that bury the working STUN path. We removed them.
-  //
-  // Replacement strategy:
-  //   1. Beef up STUN (Google variants + Cloudflare + Twilio — all
-  //      anonymous, no signup) so cone-NAT clients connect fast.
-  //   2. For symmetric-NAT users (~30%) who need TURN relay, the user
-  //      can sign up at https://dashboard.metered.ca for free 20GB/mo
-  //      credentials OR use Cloudflare Realtime TURN (free 1TB/mo).
-  //      Drop them into MP_TURN_CREDS below and they'll be picked up.
-  //
-  // The handshake callbacks below (Trystero v0.23+) make it visible in
-  // DevTools whether the failure is at signaling (peer never appears),
-  // at transport (handshake never fires), or at data (handshake fires
-  // but `pos` action never received).
-  const MP_TURN_CREDS = (typeof window !== 'undefined' && window.MP_TURN)
-    ? window.MP_TURN     // user can set window.MP_TURN = { urls, username, credential }
-    : null;
-  const rtcConfig = {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-      { urls: 'stun:stun.cloudflare.com:3478' },
-      { urls: 'stun:global.stun.twilio.com:3478' },
-      ...(MP_TURN_CREDS ? [MP_TURN_CREDS] : []),
-    ],
-  };
-  console.log('[mp] iceServers count:', rtcConfig.iceServers.length, MP_TURN_CREDS ? '· TURN configured' : '· STUN-only (no TURN)');
-  // Phase 32 — v0.21.4 uses the 2-arg form: joinRoom(config, roomId).
-  // No callbacks object (that's v0.23+). Diagnostics now come purely
-  // from onPeerJoin / getPos receive logs further down.
-  try {
-    _mpState.room = joinRoom({ appId: MP_FIREBASE_URL, rtcConfig }, roomName);
-  } catch (e) {
-    _mpState.loadError = String(e);
-    console.error('[mp] joinRoom failed:', e);
-    return;
-  }
-  _mpState.myId = selfId;
-  // ─── Action channels ──────────────────────────────────────────────
-  // 'pos'   — broadcast player position (Phase 20a)
-  // 'fire'  — broadcast a shot the moment it leaves the barrel (Phase 20b)
-  // 'kill'  — broadcast death event so peers can update kill feed + score
-  //           (Phase 20c). Each `makeAction` returns [send, receive].
-  const [sendPos, getPos] = _mpState.room.makeAction('pos');
-  _mpState.send = sendPos;
-  getPos((data, peerId) => {
-    if (!data || typeof data.x !== 'number' || typeof data.y !== 'number') return;
-    let rp = _mpState.remotePlayers.get(peerId);
-    if (!rp) {
-      // Phase 31 — first pos message from this peer == data channel open.
-      // The triplet (room join → onPeerHandshake → first pos receive) is
-      // the breadcrumb trail user can verify in DevTools to confirm the
-      // full pipeline. If onPeerHandshake fires but this never does → the
-      // remote isn't sending pos (their player.alive=false or they're
-      // throttled). If this fires but rendering looks wrong → render-side
-      // bug, not networking.
-      console.log('[mp/data] first pos from peer', peerId.slice(0, 6),
-        '@', Math.round(data.x), Math.round(data.y),
-        '· remote name:', data.name);
-      rp = {
-        x: data.x, y: data.y,
-        targetX: data.x, targetY: data.y,
-        angle: data.angle || 0,
-        name: data.name || ('U' + peerId.slice(0, 4)),
+  _mpState.ws = ws;
+  ws.addEventListener('open', () => {
+    console.log('[mp] WebSocket open');
+    _mpState.reconnectDelay = 1000;  // reset backoff
+    if (typeof showSwapToast === 'function') {
+      showSwapToast('▶ 多人連線 · room: ' + _mpState.roomName);
+    }
+  });
+  ws.addEventListener('message', (e) => {
+    let data;
+    try { data = JSON.parse(e.data); } catch { return; }
+    if (!data || typeof data !== 'object') return;
+    _mpHandleMessage(data);
+  });
+  ws.addEventListener('error', (e) => {
+    console.error('[mp] WebSocket error:', e);
+  });
+  ws.addEventListener('close', (e) => {
+    console.warn('[mp] WebSocket closed · code:', e.code, '· reason:', e.reason);
+    _mpState.enabled = false;
+    _mpState.ws = null;
+    _mpState.remotePlayers.clear();
+    // Reconnect with exponential backoff (cap 30s) so a server-side
+    // restart or transient network blip doesn't kill the session.
+    const delay = Math.min(30000, _mpState.reconnectDelay);
+    _mpState.reconnectDelay = Math.min(30000, _mpState.reconnectDelay * 1.5);
+    _mpState.reconnectTimer = setTimeout(() => _mpOpen(url), delay);
+  });
+}
+
+function _mpHandleMessage(data) {
+  switch (data.type) {
+    case 'welcome': {
+      _mpState.myId = data.id;
+      _mpState.enabled = true;
+      console.log('[mp] welcomed as', _mpState.myId, '· existing peers:', data.peers || []);
+      // Start presence so the first heartbeat fires.
+      _mpSendInputForce();
+      break;
+    }
+    case 'join': {
+      console.log('[mp] peer joined:', data.id);
+      if (typeof showSwapToast === 'function') {
+        showSwapToast('▸ 玩家加入 ' + String(data.id).slice(0, 6));
+      }
+      break;
+    }
+    case 'leave': {
+      console.log('[mp] peer left:', data.id);
+      _mpState.remotePlayers.delete(data.id);
+      _mpScoreboard.delete(data.id);
+      break;
+    }
+    case 'pos': {
+      const peerId = data.from;
+      if (!peerId) return;
+      let rp = _mpState.remotePlayers.get(peerId);
+      if (!rp) {
+        rp = {
+          x: data.x, y: data.y,
+          targetX: data.x, targetY: data.y,
+          angle: data.angle || 0,
+          name: data.name || ('U' + peerId.slice(0, 4)),
+        };
+        _mpState.remotePlayers.set(peerId, rp);
+        console.log('[mp/data] first pos from peer', peerId.slice(0, 6),
+          '@', Math.round(data.x), Math.round(data.y), '· name:', rp.name);
+      }
+      rp.targetX = data.x;
+      rp.targetY = data.y;
+      rp.angle = data.angle || 0;
+      if (data.name) rp.name = String(data.name).slice(0, 12);
+      break;
+    }
+    case 'fire': {
+      const peerId = data.from;
+      const pellets = Math.max(1, Math.min(12, data.pellets || 1));
+      const spreadMul = data.spreadMul || 1;
+      const spread = data.spread || 0;
+      const speed = data.speed || 14;
+      const life = data.life || 60;
+      for (let i = 0; i < pellets; i++) {
+        const a = data.angle + (Math.random() - 0.5) * spread * spreadMul;
+        _mpRemoteBullets.push({
+          x: data.x + Math.cos(a) * 18,
+          y: data.y + Math.sin(a) * 18,
+          vx: Math.cos(a) * speed,
+          vy: Math.sin(a) * speed,
+          life, damage: data.damage || 25,
+          shooterId: peerId,
+          weapon: data.weapon || 'RIFLE',
+          isRocket: !!data.isRocket,
+          blastR: data.blastR, blastDmg: data.blastDmg,
+        });
+      }
+      break;
+    }
+    case 'kill': {
+      // `data.from` = the victim; `data.shooterId` = who killed them.
+      if (!data.shooterId) return;
+      _mpScoreboard.set(data.shooterId, (_mpScoreboard.get(data.shooterId) || 0) + 1);
+      const shooterName = (_mpState.remotePlayers.get(data.shooterId)?.name)
+        || (data.shooterId === _mpState.myId
+              ? (typeof getOperatorName === 'function' ? getOperatorName() : 'YOU')
+              : String(data.shooterId).slice(0, 6));
+      const victimName = (_mpState.remotePlayers.get(data.from)?.name) || String(data.from).slice(0, 6);
+      _mpKillFeed.push({ killer: shooterName, victim: victimName, weapon: data.weapon || 'RIFLE', at: Date.now() });
+      if (_mpKillFeed.length > 6) _mpKillFeed.splice(0, _mpKillFeed.length - 6);
+      break;
+    }
+    case 'emote': {
+      const peerId = data.from;
+      const rp = _mpState.remotePlayers.get(peerId);
+      if (!rp) return;
+      const idx = (typeof data.idx === 'number') ? data.idx : 0;
+      rp.emote = {
+        char: MP_EMOTES[((idx % MP_EMOTES.length) + MP_EMOTES.length) % MP_EMOTES.length] || '?',
+        until: Date.now() + 3000,
       };
-      _mpState.remotePlayers.set(peerId, rp);
+      break;
     }
-    rp.targetX = data.x;
-    rp.targetY = data.y;
-    rp.angle = data.angle || 0;
-    if (data.name) rp.name = String(data.name).slice(0, 12);
-  });
-  // Phase 20b — fire action. A peer broadcasts the shot once + each
-  // receiver spawns the bullet locally with the same params. Only the
-  // local player can be hit (in _mpTickRemoteBullets) so we don't get
-  // double-counting if 3 peers all see the same bullet.
-  const [sendFire, getFire] = _mpState.room.makeAction('fire');
-  _mpState.sendFire = sendFire;
-  getFire((data, peerId) => {
-    if (!data || typeof data.x !== 'number' || typeof data.angle !== 'number') return;
-    const pellets = Math.max(1, Math.min(12, data.pellets || 1));
-    const spreadMul = data.spreadMul || 1;
-    const spread = data.spread || 0;
-    const speed = data.speed || 14;
-    const life = data.life || 60;
-    for (let i = 0; i < pellets; i++) {
-      const a = data.angle + (Math.random() - 0.5) * spread * spreadMul;
-      _mpRemoteBullets.push({
-        x: data.x + Math.cos(a) * 18,
-        y: data.y + Math.sin(a) * 18,
-        vx: Math.cos(a) * speed,
-        vy: Math.sin(a) * speed,
-        life, damage: data.damage || 25,
-        shooterId: peerId,
-        weapon: data.weapon || 'RIFLE',
-        isRocket: !!data.isRocket,
-        blastR: data.blastR, blastDmg: data.blastDmg,
-      });
+    case 'ping': {
+      const peerId = data.from;
+      if (typeof data.x !== 'number' || typeof data.y !== 'number') return;
+      _mpPings.push({ x: data.x, y: data.y, peerId, life: 240, maxLife: 240 });
+      break;
     }
-  });
-  // Phase 20c — kill action. Victim broadcasts on death so every peer
-  // can pop the kill feed + bump the shooter's score.
-  const [sendKill, getKill] = _mpState.room.makeAction('kill');
-  _mpState.sendKill = sendKill;
-  getKill((data, peerId) => {
-    if (!data || !data.shooterId) return;
-    _mpScoreboard.set(data.shooterId, (_mpScoreboard.get(data.shooterId) || 0) + 1);
-    const shooterName = (_mpState.remotePlayers.get(data.shooterId)?.name)
-                     || (data.shooterId === _mpState.myId ? (typeof getOperatorName === 'function' ? getOperatorName() : 'YOU') : data.shooterId.slice(0, 6));
-    const victimName = (_mpState.remotePlayers.get(peerId)?.name) || peerId.slice(0, 6);
-    _mpKillFeed.push({ killer: shooterName, victim: victimName, weapon: data.weapon || 'RIFLE', at: Date.now() });
-    // Trim to last 6 lines
-    if (_mpKillFeed.length > 6) _mpKillFeed.splice(0, _mpKillFeed.length - 6);
-  });
-  // Phase 24 — emote + ping channels. Emote sets a chat-bubble on the
-  // remote player's state; ping pushes a marker to _mpPings. Both are
-  // throttled on the SEND side (_mpTriggerEmote / _mpTriggerPing) so a
-  // spam-click can't flood the room.
-  const [sendEmote, getEmote] = _mpState.room.makeAction('emote');
-  const [sendPing,  getPing]  = _mpState.room.makeAction('ping');
-  _mpState.sendEmote = sendEmote;
-  _mpState.sendPing  = sendPing;
-  getEmote((data, peerId) => {
-    if (!data) return;
-    const rp = _mpState.remotePlayers.get(peerId);
-    if (!rp) return;
-    const idx = (typeof data.idx === 'number') ? data.idx : 0;
-    rp.emote = {
-      char: MP_EMOTES[((idx % MP_EMOTES.length) + MP_EMOTES.length) % MP_EMOTES.length] || '?',
-      until: Date.now() + 3000,
-    };
-  });
-  getPing((data, peerId) => {
-    if (!data || typeof data.x !== 'number' || typeof data.y !== 'number') return;
-    _mpPings.push({ x: data.x, y: data.y, peerId, life: 240, maxLife: 240 });
-  });
-  _mpState.room.onPeerJoin((peerId) => {
-    const total = _mpState.room.getPeers ? Object.keys(_mpState.room.getPeers()).length : '?';
-    console.log('[mp] peer joined:', peerId, '· connected peers:', total);
-    if (typeof showSwapToast === 'function') {
-      showSwapToast('▸ 玩家加入 ' + peerId.slice(0, 6));
-    }
-  });
-  _mpState.room.onPeerLeave((peerId) => {
-    const total = _mpState.room.getPeers ? Object.keys(_mpState.room.getPeers()).length : '?';
-    console.log('[mp] peer left:', peerId, '· remaining peers:', total);
-    _mpState.remotePlayers.delete(peerId);
-    _mpScoreboard.delete(peerId);
-  });
-  // Phase 28/31 — periodic connection diagnostic every 8 s. Always logs
-  // (even at 0/0) so the user can read the console and KNOW the MP loop
-  // is alive but lonely vs. silently broken. Three numbers to compare:
-  //   peers      = how many WebRTC peer connections Trystero has open
-  //                (this is the post-handshake count)
-  //   positions  = how many of those peers actually sent us a pos msg
-  //                (proves data channel works in BOTH directions)
-  //   room       = which room we're in (so two browsers can verify match)
-  // The expected healthy sequence after a second player joins:
-  //   peers:0 → onPeerHandshake fires → peers:1 → first pos arrives →
-  //   positions:1
-  // Stuck at peers:0 with the other side ALSO at peers:0 → NAT traversal
-  // is failing. Need TURN. Set window.MP_TURN before _mpConnect to inject.
-  setInterval(() => {
-    if (!_mpState.enabled || !_mpState.room) return;
-    const peers = _mpState.room.getPeers ? Object.keys(_mpState.room.getPeers()) : [];
-    const remoteWithPos = _mpState.remotePlayers.size;
-    console.log(`[mp/diag] room:${_mpState.roomName} peers:${peers.length} positions:${remoteWithPos}`);
-  }, 8000);
-  _mpState.enabled = true;
-  if (typeof showSwapToast === 'function') {
-    showSwapToast('▶ 多人連線 · room: ' + roomName);
   }
-  // Phase 27 — start presence heartbeat so other clients' room picker
-  // sees us. First beat fires immediately so a player who joins right
-  // after this one already counts us.
-  _mpStartPresence();
 }
 
-// Presence heartbeat — write { name, ts } into /rooms/<room>/<peer>
-// every MP_HEARTBEAT_MS. Stale entries (older than MP_PRESENCE_TTL_MS)
-// are filtered out by _mpPickRoom so a crashed tab doesn't pin a slot.
-let _mpPresenceTimer = null;
-function _mpPresenceUrl() {
-  if (!_mpState.myId || !_mpState.roomName) return null;
-  return `${MP_FIREBASE_URL}/rooms/${encodeURIComponent(_mpState.roomName)}/${encodeURIComponent(_mpState.myId)}.json`;
-}
-async function _mpHeartbeat() {
-  const url = _mpPresenceUrl();
-  if (!url) return;
+function _mpSendRaw(payload) {
+  const ws = _mpState.ws;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
   try {
-    await fetch(url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: (typeof getOperatorName === 'function') ? getOperatorName().slice(0, 12) : 'PLAYER',
-        ts: Date.now(),
-      }),
-    });
-  } catch (e) {/* network blip — try again next interval */}
-}
-function _mpStartPresence() {
-  if (_mpPresenceTimer) clearInterval(_mpPresenceTimer);
-  _mpHeartbeat();
-  _mpPresenceTimer = setInterval(_mpHeartbeat, MP_HEARTBEAT_MS);
-}
-// Cleanup on tab close. `keepalive: true` lets the request complete
-// even after the page is unloading. We DELETE the presence entry so
-// the next room picker doesn't count us as 'alive'.
-window.addEventListener('pagehide', () => {
-  if (_mpPresenceTimer) { clearInterval(_mpPresenceTimer); _mpPresenceTimer = null; }
-  const url = _mpPresenceUrl();
-  if (url) {
-    try { fetch(url, { method: 'DELETE', keepalive: true }); } catch {}
+    ws.send(JSON.stringify(payload));
+  } catch (e) {
+    // socket closed mid-flight — onclose will fire and reconnect
   }
-});
+}
 
-// Per-frame: throttled to MP_SEND_HZ so the room doesn't get spammed at
-// 60 fps. Position is rounded to 1u + angle to 3 decimals so each message
-// stays small (under 80 bytes) — Trystero will chunk if needed but small
-// payloads keep mobile data usage tiny.
+// Per-frame throttled position send.
 function _mpSendInput() {
-  if (!_mpState.enabled || !_mpState.send) return;
+  if (!_mpState.enabled) return;
   if (typeof player === 'undefined' || !player.alive) return;
   const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
   if (now - _mpState.lastSendAt < (1000 / MP_SEND_HZ)) return;
   _mpState.lastSendAt = now;
-  try {
-    _mpState.send({
-      x: Math.round(player.x),
-      y: Math.round(player.y),
-      angle: Number((player.angle || 0).toFixed(3)),
-      name: (typeof getOperatorName === 'function') ? getOperatorName() : 'PLAYER',
-    });
-  } catch (e) {
-    // Trystero throws if the peer connection drops mid-flight; quietly
-    // swallow — next tick will retry, onPeerLeave drops the entry.
-  }
+  _mpSendInputForce();
+}
+function _mpSendInputForce() {
+  if (typeof player === 'undefined' || !player.alive) return;
+  _mpSendRaw({
+    type: 'pos',
+    x: Math.round(player.x),
+    y: Math.round(player.y),
+    angle: Number((player.angle || 0).toFixed(3)),
+    name: (typeof getOperatorName === 'function') ? getOperatorName() : 'PLAYER',
+  });
 }
 
 // Interpolate remote positions toward their latest snapshot so they
@@ -398,15 +311,13 @@ function _mpTickRemote() {
 }
 
 // Render remote players. Uses drawHumanoid with COLORS.red so remotes
-// read as "another player" (vs cream-allied / red-enemy distinction).
-// In Phase 20b we'll team-color them.
+// read as "another player".
 function _mpRenderRemote() {
   if (!_mpState.enabled) return;
   if (typeof ctx === 'undefined' || typeof drawHumanoid !== 'function') return;
   for (const rp of _mpState.remotePlayers.values()) {
     ctx.save();
     drawHumanoid(rp.x, rp.y, rp.angle || 0, 0, COLORS.red, true, { _chassis: 'humanoid' });
-    // Name + chevron
     ctx.fillStyle = COLORS.black;
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
@@ -416,35 +327,29 @@ function _mpRenderRemote() {
   }
 }
 
-// ─── Phase 20b: fire broadcast + remote bullet tick ──────────────
-// Called from index.html fire() after the local shot is queued. We send
-// one packet per shot (not per pellet) — receivers reconstruct pellets
-// from the seed-rng (already deterministic enough for "looks the same").
+// Broadcast fire — called from index.html fire() after the local shot
+// is queued. One packet per shot (not per pellet).
 function _mpBroadcastFire(payload) {
-  if (!_mpState.enabled || !_mpState.sendFire) return;
-  try {
-    _mpState.sendFire({
-      x: Math.round(payload.x),
-      y: Math.round(payload.y),
-      angle: Number((payload.angle || 0).toFixed(3)),
-      speed: payload.speed,
-      damage: payload.damage,
-      life: payload.life,
-      spread: payload.spread,
-      pellets: payload.pellets,
-      spreadMul: payload.spreadMul,
-      weapon: payload.weapon,
-      isRocket: payload.isRocket,
-      blastR: payload.blastR,
-      blastDmg: payload.blastDmg,
-    });
-  } catch (e) {/* peer drop mid-fire — quiet retry next tick */}
+  if (!_mpState.enabled) return;
+  _mpSendRaw({
+    type: 'fire',
+    x: Math.round(payload.x),
+    y: Math.round(payload.y),
+    angle: Number((payload.angle || 0).toFixed(3)),
+    speed: payload.speed,
+    damage: payload.damage,
+    life: payload.life,
+    spread: payload.spread,
+    pellets: payload.pellets,
+    spreadMul: payload.spreadMul,
+    weapon: payload.weapon,
+    isRocket: payload.isRocket,
+    blastR: payload.blastR,
+    blastDmg: payload.blastDmg,
+  });
 }
-// Called once per game tick from updatePlayer (right after updateBullets
-// so the local-bullet pass is done). Moves each remote bullet, checks if
-// it hits the local player, and applies damage. The local player is
-// authoritative for their own HP — we send a 'kill' broadcast when our
-// HP drops to 0 so the shooter (and everyone else) sees the kill feed.
+
+// Tick remote bullets and resolve hits on the local player.
 function _mpTickRemoteBullets() {
   if (!_mpState.enabled) return;
   if (typeof player === 'undefined') return;
@@ -452,7 +357,6 @@ function _mpTickRemoteBullets() {
     const b = _mpRemoteBullets[i];
     b.x += b.vx; b.y += b.vy; b.life--;
     if (b.life <= 0) { _mpRemoteBullets.splice(i, 1); continue; }
-    // Hit local player?
     if (!player.alive) continue;
     const pInvuln = player._invulnUntil != null && (typeof game !== 'undefined') && game.time < player._invulnUntil;
     if (pInvuln) continue;
@@ -467,12 +371,10 @@ function _mpTickRemoteBullets() {
       if (player.hp <= 0 && player.alive) {
         player.alive = false;
         if (typeof _lbBumpDeath === 'function') _lbBumpDeath();
-        // Broadcast death so peers update kill feed + score. Trystero does
-        // NOT echo a sender's own message back, so ALSO bump locally —
-        // otherwise the victim never sees their own death recorded.
-        if (_mpState.sendKill) {
-          try { _mpState.sendKill({ shooterId: b.shooterId, weapon: b.weapon }); } catch {}
-        }
+        // Broadcast death so peers update kill feed + score. The server
+        // tags this with our id (from), so receivers know who died.
+        _mpSendRaw({ type: 'kill', shooterId: b.shooterId, weapon: b.weapon });
+        // Also bump locally (server doesn't echo our own message back).
         _mpScoreboard.set(b.shooterId, (_mpScoreboard.get(b.shooterId) || 0) + 1);
         _mpKillFeed.push({
           killer: _mpState.remotePlayers.get(b.shooterId)?.name || 'PEER',
@@ -481,20 +383,14 @@ function _mpTickRemoteBullets() {
           at: Date.now(),
         });
         if (_mpKillFeed.length > 6) _mpKillFeed.splice(0, _mpKillFeed.length - 6);
-        // Death-recap context.
         if (typeof player._killer === 'undefined') player._killer = null;
         player._killer = { callsign: (_mpState.remotePlayers.get(b.shooterId)?.name) || 'ENEMY' };
         player._killerWeapon = b.weapon;
-        // Phase 26: sync game._teamWipe.blue so death-recap's countdown
-        // ticks visibly ('沒有廣告的時候 那倒數計時應該也要繼續') instead
-        // of being stuck on RESPAWN IN 0s. The 180-tick (3-sec) matches
-        // the setTimeout below so they expire together.
+        // Sync death-recap countdown so the visible timer ticks.
         if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
           game._teamWipe.blue.wipedSince = game.time;
           game._teamWipe.blue.respawnAt = game.time + 180;
         }
-        // Auto-respawn after 3 sec — drop at the blue spawn anchor with
-        // a fresh 3-sec invuln (Phase 21 default).
         setTimeout(_mpRespawnLocalPlayer, 3000);
         if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
       }
@@ -502,6 +398,7 @@ function _mpTickRemoteBullets() {
     }
   }
 }
+
 function _mpRespawnLocalPlayer() {
   if (typeof player === 'undefined') return;
   player.alive = true;
@@ -510,16 +407,11 @@ function _mpRespawnLocalPlayer() {
   player.reserve = Math.max(player.reserve || 0, 120);
   player.reloading = false;
   if (typeof game !== 'undefined') player._invulnUntil = game.time + 180;
-  // Phase 26: clear the team-wipe flag we set on death so the death-recap
-  // countdown dismisses cleanly + the next death starts a fresh timer.
   if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
     game._teamWipe.blue.wipedSince = null;
     game._teamWipe.blue.respawnAt = null;
   }
-  // Phase 20e: pick a respawn anchor far from any remote player so the
-  // shooter can't death-camp the spawn point. Prefer the anchor in
-  // game._nnSpawnBlueList that's furthest from every alive remote;
-  // fall back to game._nnSpawnBlue or arena centre.
+  // Pick a respawn anchor far from any remote player to dodge spawn-camp.
   let anchors = (typeof game !== 'undefined') ? (game._nnSpawnBlueList || []) : [];
   if (!Array.isArray(anchors) || anchors.length === 0) {
     if (typeof game !== 'undefined' && game._nnSpawnBlue) anchors = [game._nnSpawnBlue];
@@ -542,11 +434,11 @@ function _mpRespawnLocalPlayer() {
   if (best) { player.x = best.x; player.y = best.y; }
   if (typeof dismissDeathRecap === 'function') dismissDeathRecap();
 }
+
 function _mpRenderRemoteBullets() {
   if (!_mpState.enabled) return;
   if (typeof ctx === 'undefined') return;
   for (const b of _mpRemoteBullets) {
-    // 3-layer streak matching the local bullet aesthetic
     ctx.strokeStyle = '#1A1A1A';
     ctx.lineWidth = 4; ctx.lineCap = 'round';
     ctx.beginPath();
@@ -562,18 +454,15 @@ function _mpRenderRemoteBullets() {
     ctx.fill();
   }
 }
-// Phase 20c — render kill feed in the top-right and a small scoreboard
-// in the top-left when MP is active. Both throttled so they don't fight
-// existing HUD elements.
+
+// Kill feed + scoreboard HUD.
 function _mpRenderHUD() {
   if (!_mpState.enabled) return;
   if (typeof ctx === 'undefined') return;
-  // Trim kill feed entries older than 5 sec
   const now = Date.now();
   for (let i = _mpKillFeed.length - 1; i >= 0; i--) {
     if (now - _mpKillFeed[i].at > 5000) _mpKillFeed.splice(i, 1);
   }
-  // Kill feed (right-edge, under the MP indicator)
   ctx.save();
   ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'right';
@@ -582,12 +471,10 @@ function _mpRenderHUD() {
     const age = (now - k.at) / 5000;
     ctx.globalAlpha = Math.max(0.3, 1 - age);
     ctx.fillStyle = COLORS.black;
-    const line = `${k.killer} » ${k.victim}`;
-    ctx.fillText(line, W() - 18, y);
+    ctx.fillText(`${k.killer} » ${k.victim}`, W() - 18, y);
     y += 16;
   }
   ctx.globalAlpha = 1;
-  // Scoreboard (top-left, below the existing status panel)
   if (_mpScoreboard.size > 0) {
     const entries = [..._mpScoreboard.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
     let sy = H() - 20 - entries.length * 14;
@@ -609,10 +496,7 @@ function _mpRenderHUD() {
   ctx.textAlign = 'left';
 }
 
-// ─── Phase 24: emotes + pings ─────────────────────────────────────
-// Both work in single-player too (your own bubble renders locally for
-// feedback) but only broadcast to peers when MP is active. 1-sec emote
-// cooldown / 1.5-sec ping cooldown so a key-spam can't flood the room.
+// ─── Emotes + pings ─────────────────────────────────────────────────
 function _mpTriggerEmote() {
   const now = Date.now();
   if (now - _mpLastEmoteAt < 1000) return;
@@ -622,9 +506,7 @@ function _mpTriggerEmote() {
   if (typeof player !== 'undefined') {
     player._emote = { char: MP_EMOTES[idx], until: Date.now() + 3000 };
   }
-  if (_mpState.enabled && _mpState.sendEmote) {
-    try { _mpState.sendEmote({ idx }); } catch (e) {}
-  }
+  if (_mpState.enabled) _mpSendRaw({ type: 'emote', idx });
   if (typeof playSfx === 'function') playSfx('reload', { vol: 0.25, freq: 1100 });
 }
 function _mpTriggerPing(wx, wy) {
@@ -636,46 +518,32 @@ function _mpTriggerPing(wx, wy) {
     peerId: _mpState.myId || 'local',
     life: 240, maxLife: 240,
   });
-  if (_mpState.enabled && _mpState.sendPing) {
-    try { _mpState.sendPing({ x: Math.round(wx), y: Math.round(wy) }); } catch (e) {}
-  }
+  if (_mpState.enabled) _mpSendRaw({ type: 'ping', x: Math.round(wx), y: Math.round(wy) });
   if (typeof playSfx === 'function') playSfx('countdown', { vol: 0.35, freq: 880 });
   if (typeof showSwapToast === 'function') showSwapToast('▶ PING');
 }
-// Tick pings every frame from updatePlayer so their life counts down.
 function _mpTickPings() {
   for (let i = _mpPings.length - 1; i >= 0; i--) {
     _mpPings[i].life--;
     if (_mpPings[i].life <= 0) _mpPings.splice(i, 1);
   }
 }
-// Render in world space (before HUD). Pings: expanding red ring + center
-// dot. Local-player emote: bubble. Remote-player emotes: same bubble over
-// each remote.
 function _mpRenderPings() {
   if (typeof ctx === 'undefined') return;
   for (const p of _mpPings) {
-    const t = p.life / p.maxLife;             // 1 → 0
-    const expand = (1 - t) * 50;              // 0 → 50u outward
+    const t = p.life / p.maxLife;
+    const expand = (1 - t) * 50;
     ctx.save();
     ctx.globalAlpha = 0.85 * t;
     ctx.strokeStyle = COLORS.red;
     ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 14 + expand, 0, Math.PI * 2);
-    ctx.stroke();
-    // Inner ring (pulses inversely so it reads as a 'bounce')
+    ctx.beginPath(); ctx.arc(p.x, p.y, 14 + expand, 0, Math.PI * 2); ctx.stroke();
     ctx.lineWidth = 2;
     ctx.globalAlpha = 0.5 * t;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 6 + expand * 0.4, 0, Math.PI * 2);
-    ctx.stroke();
-    // Center dot
+    ctx.beginPath(); ctx.arc(p.x, p.y, 6 + expand * 0.4, 0, Math.PI * 2); ctx.stroke();
     ctx.globalAlpha = t;
     ctx.fillStyle = COLORS.red;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
 }
@@ -686,31 +554,21 @@ function _mpRenderEmotes() {
     ctx.font = 'bold 16px sans-serif';
     const w = Math.max(40, ctx.measureText(char).width + 20);
     const bx = x - w / 2, by = y - 64;
-    // Bubble background — cream, with a small tail pointing down
     ctx.fillStyle = COLORS.cream;
     ctx.fillRect(bx, by, w, 26);
-    // Tail (triangle)
     ctx.beginPath();
-    ctx.moveTo(x - 6, by + 26);
-    ctx.lineTo(x + 6, by + 26);
-    ctx.lineTo(x,     by + 34);
-    ctx.closePath();
-    ctx.fill();
-    // Border
-    ctx.strokeStyle = COLORS.black;
-    ctx.lineWidth = 2;
+    ctx.moveTo(x - 6, by + 26); ctx.lineTo(x + 6, by + 26); ctx.lineTo(x, by + 34);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = COLORS.black; ctx.lineWidth = 2;
     ctx.strokeRect(bx, by, w, 26);
-    // Char
     ctx.fillStyle = COLORS.black;
     ctx.textAlign = 'center';
     ctx.fillText(char, x, by + 19);
     ctx.restore();
   };
-  // Local player emote
   if (typeof player !== 'undefined' && player.alive && player._emote && Date.now() < player._emote.until) {
     drawBubble(player.x, player.y, player._emote.char);
   }
-  // Remote players
   for (const rp of _mpState.remotePlayers.values()) {
     if (rp.emote && Date.now() < rp.emote.until) {
       drawBubble(rp.x, rp.y, rp.emote.char);
@@ -718,9 +576,15 @@ function _mpRenderEmotes() {
   }
 }
 
-// Boot once the page is ready. Defer 1 sec so the rest of the engine
-// has time to set up (player, getOperatorName, etc.) before we wire MP
-// in. Single-player matches that never see ?mp=1 are unaffected.
+// Boot once the page is ready.
 document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => { _mpConnect().catch(e => console.error('[mp] connect threw:', e)); }, 1000);
+});
+
+// Clean up on tab close so the server's onClose fires immediately.
+window.addEventListener('pagehide', () => {
+  if (_mpState.ws) {
+    try { _mpState.ws.close(1000, 'pagehide'); } catch {}
+  }
+  if (_mpState.reconnectTimer) clearTimeout(_mpState.reconnectTimer);
 });
