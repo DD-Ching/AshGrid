@@ -60,6 +60,13 @@
 <script src="js/ad_stubs.js"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
 <script src="js/missions/nn_deathmatch.js"></script>
+<script src="js/world_gen.js"></script>
+<script src="js/squad.js"></script>
+<script src="js/drone_fpv.js"></script>
+<script src="js/vision_raycast.js"></script>
+<script src="js/camera.js"></script>
+<script src="js/defense_build_ui.js"></script>
+<script src="js/pause.js"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -9522,18 +9529,10 @@ function loop() {
 }
 loop();
 </script>
-<!-- Late-loaded modules — depend on globals declared by the main inline
-     <script> above (WORLD, NN_ARENA). Their top-level table .push()
-     entries evaluate now, AFTER those globals exist. The renderer + lobby
-     read them via lazy access (function bodies), so timing is fine. -->
+<!-- Late-loaded modules — these have top-level .push() / .build() calls
+     that reference WORLD or NN_ARENA, which the main inline <script>
+     declares. Must run AFTER the inline script. -->
 <script src="js/maps.js"></script>
 <script src="js/missions/nn_arena_variants.js"></script>
-<script src="js/world_gen.js"></script>
-<script src="js/squad.js"></script>
-<script src="js/drone_fpv.js"></script>
-<script src="js/vision_raycast.js"></script>
-<script src="js/camera.js"></script>
-<script src="js/defense_build_ui.js"></script>
-<script src="js/pause.js"></script>
 </body>
 </html>
