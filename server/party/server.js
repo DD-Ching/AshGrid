@@ -14,18 +14,21 @@
 // Protocol (JSON over WebSocket):
 //
 //   client → server
-//     {type: 'input', seq, dx, dy, angle, fire, name?}
+//     {type: 'input', seq, dx, dy, angle, fire, t?, name?}
 //         seq = monotonic input number (used for reconciliation)
 //         dx, dy = move vector in [-1, 1]
 //         angle = facing radians (for fire direction)
 //         fire = bool (held)
+//         t = client's Date.now() at send time (echoed in snapshot for RTT)
 //     {type: 'emote', idx}            (transient, just relayed)
 //     {type: 'ping', x, y}            (transient, just relayed)
 //
 //   server → client
 //     {type: 'welcome', id, tick}     (sent once on connect)
-//     {type: 'snapshot', tick, players, bullets}
-//         players: [{id, x, y, angle, hp, alive, name, lastInputSeq, invuln}]
+//     {type: 'snapshot', tick, players, bullets, sT}
+//         sT = server Date.now() at broadcast time (for snapshot interp clock sync)
+//         players: [{id, x, y, angle, hp, alive, name, lastInputSeq, invuln, t}]
+//             t = echoed client timestamp for own player only (used for RTT)
 //         bullets: [{id, x, y, vx, vy, s}]    s = shooter id (short)
 //     {type: 'hit', victim, shooter, hp, weapon}    (event, between snapshots)
 //     {type: 'kill', shooter, victim, weapon}        (event)
@@ -96,6 +99,8 @@ export default class AshGridRoom {
       // input applied next tick:
       input: { dx: 0, dy: 0, angle: 0, fire: false, seq: 0 },
       lastInputSeq: 0,
+      // Echoed back in snapshot so client can compute RTT.
+      lastInputT: 0,
     };
     this.players.set(conn.id, p);
     this._ensureTicking();
@@ -125,6 +130,8 @@ export default class AshGridRoom {
       p.input.fire  = !!data.fire;
       p.input.seq   = num(data.seq) | 0;
       if (p.input.seq > p.lastInputSeq) p.lastInputSeq = p.input.seq;
+      // Stamp the freshest client timestamp; echoed back in snapshot for RTT.
+      if (typeof data.t === 'number' && data.t > p.lastInputT) p.lastInputT = data.t;
       if (data.name) p.name = String(data.name).slice(0, 12);
       return;
     }
@@ -261,6 +268,12 @@ export default class AshGridRoom {
     const snap = {
       type: 'snapshot',
       tick: this.tickCount,
+      // Server clock at broadcast time. Clients use it to align the
+      // snapshot interpolation buffer to a single shared reference, so
+      // remote players move in straight lines between known samples
+      // instead of easing-toward-target (the "slug crawl" you'd see with
+      // pure lerp).
+      sT: Date.now(),
       players: [...this.players.values()].map(p => ({
         id: p.id,
         x: round1(p.x),
@@ -271,6 +284,9 @@ export default class AshGridRoom {
         name: p.name,
         lastInputSeq: p.lastInputSeq,
         invuln: this.tickCount < p.invulnUntil,
+        // Latest client timestamp echoed back. Per-player so each client's
+        // own entry has its own t for an accurate self-RTT measurement.
+        t: p.lastInputT || 0,
       })),
       bullets: this.bullets.map(b => ({
         id: b.id,

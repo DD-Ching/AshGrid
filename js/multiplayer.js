@@ -42,8 +42,23 @@ const PRODUCTION_HOST = 'ashgrid-mp.dd-ching.partykit.dev';
 const MP_PLAYER_SPEED   = 5.6;       // server px-per-tick (for reconciliation replay)
 const MP_INPUT_HZ       = 30;        // input send rate (matches tick rate)
 const MP_INPUT_PERIOD   = 1000 / MP_INPUT_HZ;
-const MP_REMOTE_LERP    = 0.35;      // remote player smoothing rate
+const MP_REMOTE_LERP    = 0.35;      // legacy lerp rate (only used pre-buffer fill)
 const MP_BULLET_LERP    = 0.5;       // remote bullet smoothing rate (faster — bullets move fast)
+
+// Phase 39: snapshot interpolation. Industry-standard approach (Valve, id Software,
+// wings.io). Render remote entities `MP_INTERP_DELAY` ms in the past, finding the
+// pair of snapshots that bracket that render time and interpolating between them.
+// Result: constant-velocity smooth motion instead of easing-toward-target jitter.
+// Trade-off: remote players appear ~100ms behind their actual server position.
+// That's invisible to the eye at this latency and is what every multiplayer FPS
+// from Quake3 onward does. Hit detection is server-side, so the visual lag never
+// affects "did I hit them" — server already settled that.
+const MP_INTERP_DELAY   = 100;       // ms — render remotes this far in the past
+const MP_BUFFER_KEEP    = 1000;      // ms — discard buffer entries older than this
+
+// RTT (round-trip-time, "ping") thresholds for the connection-quality dot.
+const MP_PING_GREEN     = 80;        // ≤ green
+const MP_PING_YELLOW    = 200;       // ≤ yellow, > red
 
 function _mpResolveHost() {
   try {
@@ -90,6 +105,17 @@ const _mpState = {
   serverSelfHp:   100,
   serverSelfAlive:true,
   serverSelfInvuln:false,
+  // Phase 39 — RTT (round-trip) latency in ms. Updated whenever we receive
+  // a snapshot whose self-entry echoes back a `t` we sent. EMA smoothed so
+  // a single jitter spike doesn't make the connection-quality dot flicker.
+  rttMs:          0,
+  rttSmoothed:    0,
+  // Last server-clock value seen in a snapshot. Used by the interpolation
+  // renderer to translate a render time (now − INTERP_DELAY) into a
+  // server-clock time it can search the buffer with.
+  serverClockOffset: 0,        // serverClock − performance.now() at receive
+  // Tick rate measurement for debug HUD: snapshot count over the last 1s.
+  snapshotsRecvTimes: [],
   // Surface-area shim used by HUD code in index.html.
   get room() {
     return {
@@ -226,11 +252,31 @@ function _mpHandleMessage(data) {
 // input we sent that hasn't been acknowledged yet (seq > lastInputSeq).
 function _mpHandleSnapshot(snap) {
   _mpState.serverTick = snap.tick;
+  // Phase 39: track snapshot receive times for the debug HUD's tick-rate readout.
+  const nowMs = Date.now();
+  const sList = _mpState.snapshotsRecvTimes;
+  sList.push(nowMs);
+  while (sList.length > 0 && nowMs - sList[0] > 2000) sList.shift();
+  // Lock in the server clock offset on every snapshot so interpolation has a
+  // stable shared time base. `sT` is the server's Date.now() at broadcast.
+  if (typeof snap.sT === 'number') {
+    _mpState.serverClockOffset = snap.sT - performance.now();
+  }
   // ─ players ─
   const seenIds = new Set();
   for (const sp of snap.players) {
     seenIds.add(sp.id);
     if (sp.id === _mpState.myId) {
+      // RTT (ping). sp.t is the freshest input timestamp the server has
+      // received from us; round-trip = now - that. EMA-smooth at 0.2 so a
+      // single packet hiccup doesn't strobe the quality dot.
+      if (typeof sp.t === 'number' && sp.t > 0) {
+        const rtt = Math.max(0, nowMs - sp.t);
+        _mpState.rttMs = rtt;
+        _mpState.rttSmoothed = _mpState.rttSmoothed === 0
+          ? rtt
+          : _mpState.rttSmoothed * 0.8 + rtt * 0.2;
+      }
       // Reconcile the local player
       _mpState.serverSelfX     = sp.x;
       _mpState.serverSelfY     = sp.y;
@@ -269,7 +315,10 @@ function _mpHandleSnapshot(snap) {
         player._invulnUntil = sp.invuln ? Infinity : (player._invulnUntil || 0);
       }
     } else {
-      // Remote player — store target for interpolation
+      // Remote player — push this sample into a timestamped buffer so the
+      // renderer can interpolate between past samples instead of easing
+      // toward a moving target. `targetX/targetY` are kept for back-compat
+      // (legacy lerp fallback when buffer is too sparse).
       let rp = _mpState.remotePlayers.get(sp.id);
       if (!rp) {
         rp = {
@@ -278,6 +327,7 @@ function _mpHandleSnapshot(snap) {
           angle: sp.angle,
           hp: sp.hp, alive: sp.alive,
           name: sp.name, invuln: !!sp.invuln,
+          buffer: [],   // [{t, x, y, angle}]  t = server clock at broadcast
         };
         _mpState.remotePlayers.set(sp.id, rp);
         console.log('[mp/data] first snapshot of peer', sp.id.slice(0, 6),
@@ -290,6 +340,14 @@ function _mpHandleSnapshot(snap) {
       rp.alive   = sp.alive;
       rp.invuln  = !!sp.invuln;
       if (sp.name) rp.name = sp.name;
+      // Buffer the sample. Server clock is the authoritative timeline so
+      // multiple players' interpolations stay aligned to one another.
+      const sampleT = (typeof snap.sT === 'number') ? snap.sT : nowMs;
+      rp.buffer.push({ t: sampleT, x: sp.x, y: sp.y, angle: sp.angle });
+      // Discard samples older than the keep-window so the buffer stays
+      // bounded under long sessions.
+      const cutoff = sampleT - MP_BUFFER_KEEP;
+      while (rp.buffer.length > 0 && rp.buffer[0].t < cutoff) rp.buffer.shift();
     }
   }
   // Drop peers no longer in snapshot
@@ -308,11 +366,26 @@ function _mpHandleSnapshot(snap) {
   }
 }
 
+// Phase 39: shooter-side hit feedback. When the server reports a hit and the
+// shooter is us, we flash a brief "✕" on the crosshair (Counter-Strike style)
+// and ping a confirmation tone. This is the visual signal every modern shooter
+// gives — without it, you fire into the void and only learn you landed shots
+// when the score ticks up. Decoupled from local prediction: the server is the
+// only authority that says "yes, that bullet landed," so this is also the only
+// place that ever flashes the marker.
+let _mpHitMarker = { until: 0, kind: 'hit' };  // kind: 'hit' | 'kill'
 function _mpHandleHit(data) {
-  // Only act if we're the victim (server already updated authoritative HP via snapshot)
-  if (data.victim !== _mpState.myId) return;
-  if (typeof game !== 'undefined') game.hitFlash = Math.max(game.hitFlash || 0, 6);
-  if (typeof playSfx === 'function') playSfx('hit', { vol: 0.4 });
+  // Victim-side: flash red, play hit sound.
+  if (data.victim === _mpState.myId) {
+    if (typeof game !== 'undefined') game.hitFlash = Math.max(game.hitFlash || 0, 6);
+    if (typeof playSfx === 'function') playSfx('hit', { vol: 0.4 });
+    return;
+  }
+  // Shooter-side: hitmarker on the crosshair.
+  if (data.shooter === _mpState.myId) {
+    _mpHitMarker = { until: Date.now() + 180, kind: 'hit' };
+    if (typeof playSfx === 'function') playSfx('beep', { vol: 0.25, freq: 1320 });
+  }
 }
 
 function _mpHandleKill(data) {
@@ -339,9 +412,11 @@ function _mpHandleKill(data) {
     }
     if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
   }
-  // Local player got the kill?
+  // Local player got the kill? Fattest hitmarker variant + confirm tone.
   if (data.shooter === _mpState.myId) {
     if (typeof _lbBumpKill === 'function') _lbBumpKill();
+    _mpHitMarker = { until: Date.now() + 350, kind: 'kill' };
+    if (typeof playSfx === 'function') playSfx('beep', { vol: 0.4, freq: 1760 });
   }
 }
 
@@ -376,6 +451,10 @@ function _mpSendInput() {
   const input = {
     type: 'input',
     seq, dx, dy, angle, fire,
+    // Phase 39: client wall-clock at send time. Server stamps the freshest
+    // value onto our own player snapshot entry; we read it back to compute
+    // RTT (no extra round-trip required — piggybacks on inputs).
+    t: Date.now(),
     name: (typeof getOperatorName === 'function') ? getOperatorName() : 'PLAYER',
   };
   _mpSendRaw(input);
@@ -391,13 +470,54 @@ function _mpSendInput() {
   }
 }
 
-// Smooth remote players toward their last snapshot target.
+// Phase 39 — per-frame remote interpolation from the timestamped buffer.
+// Renders each remote player at (server-clock now − MP_INTERP_DELAY), finding
+// the pair of buffered samples that bracket that render time and lerping
+// linearly between them. This is the Quake/Source/wings.io approach and
+// produces straight-line motion at the network's actual rate.
+//
+// Fallbacks:
+//   • If the buffer has no usable bracket (just-joined, packet loss, render
+//     time newer than newest sample), fall back to legacy lerp-toward-target.
+//   • Angle uses simple lerp (NOT shortest-arc) — players rotate often enough
+//     that wraparound jitter is barely perceptible at the snapshot rate.
 function _mpTickRemote() {
   if (!_mpState.enabled) return;
+  const offset = _mpState.serverClockOffset;
+  const renderT = (offset !== 0)
+    ? performance.now() + offset - MP_INTERP_DELAY
+    : null;
   for (const [id, rp] of _mpState.remotePlayers) {
     if (id === _mpState.myId) continue;
-    if (rp.targetX != null) rp.x += (rp.targetX - rp.x) * MP_REMOTE_LERP;
-    if (rp.targetY != null) rp.y += (rp.targetY - rp.y) * MP_REMOTE_LERP;
+    const buf = rp.buffer;
+    let used = false;
+    if (renderT != null && buf && buf.length >= 2) {
+      // Find the latest sample with t ≤ renderT (a) and the earliest with
+      // t > renderT (b). Linear search from the back is O(buf.length) but
+      // buf is small (~15 entries for 1s @ 15Hz).
+      let a = null, b = null;
+      for (let i = buf.length - 1; i >= 0; i--) {
+        if (buf[i].t <= renderT) { a = buf[i]; b = buf[i + 1] || null; break; }
+      }
+      if (a && b) {
+        const span = Math.max(1, b.t - a.t);
+        const t = Math.max(0, Math.min(1, (renderT - a.t) / span));
+        rp.x = a.x + (b.x - a.x) * t;
+        rp.y = a.y + (b.y - a.y) * t;
+        rp.angle = a.angle + (b.angle - a.angle) * t;
+        used = true;
+      } else if (a && !b) {
+        // Only a "past" sample exists — extrapolate would risk overshoot,
+        // so just hold at the latest known position.
+        rp.x = a.x; rp.y = a.y; rp.angle = a.angle;
+        used = true;
+      }
+    }
+    if (!used) {
+      // Legacy fallback: ease toward last known target.
+      if (rp.targetX != null) rp.x += (rp.targetX - rp.x) * MP_REMOTE_LERP;
+      if (rp.targetY != null) rp.y += (rp.targetY - rp.y) * MP_REMOTE_LERP;
+    }
   }
 }
 
@@ -453,7 +573,8 @@ function _mpRenderRemoteBullets() {
   }
 }
 
-// HUD: kill feed + scoreboard (unchanged from Phase 33).
+// HUD: kill feed + scoreboard + Phase 39 additions (hit marker, ping dot,
+// optional debug overlay).
 function _mpRenderHUD() {
   if (!_mpState.enabled) return;
   if (typeof ctx === 'undefined') return;
@@ -489,6 +610,79 @@ function _mpRenderHUD() {
       ctx.fillText(`${name.padEnd(12, ' ').slice(0, 12)} ${kills}`, 24, sy + 12);
       sy += 14;
     }
+  }
+  // ─── Phase 39: hit marker on the crosshair when our bullet just landed.
+  // 'hit' kind = small red ✕ for 180ms. 'kill' kind = bigger red ✕ for 350ms.
+  // Drawn in screen space because the crosshair lives at the mouse position.
+  if (_mpHitMarker.until > now && typeof mouse !== 'undefined') {
+    const left = _mpHitMarker.until - now;
+    const dur  = _mpHitMarker.kind === 'kill' ? 350 : 180;
+    const t    = Math.max(0, Math.min(1, left / dur));
+    const size = (_mpHitMarker.kind === 'kill' ? 14 : 9) * (0.7 + 0.3 * t);
+    ctx.save();
+    ctx.globalAlpha = 0.55 + 0.45 * t;
+    ctx.strokeStyle = COLORS.red;
+    ctx.lineWidth = _mpHitMarker.kind === 'kill' ? 3 : 2.2;
+    ctx.lineCap = 'round';
+    const cx = mouse.x, cy = mouse.y;
+    ctx.beginPath();
+    ctx.moveTo(cx - size, cy - size); ctx.lineTo(cx - 3, cy - 3);
+    ctx.moveTo(cx + size, cy - size); ctx.lineTo(cx + 3, cy - 3);
+    ctx.moveTo(cx - size, cy + size); ctx.lineTo(cx - 3, cy + 3);
+    ctx.moveTo(cx + size, cy + size); ctx.lineTo(cx + 3, cy + 3);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // ─── Phase 39: connection quality dot top-right under the kill feed.
+  // Green ≤ 80ms, yellow ≤ 200ms, red beyond. WS not OPEN → grey ring.
+  // Smoothed RTT used so the colour doesn't strobe on noisy links.
+  const wsOpen = _mpState.ws && _mpState.ws.readyState === 1;
+  const rtt = Math.round(_mpState.rttSmoothed || 0);
+  let dotColor = '#888';
+  if (wsOpen) {
+    dotColor = rtt <= MP_PING_GREEN ? '#3aa54a'
+             : rtt <= MP_PING_YELLOW ? '#d4a020'
+             : '#c44';
+  }
+  ctx.save();
+  ctx.fillStyle = dotColor;
+  ctx.beginPath(); ctx.arc(W() - 18, 22, 5, 0, Math.PI * 2); ctx.fill();
+  if (wsOpen && rtt > 0) {
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${rtt}ms`, W() - 28, 26);
+  }
+  ctx.restore();
+  // ─── Phase 39: optional debug overlay (toggle with F3) — Minecraft/Krunker
+  // convention. Shows ping, server tick, snapshot rate, peers, buffer depth
+  // for the first remote. Useful when triaging "is it my net or the server".
+  if (typeof game !== 'undefined' && game._mpDebug) {
+    const sList = _mpState.snapshotsRecvTimes;
+    const snapHz = sList.length >= 2
+      ? (1000 * (sList.length - 1) / Math.max(1, sList[sList.length - 1] - sList[0])).toFixed(1)
+      : '–';
+    const firstRemote = [..._mpState.remotePlayers.entries()].find(([id]) => id !== _mpState.myId);
+    const bufLen = firstRemote ? (firstRemote[1].buffer ? firstRemote[1].buffer.length : 0) : 0;
+    const lines = [
+      `MP DEBUG  (F3 to hide)`,
+      `ping       ${rtt}ms  (raw ${Math.round(_mpState.rttMs || 0)}ms)`,
+      `tick       ${_mpState.serverTick}`,
+      `snap rate  ${snapHz} Hz`,
+      `peers      ${_mpState.remotePlayers.size}`,
+      `pendIn     ${_mpState.pendingInputs.length}`,
+      `buf[0]     ${bufLen} samples`,
+      `room       ${_mpState.roomName}`,
+    ];
+    ctx.save();
+    ctx.fillStyle = 'rgba(20, 20, 20, 0.78)';
+    ctx.fillRect(W() - 222, 38, 204, lines.length * 14 + 12);
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    let dy = 52;
+    for (const ln of lines) { ctx.fillText(ln, W() - 214, dy); dy += 14; }
+    ctx.restore();
   }
   ctx.restore();
   ctx.textAlign = 'left';

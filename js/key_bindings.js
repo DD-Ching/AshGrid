@@ -171,6 +171,14 @@ window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   keys[k] = true;
   if (e.key === 'Tab') e.preventDefault();
+  // Phase 39: F3 toggles MP debug overlay (Minecraft/Krunker convention).
+  // Works regardless of pause/state so users can flip it on while triaging.
+  // Eats the key — F3 in Chrome opens "Find Next" otherwise.
+  if (e.key === 'F3') {
+    e.preventDefault();
+    if (typeof game !== 'undefined') game._mpDebug = !game._mpDebug;
+    return;
+  }
   // Pause toggle works regardless of pause state — Esc again resumes.
   // The pause overlay has its own EXIT-TO-MENU button. Phase 34: in MP
   // we swallow Esc/P entirely so it doesn't even register as a no-op
