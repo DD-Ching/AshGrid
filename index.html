@@ -3285,6 +3285,22 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
     game._structures.push(_mkRelay(blueSp, 'blue',  0));
     game._structures.push(_mkRelay(redSp,  'red',   0));
   }
+  // Phase 3C: neutral factory at arena center. Either team can capture
+  // by standing in the radius for 5 sec; once owned, spawns a free bot
+  // every 30 sec (capped at ARENA_SQUAD_CAP).
+  if (typeof STRUCTURE_DEFS !== 'undefined' && STRUCTURE_DEFS['factory']) {
+    const FD = STRUCTURE_DEFS['factory'];
+    game._structures.push({
+      x: NN_ARENA.x0 + NN_ARENA.w / 2,
+      y: NN_ARENA.y0 + NN_ARENA.h / 2,
+      kind: 'factory',
+      hp: FD.hp, maxHp: FD.hp,
+      size: FD.size,
+      _isFactory: true, _team: 'neutral',
+      _captureProgress: 0, _captureBy: null,
+      _nextProductionAt: 0,
+    });
+  }
 }
 
 async function startGame() {
@@ -6086,6 +6102,56 @@ function renderStructures() {
       ctx.beginPath();
       ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
       ctx.fill();
+    } else if (s.kind === 'factory') {
+      // Phase 3C: capturable factory. Renders team color (neutral=gray /
+      // blue / red), capture-radius ring on ground, capture progress arc,
+      // and 'next bot in Ns' countdown when owned.
+      const teamCol = s._team === 'blue' ? '#42B7E8'
+                    : s._team === 'red'  ? '#E63329' : '#B8B4A8';
+      const FD = STRUCTURE_DEFS['factory'];
+      // Ground capture-radius ring (faint, always visible so players see WHERE to stand)
+      ctx.strokeStyle = `rgba(${s._team === 'blue' ? '66,183,232' : s._team === 'red' ? '230,51,41' : '184,180,168'}, 0.32)`;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, FD.captureR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Body — fat octagon-ish
+      ctx.fillStyle = '#222428';
+      ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
+      ctx.strokeStyle = teamCol;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
+      // Inner core gear
+      ctx.fillStyle = teamCol;
+      ctx.globalAlpha = 0.55;
+      ctx.fillRect(s.x - r * 0.55, s.y - r * 0.55, def.size * 0.55, def.size * 0.55);
+      ctx.globalAlpha = 1.0;
+      // Capture progress arc on top of structure
+      if (s._captureProgress > 0 && s._captureBy) {
+        const capCol = s._captureBy === 'blue' ? '#42B7E8' : '#E63329';
+        const frac = s._captureProgress / FD.captureTicks;
+        ctx.strokeStyle = capCol;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, r + 6, -Math.PI/2, -Math.PI/2 + frac * Math.PI * 2);
+        ctx.stroke();
+      }
+      // 'FACTORY' label
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('FACTORY', s.x, s.y + 4);
+      // Owner-only: production countdown
+      if (s._team !== 'neutral' && s._nextProductionAt > 0) {
+        const remTicks = Math.max(0, s._nextProductionAt - game.time);
+        const remSec = Math.ceil(remTicks / 60);
+        ctx.font = 'bold 8px monospace';
+        ctx.fillStyle = teamCol;
+        ctx.fillText(`+1 IN ${remSec}s`, s.x, s.y + r + 14);
+      }
+      ctx.textAlign = 'left';
     } else if (s.kind === 'spawn-relay') {
       // Phase 3B: spawn relay — beacon-like obelisk in team color. Pulses
       // so it reads as 'critical objective' from across the arena.

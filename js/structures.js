@@ -42,6 +42,16 @@ const STRUCTURE_DEFS = {
     cost: -1, hp: 300, size: 44, blocks: true, blocksLOS: false,
     label: () => T('重生中繼', 'SPAWN RELAY'),
   },
+  // Phase 3C: capturable factory — neutral at match start. Standing
+  // inside captureR for captureTicks (5 sec) flips ownership to your
+  // team. While owned, spawns +1 ally for that team every productionTicks
+  // (30 sec) up to ARENA_SQUAD_CAP (5). Contested (both teams in radius)
+  // pauses the capture timer. _team: 'neutral' | 'blue' | 'red'.
+  'factory': {
+    cost: -1, hp: 500, size: 60, blocks: true, blocksLOS: false,
+    captureR: 90, captureTicks: 5 * 60, productionTicks: 30 * 60,
+    label: () => T('機器工廠', 'BOT FACTORY'),
+  },
   // 3-tier cover ladder (all line-drag-able):
   //  cover  — cheap, low HP, doesn't block line-of-sight (half-height)
   //  wall   — balanced, blocks both bullets + LoS
@@ -366,6 +376,10 @@ function updateStructures() {
     const s = game._structures[i];
     const def = STRUCTURE_DEFS[s.kind];
     if (!def) { game._structures.splice(i, 1); continue; }
+    // Phase 3C: factories never die — they're territory objectives. Clamp
+    // HP at min 1 and let bullets pass through visually (still soaks them
+    // so attackers feel agency).
+    if (s._isFactory && s.hp <= 0) { s.hp = 1; }
     if (s.hp <= 0) {
       // Death FX + remove
       createExplosion(s.x, s.y, 'small');

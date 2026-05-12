@@ -80,6 +80,49 @@ function _arenaTrySEDConvert() {
   return _arenaConvertEnemyToAlly(best);
 }
 
+// Phase 3C: spawn a fresh NN bot for a captured factory. Called from
+// nn_deathmatch's _tickFactories when an owned factory's productionTicks
+// elapses. Spawned bot inherits the team's standard NN brain at the
+// faction's spawn anchor. Squad cap respected for blue (the player's
+// squad); red is uncapped because it's the AI side.
+function _arenaSpawnFactoryBot(team, x, y) {
+  if (team === 'blue' && _arenaAliveSquadCount() >= ARENA_SQUAD_CAP) return;
+  // Stand off the factory center a bit so we don't telefrag the player.
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 70 + Math.random() * 30;
+  const sx = x + Math.cos(angle) * dist;
+  const sy = y + Math.sin(angle) * dist;
+  const wid = (typeof pickRandomNNWeaponId === 'function') ? pickRandomNNWeaponId() : 'RIFLE';
+  const chassisId = (typeof CHASSIS_ORDER !== 'undefined')
+    ? CHASSIS_ORDER[Math.floor(Math.random() * CHASSIS_ORDER.length)] : 'humanoid';
+  const u = {
+    x: sx, y: sy, angle: team === 'red' ? Math.PI : 0,
+    fireCd: 0, fireRate: 50, radius: 13,
+    alive: true, walkPhase: Math.random() * Math.PI * 2,
+    speed: 2.5,
+    hp: 80, maxHp: 80,
+    team: team === 'blue' ? 0 : 1,
+    _weapon: (typeof WEAPONS !== 'undefined' && WEAPONS[wid]) || (typeof WEAPONS !== 'undefined' ? WEAPONS.RIFLE : null),
+    _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
+    _respawnAt: null,
+    _invulnUntil: (game.time || 0) + 60,
+    _arenaFactoryBot: true,
+    callsign: (team === 'blue' ? 'F-' : 'R-F-') + (++_arenaRecruitCount),
+  };
+  if (typeof applyChassisToUnit === 'function') {
+    applyChassisToUnit(u, chassisId, 2.5, 80, 13);
+  }
+  if (team === 'blue') {
+    u._arenaRecruit = true;
+    allies.push(u);
+    if (typeof showSwapToast === 'function') {
+      showSwapToast(T('▶ 工廠生產 · ' + u.callsign, '▶ FACTORY PRODUCED · ' + u.callsign));
+    }
+  } else {
+    enemies.push(u);
+  }
+}
+
 // Per-frame sweep: when an enemy dies naturally, roll for recruitment.
 // We watch for the transition (alive: true → false) by tagging deaths with
 // `_arenaDeathSeen` so we only roll once per death.

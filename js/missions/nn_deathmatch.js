@@ -100,6 +100,73 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   // Exposed so death_recap.js (ad-revive button) can call.
   game._arenaReviveTeam = _reviveTeam;
 
+  // Phase 3C: factory capture + production tick. Pulled out so the main
+  // update() block below stays readable. Walks each factory structure
+  // and applies capture progress + spawn bots when owned.
+  function _tickFactories() {
+    if (!game._structures) return;
+    const FD = STRUCTURE_DEFS && STRUCTURE_DEFS['factory'];
+    if (!FD) return;
+    for (const s of game._structures) {
+      if (!s || !s._isFactory || s.hp <= 0) continue;
+      // Count units of each team inside capture radius
+      let blueIn = 0, redIn = 0;
+      if (player && player.alive) {
+        if (Math.hypot(player.x - s.x, player.y - s.y) < FD.captureR) blueIn++;
+      }
+      for (const a of allies) {
+        if (a && a.alive && Math.hypot(a.x - s.x, a.y - s.y) < FD.captureR) blueIn++;
+      }
+      for (const e of enemies) {
+        if (e && e.alive && Math.hypot(e.x - s.x, e.y - s.y) < FD.captureR) redIn++;
+      }
+      // Contested: both teams inside → pause progress (no change)
+      if (blueIn > 0 && redIn > 0) {
+        // no-op
+      } else if (blueIn > 0 && s._team !== 'blue') {
+        // Blue capturing
+        s._captureBy = 'blue';
+        s._captureProgress = Math.min(FD.captureTicks, s._captureProgress + 1);
+        if (s._captureProgress >= FD.captureTicks) {
+          s._team = 'blue';
+          s._captureProgress = 0;
+          s._captureBy = null;
+          s._nextProductionAt = game.time + FD.productionTicks;
+          if (typeof showSwapToast === 'function') {
+            showSwapToast(T('▶ 工廠被你佔領', '▶ FACTORY CAPTURED'));
+          }
+        }
+      } else if (redIn > 0 && s._team !== 'red') {
+        s._captureBy = 'red';
+        s._captureProgress = Math.min(FD.captureTicks, s._captureProgress + 1);
+        if (s._captureProgress >= FD.captureTicks) {
+          s._team = 'red';
+          s._captureProgress = 0;
+          s._captureBy = null;
+          s._nextProductionAt = game.time + FD.productionTicks;
+          if (typeof showSwapToast === 'function') {
+            showSwapToast(T('▶ 工廠被敵方佔領', '▶ FACTORY LOST TO RED'));
+          }
+        }
+      } else if (s._captureProgress > 0 && blueIn === 0 && redIn === 0) {
+        // Nobody contesting → progress decays
+        s._captureProgress = Math.max(0, s._captureProgress - 0.5);
+        if (s._captureProgress === 0) s._captureBy = null;
+      }
+      // Production tick — owned factory spawns a bot every productionTicks
+      if (s._team !== 'neutral' && game.time >= s._nextProductionAt) {
+        s._nextProductionAt = game.time + FD.productionTicks;
+        // Use existing recruitment / spawn helpers — adds NN bot to the
+        // owning team within squad cap. arena_recruitment.js exposes
+        // _arenaSpawnFactoryBot if present; otherwise fall back to a
+        // minimal local spawn.
+        if (typeof _arenaSpawnFactoryBot === 'function') {
+          _arenaSpawnFactoryBot(s._team, s.x, s.y);
+        }
+      }
+    }
+  }
+
   return {
     title: 'ARENA',
     titleEn: 'ARENA',
@@ -146,6 +213,8 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       if (game._teamWipe.red.wipedSince  && game.time >= game._teamWipe.red.respawnAt) {
         _reviveTeam('red');
       }
+      // Phase 3C: factory capture / production tick (independent of wipe)
+      _tickFactories();
       // While a team is wiped, skip the per-unit respawn-timer setter
       // (those would race with the team revive). Per-team relay state
       // affects the individual timer length when the team is NOT wiped.
