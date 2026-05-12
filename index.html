@@ -5116,13 +5116,17 @@ function update() {
   // UAV runs without battery drain — keep deployed indefinitely.
 
   updateSquadIntel();
-  // NN AI inference (async, fires every other frame so it doesn't dominate
-  // the loop). Used to gate on game._nnMode here, but campaign enemies are
-  // now NN-merged (`_useNN: true` on each spawnSoldier) — the gate would
-  // skip the dispatcher and they'd freeze. User report: '敵人又變木頭人了'.
-  // The dispatcher's own early-out handles 'no NN units' cleanly so calling
-  // it every-other-frame is safe in legacy modes too.
-  if (game.time & 1) nnTick();
+  // NN AI inference (async). Throttled to every 4th frame (~15 Hz) since
+  // bots don't need 60-Hz reaction time — the per-unit re-inference cost
+  // was the main culprit for sub-60-fps gameplay. PPO actions stay valid
+  // across the gap (steering + fire angle change slowly compared to a
+  // single 16 ms frame). User report: '為何我遊戲如此卡頓'.
+  //
+  // TODO (proper fix): move inference into a Web Worker so it doesn't
+  // touch the main thread at all. Throttle here is a 50% cost cut without
+  // the protocol work. Re-evaluate after the user tries 15 Hz to see if
+  // bot behaviour stays believable.
+  if ((game.time & 3) === 0) nnTick();
 
   updateAllies();
   updateEnemies();
