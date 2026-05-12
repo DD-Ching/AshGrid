@@ -14,12 +14,18 @@
 // Protocol (JSON over WebSocket):
 //
 //   client → server
-//     {type: 'input', seq, dx, dy, angle, fire, t?, name?}
+//     {type: 'input', seq, dx, dy, angle, fire, t?, vT?, name?}
 //         seq = monotonic input number (used for reconciliation)
 //         dx, dy = move vector in [-1, 1]
 //         angle = facing radians (for fire direction)
 //         fire = bool (held)
-//         t = client's Date.now() at send time (echoed in snapshot for RTT)
+//         t   = client's Date.now() at send time (echoed in snapshot for RTT)
+//         vT  = view tick — latest snapshot tick the client has rendered.
+//               Used by lag compensation: when fire=true the server rewinds
+//               targets to (vT − interp delay) and tests the bullet against
+//               their position at that historic tick. Honours "favor the
+//               shooter" — shots aimed at where the shooter SAW the target
+//               land, even if the target moved during the input's flight.
 //     {type: 'emote', idx}            (transient, just relayed)
 //     {type: 'ping', x, y}            (transient, just relayed)
 //
@@ -30,8 +36,11 @@
 //         players: [{id, x, y, angle, hp, alive, name, lastInputSeq, invuln, t}]
 //             t = echoed client timestamp for own player only (used for RTT)
 //         bullets: [{id, x, y, vx, vy, s}]    s = shooter id (short)
-//     {type: 'hit', victim, shooter, hp, weapon}    (event, between snapshots)
-//     {type: 'kill', shooter, victim, weapon}        (event)
+//     {type: 'hit', victim, shooter, hp, weapon, lc?}   (event)
+//         lc = 1 if the hit was lag-compensated (resolved at fire time
+//              against historic position rather than physics-based bullet
+//              hit-test). Clients can use it for diagnostic display.
+//     {type: 'kill', shooter, victim, weapon, lc?}      (event)
 //     {type: 'leave', id}
 //     {type: 'emote'|'ping', from, ...}
 //
@@ -58,6 +67,27 @@ const BULLET_SPEED      = 14;
 const BULLET_LIFE       = 60;         // ticks
 const BULLET_DAMAGE     = 25;
 const BULLET_OFFSET     = 18;         // spawn distance from player center
+
+// Phase 40: lag compensation ("favor the shooter"). Server keeps a rolling
+// per-player position history. When a fire input arrives, we know which
+// snapshot tick the shooter was rendering (input.vT) and we know the client
+// was interpolating 100ms in the past (LAG_INTERP_OFFSET ticks). We rewind
+// each candidate target to that historic position and check if the bullet's
+// path through the next `lagTicks` ticks would intersect it. If so, register
+// an instant hit — the bullet "should have hit because the shooter aimed at
+// where they saw the target." This is what Counter-Strike, Valorant, Quake3,
+// Source engine, and basically every modern competitive shooter does.
+//
+// Trade-off: a target who just dodged behind cover (none in this arena, but
+// future-proofing) might still take damage from a shot fired before they
+// dodged. That's the "I died around the corner" complaint, and it's the
+// cost of fairness for the shooter. The alternative — only counting hits
+// that land on the target's current position — punishes high-ping players
+// disproportionately. CS-style favor-the-shooter is the established norm.
+const HISTORY_TICKS     = 30;         // 1 second of position history per player
+const LAG_INTERP_OFFSET = 3;          // matches client's MP_INTERP_DELAY (100ms = 3 ticks)
+const LAG_COMP_MAX      = 18;         // cap rewind at 600ms — beyond this we don't trust
+                                      //   the prediction; client is too laggy to favor.
 
 export default class AshGridRoom {
   constructor(party) {
@@ -96,11 +126,16 @@ export default class AshGridRoom {
       invulnUntil: this.tickCount + INVULN_TICKS,
       respawnAt: 0,
       name: 'PLAYER',
-      // input applied next tick:
-      input: { dx: 0, dy: 0, angle: 0, fire: false, seq: 0 },
+      // input applied next tick. vT = view tick (latest snapshot tick the
+      // client has rendered). Used by lag-comp to rewind targets.
+      input: { dx: 0, dy: 0, angle: 0, fire: false, seq: 0, vT: 0 },
       lastInputSeq: 0,
       // Echoed back in snapshot so client can compute RTT.
       lastInputT: 0,
+      // Phase 40: rolling position history for lag compensation.
+      // Push current pos at the START of every tick so [0] is always
+      // the freshest. Cap at HISTORY_TICKS entries.
+      history: [],
     };
     this.players.set(conn.id, p);
     this._ensureTicking();
@@ -129,6 +164,10 @@ export default class AshGridRoom {
       p.input.angle = num(data.angle);
       p.input.fire  = !!data.fire;
       p.input.seq   = num(data.seq) | 0;
+      // Phase 40: client tells us which snapshot tick it was rendering when
+      // it pressed fire. We use this to rewind targets to that tick for the
+      // lag-comp hit check. Default to current tick if absent (no rewind).
+      p.input.vT    = num(data.vT) | 0;
       if (p.input.seq > p.lastInputSeq) p.lastInputSeq = p.input.seq;
       // Stamp the freshest client timestamp; echoed back in snapshot for RTT.
       if (typeof data.t === 'number' && data.t > p.lastInputT) p.lastInputT = data.t;
@@ -168,10 +207,21 @@ export default class AshGridRoom {
       p.x = clamp(p.x + dx * PLAYER_SPEED, ARENA_PAD, ARENA_W - ARENA_PAD);
       p.y = clamp(p.y + dy * PLAYER_SPEED, ARENA_PAD, ARENA_H - ARENA_PAD);
       p.angle = inp.angle;
+      // Phase 40: record this tick's position into the per-player history
+      // BEFORE the lag-comp check below (so the shooter's own position is
+      // stamped, but more importantly so other players' history is fresh
+      // when the next shooter looks up their position). Cap at HISTORY_TICKS.
+      p.history.push({ tick: this.tickCount, x: p.x, y: p.y });
+      if (p.history.length > HISTORY_TICKS) p.history.shift();
       // Fire (if cooldown done)
       if (inp.fire && this.tickCount >= p.fireCdUntil) {
         this._spawnBullet(p);
         p.fireCdUntil = this.tickCount + FIRE_COOLDOWN;
+        // Phase 40: lag compensation. If the shooter's view tick says they
+        // were aiming at where a target USED to be, register an instant hit.
+        // Falls back to the normal physics-based hit check if no lag-comp
+        // hit is found (target wasn't on the bullet's projected path).
+        this._lagCompHitCheck(p, inp.vT);
       }
     }
 
@@ -233,12 +283,122 @@ export default class AshGridRoom {
     });
   }
 
+  // Phase 40: look up a player's position at a specific tick from history.
+  // Returns the closest sample to `tick` (or null if history is empty).
+  // We DON'T interpolate between samples here — the ticks we care about
+  // are integer-aligned with our snapshot cadence, and the history is
+  // dense enough that the closest sample is within 1 tick (33ms). Linear
+  // search backward is O(HISTORY_TICKS) = O(30); fine in the hot path.
+  _historicalPos(player, tick) {
+    const h = player.history;
+    if (h.length === 0) return null;
+    // Walk backwards from newest to find the sample with tick ≤ requested.
+    for (let i = h.length - 1; i >= 0; i--) {
+      if (h[i].tick <= tick) return h[i];
+    }
+    // Requested tick is older than our oldest sample — return the oldest.
+    return h[0];
+  }
+
+  // Phase 40 — lag-compensated hit check at fire time.
+  //
+  // Model: "favor the shooter." The shooter pressed fire while looking at a
+  // snapshot from tick `viewTick`. Their client was rendering remote players
+  // at tick `viewTick - LAG_INTERP_OFFSET` (the snapshot interpolation buffer
+  // delays everyone by ~100ms for smooth motion). So when checking whether
+  // their bullet was aimed at a real target, we rewind every other player
+  // to that historic tick.
+  //
+  // We then walk the bullet forward from its spawn point for `lagTicks`
+  // steps. At each step, if the bullet's position is inside any rewound
+  // target's circle, we register an instant hit. The bullet is removed
+  // (so the normal physics-based hit check downstream doesn't double-count)
+  // and a 'hit' / 'kill' event broadcasts immediately.
+  //
+  // No-op when:
+  //   • viewTick is 0 or absent (legacy client, no rewind requested)
+  //   • lagTicks <= 0 (shooter is fully caught up, no need)
+  //   • lagTicks > LAG_COMP_MAX (shooter is too laggy to favor honestly)
+  //   • no targets are within the swept bullet path at their historic pos
+  _lagCompHitCheck(shooter, viewTick) {
+    if (!viewTick) return;
+    const lagTicks = Math.min(
+      LAG_COMP_MAX,
+      Math.max(0, this.tickCount - viewTick + LAG_INTERP_OFFSET)
+    );
+    if (lagTicks <= 0) return;
+
+    const targetTick = this.tickCount - lagTicks;
+    const ax = Math.cos(shooter.angle);
+    const ay = Math.sin(shooter.angle);
+    const bx0 = shooter.x + ax * BULLET_OFFSET;
+    const by0 = shooter.y + ay * BULLET_OFFSET;
+    const r2  = PLAYER_RADIUS * PLAYER_RADIUS;
+
+    let bestVictim = null;
+    let bestStep   = Infinity;
+
+    for (const target of this.players.values()) {
+      if (target.id === shooter.id) continue;
+      if (!target.alive) continue;
+      if (this.tickCount < target.invulnUntil) continue;
+
+      const hist = this._historicalPos(target, targetTick);
+      if (!hist) continue;
+
+      // Sweep the bullet forward `lagTicks` steps and see if any of those
+      // samples lands inside the historic target circle. We bias toward
+      // hitting the target the shooter aimed AT — the closest match by
+      // step index wins (= the bullet would have hit them first).
+      for (let step = 0; step <= lagTicks; step++) {
+        const bx = bx0 + ax * BULLET_SPEED * step;
+        const by = by0 + ay * BULLET_SPEED * step;
+        const dx = hist.x - bx, dy = hist.y - by;
+        if (dx * dx + dy * dy < r2) {
+          if (step < bestStep) {
+            bestStep   = step;
+            bestVictim = target;
+          }
+          break;
+        }
+      }
+    }
+
+    if (!bestVictim) return;
+
+    // Resolve the hit. Apply damage, broadcast events, remove the bullet
+    // we just spawned (it's the last entry in this.bullets) so the
+    // physics-based hit check downstream doesn't re-trigger.
+    bestVictim.hp -= BULLET_DAMAGE;
+    if (this.bullets.length > 0) this.bullets.pop();
+    this.party.broadcast(JSON.stringify({
+      type: 'hit', victim: bestVictim.id, shooter: shooter.id,
+      hp: Math.max(0, bestVictim.hp), weapon: 'RIFLE',
+      lc: 1,    // marker: this hit was lag-compensated (clients can stat it)
+    }));
+    if (bestVictim.hp <= 0) {
+      bestVictim.alive = false;
+      bestVictim.respawnAt = this.tickCount + RESPAWN_TICKS;
+      this.party.broadcast(JSON.stringify({
+        type: 'kill', shooter: shooter.id, victim: bestVictim.id,
+        weapon: 'RIFLE', lc: 1,
+      }));
+    }
+  }
+
   _respawn(p) {
     const spawn = this._pickSpawn();
     p.x = spawn.x; p.y = spawn.y;
     p.hp = HP_MAX;
     p.alive = true;
     p.invulnUntil = this.tickCount + INVULN_TICKS;
+    // Phase 40: wipe history on respawn. Otherwise a lag-comp lookup right
+    // after respawn could pull a sample from "before the player died at
+    // their old position," letting bullets fired before the respawn still
+    // count against the new spawn. The first few ticks after respawn the
+    // player is invulnerable anyway (INVULN_TICKS), so any lag-comp hit
+    // would be rejected by the invuln check — but better to defend in depth.
+    p.history.length = 0;
   }
 
   // Pick a spawn point that maximises distance from existing players.

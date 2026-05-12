@@ -116,6 +116,11 @@ const _mpState = {
   serverClockOffset: 0,        // serverClock − performance.now() at receive
   // Tick rate measurement for debug HUD: snapshot count over the last 1s.
   snapshotsRecvTimes: [],
+  // Phase 40 — count lag-compensated outcomes (when WE were the shooter).
+  // Surfaced in the F3 debug overlay so the user can see how often the
+  // server is favoring them.
+  lcHitsAsShooter: 0,
+  totalHitsAsShooter: 0,
   // Surface-area shim used by HUD code in index.html.
   get room() {
     return {
@@ -385,6 +390,10 @@ function _mpHandleHit(data) {
   if (data.shooter === _mpState.myId) {
     _mpHitMarker = { until: Date.now() + 180, kind: 'hit' };
     if (typeof playSfx === 'function') playSfx('beep', { vol: 0.25, freq: 1320 });
+    // Phase 40 telemetry: track lag-compensated vs physics hits so the F3
+    // overlay can show the favor-the-shooter rate.
+    _mpState.totalHitsAsShooter++;
+    if (data.lc) _mpState.lcHitsAsShooter++;
   }
 }
 
@@ -455,6 +464,11 @@ function _mpSendInput() {
     // value onto our own player snapshot entry; we read it back to compute
     // RTT (no extra round-trip required — piggybacks on inputs).
     t: Date.now(),
+    // Phase 40: latest snapshot tick we've rendered. The server reads this
+    // on `fire` inputs to rewind targets to where we saw them, so a bullet
+    // we aimed correctly at the time still lands even if the target moved
+    // during the input's flight to the server. Standard lag-compensation.
+    vT: _mpState.serverTick | 0,
     name: (typeof getOperatorName === 'function') ? getOperatorName() : 'PLAYER',
   };
   _mpSendRaw(input);
@@ -664,6 +678,9 @@ function _mpRenderHUD() {
       : '–';
     const firstRemote = [..._mpState.remotePlayers.entries()].find(([id]) => id !== _mpState.myId);
     const bufLen = firstRemote ? (firstRemote[1].buffer ? firstRemote[1].buffer.length : 0) : 0;
+    const lcRate = _mpState.totalHitsAsShooter > 0
+      ? `${Math.round(100 * _mpState.lcHitsAsShooter / _mpState.totalHitsAsShooter)}%`
+      : '–';
     const lines = [
       `MP DEBUG  (F3 to hide)`,
       `ping       ${rtt}ms  (raw ${Math.round(_mpState.rttMs || 0)}ms)`,
@@ -672,6 +689,7 @@ function _mpRenderHUD() {
       `peers      ${_mpState.remotePlayers.size}`,
       `pendIn     ${_mpState.pendingInputs.length}`,
       `buf[0]     ${bufLen} samples`,
+      `lag-comp   ${_mpState.lcHitsAsShooter}/${_mpState.totalHitsAsShooter}  (${lcRate})`,
       `room       ${_mpState.roomName}`,
     ];
     ctx.save();
