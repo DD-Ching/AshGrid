@@ -4705,6 +4705,27 @@ function pushOutOfBuildings(ent, radius) {
       ent.y += (dy / d) * push;
     }
   }
+  // Phase 10A (user feedback '建造了很多東西 ... 牆壁 ... 沒有辦法穿越'):
+  // player-built structures in game._structures were NEVER blocking
+  // movement before — you could walk through your own walls. Iterate
+  // and push out for every structure whose def.blocks is true. Same
+  // AABB technique as the buildings[] loop. Skips dead (hp<=0) so
+  // destroyed walls don't ghost-block.
+  if (typeof game !== 'undefined' && game._structures && typeof STRUCTURE_DEFS !== 'undefined') {
+    for (const s of game._structures) {
+      const def = STRUCTURE_DEFS[s.kind];
+      if (!def || !def.blocks || s.hp <= 0) continue;
+      const r = def.size / 2;
+      if (ent.x > s.x - r - radius && ent.x < s.x + r + radius &&
+          ent.y > s.y - r - radius && ent.y < s.y + r + radius) {
+        const ddx = ent.x - s.x, ddy = ent.y - s.y;
+        const overlapX = (r + radius) - Math.abs(ddx);
+        const overlapY = (r + radius) - Math.abs(ddy);
+        if (overlapX < overlapY) ent.x += ddx > 0 ? overlapX : -overlapX;
+        else ent.y += ddy > 0 ? overlapY : -overlapY;
+      }
+    }
+  }
 }
 
 // Returns the nearest friendly (player or ally) the source can SEE right now (cone + LoS).
@@ -5076,6 +5097,63 @@ function updateSoundEvents() {
   }
 }
 
+// Phase 10C (user feedback '自殺無人機是會被散彈槍打下來的'): when an NN
+// unit is wielding SHOTGUN and a live kamikaze drone is in range + roughly
+// in front, low per-frame chance to fire at it. Player's manual shotgun
+// ALREADY hits drones (the bullets→enemyDrones loop in updateBullets), so
+// this just adds the AI flair — squadmates / NN enemies with shotguns will
+// "look up" and pop at incoming drones. Chance is low so it's not a hard
+// counter — drones still get through, just slightly less often near SGs.
+const SHOTGUN_ANTI_DRONE_RANGE       = 280;          // px
+const SHOTGUN_ANTI_DRONE_CONE        = Math.PI / 2.5;// ~72° front arc
+const SHOTGUN_ANTI_DRONE_FIRE_CHANCE = 0.025;        // ~1 shot/1.3s while drone in view
+const SHOTGUN_ANTI_DRONE_HIT_CHANCE  = 0.55;         // 55% per shot — 1 hit drops 18 HP drone
+function _tickShotgunAntiKamikaze() {
+  if (!enemyDrones || enemyDrones.length === 0) return;
+  const SG = (typeof WEAPONS !== 'undefined') ? WEAPONS.SHOTGUN : null;
+  if (!SG) return;
+  const candidates = [];
+  for (const a of allies) candidates.push(a);
+  for (const e of enemies) candidates.push(e);
+  for (const u of candidates) {
+    if (!u || !u.alive) continue;
+    if (u._weapon !== SG) continue;
+    let best = null, bestD = SHOTGUN_ANTI_DRONE_RANGE;
+    for (const d of enemyDrones) {
+      if (!d.alive) continue;
+      const dx = d.x - u.x, dy = d.y - u.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > bestD) continue;
+      let aDiff = Math.atan2(dy, dx) - (u.angle || 0);
+      while (aDiff > Math.PI) aDiff -= Math.PI * 2;
+      while (aDiff < -Math.PI) aDiff += Math.PI * 2;
+      if (Math.abs(aDiff) > SHOTGUN_ANTI_DRONE_CONE) continue;
+      if (dist < bestD) { bestD = dist; best = d; }
+    }
+    if (!best) continue;
+    if (Math.random() > SHOTGUN_ANTI_DRONE_FIRE_CHANCE) continue;
+    // Fire FX — muzzle flash pointed at drone
+    if (typeof muzzleFlashes !== 'undefined') {
+      muzzleFlashes.push({
+        x: u.x, y: u.y,
+        angle: Math.atan2(best.y - u.y, best.x - u.x),
+        life: 5,
+      });
+    }
+    if (typeof playSfx === 'function') playSfx('shoot', { freq: 410, vol: 0.5 });
+    // Roll for hit. Pellet damage = SG.damage (18). Drone HP 18 = 1 hit drops.
+    if (Math.random() < SHOTGUN_ANTI_DRONE_HIT_CHANCE) {
+      best.hp -= SG.damage;
+      if (best.hp <= 0) {
+        best.alive = false;
+        if (typeof createExplosion === 'function') createExplosion(best.x, best.y, 'small');
+        game.score += 50;
+        game.killCount++;
+      }
+    }
+  }
+}
+
 // ============ UPDATE ============
 function update() {
   if (game.state !== 'playing') return;
@@ -5092,6 +5170,8 @@ function update() {
   if (game._nnMode && typeof _arenaTickSeed === 'function') {
     _arenaTickSeed();
   }
+  // Phase 10C: NN squad / hostile shotgunners pop at incoming kamikaze drones.
+  if (typeof _tickShotgunAntiKamikaze === 'function') _tickShotgunAntiKamikaze();
 
 
   // Footprint emission for allies + enemies — once every 30 ticks, drop a
@@ -6296,14 +6376,16 @@ function renderStructures() {
         ctx.stroke();
       }
     } else if (s.kind === 'generator') {
-      // Power reach — faint dashed ring at powerR so the player can see
-      // 'this is the area my generator covers' BEFORE placing turrets/
-      // cameras. Ring intensifies briefly (1Hz pulse) to signal it's
-      // alive. Drawn FIRST so it sits behind the body.
+      // Phase 10B: harmonize with TOD. Body uses COLORS.gray (TOD-tinted)
+      // and the outline + power ring use COLORS.cream / COLORS.red — both
+      // are TOD-stable (cream HUD anchor + constructivist red accent).
+      // The lightning bolt keeps a cream-on-red core so the "energy"
+      // semantic still reads at a glance without screaming yellow across
+      // every ambient.
       const powerR = def.powerR || 200;
       const ringPulse = 0.18 + 0.10 * Math.sin(game.time * 0.06);
       ctx.globalAlpha = ringPulse;
-      ctx.strokeStyle = '#FFD24A';
+      ctx.strokeStyle = COLORS.red;
       ctx.lineWidth = 1.5;
       ctx.setLineDash([6, 6]);
       ctx.beginPath();
@@ -6314,15 +6396,19 @@ function renderStructures() {
       // Drop-shadow + body — matches the wall-line aesthetic (4u SE)
       ctx.fillStyle = COLORS.creamDark;
       ctx.fillRect(s.x - r + 4, s.y - r + 4, def.size, def.size);
-      ctx.fillStyle = '#1A1A1A';
+      ctx.fillStyle = COLORS.gray;
       ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
-      ctx.strokeStyle = '#FFD24A'; ctx.lineWidth = 2;
+      ctx.strokeStyle = COLORS.cream;
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 2;
       ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
-      // Pulsing core — vector lightning bolt instead of emoji
-      const pulse = 0.4 + 0.4 * Math.sin(game.time * 0.15);
-      ctx.fillStyle = `rgba(230, 200, 50, ${pulse})`;
+      ctx.globalAlpha = 1;
+      // Pulsing core — red bg square with cream lightning bolt vector.
+      // Red is the constructivist signature; cream is universally legible.
+      const pulse = 0.55 + 0.35 * Math.sin(game.time * 0.15);
+      ctx.fillStyle = `rgba(200, 38, 28, ${pulse})`;
       ctx.fillRect(s.x - 8, s.y - 8, 16, 16);
-      ctx.strokeStyle = '#FFD24A';
+      ctx.strokeStyle = COLORS.cream;
       ctx.lineWidth = 2;
       ctx.lineJoin = 'miter';
       ctx.beginPath();
@@ -6333,7 +6419,7 @@ function renderStructures() {
       ctx.lineTo(s.x - 1, s.y + 1);
       ctx.lineTo(s.x + 2, s.y + 1);
       ctx.closePath();
-      ctx.fillStyle = '#1A1A1A';
+      ctx.fillStyle = COLORS.cream;
       ctx.fill();
       ctx.stroke();
     } else if (s.kind === 'camera') {

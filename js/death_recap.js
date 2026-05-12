@@ -45,7 +45,13 @@ function _adRevivePlayer() {
   if (!_isBlueTeamWiped()) return;     // gate: team-wipe only
   _deathRecap.adReviveUsed = true;
   const doRevive = () => {
-    if (typeof game._arenaReviveTeam === 'function') {
+    // Phase 10D: ad path revives the OPERATOR ALONE — squad stays dead,
+    // player has to rebuild via recruit. Fall back to whole-team revive
+    // only if the player-only helper doesn't exist (defensive — older
+    // mission factories without Phase 10 plumbing).
+    if (typeof game._arenaRevivePlayerOnly === 'function') {
+      game._arenaRevivePlayerOnly();
+    } else if (typeof game._arenaReviveTeam === 'function') {
       game._arenaReviveTeam('blue');
     } else if (player) {
       player.alive = true;
@@ -55,7 +61,8 @@ function _adRevivePlayer() {
     }
     dismissDeathRecap();
     if (typeof showSwapToast === 'function') {
-      showSwapToast(_r('▶ 廣告收看完成 · 全隊復活', '▶ AD WATCHED · SQUAD REVIVED'));
+      showSwapToast(_r('▶ 廣告收看完成 · 你獨自復活',
+                       '▶ AD WATCHED · SOLO REVIVE'));
     }
   };
   if (typeof crazyAd_rewarded === 'function') {

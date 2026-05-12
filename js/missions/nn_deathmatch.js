@@ -55,8 +55,10 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   // Phase 3A: team-wipe state. When a whole team is 0-alive, halt
   // individual respawns and start a longer countdown. During the
   // countdown the ad-revive button is the only way to skip the wait.
-  // After the countdown, ALL members of the wiped team revive at once.
-  const TEAM_WIPE_TICKS       = 15 * 60;  // 15-sec ad-window default
+  // Phase 10D (user: '不看廣告是30秒, 看廣告15秒 = 兩倍速復活'): no-ad wait
+  // is now 30 sec, ad-revive bypasses the wait entirely (the ad itself is
+  // ~15 sec — so effectively 2× speed when watched).
+  const TEAM_WIPE_TICKS       = 30 * 60;  // was 15*60
   const startTick = game.time;
   const teamKills = [0, 0];               // [blue, red] — running totals, never resets
   let lastBlueAlive = -1, lastRedAlive = -1;
@@ -135,6 +137,31 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   }
   // Exposed so death_recap.js (ad-revive button) can call.
   game._arenaReviveTeam = _reviveTeam;
+
+  // Phase 10D (user: '看完廣告復活之後 你當然也就是只有一個人了'): ad-revive
+  // brings the player back ALONE — no squad, no allies. They have to
+  // rebuild via recruit. Differs from no-ad timeout which brings the whole
+  // blue team back. Sets player only; ally bodies stay dead (will respawn
+  // from waves / per-unit timer if relay alive).
+  function _revivePlayerOnly() {
+    const state = game._teamWipe.blue;
+    if (state) { state.wipedSince = null; state.respawnAt = null; }
+    if (!player) return;
+    player.alive = true;
+    player.hp = player.maxHp;
+    if (player.maxArmor > 0) player.armor = player.maxArmor;
+    player._respawnAt = null;
+    player._invulnUntil = game.time + 120;
+    // Pop the player back to the blue spawn anchor (their last death spot
+    // is probably surrounded by red — give them breathing room).
+    if (game._nnSpawnBlue) {
+      player.x = game._nnSpawnBlue.x;
+      player.y = game._nnSpawnBlue.y;
+      player._lastX = player.x; player._lastY = player.y;
+      player._velX = 0; player._velY = 0;
+    }
+  }
+  game._arenaRevivePlayerOnly = _revivePlayerOnly;
 
   // Phase 3C: factory capture + production tick. Pulled out so the main
   // update() block below stays readable. Walks each factory structure
