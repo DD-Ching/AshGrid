@@ -157,20 +157,28 @@ const NN_MAP_VARIANTS = [
     ],
     modes: ['dm', 'sniper', 'survival', 'helo'],
   },
-  // ============ Phase 13: industrial zone — flagship dm variant ============
+  // ============ Phase 13/15: industrial zone — flagship dm variant ============
   // User feedback (screenshot of empty arena): '可能這裡曾經是一個工廠、工業區
-  // 被規劃過 · 有街道、有大樓、有室內'. So this variant places four corner
-  // warehouses around a cross-shaped street grid. Each warehouse is a 220u
-  // rectangle perimeter with ONE or TWO door gaps facing the streets, so you
-  // can flank around the back wall or push through the door. The factory
-  // landmark sits at the crossroads (separate spawn done by world_gen, not
-  // here). Inner crates give each warehouse a peek-shoot anchor; outer
-  // crates dot the streets for traversal cover.
+  // 被規劃過 · 有街道、有大樓、有室內'. Phase 15 (user '工業區?剛剛不是有
+  // 請你把這個地圖規劃大豐富一點嗎?'): the 4-warehouse layout was too sparse,
+  // so this is a real factory district — 6 warehouses on a 3×2 grid, 2
+  // vertical alleys + 1 wide horizontal boulevard (factory sits at the
+  // crossroads), interior partitions inside every warehouse so each one
+  // splits into 2 rooms with their own peek crates, and industrial debris
+  // scattered across the alleys + boulevard so traversal isn't pure
+  // sightline. Each warehouse has 2-3 door gaps facing the alley grid.
   //
   // Doorway openings are 90u wide — slightly wider than the NN training
   // pillars-variant so the trained PPO can still path through without
   // jamming on the door frame. Walls use the existing 'building' kind
   // (HP 220 after Phase 8 doubling) so they take a few rockets to breach.
+  //
+  // Layout (1200×1200 arena, factory at (600, 600)):
+  //   [NW(140-380,120-380)] [N(440-740,120-340)] [NE(800-1060,120-380)]
+  //                              [factory at center]
+  //   [SW(140-380,820-1080)] [S(440-740,860-1080)] [SE(800-1060,820-1080)]
+  //   Vertical alleys at x≈380-440 + 740-800 (60u wide each)
+  //   Horizontal boulevard at y≈380-820 (440u — open central combat ring)
   { id: 'industrial', name: '工业区 INDUSTRIAL ZONE',
     walls: () => {
       const out = [];
@@ -202,36 +210,90 @@ const NN_MAP_VARIANTS = [
           out.push({ x: x2 - T, y: d.right + D/2, w: T, h: y2 - (d.right + D/2), kind: 'building' });
         } else out.push({ x: x2 - T, y: y1, w: T, h: y2 - y1, kind: 'building' });
       };
-      // Four corner warehouses — doors face the central crossroads so combat
-      // funnels inward. Each warehouse has TWO doors (one facing each
-      // intersecting street) so the player can flank without being penned in.
-      // NW warehouse — doors on S + E
-      building(140, 140, 420, 420, { bottom: 280, right: 280 });
-      // NE warehouse — doors on S + W
-      building(780, 140, 1060, 420, { bottom: 920, left: 920 });
-      // SW warehouse — doors on N + E
-      building(140, 780, 420, 1060, { top: 280, right: 920 });
-      // SE warehouse — doors on N + W
-      building(780, 780, 1060, 1060, { top: 920, left: 280 });
-      // Interior covers — one mid-floor peek crate per warehouse
-      out.push({ x: 250, y: 250, w: 60, h: 60, kind: 'cover' });
-      out.push({ x: 890, y: 250, w: 60, h: 60, kind: 'cover' });
-      out.push({ x: 250, y: 890, w: 60, h: 60, kind: 'cover' });
-      out.push({ x: 890, y: 890, w: 60, h: 60, kind: 'cover' });
-      // Street-level industrial debris — sits in the crossroads + outer ring.
-      // Gives mid-street cover so the lanes aren't pure sightline corridors.
-      // Crates avoid the centre 80u where the factory sits.
-      out.push({ x: 540, y: 220, w: 120, h: 40, kind: 'cover' });  // N alley
-      out.push({ x: 540, y: 940, w: 120, h: 40, kind: 'cover' });  // S alley
-      out.push({ x: 220, y: 540, w: 40, h: 120, kind: 'cover' });  // W alley
-      out.push({ x: 940, y: 540, w: 40, h: 120, kind: 'cover' });  // E alley
-      // Two oblique cover stacks closer to spawn so the first 5 sec of the
-      // match has something to break the long sightline.
-      out.push({ x: 480, y: 460, w: 60, h: 60, kind: 'cover' });
-      out.push({ x: 660, y: 680, w: 60, h: 60, kind: 'cover' });
+      // ------- Six warehouses on a 3x2 grid -------
+      // Corner warehouses — doors face the boulevard + neighbouring alley
+      // NW: doors S (to boulevard) + E (to W-alley)
+      building(140, 120, 380, 380, { bottom: 260, right: 250 });
+      // N : doors S + L + R (3 ways — it's the middle of the row, traffic
+      // funnels through it)
+      building(440, 120, 740, 340, { bottom: 590, left: 230, right: 230 });
+      // NE: doors S + W
+      building(800, 120, 1060, 380, { bottom: 940, left: 950 });
+      // SW: doors N + E
+      building(140, 820, 380, 1080, { top: 260, right: 950 });
+      // S : doors N + L + R (mirror of N)
+      building(440, 860, 740, 1080, { top: 590, left: 970, right: 970 });
+      // SE: doors N + W
+      building(800, 820, 1060, 1080, { top: 940, left: 950 });
+      // ------- Interior partitions (1 short wall per warehouse) -------
+      // Each splits the warehouse into 2 rooms with a wide gap so the NN
+      // can still traverse. Partitions don't touch the perimeter — there's
+      // always a 70u edge clearance.
+      const partition = (x1, y1, x2, y2) => {
+        // Treat as a thin building strip. Either horizontal (y1==y2-ish)
+        // or vertical (x1==x2-ish); pick wider side as the long axis.
+        const horiz = Math.abs(x2 - x1) >= Math.abs(y2 - y1);
+        if (horiz) out.push({ x: x1, y: y1, w: x2 - x1, h: T, kind: 'building' });
+        else       out.push({ x: x1, y: y1, w: T, h: y2 - y1, kind: 'building' });
+      };
+      // NW warehouse — horizontal partition with a gap centered
+      partition(170, 250, 290, 250);
+      // N warehouse — vertical partition (offices vs hall)
+      partition(590, 150, 590, 240);
+      // NE warehouse — horizontal partition
+      partition(890, 250, 1030, 250);
+      // SW warehouse — horizontal partition
+      partition(170, 950, 290, 950);
+      // S warehouse — vertical partition
+      partition(590, 960, 590, 1050);
+      // SE warehouse — horizontal partition
+      partition(890, 950, 1030, 950);
+      // ------- Interior crates (one per room, 2 per warehouse) -------
+      // NW: room A + room B
+      out.push({ x: 200, y: 180, w: 50, h: 50, kind: 'cover' });
+      out.push({ x: 310, y: 320, w: 50, h: 50, kind: 'cover' });
+      // N
+      out.push({ x: 500, y: 200, w: 50, h: 50, kind: 'cover' });
+      out.push({ x: 660, y: 250, w: 50, h: 50, kind: 'cover' });
+      // NE
+      out.push({ x: 850, y: 180, w: 50, h: 50, kind: 'cover' });
+      out.push({ x: 960, y: 320, w: 50, h: 50, kind: 'cover' });
+      // SW
+      out.push({ x: 200, y: 880, w: 50, h: 50, kind: 'cover' });
+      out.push({ x: 310, y: 1020, w: 50, h: 50, kind: 'cover' });
+      // S
+      out.push({ x: 500, y: 920, w: 50, h: 50, kind: 'cover' });
+      out.push({ x: 660, y: 1000, w: 50, h: 50, kind: 'cover' });
+      // SE
+      out.push({ x: 850, y: 880, w: 50, h: 50, kind: 'cover' });
+      out.push({ x: 960, y: 1020, w: 50, h: 50, kind: 'cover' });
+      // ------- Alley + boulevard debris -------
+      // W vertical alley (x≈380-440) — small crate stack midway
+      out.push({ x: 395, y: 220, w: 40, h: 50, kind: 'cover' });
+      out.push({ x: 395, y: 920, w: 40, h: 50, kind: 'cover' });
+      // E vertical alley (x≈740-800)
+      out.push({ x: 755, y: 220, w: 40, h: 50, kind: 'cover' });
+      out.push({ x: 755, y: 920, w: 40, h: 50, kind: 'cover' });
+      // Boulevard cover — sparse industrial debris breaking up the long
+      // sightline through y=380-820. Pieces avoid the centre 80u so they
+      // never overlap the factory or its captureR ring.
+      out.push({ x: 250, y: 470, w: 60, h: 30, kind: 'cover' });   // W boulevard
+      out.push({ x: 250, y: 700, w: 60, h: 30, kind: 'cover' });
+      out.push({ x: 880, y: 470, w: 60, h: 30, kind: 'cover' });   // E boulevard
+      out.push({ x: 880, y: 700, w: 60, h: 30, kind: 'cover' });
+      out.push({ x: 440, y: 420, w: 40, h: 80, kind: 'cover' });   // mid pillars
+      out.push({ x: 720, y: 420, w: 40, h: 80, kind: 'cover' });
+      out.push({ x: 440, y: 700, w: 40, h: 80, kind: 'cover' });
+      out.push({ x: 720, y: 700, w: 40, h: 80, kind: 'cover' });
+      // A pair of oblique cover stacks NE + SW of factory — flanking lanes
+      out.push({ x: 700, y: 500, w: 50, h: 50, kind: 'cover' });
+      out.push({ x: 450, y: 660, w: 50, h: 50, kind: 'cover' });
       return out;
     },
-    spawn: { blue: { x: 240, y: 600 }, red: { x: 960, y: 600 } },
+    // Spawn in the boulevard, between the corner warehouses (clear of all
+    // walls — perimeter starts at x=140 W / x=1060 E, and the W warehouse
+    // perimeter is y=120-380 + y=820-1080, so y=600 is the boulevard).
+    spawn: { blue: { x: 230, y: 600 }, red: { x: 970, y: 600 } },
     modes: ['dm', 'helo', 'duel'],
   },
   // ========= Indoor variants — single-room interiors with cover =========
