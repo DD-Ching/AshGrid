@@ -133,31 +133,72 @@ async function _mpConnect() {
     return;
   }
   console.log('[mp] joining room:', roomName, 'via', MP_FIREBASE_URL);
-  // Phase 28 — explicit ICE servers. Default WebRTC tries direct + Google
-  // STUN, which works on the same LAN / cone-NAT but fails for symmetric
-  // NAT (most carrier NATs + many home routers + corporate). When STUN
-  // alone fails, two clients sit on Firebase signalling waving SDPs at
-  // each other forever — Trystero reports them in the room but the
-  // actual data channel never opens. We add OpenRelay's public free
-  // TURN servers (UDP + TCP + TLS variants) so the connection falls
-  // back to relayed traffic when direct fails. Bandwidth-bound by
-  // OpenRelay's free tier — replace with Cloudflare TURN / your own
-  // Coturn when traffic justifies it.
+  // Phase 31 — Trystero/issues#118 + community reports (2025-2026) confirm
+  // that the old free OpenRelay static credentials (`openrelayproject` /
+  // `openrelayproject`) STOPPED WORKING on most networks. Worse, leaving
+  // dead TURN servers in the iceServers list HURTS connection time because
+  // ICE tries each candidate in order — failing TURNs trigger 30-sec
+  // timeouts that bury the working STUN path. We removed them.
+  //
+  // Replacement strategy:
+  //   1. Beef up STUN (Google variants + Cloudflare + Twilio — all
+  //      anonymous, no signup) so cone-NAT clients connect fast.
+  //   2. For symmetric-NAT users (~30%) who need TURN relay, the user
+  //      can sign up at https://dashboard.metered.ca for free 20GB/mo
+  //      credentials OR use Cloudflare Realtime TURN (free 1TB/mo).
+  //      Drop them into MP_TURN_CREDS below and they'll be picked up.
+  //
+  // The handshake callbacks below (Trystero v0.23+) make it visible in
+  // DevTools whether the failure is at signaling (peer never appears),
+  // at transport (handshake never fires), or at data (handshake fires
+  // but `pos` action never received).
+  const MP_TURN_CREDS = (typeof window !== 'undefined' && window.MP_TURN)
+    ? window.MP_TURN     // user can set window.MP_TURN = { urls, username, credential }
+    : null;
   const rtcConfig = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
       { urls: 'stun:stun.cloudflare.com:3478' },
-      { urls: 'stun:openrelay.metered.ca:80' },
-      { urls: 'turn:openrelay.metered.ca:80',
-        username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443',
-        username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-        username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+      ...(MP_TURN_CREDS ? [MP_TURN_CREDS] : []),
     ],
   };
+  console.log('[mp] iceServers count:', rtcConfig.iceServers.length, MP_TURN_CREDS ? '· TURN configured' : '· STUN-only (no TURN)');
+  // Trystero v0.23+ takes a callbacks object as the 3rd arg. We use:
+  //   onJoinError       — surface signaling/admission failures (was silent)
+  //   onPeerHandshake   — fires when WebRTC transport actually connects,
+  //                       BEFORE the peer becomes 'active'. This is the
+  //                       diagnostic anchor: if it never fires for a peer
+  //                       we know it's a NAT traversal failure, not a
+  //                       signaling/Firebase issue.
+  //   handshakeTimeoutMs — bumped to 20s for slow mobile / cross-region.
   try {
-    _mpState.room = joinRoom({ appId: MP_FIREBASE_URL, rtcConfig }, roomName);
+    _mpState.room = joinRoom(
+      { appId: MP_FIREBASE_URL, rtcConfig },
+      roomName,
+      {
+        onJoinError: (details) => {
+          console.error('[mp] room join FAILED:', details);
+          if (typeof showSwapToast === 'function') {
+            const msg = (details && details.code) || JSON.stringify(details).slice(0, 40);
+            showSwapToast('✗ 多人連線失敗 · ' + msg);
+          }
+        },
+        onPeerHandshake: async (peerId, send, receive, isInitiator) => {
+          console.log('[mp/handshake] peer', peerId.slice(0, 6),
+            'transport connected · initiator:', isInitiator);
+          if (typeof showSwapToast === 'function') {
+            showSwapToast('✓ WebRTC 握手成功 · ' + peerId.slice(0, 6));
+          }
+          return true;     // accept the peer
+        },
+        handshakeTimeoutMs: 20000,
+      }
+    );
   } catch (e) {
     _mpState.loadError = String(e);
     console.error('[mp] joinRoom failed:', e);
@@ -175,6 +216,16 @@ async function _mpConnect() {
     if (!data || typeof data.x !== 'number' || typeof data.y !== 'number') return;
     let rp = _mpState.remotePlayers.get(peerId);
     if (!rp) {
+      // Phase 31 — first pos message from this peer == data channel open.
+      // The triplet (room join → onPeerHandshake → first pos receive) is
+      // the breadcrumb trail user can verify in DevTools to confirm the
+      // full pipeline. If onPeerHandshake fires but this never does → the
+      // remote isn't sending pos (their player.alive=false or they're
+      // throttled). If this fires but rendering looks wrong → render-side
+      // bug, not networking.
+      console.log('[mp/data] first pos from peer', peerId.slice(0, 6),
+        '@', Math.round(data.x), Math.round(data.y),
+        '· remote name:', data.name);
       rp = {
         x: data.x, y: data.y,
         targetX: data.x, targetY: data.y,
@@ -265,18 +316,24 @@ async function _mpConnect() {
     _mpState.remotePlayers.delete(peerId);
     _mpScoreboard.delete(peerId);
   });
-  // Phase 28 — periodic connection diagnostic every 8 s. Lets the player
-  // verify in DevTools that peers are actually connected vs just listed
-  // in the Firebase presence index. Surfaces the most common silent
-  // failure: 'Firebase says there are 2 peers but my WebRTC channel
-  // never opened so I see nothing'.
+  // Phase 28/31 — periodic connection diagnostic every 8 s. Always logs
+  // (even at 0/0) so the user can read the console and KNOW the MP loop
+  // is alive but lonely vs. silently broken. Three numbers to compare:
+  //   peers      = how many WebRTC peer connections Trystero has open
+  //                (this is the post-handshake count)
+  //   positions  = how many of those peers actually sent us a pos msg
+  //                (proves data channel works in BOTH directions)
+  //   room       = which room we're in (so two browsers can verify match)
+  // The expected healthy sequence after a second player joins:
+  //   peers:0 → onPeerHandshake fires → peers:1 → first pos arrives →
+  //   positions:1
+  // Stuck at peers:0 with the other side ALSO at peers:0 → NAT traversal
+  // is failing. Need TURN. Set window.MP_TURN before _mpConnect to inject.
   setInterval(() => {
     if (!_mpState.enabled || !_mpState.room) return;
     const peers = _mpState.room.getPeers ? Object.keys(_mpState.room.getPeers()) : [];
     const remoteWithPos = _mpState.remotePlayers.size;
-    if (peers.length > 0 || remoteWithPos > 0) {
-      console.log(`[mp/diag] room:${_mpState.roomName} peers:${peers.length} positions:${remoteWithPos}`);
-    }
+    console.log(`[mp/diag] room:${_mpState.roomName} peers:${peers.length} positions:${remoteWithPos}`);
   }, 8000);
   _mpState.enabled = true;
   if (typeof showSwapToast === 'function') {
