@@ -2189,9 +2189,13 @@ const game = {
   // shakeUntil kept on the object for save-state compat but unused by the
   // current shake logic.
   shakeMag: 0, shakeUntil: 0,
-  // Slow-mo time scale; killstreak ≥3 sets this < 1 for a brief window.
-  // The main game loop uses (game._timeScale ?? 1) to subsample updates.
-  _timeScale: 1, _slowMoUntil: 0,
+  // Global world speed multiplier. Main loop runs update() N times per
+  // frame where N accumulates from _timeScale per real frame. So:
+  //   _timeScale: 1   → 60 ticks/sec (normal-rate baseline)
+  //   _timeScale: 2   → 120 ticks/sec — everything 2x faster (current)
+  //   _timeScale: 0.5 → slow-mo (was wired to kill-streak; now removed)
+  // User: '我覺得這個可能要再快1.5倍,或者是2倍'.
+  _timeScale: 2, _slowMoUntil: 0,
 };
 
 // End-of-match grade letter — given a 0..1 score, return S/A/B/C/D and a
@@ -5058,9 +5062,10 @@ function update() {
     game.shakeMag *= SHAKE_DECAY;
     if (game.shakeMag < 0.05) game.shakeMag = 0;
   }
-  // Slow-mo restore — once the window ends, snap back to 1×.
-  if (game._timeScale < 1 && game.time >= game._slowMoUntil) {
-    game._timeScale = 1;
+  // Slow-mo restore — once the window ends, snap back to the 2× baseline
+  // (was 1× before world-speed change). User: '快兩倍'.
+  if (game._timeScale < 2 && game.time >= game._slowMoUntil) {
+    game._timeScale = 2;
   }
 
   // Low-HP heartbeat — periodic thump while HP < 25%. Tempo speeds up as HP drops.
@@ -5564,7 +5569,10 @@ function updateBullets() {
           // subsequent kill so a hot streak stays in slow-mo. Tiny shake on
           // every kill so even a single shot punches.
           if (player._killStreak >= 3) {
-            triggerSlowMo(0.55, 90);
+            // Slow-mo on kill streak DISABLED — user report
+            // '每次我幹掉敵人的時候就會變得很卡頓'; the perceived 'lag' was
+            // this 1.5-second 0.55× slow-mo by design. Removed at the
+            // user's request. Shake stays (small visual punch).
             triggerShake(4, 8);
             unlockAchievement('killstreak3');
             if (player._killStreak >= 5) unlockAchievement('killstreak5');
@@ -8432,25 +8440,34 @@ function renderHUD() {
   drawHUDPanel(barX, barY, barW, barH, null);
   // HP bar (left third)
   const hpw = 180;
+  // Heavy chassis armor bar — drawn FIRST/above HP so player can read both
+  // at a glance. Same width as HP, but 10px tall + cyan + 'ARMOR N/M' label.
+  // User: '當我在操作重型裝甲的時候,那我也應該要看得到我的護甲的這個值數,
+  // 在我左下角這邊才對'. Renders only when piloting heavy chassis.
+  const showArmorBar = player._chassis === 'heavy' && player.maxArmor > 0;
+  if (showArmorBar) {
+    const aby = barY + 4;
+    ctx.fillStyle = 'rgba(20,20,32,0.85)';
+    ctx.fillRect(barX + 12, aby, hpw, 12);
+    ctx.fillStyle = '#42B7E8';
+    ctx.fillRect(barX + 12, aby, hpw * Math.max(0, player.armor) / player.maxArmor, 12);
+    ctx.strokeStyle = '#1A4B5E';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX + 12, aby, hpw, 12);
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`ARMOR ${Math.floor(player.armor)}/${player.maxArmor}`, barX + 18, aby + 10);
+  }
+  // HP bar — push down a hair if armor bar above
+  const hpBarY = showArmorBar ? barY + 22 : barY + 22;
   ctx.fillStyle = COLORS.creamDark;
-  ctx.fillRect(barX + 12, barY + 22, hpw, 18);
+  ctx.fillRect(barX + 12, hpBarY, hpw, 18);
   ctx.fillStyle = player.hp > 30 ? COLORS.black : COLORS.red;
-  ctx.fillRect(barX + 12, barY + 22, hpw * (player.hp/player.maxHp), 18);
+  ctx.fillRect(barX + 12, hpBarY, hpw * (player.hp/player.maxHp), 18);
   ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 12px sans-serif';
-  ctx.fillText(`HP ${Math.floor(player.hp)}/${player.maxHp}`, barX + 18, barY + 36);
-  // Heavy chassis armor stripe — thin cyan above HP, only when applicable
-  if (player._chassis === 'heavy' && player.maxArmor > 0) {
-    ctx.fillStyle = 'rgba(20,20,32,0.55)';
-    ctx.fillRect(barX + 12, barY + 16, hpw, 4);
-    ctx.fillStyle = '#42B7E8';
-    ctx.fillRect(barX + 12, barY + 16, hpw * Math.max(0, player.armor) / player.maxArmor, 4);
-    ctx.fillStyle = COLORS.cream;
-    ctx.font = 'bold 9px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(`▼ ${Math.floor(player.armor)}/${player.maxArmor}`, barX + 12 + hpw, barY + 14);
-    ctx.textAlign = 'left';
-  }
+  ctx.fillText(`HP ${Math.floor(player.hp)}/${player.maxHp}`, barX + 18, hpBarY + 14);
   // Stamina sliver (just below HP bar) — orange when sprinting, dim when locked.
   const stamFrac = player.stamina / player.maxStamina;
   const stamLocked = player._spentToZero && player.stamina < STAMINA_RECOVERY_MIN;
