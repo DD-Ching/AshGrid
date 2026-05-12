@@ -33,8 +33,12 @@ function launchFPV() {
   fpv.y = player.y + Math.sin(player.angle)*40;
   fpv.angle = player.angle;
   fpv.trail = [];
+  // Phase 9: reset speed ramp so each launch starts slow + controllable.
+  fpv.speed = (typeof FPV_SPEED_START !== 'undefined') ? FPV_SPEED_START : 3;
+  fpv._launchTick = game.time;
   game.mode = 'fpv';
-  showMessage(T('FPV 自杀无人机已发射', 'FPV kamikaze launched'), 60);
+  showMessage(T('FPV 自杀无人机已发射 · 空白鍵手動引爆',
+                'FPV kamikaze launched · SPACE = detonate'), 90);
 }
 
 function startReload() {

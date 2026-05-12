@@ -21,7 +21,13 @@
 //   player · allies · enemies · game.time
 //   showSwapToast() · playRadioStatic() · T()
 
-const ARENA_RECRUIT_CHANCE = 0.25;     // natural kill conversion roll
+// Phase 9 (user feedback '不會自動招降, 招降一定要靠手動的'):
+// passive natural-kill recruit is OFF. The G-key path (gated by HP / range
+// / SEED / human-piloted — see _arenaTrySEDConvert below) is now the
+// ONLY way to recruit. Keep the constant at 0 (don't delete) so the
+// passive-tick function still exists and tracks deaths for cleanup, just
+// never converts.
+const ARENA_RECRUIT_CHANCE = 0;        // was 0.25 — passive recruit disabled
 const ARENA_SED_RANGE      = 220;      // px — kept for back-compat; the
                                        // active gate is ARENA_TOUCH_RANGE
 const ARENA_SQUAD_CAP      = 5;        // hard cap on bots you own at once

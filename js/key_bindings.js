@@ -150,6 +150,18 @@ window.addEventListener('keydown', e => {
   }
   // While paused, swallow all other hotkeys.
   if (game._paused) return;
+  // Phase 9: SPACE while flying FPV = manual detonate. Bypasses impact
+  // gating so the player can blow up at the optimal frame (over a cluster
+  // / before a building intercept). Eats the key so it doesn't also fire.
+  if ((e.key === ' ' || e.code === 'Space')
+      && typeof fpv !== 'undefined' && fpv.active
+      && game.mode === 'fpv'
+      && game.state === 'playing'
+      && typeof _detonateFPV === 'function') {
+    e.preventDefault();
+    _detonateFPV(true);
+    return;
+  }
   // Build-radial number shortcut MUST run before the FTUE-lock check so that
   // pressing a digit while build mode is active picks a module instead of
   // showing the locked-key toast (user report: '按下 1 也不知道發生什麼事情').

@@ -60,6 +60,42 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   const startTick = game.time;
   const teamKills = [0, 0];               // [blue, red] — running totals, never resets
   let lastBlueAlive = -1, lastRedAlive = -1;
+  // Phase 9: escalating red waves. User feedback '敵人會越來越多 一波一波
+  // 越來越密集 不會一個一個生成'. Red side stops doing per-unit respawn —
+  // instead we run a wave clock: every WAVE_INTERVAL ticks, drop WAVE_SIZE
+  // fresh NN bots at the red spawn anchor (with stand-off jitter). Both
+  // numbers escalate with wave count; hard-capped by ENEMY_HARD_CAP so the
+  // CPU + the player both survive past wave 10.
+  let _waveNum = 0;
+  let _nextWaveAt = game.time + 6 * 60;   // first reinforcement at +6 sec
+  function _waveInterval(n) {
+    // 15s → 6s over the first 10 waves, then floor at 6s.
+    return Math.max(360, 900 - n * 60);
+  }
+  function _waveSize(n) {
+    // 3 → 8 over the first 10 waves, then capped.
+    return Math.min(8, 3 + Math.floor(n / 2));
+  }
+  const ENEMY_HARD_CAP = 16;              // simultaneous live red enemies
+  function _spawnRedWave() {
+    if (typeof _arenaSpawnFactoryBot !== 'function') return;
+    if (typeof game._nnSpawnRed === 'undefined' || !game._nnSpawnRed) return;
+    const alive = enemies.filter(e => e && e.alive).length;
+    if (alive >= ENEMY_HARD_CAP) return;
+    const room = ENEMY_HARD_CAP - alive;
+    const n = Math.min(_waveSize(_waveNum), room);
+    const list = game._nnSpawnRedList || [game._nnSpawnRed];
+    for (let i = 0; i < n; i++) {
+      const sp = list[(game._nnSpawnRedIdx || 0) % list.length];
+      game._nnSpawnRedIdx = ((game._nnSpawnRedIdx || 0) + 1) % list.length;
+      _arenaSpawnFactoryBot('red', sp.x, sp.y);
+    }
+    _waveNum++;
+    if (typeof showSwapToast === 'function') {
+      showSwapToast(T(`▶ 增援波 #${_waveNum} · 紅方 +${n}`,
+                      `▶ WAVE #${_waveNum} · RED +${n}`));
+    }
+  }
   // Mounted on game._teamWipe so other modules (death_recap, HUD, ad
   // button) can read state without coupling to this factory closure.
   game._teamWipe = game._teamWipe || {};
@@ -205,16 +241,33 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       }
       const blueUnits = player ? [player, ...allies] : allies;
       _checkTeamWipe('blue', blueAlive, blueUnits);
-      _checkTeamWipe('red',  redAlive,  enemies);
+      // Phase 9: red side no longer enters team-wipe state — fresh reds
+      // arrive via the wave clock. _checkTeamWipe('red', ...) intentionally
+      // skipped so we never trigger an in-place revival of last-position
+      // corpses (which would land on top of the player after a clean sweep).
       // End-of-wipe team revive
       if (game._teamWipe.blue.wipedSince && game.time >= game._teamWipe.blue.respawnAt) {
         _reviveTeam('blue');
       }
-      if (game._teamWipe.red.wipedSince  && game.time >= game._teamWipe.red.respawnAt) {
-        _reviveTeam('red');
-      }
       // Phase 3C: factory capture / production tick (independent of wipe)
       _tickFactories();
+      // Phase 9: red waves. Independent of wipe — even during a red team-wipe
+      // countdown, the wave clock keeps ticking so the player is overwhelmed
+      // either by surviving red or by incoming reinforcements.
+      if (game.time >= _nextWaveAt) {
+        _spawnRedWave();
+        _nextWaveAt = game.time + _waveInterval(_waveNum);
+      }
+      // Phase 9: evict long-dead reds. Without per-unit respawn, dead red
+      // corpses would accumulate in the array forever (and still draw HP
+      // bars / be checked by lots of loops). Mark a death tick once on
+      // transition; drop the slot ~3 sec later.
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (!e || e.alive) continue;
+        if (e._deadAt == null) e._deadAt = game.time;
+        else if (game.time - e._deadAt > 180) enemies.splice(i, 1);
+      }
       // While a team is wiped, skip the per-unit respawn-timer setter
       // (those would race with the team revive). Per-team relay state
       // affects the individual timer length when the team is NOT wiped.
@@ -268,9 +321,10 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       for (const a of allies) {
         if (!a.alive && a._respawnAt == null && !blueWiped) a._respawnAt = game.time + blueTicks;
       }
-      for (const e of enemies) {
-        if (!e.alive && e._respawnAt == null && !redWiped) e._respawnAt = game.time + redTicks;
-      }
+      // Phase 9: red side does NOT respawn per-unit anymore — fresh red
+      // arrives in escalating waves above. Without this, dead reds were
+      // popping back at their spawn anchor on a 5-sec timer which is the
+      // "刷 NPC" feel the user wanted gone.
 
       // Player respawn countdown beep — once per remaining whole second
       if (!player.alive && player._respawnAt != null) {

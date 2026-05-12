@@ -2425,11 +2425,16 @@ const fpv = {
   available: 3, max: 3,
   x: 0, y: 0,
   angle: 0,
-  // Phase 7 (user feedback '飛得更快'): 7 → 10. Faster commit window so
-  // the player can spike a moving target before they break cover.
-  speed: 10,
+  // Phase 9 (user feedback '太快了 ... 從慢會越來越快'): speed RAMPS from
+  // FPV_SPEED_START up to FPV_SPEED_MAX over FPV_RAMP_TICKS so the launch
+  // is controllable, then the dive gets brutal. Reset by launchFPV().
+  speed: 3,
+  _launchTick: 0,
   trail: [],
 };
+const FPV_SPEED_START = 3;       // slow at launch (controllable arc)
+const FPV_SPEED_MAX   = 14;      // committed dive speed
+const FPV_RAMP_TICKS  = 150;     // 2.5 sec to reach max (~60 TPS)
 
 const bullets = [];
 const enemyBullets = [];
@@ -6010,6 +6015,11 @@ function updateFPV() {
     while (diff < -Math.PI) diff += Math.PI*2;
     fpv.angle += diff * 0.08;
   }
+  // Phase 9: speed ramps from FPV_SPEED_START → FPV_SPEED_MAX over
+  // FPV_RAMP_TICKS frames, so the launch is controllable and the
+  // committed dive ramps up later. Eased linearly for simplicity.
+  const _rampT = Math.min(1, Math.max(0, (game.time - (fpv._launchTick || 0)) / FPV_RAMP_TICKS));
+  fpv.speed = FPV_SPEED_START + (FPV_SPEED_MAX - FPV_SPEED_START) * _rampT;
   fpv.x += Math.cos(fpv.angle) * fpv.speed;
   fpv.y += Math.sin(fpv.angle) * fpv.speed;
   fpv.trail.push({ x: fpv.x, y: fpv.y, life: 25 });
@@ -6033,17 +6043,24 @@ function updateFPV() {
     if (fpv.x > o.x && fpv.x < o.x+o.w && fpv.y > o.y && fpv.y < o.y+o.h) { exploded = true; break; }
   }
   if (fpv.x < 0 || fpv.x > WORLD.w || fpv.y < 0 || fpv.y > WORLD.h) exploded = true;
-  if (exploded) {
-    // Phase 7 (user feedback '爆炸效果更強 更痛'):
-    // 'medium' → 'big' (radius 65→90, AoE dmg 60→80 to enemies + enemyDrones).
-    // Add camera shake + low-pitch boom for impact.
-    createExplosion(fpv.x, fpv.y, 'big');
-    if (typeof triggerShake === 'function') triggerShake(5);
-    if (typeof emitSound === 'function') emitSound(fpv.x, fpv.y, 360, false);
-    fpv.active = false;
-    if (game.mode === 'fpv') game.mode = 'tactical';
-    showMessage(T(`FPV 命中 · 剩余 ${fpv.available}`, `FPV hit · ${fpv.available} left`), 60);
-  }
+  if (exploded) _detonateFPV(false);
+}
+
+// Phase 9: shared FPV detonation path. `manual=true` when triggered by the
+// space-key handler (lets the player blow up early on demand without
+// needing an impact condition).
+function _detonateFPV(manual) {
+  if (!fpv.active) return;
+  // Phase 7 (user feedback '爆炸效果更強 更痛'):
+  // 'medium' → 'big' (radius 65→90, AoE dmg 60→80 to enemies + enemyDrones).
+  // Add camera shake + low-pitch boom for impact.
+  createExplosion(fpv.x, fpv.y, 'big');
+  if (typeof triggerShake === 'function') triggerShake(5);
+  if (typeof emitSound === 'function') emitSound(fpv.x, fpv.y, 360, false);
+  fpv.active = false;
+  if (game.mode === 'fpv') game.mode = 'tactical';
+  showMessage(T(`FPV ${manual ? '手動引爆' : '命中'} · 剩余 ${fpv.available}`,
+                `FPV ${manual ? 'MANUAL DETONATE' : 'HIT'} · ${fpv.available} left`), 60);
 }
 
 // ============ CAMERA ============
@@ -9490,6 +9507,20 @@ function renderFPVOverlay() {
   ctx.fillText(`ALT   080m`, 32, H()/2 + 10);
   ctx.fillText(`GUN  ----`, 32, H()/2 + 28);
   ctx.fillText(`RKT    01`, 32, H()/2 + 46);
+  // Phase 9: pulsing hint that SPACE manually detonates the FPV. Sits
+  // bottom-center so it's unmissable while diving.
+  const _spcPulse = 0.6 + 0.4 * Math.sin(game.time * 0.18);
+  ctx.fillStyle = `rgba(230, 51, 41, ${_spcPulse})`;
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(_r('▶ 空白鍵 · 手動引爆', '▶ SPACE · MANUAL DETONATE'),
+               W()/2, H() - 60);
+  ctx.font = 'bold 10px monospace';
+  ctx.fillStyle = COLORS.cream;
+  ctx.fillText(_r('(隨時可炸 · 不需命中)',
+                  '(detonate any time · no impact needed)'),
+               W()/2, H() - 44);
+  ctx.textAlign = 'left';
 
   // LOCK indicator
   ctx.fillStyle = COLORS.red;
