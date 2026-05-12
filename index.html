@@ -50,6 +50,11 @@
 <script src="js/structures.js"></script>
 <script src="js/weapons.js"></script>
 <script src="js/chassis.js"></script>
+<script src="js/death_recap.js"></script>
+<script src="js/mote_affinity.js"></script>
+<script src="js/ftue_stubs.js"></script>
+<script src="js/stage_hints.js"></script>
+<script src="js/pawn_swap.js"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
 <script src="js/missions/nn_deathmatch.js"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
@@ -1778,112 +1783,10 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   url.hash = '';
   location.replace(url.toString());
 })();
+
 // ============ DEATH RECAP ============
-// On player death, capture the kill context + flag the renderer to draw a
-// full-screen "OPERATOR DOWN" overlay for ~2.5s (auto-dismiss). The overlay
-// is visual only — pawn-swap (1-4) still works underneath so the player can
-// jump bodies during the recap if they want to skip it.
-const _deathRecap = {
-  active: false,
-  startTick: 0,
-  durationTicks: 150,         // 2.5s @ 60 TPS
-  killer: null,
-  killerCallsign: '',
-  killerWeapon: '',
-  killerX: 0, killerY: 0,
-  victimX: 0, victimY: 0,
-  distance: 0,
-  lastHits: [],               // {dmg, weapon} for the 3 most recent hits
-};
-function triggerDeathRecap() {
-  // Skip in non-NN modes (campaign hands its own end card; killcam noise)
-  if (!game._nnMode) return;
-  _deathRecap.active = true;
-  _deathRecap.startTick = game.time;
-  const k = player._killer;
-  _deathRecap.killer = k;
-  _deathRecap.killerCallsign = (k && k.callsign) || _r('敵方', 'ENEMY');
-  _deathRecap.killerWeapon  = player._killerWeapon || '';
-  _deathRecap.killerX = k ? k.x : player.x;
-  _deathRecap.killerY = k ? k.y : player.y;
-  _deathRecap.victimX = player.x;
-  _deathRecap.victimY = player.y;
-  _deathRecap.distance = k ? Math.hypot(k.x - player.x, k.y - player.y) : 0;
-  // Snapshot last few damage events from the recent damage log if we have one
-  _deathRecap.lastHits = (player._recentHits || []).slice(-3);
-}
-function dismissDeathRecap() { _deathRecap.active = false; }
-
-function renderDeathRecap() {
-  if (!_deathRecap.active) return;
-  const elapsed = game.time - _deathRecap.startTick;
-  if (elapsed >= _deathRecap.durationTicks) { _deathRecap.active = false; return; }
-  const t = elapsed / _deathRecap.durationTicks;
-  const fade = t < 0.15 ? (t / 0.15) : (t > 0.85 ? (1 - t) / 0.15 : 1);
-
-  // Top strip + bottom hint instead of a full-screen blocker. The world
-  // stays visible underneath so pawn-swap (1-4) can target a live ally
-  // without the player guessing where everyone is. User: '不應該直接擋住
-  // 介面,不然的話我在切換它自動切換人員的時候會不會直接擋住,沒有辦法玩'.
-  const W_ = W(), H_ = H();
-  ctx.save();
-  ctx.globalAlpha = fade;
-
-  // ---- Top strip: black bar with red accent rail + key data ----
-  const stripH = 64;
-  ctx.fillStyle = `rgba(20, 8, 8, 0.92)`;
-  ctx.fillRect(0, 0, W_, stripH);
-  ctx.fillStyle = COLORS.red;
-  ctx.fillRect(0, stripH - 4, W_, 4);
-  // CRT scanlines on the strip only
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.20)';
-  for (let y = 0; y < stripH; y += 4) ctx.fillRect(0, y, W_, 2);
-  // Subtle red flicker corner
-  if ((game.time & 6) < 3) {
-    ctx.fillStyle = `rgba(200, 38, 28, 0.18)`;
-    ctx.fillRect(0, 0, W_, 4);
-  }
-  // 'SIGNAL LOST' eyebrow — GREY VECTOR: cycle archived, not just death
-  ctx.fillStyle = COLORS.red;
-  ctx.font = 'bold 10px monospace';
-  ctx.textAlign = 'left';
-  const _cyc = (typeof getCycleNum === 'function') ? getCycleNum() : 347;
-  ctx.fillText(_r(`連結中斷 // CYCLE #${_cyc} ARCHIVED`,
-                  `NEURAL LINK SEVERED // CYCLE #${_cyc} ARCHIVED`), 24, 18);
-  // OPERATOR DOWN big
-  ctx.fillStyle = COLORS.cream;
-  ctx.font = 'bold 28px sans-serif';
-  ctx.fillText(_r('V-07 倒下 — Mote 在等', 'V-07 DOWN — MOTE IS WAITING'), 24, 48);
-  // Killer card on the right side of the strip
-  const dist = Math.round(_deathRecap.distance);
-  const weaponStr = _deathRecap.killerWeapon ? `${_deathRecap.killerWeapon} · ` : '';
-  const killerLine = `${_r('被', 'BY')} ${_deathRecap.killerCallsign} · ${weaponStr}${dist}u`;
-  ctx.font = 'bold 14px sans-serif';
-  ctx.textAlign = 'right';
-  ctx.fillStyle = COLORS.cream;
-  ctx.fillText(killerLine, W_ - 24, 28);
-  ctx.font = 'bold 9px monospace';
-  ctx.fillStyle = COLORS.red;
-  ctx.fillText(_r('代號 · ' + getOperatorName(), 'CALLSIGN · ' + getOperatorName()), W_ - 24, 46);
-
-  // ---- Bottom hint bar — strong red CTA telling the player WHAT TO DO ----
-  // Pulses so it draws the eye, can't be missed mid-firefight. Bigger text
-  // (16px bold) per user feedback '下面這個文字組線內容要更強勢一點'.
-  const pulse = 0.7 + 0.3 * Math.sin(game.time * 0.18);
-  const hintH = 56;
-  ctx.fillStyle = `rgba(200, 38, 28, ${0.85 * pulse})`;
-  ctx.fillRect(0, H_ - hintH, W_, hintH);
-  ctx.fillStyle = COLORS.cream;
-  ctx.font = 'bold 16px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(
-    _r('▼ 按 1-4 接管隊友身體 · 操作員不會等死 ▼',
-       '▼ PRESS 1-4 TO TAKE OVER A TEAMMATE · YOU DON\'T SIT OUT ▼'),
-    W_ / 2, H_ - hintH / 2 + 6,
-  );
-  ctx.textAlign = 'left';
-  ctx.restore();
-}
+// → Moved to js/death_recap.js. Declares globally:
+//     _deathRecap · triggerDeathRecap · dismissDeathRecap · renderDeathRecap
 
 // ============ OPERATOR'S LOG ============
 // → Moved to js/operators_log.js. Declares (globally):
@@ -2002,47 +1905,10 @@ function _maybeTriggerFirstKillAudit(playerWasShooter) {
 //     getDayNum() · bumpDayNum()
 
 // ============ GREY VECTOR — MOTE AFFINITY ============
-// Mote 是 V-07 的情感錨。它的「親密度」是隱藏數值,影響 Mote 的行為與
-// 後期 decoded dialogue 解鎖。預設 50,範圍 0-100。
-//   ag.moteAffinity   int 0-100  → Mote 對 V-07 的信任度
-//   ag.cycleNum       int        → 當前 cycle 編號(預設 347)
-//   ag.seedIntegrity  int 0-100  → V-07 當前 Seed 完整度(預設 87)
-function getMoteAffinity() {
-  try { const n = parseInt(localStorage.getItem('ag.moteAffinity') || '50', 10);
-        return isFinite(n) ? Math.max(0, Math.min(100, n)) : 50; }
-  catch (e) { return 50; }
-}
-function bumpMoteAffinity(delta) {
-  const cur = getMoteAffinity();
-  const next = Math.max(0, Math.min(100, cur + delta));
-  try { localStorage.setItem('ag.moteAffinity', String(next)); } catch (e) {}
-  // Refresh start-screen chip if visible
-  const chip = document.getElementById('moteChip');
-  if (chip) chip.textContent = `MOTE ${next}%`;
-  return next;
-}
-function getCycleNum() {
-  try { const n = parseInt(localStorage.getItem('ag.cycleNum') || '347', 10);
-        return isFinite(n) ? n : 347; }
-  catch (e) { return 347; }
-}
-function bumpCycleNum() {
-  const n = getCycleNum() + 1;
-  try { localStorage.setItem('ag.cycleNum', String(n)); } catch (e) {}
-  const chip = document.getElementById('cycleChip');
-  if (chip) chip.textContent = `CYCLE #${n}`;
-  return n;
-}
-function getSeedIntegrity() {
-  try { const n = parseInt(localStorage.getItem('ag.seedIntegrity') || '87', 10);
-        return isFinite(n) ? Math.max(0, Math.min(100, n)) : 87; }
-  catch (e) { return 87; }
-}
-function setSeedIntegrity(v) {
-  const next = Math.max(0, Math.min(100, v|0));
-  AG.set('seedIntegrity', next);
-  return next;
-}
+// → Moved to js/mote_affinity.js. Declares globally:
+//     getMoteAffinity() · bumpMoteAffinity(d)
+//     getCycleNum() · bumpCycleNum()
+//     getSeedIntegrity() · setSeedIntegrity(v)
 
 // Typewriter effect — type each char of `text` into `el` over ~18ms each,
 // then resolve. Skipping (clicking the overlay) instantly completes by
@@ -2260,93 +2126,16 @@ function showRadioToast(label, text, ttl = 5500) {
 // _tickDynamicRadio is called from update() each frame.
 
 // ============ FTUE — Compat no-op stubs (arena-mp) ============
-// The full narrative prologue + scripted-canvas FTUE was removed for the
-// arena-mp fork. These stubs keep the 130+ scattered callsites in the
-// rest of the codebase safe (they all check typeof / null-guard).
-const ftue = { active: false, stepIdx: 0, steps: [], stepShownAt: null,
-                advancing: false, log: [] };
-function _ftueLog(kind, msg) {
-  try { console.log(`[FTUE-OLD ${kind}] ${msg}`); } catch (e) {}
-}
-function _ftueIsActive() { return false; }
-function _ftueIsFirstSession() {
-  // First session = ag.firstMatch is anything other than '1'.
-  return !AG.bool('firstMatch');
-}
-function _ftueCurStep() { return null; }
-function _ftueRevealed(_key) {
-  // Arena mode: full HUD always. No scripted reveal gating.
-  return true;
-}
-function _ftueKeyLocked(_k) {
-  // Arena mode: no key lock. All keys work all the time.
-  return false;
-}
-function _ftueCameraScale() {
-  // Arena mode: no scripted camera override.
-  return null;
-}
-function _ftueShowCurrent() {}
-function _ftueHide() {
-  const el = document.getElementById('ftueDialogue');
-  if (el) el.setAttribute('hidden', '');
-}
-function _ftueEvent(_name) {}
-function _ftueSpawnAllies() {}
-function _ftueSpawnTarget() {}
-function _ftueStart() {}
-function _scheduleFirstMatchToasts() {}
-function _finalizeFtue() {
-  AG.set('firstMatch', '1');
-}
+// → Moved to js/ftue_stubs.js. Declares globally:
+//     ftue · _ftueLog · _ftueIsActive · _ftueIsFirstSession ·
+//     _ftueCurStep · _ftueRevealed · _ftueKeyLocked · _ftueCameraScale ·
+//     _ftueShowCurrent · _ftueHide · _ftueEvent · _ftueSpawnAllies ·
+//     _ftueSpawnTarget · _ftueStart · _scheduleFirstMatchToasts ·
+//     _finalizeFtue
 
 // ============ STAGE HINTS ============
-// Per-feature one-shot hints. Each fires on a specific gameplay event
-// the first time it happens, then never again (tracked in
-// ag.hintsSeen). Distinct from the time-based first-match radio
-// chatter above — these are tied to what the player actually did, so
-// the right tip surfaces at the right moment instead of on a fixed
-// timer the player may have already moved past.
-function _hintsSeen() {
-  try { return new Set(JSON.parse(localStorage.getItem('ag.hintsSeen') || '[]')); }
-  catch (e) { return new Set(); }
-}
-function _markHintSeen(id) {
-  const s = _hintsSeen();
-  s.add(id);
-  try { localStorage.setItem('ag.hintsSeen', JSON.stringify([...s])); } catch (e) {}
-}
-const STAGE_HINTS = {
-  basic_controls:  { zh: 'WASD 移動 · 按住滑鼠射擊 · R 換彈',
-                     en: 'WASD move · hold mouse to fire · R reload' },
-  swap_weapon:     { zh: '✓ 首擊 — 按 X 切換主/副武器',
-                     en: '✓ FIRST KILL — Press X to swap primary/secondary' },
-  low_hp:          { zh: '血量低 — 找掩體、R 換彈',
-                     en: 'Low HP — find cover, hold R to reload' },
-  pawn_swap:       { zh: '隊友倒下 — 按 1-4 接管最近的隊友身體',
-                     en: 'Ally down — press 1-4 to take over their body' },
-  tab_command:     { zh: 'TAB 進指揮視角 · 1-7 下令(集合/進攻/壓制…)',
-                     en: 'TAB → command view · 1-7 issue orders (rally/attack/suppress…)' },
-  build_mode:      { zh: 'B 開建造輪盤 · 16 模塊邊建邊打',
-                     en: 'B opens the build radial · 16 modules to plant on the fly' },
-  rocket_walls:    { zh: '火箭炮可炸開牆體 · 強行開路',
-                     en: 'Rocket destroys walls — punch your own corridor' },
-  unlock_survival: { zh: '★ 解鎖 SURVIVAL — 守住每一波,隊友死了不復活',
-                     en: '★ SURVIVAL unlocked — hold waves, teammates stay dead' },
-  unlock_defense:  { zh: '★ 解鎖 DEFENSE — 邊建造邊抵禦,16 模塊任選',
-                     en: '★ DEFENSE unlocked — build while you fight, 16 modules' },
-  build_now:       { zh: '⚡ 200 能源備用 · 按 B 蓋砲塔/牆守住中繼',
-                     en: '⚡ 200⚡ to spend — press B to build turrets / walls' },
-};
-function showStageHint(id) {
-  const def = STAGE_HINTS[id];
-  if (!def) return;
-  if (_hintsSeen().has(id)) return;
-  _markHintSeen(id);
-  const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
-  if (typeof showRadioToast === 'function') showRadioToast('TIP', def[lang] || def.en);
-  else if (typeof showSwapToast === 'function') showSwapToast(def[lang] || def.en);
-}
+// → Moved to js/stage_hints.js. Declares globally:
+//     STAGE_HINTS · _hintsSeen · _markHintSeen · showStageHint
 
 // ============ I18N ============
 // → Moved to js/i18n.js. Declares globally:
@@ -2623,119 +2412,9 @@ const STAMINA_RECOVERY_MIN = 25;    // empty bar must recover to this much befor
 //     WEAPONS (table — RIFLE / SMG / LMG / SNIPER / SHOTGUN / ROCKET / AK)
 //     playerWeapon (let, mutable)
 
-// Apply a weapon's mag size + starting reserve to the player. Call at game start
-// or when switching weapons mid-game.
 // ============ OPERATOR PAWN-SWAP ============
-// In NN mode the player is just one of the team-0 slots. Press 2/3/4 to hand
-// the operator (you) into a different friendly body — the body you leave
-// behind keeps fighting under NN control, and you take over the chosen ally.
-// Operator-level state (drone, FPV, grenades, stamina) stays with you; only
-// body-level state (position, weapon, HP, ammo, gun barrel) swaps.
-function swapPlayerToAlly(idx) {
-  if (!game._nnMode) return;
-  if (idx < 0 || idx >= allies.length) return;
-  const a = allies[idx];
-  if (!a || !a.alive) return;
-  // Pawn-swap auto-dismisses the death recap — player wants to see the
-  // new body, not stare at the killer card.
-  if (typeof dismissDeathRecap === 'function') dismissDeathRecap();
-
-  // Snapshot ally body before we overwrite the slot
-  const targetCallsign  = a.callsign;
-  const targetWeapon    = a._weapon || WEAPONS.RIFLE;
-  const targetX         = a.x, targetY = a.y;
-  const targetAngle     = a.angle;
-  const targetGun       = a.gunAngle || a.angle;
-  const targetGunRecoil = a.gunRecoil || 0;
-  const targetHp        = a.hp, targetMaxHp = a.maxHp;
-  const targetChassis   = a._chassis || 'humanoid';
-
-  // What to put in the ally slot we just left behind:
-  //   - If the operator was ALIVE, hand the live body to NN intact (full hp,
-  //     same weapon, NN takes over driving it).
-  //   - If the operator was MID-RESPAWN-COUNTDOWN, the old body already
-  //     exploded; the slot becomes a dead corpse at the death spot that
-  //     respawns under NN control after the standard timer.
-  if (player.alive) {
-    allies[idx] = {
-      callsign: T('前操作员', 'EX-OPERATOR'),
-      offsetX: a.offsetX, offsetY: a.offsetY,
-      x: player.x, y: player.y,
-      angle: player.angle, gunAngle: player.gunAngle, gunRecoil: player.gunRecoil,
-      swayPhase: Math.random() * Math.PI * 2,
-      walkPhase: player.walkPhase || 0,
-      hp: player.hp, maxHp: player.maxHp,
-      alive: true, radius: player.radius || 13,
-      speed: player.speed || 2.5, fireCd: 0,
-      weaponId: 'M4',
-      _weapon: playerWeapon,
-      _nnDifficulty: a._nnDifficulty || NN.difficulty || 'evolved',
-      _chassis: player._chassis || 'humanoid',
-      target: null, lookPhase: 0,
-      team: 0,
-      _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
-      _respawnAt: null,
-      _invulnUntil: game.time + 60,
-    };
-  } else {
-    // Dead body — already an "explosion" was drawn. Slot becomes corpse +
-    // pending respawn so the slot doesn't permanently disappear.
-    const corpseX = player._lastDeathX != null ? player._lastDeathX : player.x;
-    const corpseY = player._lastDeathY != null ? player._lastDeathY : player.y;
-    allies[idx] = {
-      callsign: T('前操作员', 'EX-OPERATOR'),
-      offsetX: a.offsetX, offsetY: a.offsetY,
-      x: corpseX, y: corpseY,
-      angle: 0, gunAngle: 0, gunRecoil: 0,
-      swayPhase: Math.random() * Math.PI * 2, walkPhase: 0,
-      hp: 0, maxHp: 100,
-      alive: false, radius: 13,
-      speed: 2.5, fireCd: 0,
-      weaponId: 'M4',
-      _weapon: playerWeapon,
-      _nnDifficulty: a._nnDifficulty || NN.difficulty || 'evolved',
-      target: null, lookPhase: 0,
-      team: 0,
-      _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
-      _respawnAt: game.time + 5 * 60,   // RESPAWN_TICKS — same constant inline
-      _invulnUntil: 0,
-    };
-  }
-
-  // Move operator into target body — and ALWAYS clear any pending respawn.
-  // This is the rule: a successful takeover cancels the respawn countdown.
-  const wasResurrected = !player.alive;
-  player.alive = true;
-  player._respawnAt = null;
-  player._lastBeepSec = -1;
-  player.x = targetX; player.y = targetY;
-  player.angle = targetAngle;
-  player.gunAngle = targetGun;
-  player.gunRecoil = targetGunRecoil * 0.4;
-  player.hp = targetHp; player.maxHp = targetMaxHp;
-  // Inherit the ally's chassis (speed / radius / silhouette) on pawn-swap
-  player._chassis = targetChassis || player._chassis || 'humanoid';
-  const _cdef = CHASSIS[player._chassis] || CHASSIS.humanoid;
-  player.speed  = 2.8 * _cdef.speedMul;
-  player.radius = Math.round(14 * _cdef.radiusMul);
-  player._invulnUntil = game.time + 60;
-  player._lastX = targetX; player._lastY = targetY;
-  player._velX = 0; player._velY = 0;
-  player._lastDeathX = null; player._lastDeathY = null;
-  mouse.down = false;
-  applyWeaponToPlayer(targetWeapon);
-  player.hp = targetHp;   // applyWeaponToPlayer doesn't touch HP — be explicit
-
-  showSwapToast(`${wasResurrected ? T('紧急接管', 'EMERGENCY SWAP') : T('接管', 'SWAP')} ${targetCallsign}`);
-  playSfx('countdown', { freq: 1320, vol: 0.45 });
-}
-
-// Small top-center toast for pawn-swap feedback — replaces the full-width
-// "接管 BRAVO" center banner that used to block view of the action while
-// the player was rapid-switching between bodies.
-function showSwapToast(text) {
-  game._swapToast = { text, ttl: 75 };   // 1.25s
-}
+// → Moved to js/pawn_swap.js. Declares globally:
+//     swapPlayerToAlly(idx) · showSwapToast(text)
 
 // ============ CHASSIS ============
 // → Moved to js/chassis.js. Declares globally:
