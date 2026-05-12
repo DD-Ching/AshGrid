@@ -172,8 +172,12 @@ window.addEventListener('keydown', e => {
   keys[k] = true;
   if (e.key === 'Tab') e.preventDefault();
   // Pause toggle works regardless of pause state — Esc again resumes.
-  // The pause overlay has its own EXIT-TO-MENU button.
+  // The pause overlay has its own EXIT-TO-MENU button. Phase 34: in MP
+  // we swallow Esc/P entirely so it doesn't even register as a no-op
+  // (togglePause itself bails on MP, but eating the key here keeps the
+  // event from leaking to other handlers).
   if ((e.key === 'Escape' || k === 'p') && game.state === 'playing') {
+    if (typeof _mpIsActive === 'function' && _mpIsActive()) return;
     togglePause();
     return;
   }

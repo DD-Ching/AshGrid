@@ -44,7 +44,7 @@
 <script src="js/dynamic_radio.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/touch_input.js"></script>
-<script src="js/key_bindings.js"></script>
+<script src="js/key_bindings.js?v=34"></script>
 <script src="js/grenades.js"></script>
 <script src="js/squad_commands.js"></script>
 <script src="js/multiplayer.js?v=33"></script>
@@ -72,7 +72,7 @@
 <script src="js/vision_raycast.js"></script>
 <script src="js/camera.js"></script>
 <script src="js/defense_build_ui.js"></script>
-<script src="js/pause.js"></script>
+<script src="js/pause.js?v=34"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -9111,15 +9111,21 @@ function renderHUD() {
   drawHUDPanel(16, 16, _panelW, _panelH, null);
   // Pause button (top-right of the status panel) — clickable + matches the
   // canvas-drawn minimap toggle pattern. Stored rect is hit-tested in mousedown.
-  const _pbX = 16 + _panelW - 24, _pbY = 22, _pbW = 18, _pbH = 18;
-  ctx.fillStyle = 'rgba(200, 38, 28, 0.85)';
-  ctx.fillRect(_pbX, _pbY, _pbW, _pbH);
-  ctx.fillStyle = COLORS.cream;
-  ctx.font = 'bold 11px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('II', _pbX + _pbW / 2, _pbY + 13);
-  ctx.textAlign = 'left';
-  game._pauseBtnRect = { x: _pbX, y: _pbY, w: _pbW, h: _pbH };
+  // Phase 34: hidden + rect cleared in MP, since pause doesn't apply (server
+  // keeps ticking either way).
+  if (typeof _mpIsActive === 'function' && _mpIsActive()) {
+    game._pauseBtnRect = null;
+  } else {
+    const _pbX = 16 + _panelW - 24, _pbY = 22, _pbW = 18, _pbH = 18;
+    ctx.fillStyle = 'rgba(200, 38, 28, 0.85)';
+    ctx.fillRect(_pbX, _pbY, _pbW, _pbH);
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('II', _pbX + _pbW / 2, _pbY + 13);
+    ctx.textAlign = 'left';
+    game._pauseBtnRect = { x: _pbX, y: _pbY, w: _pbW, h: _pbH };
+  }
   ctx.fillStyle = COLORS.red;
   ctx.font = _narrow ? 'bold 10px sans-serif' : 'bold 12px sans-serif';
   ctx.fillText(`${T('关卡', 'Stage')} ${game.wave}/${MISSIONS.length}  ${mapName(currentMap)}`, 26, 36);

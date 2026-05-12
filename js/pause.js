@@ -8,18 +8,29 @@
 // External deps: game · mouse · ctx · W · H · COLORS · T · AUDIO ·
 //   setAudioMuted · exitMatchToMenu · _hitRect
 
+// Phase 34 — pause is meaningless in MP. The server keeps ticking and
+// every other player keeps shooting whether you tab away or not. Wings.io
+// works the same way. We short-circuit ALL pause entry points (manual
+// toggle, visibility change, blur) when MP is active so the local game
+// loop never freezes out of sync with the server.
+function _isMpLive() {
+  return typeof _mpIsActive === 'function' && _mpIsActive();
+}
 function togglePause() {
   if (game.state !== 'playing') return;
+  if (_isMpLive()) return;
   game._paused = !game._paused;
   // Drop any held mouse so we don't keep firing on resume
   if (game._paused) mouse.down = false;
 }
-// Auto-pause when the tab loses focus or becomes hidden — prevents ghost
-// kills while the player tabs to look something up.
+// Auto-pause when the tab loses focus or becomes hidden — single-player
+// only. In MP you stay alive (and shootable) while the tab is hidden.
 document.addEventListener('visibilitychange', () => {
+  if (_isMpLive()) return;
   if (document.hidden && game.state === 'playing' && !game._paused) togglePause();
 });
 window.addEventListener('blur', () => {
+  if (_isMpLive()) return;
   if (game.state === 'playing' && !game._paused) togglePause();
 });
 function drawPauseOverlay() {
