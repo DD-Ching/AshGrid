@@ -3263,6 +3263,28 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   player._invulnUntil = initialInvuln;
   for (const a of allies)  a._invulnUntil = initialInvuln;
   for (const e of enemies) e._invulnUntil = initialInvuln;
+
+  // Phase 3B: one spawn relay per team at the team's primary spawn point.
+  // Destroying it bumps that team's respawn timer from 5s to 20s. Placed
+  // as a structure so it shows up on minimap + can be hit by bullets +
+  // grenades + airstrikes via existing structure damage paths.
+  if (typeof STRUCTURE_DEFS !== 'undefined' && STRUCTURE_DEFS['spawn-relay']) {
+    const SR_DEF = STRUCTURE_DEFS['spawn-relay'];
+    const SR_SIZE = SR_DEF.size;
+    // Anchor slightly inset from the spawn point so units don't telefrag
+    // into it on respawn.
+    const blueSp = game._nnSpawnBlue;
+    const redSp  = game._nnSpawnRed;
+    const _mkRelay = (sp, team, dx) => ({
+      x: sp.x + dx, y: sp.y - 90,
+      kind: 'spawn-relay',
+      hp: SR_DEF.hp, maxHp: SR_DEF.hp,
+      size: SR_SIZE,
+      _isSpawnRelay: true, _team: team,
+    });
+    game._structures.push(_mkRelay(blueSp, 'blue',  0));
+    game._structures.push(_mkRelay(redSp,  'red',   0));
+  }
 }
 
 async function startGame() {
@@ -6064,6 +6086,35 @@ function renderStructures() {
       ctx.beginPath();
       ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
       ctx.fill();
+    } else if (s.kind === 'spawn-relay') {
+      // Phase 3B: spawn relay — beacon-like obelisk in team color. Pulses
+      // so it reads as 'critical objective' from across the arena.
+      const teamCol = s._team === 'blue' ? '#42B7E8' : '#E63329';
+      const pulse = 0.55 + 0.45 * Math.sin(game.time * 0.06);
+      // Ground halo
+      const grad = ctx.createRadialGradient(s.x, s.y, 4, s.x, s.y, def.size);
+      grad.addColorStop(0, `rgba(${s._team === 'blue' ? '66,183,232' : '230,51,41'}, ${0.45 * pulse})`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(s.x - def.size, s.y - def.size, def.size * 2, def.size * 2);
+      // Base (dark hex-ish square)
+      ctx.fillStyle = '#1A1A1A';
+      ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
+      ctx.strokeStyle = teamCol;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
+      // Inner team-colored core
+      ctx.fillStyle = teamCol;
+      ctx.globalAlpha = isOff ? 0.45 : (0.65 + 0.35 * pulse);
+      ctx.fillRect(s.x - r * 0.4, s.y - r * 0.4, def.size * 0.4, def.size * 0.4);
+      ctx.globalAlpha = isOff ? 0.45 : 1.0;
+      // Cross indicator (visible while alive)
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y - r * 0.5); ctx.lineTo(s.x, s.y + r * 0.5);
+      ctx.moveTo(s.x - r * 0.5, s.y); ctx.lineTo(s.x + r * 0.5, s.y);
+      ctx.stroke();
     } else if (s.kind === 'turret') {
       // Octagonal base
       ctx.fillStyle = '#2A2A2A';

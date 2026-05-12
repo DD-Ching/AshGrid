@@ -45,10 +45,60 @@
 // both sides cooperate.
 window.MISSION_FACTORIES = window.MISSION_FACTORIES || {};
 MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
-  const RESPAWN_TICKS    = 5 * 60;        // 5 seconds
+  // Per-unit "you died, wait this long" timer. Used when the team is NOT
+  // wiped — the rest of the squad keeps fighting while a dead bot cools.
+  // Spawn-relay (Phase 3B): when a team's relay is destroyed, this timer
+  // is replaced by a longer one for that team. Set base low so squad
+  // wipes are the real penalty.
+  const RESPAWN_TICKS         = 5 * 60;   // 5 sec when relay alive
+  const RESPAWN_TICKS_NO_SP   = 20 * 60;  // 20 sec when relay destroyed
+  // Phase 3A: team-wipe state. When a whole team is 0-alive, halt
+  // individual respawns and start a longer countdown. During the
+  // countdown the ad-revive button is the only way to skip the wait.
+  // After the countdown, ALL members of the wiped team revive at once.
+  const TEAM_WIPE_TICKS       = 15 * 60;  // 15-sec ad-window default
   const startTick = game.time;
   const teamKills = [0, 0];               // [blue, red] — running totals, never resets
   let lastBlueAlive = -1, lastRedAlive = -1;
+  // Mounted on game._teamWipe so other modules (death_recap, HUD, ad
+  // button) can read state without coupling to this factory closure.
+  game._teamWipe = game._teamWipe || {};
+  game._teamWipe.blue = { wipedSince: null, respawnAt: null };
+  game._teamWipe.red  = { wipedSince: null, respawnAt: null };
+  // Helper to read the spawn relay's HP for a team. Returns null if
+  // structures aren't loaded yet (early ticks); callers treat null as
+  // "intact" (use the short timer). Spawn-relay structures get tagged
+  // _isSpawnRelay + _team during world gen in Phase 3B.
+  function _spawnRelayAlive(team) {
+    if (!game._structures) return true;
+    for (const s of game._structures) {
+      if (s && s._isSpawnRelay && s._team === team) return (s.hp || 0) > 0;
+    }
+    return true;   // no relay placed yet — treat as alive
+  }
+  // Instantly revive an entire team. Called at end of team-wipe countdown
+  // OR by the watch-ad button (death_recap.js). Resets every unit to full
+  // HP/armor + spawn-point positions.
+  function _reviveTeam(team) {
+    const state = game._teamWipe[team];
+    if (!state) return;
+    state.wipedSince = null;
+    state.respawnAt  = null;
+    const units = team === 'blue'
+      ? (player ? [player, ...allies] : allies.slice())
+      : enemies.slice();
+    for (const u of units) {
+      if (!u) continue;
+      u.alive = true;
+      u.hp = u.maxHp;
+      if (u.maxArmor > 0) u.armor = u.maxArmor;
+      u._respawnAt = null;
+      u._invulnUntil = game.time + 90;
+      u._nnFireCd = 0; u._nnRecentDmg = 0;
+    }
+  }
+  // Exposed so death_recap.js (ad-revive button) can call.
+  game._arenaReviveTeam = _reviveTeam;
 
   return {
     title: 'ARENA',
@@ -72,11 +122,43 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       lastBlueAlive = blueAlive;
       lastRedAlive  = redAlive;
 
+      // Phase 3A: detect team-wipe transitions. When a whole team hits 0
+      // alive AND we haven't already started a wipe countdown, kick off
+      // the wipe state. Individual _respawnAt timers are cleared so the
+      // team revives together at the end of TEAM_WIPE_TICKS (or earlier
+      // if the player watches a rewarded ad).
+      function _checkTeamWipe(team, aliveCount, units) {
+        const state = game._teamWipe[team];
+        if (aliveCount === 0 && !state.wipedSince) {
+          state.wipedSince = game.time;
+          state.respawnAt  = game.time + TEAM_WIPE_TICKS;
+          // Clear pending individual respawns — wipe gates them all
+          for (const u of units) { if (u) u._respawnAt = null; }
+        }
+      }
+      const blueUnits = player ? [player, ...allies] : allies;
+      _checkTeamWipe('blue', blueAlive, blueUnits);
+      _checkTeamWipe('red',  redAlive,  enemies);
+      // End-of-wipe team revive
+      if (game._teamWipe.blue.wipedSince && game.time >= game._teamWipe.blue.respawnAt) {
+        _reviveTeam('blue');
+      }
+      if (game._teamWipe.red.wipedSince  && game.time >= game._teamWipe.red.respawnAt) {
+        _reviveTeam('red');
+      }
+      // While a team is wiped, skip the per-unit respawn-timer setter
+      // (those would race with the team revive). Per-team relay state
+      // affects the individual timer length when the team is NOT wiped.
+      const blueWiped = !!game._teamWipe.blue.wipedSince;
+      const redWiped  = !!game._teamWipe.red.wipedSince;
+      const blueTicks = _spawnRelayAlive('blue') ? RESPAWN_TICKS : RESPAWN_TICKS_NO_SP;
+      const redTicks  = _spawnRelayAlive('red')  ? RESPAWN_TICKS : RESPAWN_TICKS_NO_SP;
+
       // Set respawn timers for newly-dead units. In NN mode, instead of
       // sending the operator to spawn for 5 seconds, auto-jump into the
       // CLOSEST alive ally (the operator never sits out — that's the whole
       // point of pawn-swap). If no alive allies, fall back to normal respawn.
-      if (!player.alive && player._respawnAt == null) {
+      if (!player.alive && player._respawnAt == null && !blueWiped) {
         let bestIdx = -1, bestD = Infinity;
         for (let i = 0; i < allies.length; i++) {
           const ax = allies[i];
@@ -104,21 +186,21 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           a.x = player._lastDeathX != null ? player._lastDeathX : a.x;
           a.y = player._lastDeathY != null ? player._lastDeathY : a.y;
           a.callsign = T('前操作员', 'EX-OPERATOR');
-          a._respawnAt = game.time + RESPAWN_TICKS;
+          a._respawnAt = game.time + blueTicks;
           a._useNN = true;
           a._nnDifficulty = a._nnDifficulty || NN.difficulty || 'evolved';
           const killerInfo = player._killer ? ` · ${T('死於', 'killed by')} ${player._killer.callsign || T('敌方', 'enemy')}` : '';
           showSwapToast(`${T('接管', 'SWAP')} ${(a.callsign === '前操作员' || a.callsign === 'EX-OPERATOR') ? T('隊友', 'ALLY') : a.callsign}${killerInfo}`);
           playSfx('countdown', { freq: 1320, vol: 0.45 });
         } else {
-          player._respawnAt = game.time + RESPAWN_TICKS;
+          player._respawnAt = game.time + blueTicks;
         }
       }
       for (const a of allies) {
-        if (!a.alive && a._respawnAt == null) a._respawnAt = game.time + RESPAWN_TICKS;
+        if (!a.alive && a._respawnAt == null && !blueWiped) a._respawnAt = game.time + blueTicks;
       }
       for (const e of enemies) {
-        if (!e.alive && e._respawnAt == null) e._respawnAt = game.time + RESPAWN_TICKS;
+        if (!e.alive && e._respawnAt == null && !redWiped) e._respawnAt = game.time + redTicks;
       }
 
       // Player respawn countdown beep — once per remaining whole second

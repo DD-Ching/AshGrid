@@ -33,6 +33,15 @@
 // as units; render adds them to the world pass; defense mission ticks
 // their behaviour. Costs deduct from game._energy at place time.
 const STRUCTURE_DEFS = {
+  // Phase 3B: spawn relay — pre-placed per team at match start. While
+  // alive, that team's respawn timer is 5 sec; once destroyed, 20 sec.
+  // Not buildable (cost: -1 keeps it out of the radial). Big HP buffer
+  // (300) so killing it takes deliberate effort: ~10 LMG hits or 4
+  // grenades. _team set at world-gen time.
+  'spawn-relay': {
+    cost: -1, hp: 300, size: 44, blocks: true, blocksLOS: false,
+    label: () => T('重生中繼', 'SPAWN RELAY'),
+  },
   // 3-tier cover ladder (all line-drag-able):
   //  cover  — cheap, low HP, doesn't block line-of-sight (half-height)
   //  wall   — balanced, blocks both bullets + LoS

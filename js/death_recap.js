@@ -31,27 +31,31 @@ const _deathRecap = {
   adReviveBtnRect: null,      // hit rect for the watch-ad button (canvas coords)
 };
 
-// Watch-ad revive — caller fires the Crazy Games rewarded ad path; on
-// success we revive the player in place (full HP, ammo, clear killer).
-// One use per match so the loop stays honest. Falls back to the local
-// stub if SDK isn't loaded yet, so dev / itch.io / direct hosts also work.
+// Phase 3A: ad-revive ONLY when the whole blue team is wiped. A single
+// death is no longer "you sit out + watch an ad" — the mission factory
+// auto-pawn-swaps the operator into the nearest live ally. The ad shows
+// only when there's no body left to swap into, and the entire squad
+// revives together when the player watches it (or the 15-sec timer ends).
+function _isBlueTeamWiped() {
+  return !!(typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue && game._teamWipe.blue.wipedSince);
+}
+
 function _adRevivePlayer() {
   if (_deathRecap.adReviveUsed) return;
+  if (!_isBlueTeamWiped()) return;     // gate: team-wipe only
   _deathRecap.adReviveUsed = true;
   const doRevive = () => {
-    if (!player) return;
-    player.alive = true;
-    player.hp = player.maxHp;
-    player.ammo = player.maxAmmo;
-    player.reloading = false;
-    player.reloadTime = 0;
-    player._respawnAt = null;
-    player._killer = null;
-    player._killerWeapon = '';
-    player._invulnUntil = (game.time || 0) + 90;  // 1.5s spawn protection
+    if (typeof game._arenaReviveTeam === 'function') {
+      game._arenaReviveTeam('blue');
+    } else if (player) {
+      player.alive = true;
+      player.hp = player.maxHp;
+      player._respawnAt = null;
+      player._invulnUntil = (game.time || 0) + 90;
+    }
     dismissDeathRecap();
     if (typeof showSwapToast === 'function') {
-      showSwapToast(_r('▶ 廣告收看完成 · 復活', '▶ AD WATCHED · REVIVED'));
+      showSwapToast(_r('▶ 廣告收看完成 · 全隊復活', '▶ AD WATCHED · SQUAD REVIVED'));
     }
   };
   if (typeof crazyAd_rewarded === 'function') {
@@ -59,15 +63,14 @@ function _adRevivePlayer() {
   } else if (typeof requestRewardedAd === 'function') {
     requestRewardedAd('revive', (ok) => { if (ok) doRevive(); else _deathRecap.adReviveUsed = false; });
   } else {
-    // No ad system at all — just revive (dev fallback)
-    doRevive();
+    doRevive();   // dev fallback
   }
 }
 
-// Hit-test the ad-revive button on canvas mousedown. Called from the main
-// mousedown handler; returns true if the click was consumed.
+// Hit-test the ad-revive button on canvas mousedown.
 function tryDeathRecapAdClick(x, y) {
   if (!_deathRecap.active || _deathRecap.adReviveUsed) return false;
+  if (!_isBlueTeamWiped()) return false;
   const r = _deathRecap.adReviveBtnRect;
   if (!r) return false;
   if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
@@ -158,36 +161,55 @@ function renderDeathRecap() {
   ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 16px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(
-    _r('▼ 按 1-4 接管隊友身體 · 操作員不會等死 ▼',
-       '▼ PRESS 1-4 TO TAKE OVER A TEAMMATE · YOU DON\'T SIT OUT ▼'),
-    W_ / 2, H_ - hintH / 2 + 6,
-  );
-
-  // ---- Rewarded-ad revive button (mid-screen) ----
-  // One use per match. Hidden after used. SDK env (Crazy Games portal)
-  // serves a real rewarded ad; local dev shows the SDK's dev-mode overlay
-  // and resolves on close.
-  if (!_deathRecap.adReviveUsed) {
-    const btnW = 280, btnH = 56;
-    const btnX = W_ / 2 - btnW / 2;
-    const btnY = H_ / 2 - btnH / 2 + 24;
-    _deathRecap.adReviveBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
-    const pulse2 = 0.85 + 0.15 * Math.sin(game.time * 0.22);
-    ctx.fillStyle = `rgba(63, 230, 63, ${pulse2})`;
-    ctx.fillRect(btnX, btnY, btnW, btnH);
-    ctx.strokeStyle = COLORS.black;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(btnX, btnY, btnW, btnH);
-    ctx.fillStyle = COLORS.black;
+  // Phase 3A: while there are live teammates, the operator auto-swaps
+  // (mission factory handles that BEFORE this recap even fires for that
+  // case). So if the recap is up AND blue is wiped, we know the squad
+  // really is gone — show countdown + ad button. Otherwise the recap is
+  // just the kill-cam header for ~2.5 sec.
+  if (_isBlueTeamWiped()) {
+    const ticksLeft = Math.max(0, (game._teamWipe.blue.respawnAt || 0) - game.time);
+    const sLeft = Math.ceil(ticksLeft / 60);
+    // Hint text — overwrite the 1-4 prompt since there's no live teammate
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      _r(`▼ 全隊覆滅 — ${sLeft} 秒後重生 ▼`,
+         `▼ SQUAD WIPED — RESPAWN IN ${sLeft}s ▼`),
+      W_ / 2, H_ - hintH / 2 + 6,
+    );
+    // Watch-ad-to-skip button
+    if (!_deathRecap.adReviveUsed) {
+      const btnW = 320, btnH = 64;
+      const btnX = W_ / 2 - btnW / 2;
+      const btnY = H_ / 2 - btnH / 2 + 24;
+      _deathRecap.adReviveBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+      const pulse2 = 0.85 + 0.15 * Math.sin(game.time * 0.22);
+      ctx.fillStyle = `rgba(63, 230, 63, ${pulse2})`;
+      ctx.fillRect(btnX, btnY, btnW, btnH);
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(btnX, btnY, btnW, btnH);
+      ctx.fillStyle = COLORS.black;
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText(_r('▶ 看廣告 · 全隊立即復活', '▶ WATCH AD · SQUAD REVIVE'),
+                   W_ / 2, btnY + btnH / 2 + 4);
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(_r('(跳過倒數)', '(skip the countdown)'),
+                   W_ / 2, btnY + btnH - 8);
+    } else {
+      _deathRecap.adReviveBtnRect = null;
+    }
+  } else {
+    // Single death, allies alive — operator auto-swaps. Tell them.
+    ctx.fillStyle = COLORS.cream;
     ctx.font = 'bold 16px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(_r('▶ 看廣告 · 原地復活', '▶ WATCH AD · INSTANT REVIVE'),
-                 W_ / 2, btnY + btnH / 2 + 6);
-    ctx.font = 'bold 9px monospace';
-    ctx.fillText(_r('(本場一次)', '(once per match)'),
-                 W_ / 2, btnY + btnH - 6);
-  } else {
+    ctx.fillText(
+      _r('▼ 自動接管最近的隊友 · 按 1-4 手動切換 ▼',
+         '▼ AUTO-SWAP TO NEAREST ALLY · 1-4 to override ▼'),
+      W_ / 2, H_ - hintH / 2 + 6,
+    );
     _deathRecap.adReviveBtnRect = null;
   }
 
