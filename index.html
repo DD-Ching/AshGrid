@@ -48,6 +48,7 @@
 <script src="js/grenades.js"></script>
 <script src="js/squad_commands.js"></script>
 <script src="js/structures.js"></script>
+<script src="js/tod.js"></script>
 <script src="js/weapons.js"></script>
 <script src="js/chassis.js"></script>
 <script src="js/death_recap.js"></script>
@@ -2079,6 +2080,11 @@ const COLORS = {
   floor:       '#0F0F0F',
   floorAccent: '#1A1A1A',
 };
+// Phase 5 (visual): Time-of-Day rebinds the scene-only keys above. Snapshot
+// the day baseline RIGHT HERE so TOD.revertToDay() always has a target,
+// and inject COLORS.sky for the canvas-clear edge color (used at NN arena
+// off-arena strip). HUD/red/cream/black stay untouched — see js/tod.js.
+try { if (typeof TOD !== 'undefined') TOD.snapshotBaseline(); } catch (e) {}
 
 const WORLD = { w: 3200, h: 3200 };
 
@@ -3006,6 +3012,19 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   if (typeof crazyEvent_gameplayStart === 'function') crazyEvent_gameplayStart();
   // Reset per-match flags: watch-ad-revive is one-shot per skirmish
   if (typeof _deathRecap !== 'undefined') { _deathRecap.adReviveUsed = false; }
+  // Phase 5 (visual): pick a Time-of-Day for this match. Mutates
+  // COLORS.{sky,floor,floorAccent,gray,lightGray,creamDark} so every
+  // subsequent render uses the new ambient palette. red / cream / black
+  // stay stable — they're the constructivist signature. URL override:
+  // ?tod=day|dusk|night|dawn. Default: random per match.
+  if (typeof TOD !== 'undefined') {
+    const _todName = TOD.applyMatchTOD();
+    if (typeof showSwapToast === 'function') {
+      const todLabel = { day: '正午', dusk: '黃昏', night: '夜', dawn: '黎明' }[_todName] || _todName;
+      const todLabelEn = { day: 'NOON', dusk: 'DUSK', night: 'NIGHT', dawn: 'DAWN' }[_todName] || _todName.toUpperCase();
+      showSwapToast(T('▶ 時段 · ' + todLabel, '▶ TIME · ' + todLabelEn));
+    }
+  }
 
   // Mode-specific overrides
   if (gameMode === 'duel') { blueSize = 1; redSize = 1; }
@@ -6005,8 +6024,12 @@ function updateFPV() {
 function render() {
   // Canvas-clear MUST be dark per FTUE/01 §A.4.1 ('幾乎不會有白色得底色').
   // The world theme rect (per-map addTheme) renders over this; the clear
-  // shows around the edges when zoomed-out / smaller worlds.
-  ctx.fillStyle = COLORS.floor;
+  // shows around the edges when zoomed-out / smaller worlds. Phase 5
+  // uses COLORS.sky here (TOD-tinted) so the off-arena strip reads as
+  // sky-at-this-hour (warm ash by day, smoke-orange at dusk, void at
+  // night, cold steel-blue at dawn). All four palettes still respect
+  // 'never light bottom' — sky is the dimmer ash above a darker floor.
+  ctx.fillStyle = (typeof COLORS.sky !== 'undefined') ? COLORS.sky : COLORS.floor;
   ctx.fillRect(0, 0, W(), H());
 
   // Apply camera shake — small random offset, decays in update(). Pure
@@ -6117,8 +6140,8 @@ function renderStructures() {
       ctx.arc(s.x, s.y, FD.captureR, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
-      // Body — fat octagon-ish
-      ctx.fillStyle = '#222428';
+      // Body — fat octagon-ish (TOD-tinted via COLORS.gray)
+      ctx.fillStyle = COLORS.gray;
       ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
       ctx.strokeStyle = teamCol;
       ctx.lineWidth = 3;

@@ -514,8 +514,11 @@ MAPS.push({
     soldierFireFast: false,
   },
   build() {
-    // Cream base only inside the 1200×1200 region; outside left grey-ish
-    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: '#9a978c' });
+    // Cream base only inside the 1200×1200 region; outside left grey-ish.
+    // Phase 5: both colors are TOD-tinted via COLORS rebind so the whole
+    // off-arena + arena shifts together by time-of-day (warm noon, ember
+    // dusk, void night, cold dawn).
+    addTheme({ kind: 'rect', x: 0, y: 0, w: WORLD.w, h: WORLD.h, color: COLORS.lightGray });
     addTheme({ kind: 'rect', x: NN_ARENA.x0, y: NN_ARENA.y0, w: NN_ARENA.w, h: NN_ARENA.h, color: COLORS.floor });
     // Border
     addTheme({ kind: 'rect', x: NN_ARENA.x0, y: NN_ARENA.y0 - 4, w: NN_ARENA.w, h: 8, color: COLORS.red });
