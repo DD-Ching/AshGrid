@@ -1192,6 +1192,24 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7; color:var(--cream);">CALLSIGN · 代號 (英文 / 數字 · 最多 12 字)</div>
       <input id="callsignInput" type="text" maxlength="12" placeholder="0451" autocomplete="off" spellcheck="false"
         style="background:var(--black); color:var(--cream); border:3px solid var(--cream-dark); padding:16px 20px; font:bold 24px monospace; letter-spacing:6px; text-transform:uppercase; outline:none; width:100%; box-sizing:border-box;" />
+      <!-- Phase 20d: solo / multiplayer toggle. Default SOLO so first-time
+           players just hit ENTER ARENA and play. Switching to MULTI reveals
+           the optional room input + repoints the entry countdown to
+           ?mp=1&room=. Room defaults to 'ashgrid-main' so anyone who picks
+           MULTI without a custom room lands in the lobby together — user
+           '人很少的時候盡量擠在同一個房間'. -->
+      <div style="display:flex; gap:8px; align-items:stretch;">
+        <button id="modeSoloBtn" type="button"
+          style="flex:1; background:var(--cream); color:var(--black); border:3px solid var(--black); padding:14px; font:bold 14px monospace; letter-spacing:4px; cursor:pointer;">
+          ◯ SOLO
+        </button>
+        <button id="modeMpBtn" type="button"
+          style="flex:1; background:var(--black); color:var(--cream); border:3px solid var(--black); padding:14px; font:bold 14px monospace; letter-spacing:4px; cursor:pointer; opacity:0.55;">
+          ◯ MULTI · PvP
+        </button>
+      </div>
+      <input id="roomInput" type="text" maxlength="20" placeholder="ROOM · 房間名 (預設 ashgrid-main)" autocomplete="off" spellcheck="false"
+        style="display:none; background:var(--black); color:var(--cream); border:3px solid var(--cream-dark); padding:12px 16px; font:bold 14px monospace; letter-spacing:3px; outline:none; width:100%; box-sizing:border-box; text-transform:lowercase;" />
       <button id="nnBtn" type="button"
         style="background:var(--red); color:var(--cream); border:none; padding:26px 28px; font:bold 26px sans-serif; letter-spacing:8px; cursor:pointer; box-shadow:6px 6px 0 var(--black); text-align:center; transition:transform .12s, box-shadow .12s;">
         進入戰場 ▶ ENTER ARENA
@@ -2889,10 +2907,102 @@ function _startEntryCountdown() {
     }
   }, 1000);
 }
+// Phase 20d — SOLO / MULTI toggle. Tracks which mode the player is about
+// to drop into. SOLO is the default (single-player vs NN bots, no peers,
+// no Firebase load). MULTI re-enters with ?mp=1&room=... so the next page
+// load wires up Trystero + PvP. If the URL already has mp=1 on first
+// visit, MULTI starts pre-selected so a friend's invite link keeps its
+// mode through the lobby gate.
+let _entryMode = 'solo';
+let _entryRoom = '';
+function _refreshModeButtons() {
+  const soloBtn = document.getElementById('modeSoloBtn');
+  const mpBtn = document.getElementById('modeMpBtn');
+  const roomEl = document.getElementById('roomInput');
+  if (soloBtn && mpBtn) {
+    soloBtn.style.opacity = (_entryMode === 'solo') ? '1' : '0.55';
+    soloBtn.style.background = (_entryMode === 'solo') ? 'var(--cream)' : 'var(--black)';
+    soloBtn.style.color = (_entryMode === 'solo') ? 'var(--black)' : 'var(--cream)';
+    soloBtn.firstChild && (soloBtn.textContent = (_entryMode === 'solo') ? '● SOLO' : '◯ SOLO');
+    mpBtn.style.opacity = (_entryMode === 'mp') ? '1' : '0.55';
+    mpBtn.style.background = (_entryMode === 'mp') ? 'var(--red)' : 'var(--black)';
+    mpBtn.style.color = 'var(--cream)';
+    mpBtn.firstChild && (mpBtn.textContent = (_entryMode === 'mp') ? '● MULTI · PvP' : '◯ MULTI · PvP');
+  }
+  if (roomEl) roomEl.style.display = (_entryMode === 'mp') ? 'block' : 'none';
+}
+(function _initModeFromUrl() {
+  const p = new URLSearchParams(location.search);
+  if (p.get('mp') === '1') _entryMode = 'mp';
+  if (p.get('room')) _entryRoom = p.get('room');
+  _refreshModeButtons();
+  const roomEl = document.getElementById('roomInput');
+  if (roomEl && _entryRoom) roomEl.value = _entryRoom;
+})();
+const _modeSoloBtn = document.getElementById('modeSoloBtn');
+if (_modeSoloBtn) _modeSoloBtn.onclick = () => { _entryMode = 'solo'; _refreshModeButtons(); };
+const _modeMpBtn = document.getElementById('modeMpBtn');
+if (_modeMpBtn) _modeMpBtn.onclick = () => { _entryMode = 'mp'; _refreshModeButtons(); };
+
 const _nnBtn = document.getElementById('nnBtn');
 if (_nnBtn) {
-  _nnBtn.onclick = _startEntryCountdown;
+  _nnBtn.onclick = () => {
+    // Phase 20d: if the player chose MULTI, repoint the page to ?mp=1
+    // BEFORE the countdown so Trystero loads cleanly + the deterministic
+    // map (Phase 22) reads the room from the URL. Same-page state can't
+    // attach a fresh Trystero session reliably so a full reload is the
+    // safest path. The countdown still runs after reload because the
+    // start screen kicks _startEntryCountdown from the new page load.
+    const p = new URLSearchParams(location.search);
+    const inMp = (p.get('mp') === '1');
+    if (_entryMode === 'mp' && !inMp) {
+      const roomEl = document.getElementById('roomInput');
+      const typedRoom = (roomEl && roomEl.value.trim()) || 'ashgrid-main';
+      p.set('mp', '1');
+      p.set('room', typedRoom);
+      // Save callsign before nav so it survives the reload
+      const input = document.getElementById('callsignInput');
+      if (input && typeof setOperatorName === 'function' && input.value.trim()) {
+        setOperatorName(input.value.trim());
+      }
+      // Also auto-start countdown after reload — set a flag in sessionStorage
+      try { sessionStorage.setItem('ag.autoEnter', '1'); } catch (e) {}
+      location.search = p.toString();
+      return;
+    }
+    if (_entryMode === 'solo' && inMp) {
+      // Drop mp param so the next match is pure single-player
+      p.delete('mp'); p.delete('room');
+      p.set('nn', '1');
+      try { sessionStorage.setItem('ag.autoEnter', '1'); } catch (e) {}
+      location.search = p.toString();
+      return;
+    }
+    // Already in MP — but maybe the player typed a new room. Reload only
+    // if the room changed; otherwise just countdown.
+    if (_entryMode === 'mp' && inMp) {
+      const currentRoom = p.get('room') || 'ashgrid-main';
+      const roomEl = document.getElementById('roomInput');
+      const typedRoom = (roomEl && roomEl.value.trim()) || 'ashgrid-main';
+      if (typedRoom !== currentRoom) {
+        p.set('room', typedRoom);
+        try { sessionStorage.setItem('ag.autoEnter', '1'); } catch (e) {}
+        location.search = p.toString();
+        return;
+      }
+    }
+    _startEntryCountdown();
+  };
 }
+// If we just reloaded with ag.autoEnter set, fire the countdown immediately.
+(function _maybeAutoEnter() {
+  try {
+    if (sessionStorage.getItem('ag.autoEnter') === '1') {
+      sessionStorage.removeItem('ag.autoEnter');
+      setTimeout(_startEntryCountdown, 200);
+    }
+  } catch (e) {}
+})();
 const _entryCancelBtn = document.getElementById('entryCountdownCancel');
 if (_entryCancelBtn) _entryCancelBtn.onclick = _cancelEntryCountdown;
 // ESC in the countdown aborts back to start. Capture phase so we beat any
@@ -5391,10 +5501,12 @@ function update() {
   updateEnemies();
   updateMission();   // mission tick (movement, capture progress, breach, spawn pressure)
   updateBullets();
-  // Phase 20a: multiplayer — send our position to peers, interpolate
-  // theirs. Both are no-ops when MP is inactive (?mp=1 absent).
+  // Phase 20a/b: multiplayer — broadcast position, interpolate remote
+  // players, advance remote bullets + run hit-checks against the local
+  // player. All no-ops when MP is inactive (?mp=1 absent).
   if (typeof _mpSendInput === 'function') _mpSendInput();
   if (typeof _mpTickRemote === 'function') _mpTickRemote();
+  if (typeof _mpTickRemoteBullets === 'function') _mpTickRemoteBullets();
   updateGrenades();
   updateExplosions();
   updateSoundEvents();
@@ -5676,6 +5788,18 @@ function fire() {
   muzzleFlashes.push({ x: player.x + Math.cos(baseAngle)*22, y: player.y + Math.sin(baseAngle)*22, angle: baseAngle, life: 5 });
   applyRecoil(player, w);
   emitSound(player.x, player.y, w.soundIntensity, true, true, w.soundProfile);
+  // Phase 20b: broadcast the shot to peers so they see + can be hit by us.
+  // No-op when MP is inactive. Single message per shot (not per pellet) —
+  // peers reconstruct pellets from `w.pellets` and the seed-rng.
+  if (typeof _mpBroadcastFire === 'function') {
+    _mpBroadcastFire({
+      x: player.x, y: player.y, angle: baseAngle,
+      speed: w.bulletSpeed, damage: w.damage, life: w.bulletLife,
+      spread: w.spread, pellets: w.pellets || 1, spreadMul,
+      weapon: w.name, isRocket: !!w.isRocket,
+      blastR: w.blastR, blastDmg: w.blastDmg,
+    });
+  }
 }
 
 // Rocket projectile sprite — chunky black body + flame trail, oriented to
@@ -7801,8 +7925,10 @@ function renderWorld() {
     if (pInvuln) ctx.globalAlpha = 1;
   }
 
-  // Phase 20a: remote players (other browsers in the same Trystero room).
-  // No-op when ?mp=1 is absent. Combat with these peers ships in Phase 20b.
+  // Phase 20a/b: remote players + remote bullets. No-op when ?mp=1
+  // is absent. Bullets render between players + flying so they're
+  // visible from any vantage.
+  if (typeof _mpRenderRemoteBullets === 'function') _mpRenderRemoteBullets();
   if (typeof _mpRenderRemote === 'function') _mpRenderRemote();
 
   // Player drone
@@ -8884,6 +9010,8 @@ function renderHUD() {
     ctx.textAlign = 'left';
     ctx.restore();
   }
+  // Phase 20c: kill feed + scoreboard (no-op when MP inactive).
+  if (typeof _mpRenderHUD === 'function') _mpRenderHUD();
 
   // Top-left: compact status panel — shrinks on narrow viewports (≤500px)
   // so it doesn't overlap the mode banner or score on portrait phones.
