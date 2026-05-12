@@ -3457,17 +3457,23 @@ function clearWorld() {
   coverPoints.length = 0;
 }
 
-// Cover/wall HP per material. Different feel + different rocket counts:
-//   wood crate:  60   (1 RPG hit + AOE = gone)
-//   tree:        70   (canopy LoS-blocker, falls quickly)
-//   sandbag:    140
-//   bunker:     200
-//   concrete:   300   (shrugs off 1 RPG, dies on 2)
+// Cover/wall HP per material. Phase 8 (user feedback '太容易被摧毀, 沒什麼
+// 價值'): scaled ~2× across the board so cover actually MATTERS — sitting
+// behind a sandbag should mean something. Trees still die quickly (they're
+// soft canopies, not concrete). Concrete shrugs off 2 RPGs, dies on 3.
+//   wood crate: 160   (2 RPG hits)
+//   tree:       140   (canopy LoS, faster to clear than concrete)
+//   sandbag:    280   (was 140)
+//   cover:      240   (was 120)
+//   bunker:     420   (was 200)
+//   wall:       460   (was 220)
+//   concrete:   600   (was 300 — 2 RPG hits + still up)
+//   building:   460   (was 220)
 const COVER_HP_BY_KIND = {
-  crate: 80, tree: 70, sandbag: 140,
-  cover: 120, low: 120,
-  bunker: 200, wall: 220, concrete: 300,
-  building: 220,
+  crate: 160, tree: 140, sandbag: 280,
+  cover: 240, low: 240,
+  bunker: 420, wall: 460, concrete: 600,
+  building: 460,
 };
 function addBuilding(x, y, w, h, color, opts={}) {
   const baseHp = COVER_HP_BY_KIND[opts.kind || 'building'] || 220;

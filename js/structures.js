@@ -39,7 +39,7 @@ const STRUCTURE_DEFS = {
   // (300) so killing it takes deliberate effort: ~10 LMG hits or 4
   // grenades. _team set at world-gen time.
   'spawn-relay': {
-    cost: -1, hp: 300, size: 44, blocks: true, blocksLOS: false,
+    cost: -1, hp: 450, size: 44, blocks: true, blocksLOS: false,    // was 300
     label: () => T('重生中繼', 'SPAWN RELAY'),
   },
   // Phase 3C: capturable factory — neutral at match start. Standing
@@ -52,38 +52,40 @@ const STRUCTURE_DEFS = {
     captureR: 90, captureTicks: 5 * 60, productionTicks: 30 * 60,
     label: () => T('機器工廠', 'BOT FACTORY'),
   },
-  // 3-tier cover ladder (all line-drag-able):
-  //  cover  — cheap, low HP, doesn't block line-of-sight (half-height)
+  // 3-tier cover ladder (all line-drag-able). Phase 8 (user feedback
+  // '太容易被摧毀, 沒什麼價值'): all built structures ~2× HP so spending
+  // energy on cover/turrets/etc. is actually worth it.
+  //  cover  — cheap, half-height, doesn't block line-of-sight
   //  wall   — balanced, blocks both bullets + LoS
   //  bunker — expensive, very tanky, blocks both
   cover: {
-    cost: 18, hp: 60, size: 30, blocks: true, blocksLOS: false,
+    cost: 18, hp: 120, size: 30, blocks: true, blocksLOS: false,    // was 60
     label: () => T('掩体', 'COVER'),
   },
   wall: {
-    cost: 30, hp: 100, size: 30, blocks: true, blocksLOS: true,
+    cost: 30, hp: 220, size: 30, blocks: true, blocksLOS: true,     // was 100
     label: () => T('牆', 'WALL'),
   },
   bunker: {
-    cost: 70, hp: 260, size: 30, blocks: true, blocksLOS: true,
+    cost: 70, hp: 500, size: 30, blocks: true, blocksLOS: true,     // was 260
     label: () => T('堡垒', 'BUNKER'),
   },
   turret: {
-    cost: 100, hp: 80, size: 50, blocks: false, blocksLOS: false,
+    cost: 100, hp: 160, size: 50, blocks: false, blocksLOS: false,  // was 80
     range: 380, fireCd: 60, dmg: 25,
     needsPower: true,           // dies if no generator can reach it
     ammoPerShot: 3,             // each shot drains game._energy by this much
     label: () => T('判決砲塔 VERDICT', 'VERDICT TURRET'),
   },
   generator: {
-    cost: 80, hp: 50, size: 50, blocks: false, blocksLOS: false,
+    cost: 80, hp: 120, size: 50, blocks: false, blocksLOS: false,   // was 50
     energyPerSec: 1.0,
     powerSource: true,          // emits power; powerR = how far power radiates
     powerR: 200,
     label: () => T('種子反應爐 SEED REACTOR', 'SEED REACTOR'),
   },
   camera: {
-    cost: 60, hp: 40, size: 40, blocks: false, blocksLOS: false,
+    cost: 60, hp: 90, size: 40, blocks: false, blocksLOS: false,    // was 40
     visionR: 360,
     needsPower: true,           // unpowered = no vision feed
     label: () => T('審計鏡 AUDIT LENS', 'AUDIT LENS'),
@@ -94,7 +96,7 @@ const STRUCTURE_DEFS = {
     label: () => T('同盟審計單位 ALLY', 'ALLIED AUDIT UNIT'),
   },
   terminal: {
-    cost: 200, hp: 60, size: 50, blocks: false, blocksLOS: false,
+    cost: 200, hp: 140, size: 50, blocks: false, blocksLOS: false,  // was 60
     airstrikeCd: 1800,    // 30s between airstrikes
     needsPower: true,
     label: () => T('審計台 AUDIT CONSOLE', 'AUDIT CONSOLE'),
@@ -118,14 +120,14 @@ const STRUCTURE_DEFS = {
   // Sensor: passive — pings enemies in radius onto the minimap (no damage).
   // Cheap intel, easy to destroy. Useful behind walls to scout the next wave.
   sensor: {
-    cost: 30, hp: 30, size: 30, blocks: false, blocksLOS: false,
+    cost: 30, hp: 70, size: 30, blocks: false, blocksLOS: false,    // was 30
     pingR: 320,
     label: () => T('診斷感測器 DIAGNOSTIC', 'DIAGNOSTIC SENSOR'),
   },
   // Smoke emitter: every 6s spawns a smoke cloud that blocks line-of-sight
   // for 5s in 140u radius. Tactical — denies enemy NN aim through it.
   smoke: {
-    cost: 70, hp: 50, size: 36, blocks: false, blocksLOS: false,
+    cost: 70, hp: 110, size: 36, blocks: false, blocksLOS: false,   // was 50
     emitCd: 360, cloudLife: 300, cloudR: 140,
     label: () => T('靜默雲 STATIC', 'STATIC CLOUD'),
   },
@@ -135,7 +137,7 @@ const STRUCTURE_DEFS = {
   // electricity arcs around cover. Visually a stack of lightning lines that
   // fade over ~10 ticks.
   tesla: {
-    cost: 140, hp: 70, size: 38, blocks: false, blocksLOS: false,
+    cost: 140, hp: 150, size: 38, blocks: false, blocksLOS: false,  // was 70
     range: 300, fireCd: 90, dmg: 30, chainR: 110, chainDmg: [22, 16, 10], chainMax: 3,
     needsPower: true,
     ammoPerShot: 5,
@@ -145,7 +147,7 @@ const STRUCTURE_DEFS = {
   // — they freeze in place + don't fire. No damage, pure crowd control.
   // Pairs with rocket / tesla as the burst payoff.
   emp: {
-    cost: 130, hp: 60, size: 36, blocks: false, blocksLOS: false,
+    cost: 130, hp: 130, size: 36, blocks: false, blocksLOS: false,  // was 60
     emitCd: 240, pulseR: 220, stunTicks: 180,
     needsPower: true,
     ammoPerShot: 8,
@@ -155,7 +157,7 @@ const STRUCTURE_DEFS = {
   // healAmt. Doesn't heal the player's own structures (they need rockets
   // killing the things shooting at them, not patches). Cheap support.
   medstation: {
-    cost: 100, hp: 50, size: 32, blocks: false, blocksLOS: false,
+    cost: 100, hp: 110, size: 32, blocks: false, blocksLOS: false,  // was 50
     healCd: 60, healR: 200, healAmt: 4,
     needsPower: true,
     label: () => T('修復場 REPAIR FIELD', 'REPAIR FIELD'),
@@ -164,7 +166,7 @@ const STRUCTURE_DEFS = {
   // homes on the nearest enemy + detonates on contact. Drones live in
   // game._autoDrones, ticked + rendered separately.
   dronebay: {
-    cost: 200, hp: 80, size: 38, blocks: false, blocksLOS: false,
+    cost: 200, hp: 170, size: 38, blocks: false, blocksLOS: false,  // was 80
     spawnCd: 360, droneHp: 30, droneSpeed: 5, droneDmg: 40, droneBlastR: 60,
     needsPower: true,
     label: () => T('審計蜂群 SWARM', 'AUDITOR SWARM'),
