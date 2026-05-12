@@ -47,6 +47,7 @@
 <script src="js/key_bindings.js"></script>
 <script src="js/grenades.js"></script>
 <script src="js/squad_commands.js"></script>
+<script src="js/multiplayer.js"></script>
 <script src="js/structures.js"></script>
 <script src="js/tod.js"></script>
 <script src="js/weapons.js"></script>
@@ -5370,6 +5371,10 @@ function update() {
   updateEnemies();
   updateMission();   // mission tick (movement, capture progress, breach, spawn pressure)
   updateBullets();
+  // Phase 20a: multiplayer — send our position to peers, interpolate
+  // theirs. Both are no-ops when MP is inactive (?mp=1 absent).
+  if (typeof _mpSendInput === 'function') _mpSendInput();
+  if (typeof _mpTickRemote === 'function') _mpTickRemote();
   updateGrenades();
   updateExplosions();
   updateSoundEvents();
@@ -7767,6 +7772,10 @@ function renderWorld() {
     if (pInvuln) ctx.globalAlpha = 1;
   }
 
+  // Phase 20a: remote players (other browsers in the same Trystero room).
+  // No-op when ?mp=1 is absent. Combat with these peers ships in Phase 20b.
+  if (typeof _mpRenderRemote === 'function') _mpRenderRemote();
+
   // Player drone
   if (drone.deployed) drawDrone(drone.x, drone.y, COLORS.black, game.time * 0.25);
 
@@ -8832,6 +8841,19 @@ function renderHUD() {
   if (game.hitFlash > 0) {
     ctx.fillStyle = `rgba(200, 38, 28, ${game.hitFlash / 12 * 0.35})`;
     ctx.fillRect(0, 0, W(), H());
+  }
+  // Phase 20a: MP indicator — top-right corner shows 'MP · 3 / room'.
+  // Tells the player whether they're in single-player or PvP at a glance.
+  if (typeof _mpIsActive === 'function' && _mpIsActive()) {
+    const count = (typeof _mpPeerCount === 'function') ? _mpPeerCount() : 1;
+    const roomLbl = (_mpState && _mpState.roomName) ? _mpState.roomName.slice(0, 12) : 'room';
+    ctx.save();
+    ctx.fillStyle = COLORS.red;
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`MP · ${count} · ${roomLbl}`, W() - 18, 18);
+    ctx.textAlign = 'left';
+    ctx.restore();
   }
 
   // Top-left: compact status panel — shrinks on narrow viewports (≤500px)
