@@ -8,17 +8,30 @@
 // External deps: game · mouse · ctx · W · H · COLORS · T · AUDIO ·
 //   setAudioMuted · exitMatchToMenu · _hitRect
 
-// Phase 34 — pause is meaningless in MP. The server keeps ticking and
+// Phase 34/35 — pause is meaningless in MP. The server keeps ticking and
 // every other player keeps shooting whether you tab away or not. Wings.io
 // works the same way. We short-circuit ALL pause entry points (manual
-// toggle, visibility change, blur) when MP is active so the local game
-// loop never freezes out of sync with the server.
-function _isMpLive() {
-  return typeof _mpIsActive === 'function' && _mpIsActive();
+// toggle, visibility change, blur) when MP MODE is intended.
+//
+// Phase 35 fix: gate on the URL `?mp=1` flag, NOT on _mpState.enabled.
+// Reason: _mpState.enabled is only true AFTER the server's welcome
+// message arrives. If the WS handshake is mid-flight or the server is
+// briefly unreachable, _mpIsActive() returns false and pause re-arms —
+// which surprises the user ("我選了 MULTI 為什麼 Esc 還會暫停?"). The
+// intent is fixed by the URL flag from the moment the page loads, so
+// we use that as the gate. If MP server is genuinely down the user
+// still cannot pause (the world is "paused" effectively because they
+// have no peers anyway).
+function _isMpMode() {
+  try {
+    return new URLSearchParams(location.search).get('mp') === '1';
+  } catch (e) {
+    return false;
+  }
 }
 function togglePause() {
   if (game.state !== 'playing') return;
-  if (_isMpLive()) return;
+  if (_isMpMode()) return;
   game._paused = !game._paused;
   // Drop any held mouse so we don't keep firing on resume
   if (game._paused) mouse.down = false;
@@ -26,11 +39,11 @@ function togglePause() {
 // Auto-pause when the tab loses focus or becomes hidden — single-player
 // only. In MP you stay alive (and shootable) while the tab is hidden.
 document.addEventListener('visibilitychange', () => {
-  if (_isMpLive()) return;
+  if (_isMpMode()) return;
   if (document.hidden && game.state === 'playing' && !game._paused) togglePause();
 });
 window.addEventListener('blur', () => {
-  if (_isMpLive()) return;
+  if (_isMpMode()) return;
   if (game.state === 'playing' && !game._paused) togglePause();
 });
 function drawPauseOverlay() {

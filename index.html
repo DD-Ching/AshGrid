@@ -44,7 +44,7 @@
 <script src="js/dynamic_radio.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/touch_input.js"></script>
-<script src="js/key_bindings.js?v=34"></script>
+<script src="js/key_bindings.js?v=35"></script>
 <script src="js/grenades.js"></script>
 <script src="js/squad_commands.js"></script>
 <script src="js/multiplayer.js?v=33"></script>
@@ -72,7 +72,7 @@
 <script src="js/vision_raycast.js"></script>
 <script src="js/camera.js"></script>
 <script src="js/defense_build_ui.js"></script>
-<script src="js/pause.js?v=34"></script>
+<script src="js/pause.js?v=35"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -9111,9 +9111,12 @@ function renderHUD() {
   drawHUDPanel(16, 16, _panelW, _panelH, null);
   // Pause button (top-right of the status panel) — clickable + matches the
   // canvas-drawn minimap toggle pattern. Stored rect is hit-tested in mousedown.
-  // Phase 34: hidden + rect cleared in MP, since pause doesn't apply (server
-  // keeps ticking either way).
-  if (typeof _mpIsActive === 'function' && _mpIsActive()) {
+  // Phase 34/35: hidden + rect cleared in MP MODE (URL flag), since pause
+  // doesn't apply. Gate on URL flag instead of _mpState.enabled so the
+  // button is hidden from page-load, not after-welcome.
+  let _isMpModeForBtn = false;
+  try { _isMpModeForBtn = new URLSearchParams(location.search).get('mp') === '1'; } catch (e) {}
+  if (_isMpModeForBtn) {
     game._pauseBtnRect = null;
   } else {
     const _pbX = 16 + _panelW - 24, _pbY = 22, _pbW = 18, _pbH = 18;
