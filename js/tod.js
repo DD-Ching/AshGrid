@@ -104,12 +104,31 @@ const TOD = {
     return true;
   },
 
-  // Pick a TOD for the upcoming match. Honors ?tod= URL param when valid;
-  // otherwise random across the four states.
+  // Pick a TOD for the upcoming match. Order of preference:
+  //   (1) ?tod=day|dusk|night|dawn URL override (debug + perma-mood)
+  //   (2) ?mp=1 → derive from UTC hour bucket so every peer in the room
+  //       sees the same time-of-day at the same wall-clock moment, no
+  //       sync messages needed. User '一個感覺是黃昏, 一個感覺是晚上 ·
+  //       會不會是因為時間差調整的這個場景的差異'. Yes — Phase 30 fixes
+  //       it by tying TOD to UTC instead of Math.random per client.
+  //         00-05 UTC → dawn  (~中午-早晨亞太 / 凌晨歐美)
+  //         06-11 UTC → day
+  //         12-17 UTC → dusk
+  //         18-23 UTC → night
+  //   (3) Solo (no ?mp=1) → original random pick so single-player keeps
+  //       its variety.
   pickForMatch() {
     try {
-      const qp = new URLSearchParams(location.search).get('tod');
+      const params = new URLSearchParams(location.search);
+      const qp = params.get('tod');
       if (qp && TOD_PALETTES[qp]) return qp;
+      if (params.get('mp') === '1') {
+        const h = new Date().getUTCHours();
+        if (h < 6)  return 'dawn';
+        if (h < 12) return 'day';
+        if (h < 18) return 'dusk';
+        return 'night';
+      }
     } catch (e) {}
     const order = ['day', 'dusk', 'night', 'dawn'];
     return order[Math.floor(Math.random() * order.length)];

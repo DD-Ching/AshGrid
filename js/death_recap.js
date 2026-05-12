@@ -111,9 +111,23 @@ function dismissDeathRecap() { _deathRecap.active = false; }
 function renderDeathRecap() {
   if (!_deathRecap.active) return;
   const elapsed = game.time - _deathRecap.startTick;
-  if (elapsed >= _deathRecap.durationTicks) { _deathRecap.active = false; return; }
-  const t = elapsed / _deathRecap.durationTicks;
-  const fade = t < 0.15 ? (t / 0.15) : (t > 0.85 ? (1 - t) / 0.15 : 1);
+  // Phase 30: while the blue team is wiped (i.e. respawn countdown is
+  // active), KEEP the recap visible no matter how much time elapsed.
+  // The 2.5-sec auto-dismiss was leaving a 0.5-sec dead window between
+  // recap disappearing + respawn firing — user '倒數計時的圖片動畫並沒
+  // 有出來 · 即便之後有廣告彈出, 動畫也不會消失'.
+  const teamWiped = _isBlueTeamWiped();
+  if (!teamWiped && elapsed >= _deathRecap.durationTicks) {
+    _deathRecap.active = false;
+    return;
+  }
+  // For the FADE math, cap t at 1 when wiped (recap stays full-opacity
+  // for the whole countdown; no premature fade-out).
+  const tRaw = elapsed / _deathRecap.durationTicks;
+  const t = teamWiped ? Math.min(1, tRaw) : tRaw;
+  const fade = teamWiped
+    ? Math.min(1, tRaw / 0.15)     // fade in but never fade out while wiped
+    : (t < 0.15 ? (t / 0.15) : (t > 0.85 ? (1 - t) / 0.15 : 1));
 
   // Top strip + bottom hint instead of a full-screen blocker. The world
   // stays visible underneath so pawn-swap (1-4) can target a live ally
