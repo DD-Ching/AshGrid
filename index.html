@@ -44,10 +44,10 @@
 <script src="js/dynamic_radio.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/touch_input.js"></script>
-<script src="js/key_bindings.js?v=35"></script>
+<script src="js/key_bindings.js?v=36"></script>
 <script src="js/grenades.js"></script>
 <script src="js/squad_commands.js"></script>
-<script src="js/multiplayer.js?v=33"></script>
+<script src="js/multiplayer.js?v=36"></script>
 <script src="js/leaderboard.js"></script>
 <script src="js/structures.js"></script>
 <script src="js/tod.js"></script>
@@ -72,7 +72,7 @@
 <script src="js/vision_raycast.js"></script>
 <script src="js/camera.js"></script>
 <script src="js/defense_build_ui.js"></script>
-<script src="js/pause.js?v=35"></script>
+<script src="js/pause.js?v=36"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -3442,6 +3442,22 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   game._nnSpawnBlue = blueList[0];
   game._nnSpawnRed  = redList[0];
 
+  // Phase 36: in MP mode we don't spawn NN allies or enemies — the arena
+  // is purely human-vs-human, server-authoritative. NN bots would damage
+  // the local player but the server doesn't know about them, so death
+  // would mismatch reality. Skip both the ally and enemy spawn loops.
+  // Squad / formation behaviours, factory ownership, etc. all become
+  // no-ops because allies[]/enemies[] stay empty in MP.
+  const _mpModeArena = (() => {
+    try { return new URLSearchParams(location.search).get('mp') === '1'; }
+    catch (e) { return false; }
+  })();
+  if (_mpModeArena) {
+    // Skip the entire bot setup. Player still spawns below.
+    blueSize = 1;   // just the player
+    redSize  = 0;
+  }
+
   // Player counts as ONE blue (slot 0). Spawn (blueSize - 1) NN allies in slots 1..N.
   // Indoor variants cluster around the anchor (rooms are small); outdoor uses
   // the full arena-height vertical spread.
@@ -5843,28 +5859,35 @@ function fire() {
   const spreadMul = (player._aimAssistLockedAt && (w.pellets || 1) === 1) ? 0.3 : 1.0;
   // Shotgun and similar: emit `pellets` bullets per shot with shared spread cone
   const pellets = w.pellets || 1;
-  for (let i = 0; i < pellets; i++) {
-    const barrel = baseAngle + (Math.random()-0.5) * w.spread * spreadMul;
-    bullets.push({
-      x: player.x + Math.cos(barrel)*18,
-      y: player.y + Math.sin(barrel)*18,
-      vx: Math.cos(barrel)*w.bulletSpeed, vy: Math.sin(barrel)*w.bulletSpeed,
-      life: w.bulletLife, damage: w.damage,
-      fromAlly: false,
-      fromUnit: player,
-      weaponName: w.name,
-      // Rocket flag — turn the bullet into an AOE projectile on impact
-      isRocket: !!w.isRocket,
-      blastR: w.blastR, blastDmg: w.blastDmg, structDmgMul: w.structDmgMul,
-    });
+  // Phase 36: in MP, the SERVER owns all bullets. Client just gets muzzle
+  // flash + sound + recoil + ammo decrement for feel; the actual projectile
+  // fires server-side via the `fire` flag in input messages, gated by the
+  // server's FIRE_COOLDOWN. Server broadcasts the bullet in its snapshot,
+  // and the client renders it via _mpRenderRemoteBullets.
+  const _mpFireSkip = typeof _mpIsActive === 'function' && _mpIsActive();
+  if (!_mpFireSkip) {
+    for (let i = 0; i < pellets; i++) {
+      const barrel = baseAngle + (Math.random()-0.5) * w.spread * spreadMul;
+      bullets.push({
+        x: player.x + Math.cos(barrel)*18,
+        y: player.y + Math.sin(barrel)*18,
+        vx: Math.cos(barrel)*w.bulletSpeed, vy: Math.sin(barrel)*w.bulletSpeed,
+        life: w.bulletLife, damage: w.damage,
+        fromAlly: false,
+        fromUnit: player,
+        weaponName: w.name,
+        // Rocket flag — turn the bullet into an AOE projectile on impact
+        isRocket: !!w.isRocket,
+        blastR: w.blastR, blastDmg: w.blastDmg, structDmgMul: w.structDmgMul,
+      });
+    }
   }
   // One muzzle flash per shot (not per pellet) — spread looks like a cloud
   muzzleFlashes.push({ x: player.x + Math.cos(baseAngle)*22, y: player.y + Math.sin(baseAngle)*22, angle: baseAngle, life: 5 });
   applyRecoil(player, w);
   emitSound(player.x, player.y, w.soundIntensity, true, true, w.soundProfile);
-  // Phase 20b: broadcast the shot to peers so they see + can be hit by us.
-  // No-op when MP is inactive. Single message per shot (not per pellet) —
-  // peers reconstruct pellets from `w.pellets` and the seed-rng.
+  // _mpBroadcastFire is a no-op in Phase 36 (server fires from input flag).
+  // Kept as a shim for future weapon-spec sync if we ever revisit.
   if (typeof _mpBroadcastFire === 'function') {
     _mpBroadcastFire({
       x: player.x, y: player.y, angle: baseAngle,
