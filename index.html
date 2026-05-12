@@ -2447,9 +2447,15 @@ const fpv = {
   _launchTick: 0,
   trail: [],
 };
-const FPV_SPEED_START = 3;       // slow at launch (controllable arc)
-const FPV_SPEED_MAX   = 14;      // committed dive speed
-const FPV_RAMP_TICKS  = 150;     // 2.5 sec to reach max (~60 TPS)
+// Phase 19: FPV tuned slower across the board — user '自殺式無人機還是
+// 太快, 容易撞到牆壁提前爆掉 · 速度慢一點 · 加速慢一點 · 轉彎慢'. The
+// launch is now a creep (2.0 u/tick), takes 4 sec to commit, and tops
+// out at 9 instead of 14 so walls in the new industrial district are
+// avoidable. Turn rate also drops as speed rises (see updateFPV) so a
+// committed dive can't U-turn out of a wall.
+const FPV_SPEED_START = 2.0;     // slower launch — controllable
+const FPV_SPEED_MAX   = 9;       // was 14
+const FPV_RAMP_TICKS  = 240;     // 4 sec ramp (was 2.5 sec)
 
 const bullets = [];
 const enemyBullets = [];
@@ -5787,10 +5793,11 @@ function updateBullets() {
         // Spawn invuln: still consume the bullet so it doesn't pass through,
         // but don't apply damage. Visually the bullet vanishes on impact.
         if (e._invulnUntil != null && game.time < e._invulnUntil) { hit = true; break; }
-        // Phase 18: KO-stunned enemies are untargetable by bullets. The
-        // bullet passes through silently — the user wants stunned bodies
-        // to wait peacefully for recruit, not get strafed off the map.
-        if (e._koStunned) continue;
+        // Phase 18→19: KO-stunned are AIM-ASSIST-SAFE only (auto-lock won't
+        // pick them), but MANUAL shots still land + finish them — '你可以
+        // 手動射擊他, 他就會真的爆掉'. Damage applies; if hp drops below 0
+        // again, _tryStunOrKill returns false (already stunned) and the
+        // real-death branch below runs.
         _applyDamageToUnit(e, b.damage);
         e.recentDamage = 60;     // marks "I'm under fire" for FSM low-HP flee branch
         e.alerted = Math.max(e.alerted || 0, 240);
@@ -6212,18 +6219,23 @@ function updateExplosions() {
 
 function updateFPV() {
   if (!fpv.active) return;
+  // Phase 19: turn rate falls with the speed ramp. Fresh launch is
+  // 0.075 (close to old 0.08), committed dive drops to 0.025 — so the
+  // pilot can still steer around obstacles in the first 2 sec, but a
+  // maxed-out drone can't U-turn out of a wall it's about to hit.
+  const _rampT = Math.min(1, Math.max(0, (game.time - (fpv._launchTick || 0)) / FPV_RAMP_TICKS));
   if (game.mode === 'fpv') {
     const wp = screenToWorld(mouse.x, mouse.y);
     const target = Math.atan2(wp.y - fpv.y, wp.x - fpv.x);
     let diff = target - fpv.angle;
     while (diff > Math.PI) diff -= Math.PI*2;
     while (diff < -Math.PI) diff += Math.PI*2;
-    fpv.angle += diff * 0.08;
+    const turnRate = 0.075 - 0.050 * _rampT;
+    fpv.angle += diff * turnRate;
   }
   // Phase 9: speed ramps from FPV_SPEED_START → FPV_SPEED_MAX over
   // FPV_RAMP_TICKS frames, so the launch is controllable and the
   // committed dive ramps up later. Eased linearly for simplicity.
-  const _rampT = Math.min(1, Math.max(0, (game.time - (fpv._launchTick || 0)) / FPV_RAMP_TICKS));
   fpv.speed = FPV_SPEED_START + (FPV_SPEED_MAX - FPV_SPEED_START) * _rampT;
   fpv.x += Math.cos(fpv.angle) * fpv.speed;
   fpv.y += Math.sin(fpv.angle) * fpv.speed;
