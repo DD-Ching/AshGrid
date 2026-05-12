@@ -2191,11 +2191,18 @@ const game = {
   shakeMag: 0, shakeUntil: 0,
   // Global world speed multiplier. Main loop runs update() N times per
   // frame where N accumulates from _timeScale per real frame. So:
-  //   _timeScale: 1   → 60 ticks/sec (normal-rate baseline)
-  //   _timeScale: 2   → 120 ticks/sec — everything 2x faster (current)
-  //   _timeScale: 0.5 → slow-mo (was wired to kill-streak; now removed)
-  // User: '我覺得這個可能要再快1.5倍,或者是2倍'.
-  _timeScale: 2, _slowMoUntil: 0,
+  //   _timeScale: 1   → 60 ticks/sec (original baseline)
+  //   _timeScale: 1.4 → 84 ticks/sec — current (2x felt too fast)
+  //   _timeScale: 2   → 120 ticks/sec
+  // User progression: 1x slow → 2x too fast → 1.4x sweet spot
+  //   ('再減0.3的速度,依現在').
+  _timeScale: 1.4, _slowMoUntil: 0,
+  // VFX master switch — when false, kill-streak slow-mo + future
+  // particle / camera-zoom celebrations are SKIPPED. Helpers stay in
+  // place so flipping this back true re-enables everything without code
+  // changes. User: '特效那可能就放著,但是就先不開,到時候需要再把這個
+  // 開關開起來就好'.
+  _vfxEnabled: false,
 };
 
 // End-of-match grade letter — given a 0..1 score, return S/A/B/C/D and a
@@ -5062,10 +5069,9 @@ function update() {
     game.shakeMag *= SHAKE_DECAY;
     if (game.shakeMag < 0.05) game.shakeMag = 0;
   }
-  // Slow-mo restore — once the window ends, snap back to the 2× baseline
-  // (was 1× before world-speed change). User: '快兩倍'.
-  if (game._timeScale < 2 && game.time >= game._slowMoUntil) {
-    game._timeScale = 2;
+  // Slow-mo restore — snap back to current baseline (1.4×).
+  if (game._timeScale < 1.4 && game.time >= game._slowMoUntil) {
+    game._timeScale = 1.4;
   }
 
   // Low-HP heartbeat — periodic thump while HP < 25%. Tempo speeds up as HP drops.
@@ -5569,10 +5575,11 @@ function updateBullets() {
           // subsequent kill so a hot streak stays in slow-mo. Tiny shake on
           // every kill so even a single shot punches.
           if (player._killStreak >= 3) {
-            // Slow-mo on kill streak DISABLED — user report
-            // '每次我幹掉敵人的時候就會變得很卡頓'; the perceived 'lag' was
-            // this 1.5-second 0.55× slow-mo by design. Removed at the
-            // user's request. Shake stays (small visual punch).
+            // Kill-streak bullet-time. Gated behind game._vfxEnabled so it
+            // can be flipped on/off without code changes. User initially
+            // perceived it as 'lag' so it ships off; re-enable by setting
+            // game._vfxEnabled = true (lobby toggle could expose this).
+            if (game._vfxEnabled) triggerSlowMo(0.55, 90);
             triggerShake(4, 8);
             unlockAchievement('killstreak3');
             if (player._killStreak >= 5) unlockAchievement('killstreak5');
