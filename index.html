@@ -1181,30 +1181,29 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     </div>
 
 
-    <!-- Two-card hero. SKIRMISH = quick PvAI with the COMBAT SETUP picker
-         opening behind it; CAMPAIGN = sequential story missions. Each
-         card is the entire click target so the menu reads at a glance. -->
-    <div id="primaryCards" style="display:grid; grid-template-columns:1fr 1fr; gap:14px; max-width:780px;">
-      <button id="nnBtn" class="primary-card primary-card-red" type="button" style="background:var(--red); color:var(--cream); border:none; padding:26px 28px; text-align:left; cursor:pointer; box-shadow:6px 6px 0 var(--black); transition:transform .12s, box-shadow .12s;">
-        <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7; display:flex; justify-content:space-between; align-items:center;">
-          <span>A1 · QUICK PLAY</span>
-          <span style="font:bold 9px monospace; letter-spacing:2px; padding:2px 6px; background:rgba(232,228,216,0.18);">[1]</span>
-        </div>
-        <div style="font:bold 28px sans-serif; letter-spacing:5px; margin-top:6px;">遭遇戰 SKIRMISH ▶</div>
-        <div id="skirmishHint" style="font:11px monospace; letter-spacing:1.5px; opacity:0.85; margin-top:10px;">Audit Mission · 7 syndromes · 6 factions · pick auditor lineup</div>
+    <!-- Phase 11: stripped lobby. Wings.io-style entry — type a callsign,
+         hit ENTER ARENA, watch the 5-second countdown, drop into the match.
+         All the old setup picker (team size / mode / weapon / chassis /
+         difficulty / lineup) is bypassed; defaults from `_lobby` are used.
+         Other entry points (campaign, editor, dossier, settings, dev) are
+         still wired up but hidden until we decide what to bring back. -->
+    <div id="primaryCards" style="display:flex; flex-direction:column; gap:14px; max-width:520px; width:100%;">
+      <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7; color:var(--cream);">CALLSIGN · 代號 (英文 / 數字 · 最多 12 字)</div>
+      <input id="callsignInput" type="text" maxlength="12" placeholder="0451" autocomplete="off" spellcheck="false"
+        style="background:var(--black); color:var(--cream); border:3px solid var(--cream-dark); padding:16px 20px; font:bold 24px monospace; letter-spacing:6px; text-transform:uppercase; outline:none; width:100%; box-sizing:border-box;" />
+      <button id="nnBtn" type="button"
+        style="background:var(--red); color:var(--cream); border:none; padding:26px 28px; font:bold 26px sans-serif; letter-spacing:8px; cursor:pointer; box-shadow:6px 6px 0 var(--black); text-align:center; transition:transform .12s, box-shadow .12s;">
+        進入戰場 ▶ ENTER ARENA
       </button>
-      <button id="campaignBtn" class="primary-card primary-card-black" type="button" style="background:var(--black); color:var(--cream); border:none; padding:26px 28px; text-align:left; cursor:pointer; box-shadow:6px 6px 0 var(--red); transition:transform .12s, box-shadow .12s;">
-        <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7; display:flex; justify-content:space-between; align-items:center;">
-          <span>A2 · STORY</span>
-          <span style="font:bold 9px monospace; letter-spacing:2px; padding:2px 6px; background:rgba(232,228,216,0.18);">[2]</span>
-        </div>
-        <div style="font:bold 28px sans-serif; letter-spacing:5px; margin-top:6px;">戰役 CAMPAIGN</div>
-        <div id="campaignHint" style="font:11px monospace; letter-spacing:1.5px; opacity:0.85; margin-top:10px;">6 hand-crafted missions · escort · breach · hive · relay</div>
-      </button>
+      <button id="campaignBtn" type="button" style="display:none;"></button>
+      <div id="skirmishHint" style="display:none;"></div>
+      <div id="campaignHint" style="display:none;"></div>
     </div>
 
-    <!-- Utility row — secondary actions get less weight -->
-    <div id="utilityRow" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:4px;">
+    <!-- Utility row — hidden in Phase 11. Buttons remain in DOM so wireup
+         scripts don't null-ref. Modals (settings/dev/etc.) can still be
+         reached via direct URL or future shortcut. -->
+    <div id="utilityRow" style="display:none;">
       <button class="footer-link" id="editorBtn">▦ MAP EDITOR</button>
       <button class="footer-link" id="dossierBtn">⌂ DOSSIER</button>
       <button class="footer-link" id="logBtn">≡ LOG <span class="badge" id="logBadge" hidden>1</span></button>
@@ -1233,11 +1232,27 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <div class="ctrl-item"><span class="ctrl-key">H</span><span>回到出生點 (卡關時)</span></div>
     </div>
 
-    <div class="footer-bar">
+    <!-- Phase 11: footer chips hidden — keeping nodes so DAY/CYCLE/MOTE
+         updaters elsewhere don't null-ref. -->
+    <div class="footer-bar" style="display:none;">
       <span><span class="day-chip" id="dayChip">DAY 14</span><span class="day-chip" id="cycleChip" style="background:#1a1a1a; color:var(--cream); margin-right:8px;">CYCLE #347</span><span class="day-chip" id="moteChip" style="background:#3a3a3a; color:var(--cream); margin-right:8px;">MOTE 50%</span><span id="startStatsLine">VECTOR-7 · OBJECTIVE AUDITOR</span></span>
       <span><span id="nextUnlockHint" style="margin-right:8px; opacity:0.55; letter-spacing:1px; font-size:10px;"></span><button class="footer-link" id="unlockAllBtn" style="display:none; margin-right:14px;">SKIP ALL ▶</button><span id="resHint" style="opacity:0.55; font-size:10px;">建议 1080p+ 全屏体验</span></span>
     </div>
   </div>
+</div>
+
+<!-- Phase 11 entry countdown — fullscreen overlay shown between PLAY and
+     the actual match. Matches the constructivist palette (cream + red),
+     5-second countdown, ESC/click cancels back to start screen. Calls
+     startNNSkirmish with _lobby defaults when the count hits zero. -->
+<div id="entryCountdown" style="display:none; position:fixed; inset:0; z-index:150; background:var(--cream); align-items:center; justify-content:center; flex-direction:column; gap:28px; pointer-events:auto;">
+  <div style="font:bold 11px monospace; letter-spacing:8px; color:var(--red);">NEURAL LINK SYNC</div>
+  <div id="entryCountdownNumber" style="font:bold 240px sans-serif; line-height:0.9; color:var(--black); letter-spacing:-8px;">5</div>
+  <div style="font:bold 14px sans-serif; letter-spacing:6px; color:var(--black);">AUDITOR <span id="entryCountdownName" style="color:var(--red);">0451</span> · ENTERING ARENA</div>
+  <button id="entryCountdownCancel" type="button"
+    style="margin-top:14px; background:transparent; color:var(--black); border:2px solid var(--black); padding:10px 24px; font:bold 11px monospace; letter-spacing:4px; cursor:pointer;">
+    CANCEL · ESC
+  </button>
 </div>
 
 <!-- Operator Dossier — service record summary -->
@@ -2797,35 +2812,90 @@ function _saveLobbyConfig() {
     localStorage.setItem('ag.lobbyConfig', JSON.stringify(slim));
   } catch (e) {}
 }
+// Phase 11: PLAY button now skips the full lobby + tutorial. Saves the
+// callsign typed on the start screen, shows a 5-second countdown overlay,
+// then drops straight into startNNSkirmish with `_lobby` defaults
+// (blue=3, red=3, mode=dm, diff=elite, weapon=RIFLE — same as before).
+// ESC or CANCEL aborts back to the start screen.
+const ENTRY_COUNTDOWN_SECS = 5;
+let _entryCountdownTimer = null;
+function _cancelEntryCountdown() {
+  if (_entryCountdownTimer) {
+    clearInterval(_entryCountdownTimer);
+    _entryCountdownTimer = null;
+  }
+  const overlay = document.getElementById('entryCountdown');
+  if (overlay) overlay.style.display = 'none';
+  const start = document.getElementById('start');
+  if (start) start.classList.remove('hidden');
+}
+function _startEntryCountdown() {
+  // Persist whatever the player typed (skip if empty — getOperatorName
+  // falls back to '0451'). setOperatorName already strips non [A-Z0-9_-].
+  const input = document.getElementById('callsignInput');
+  if (input && typeof setOperatorName === 'function') {
+    const typed = input.value && input.value.trim();
+    if (typed) setOperatorName(typed);
+  }
+  document.getElementById('start').classList.add('hidden');
+  const overlay = document.getElementById('entryCountdown');
+  const numEl = document.getElementById('entryCountdownNumber');
+  const nameEl = document.getElementById('entryCountdownName');
+  if (nameEl && typeof getOperatorName === 'function') {
+    nameEl.textContent = getOperatorName();
+  }
+  let secsLeft = ENTRY_COUNTDOWN_SECS;
+  if (numEl) numEl.textContent = String(secsLeft);
+  if (overlay) overlay.style.display = 'flex';
+  if (_entryCountdownTimer) clearInterval(_entryCountdownTimer);
+  _entryCountdownTimer = setInterval(() => {
+    secsLeft -= 1;
+    if (numEl) numEl.textContent = String(Math.max(0, secsLeft));
+    if (secsLeft <= 0) {
+      clearInterval(_entryCountdownTimer);
+      _entryCountdownTimer = null;
+      if (overlay) overlay.style.display = 'none';
+      // Defaults straight from _lobby (3v3 DM · elite · RIFLE · random
+      // chassis). startNNSkirmish hides #nnLobby itself so we don't need
+      // to touch it here even though it's never opened.
+      const lineup = _lobby.lineupOpen ? _lobby.lineup : null;
+      startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty,
+                      _lobby.weapon, lineup, _lobby.mode);
+    }
+  }, 1000);
+}
 const _nnBtn = document.getElementById('nnBtn');
 if (_nnBtn) {
-  _nnBtn.onclick = () => {
-    document.getElementById('start').classList.add('hidden');
-    // First-time tutorial — once dismissed, never shown again until localStorage clears.
-    let seenTutorial = false;
-    try { seenTutorial = localStorage.getItem('ag.tutorialSeen') === '1'; } catch (e) {}
-    if (!seenTutorial) {
-      document.getElementById('tutorial').classList.remove('hidden');
-    } else {
-      document.getElementById('nnLobby').classList.remove('hidden');
-    }
-    if (typeof applyUnlockGating === 'function') applyUnlockGating();
-    document.getElementById('blueSizeLabel').textContent = _lobby.blue;
-    document.getElementById('redSizeLabel').textContent  = _lobby.red;
-    // Sync active highlights to current _lobby state (restored from localStorage)
-    document.querySelectorAll('#nnLobby .mode-btn').forEach(b =>
-      b.classList.toggle('active', b.dataset.mode === _lobby.mode));
-    // Style buttons: .diff-btn[data-diff] (chassis-btn shares the class but
-    // uses data-chassis instead — exclude it via the [data-diff] gate)
-    document.querySelectorAll('#nnLobby .diff-btn[data-diff]').forEach(b =>
-      b.classList.toggle('active', b.dataset.diff === _lobby.difficulty));
-    document.querySelectorAll('#nnLobby .chassis-btn').forEach(b =>
-      b.classList.toggle('active', b.dataset.chassis === _lobby.chassis));
-    document.querySelectorAll('#nnLobby .weap-btn').forEach(b =>
-      b.classList.toggle('active', b.dataset.weapon === _lobby.weapon));
-    if (_lobby.lineupOpen) rebuildLineupUI();
-  };
+  _nnBtn.onclick = _startEntryCountdown;
 }
+const _entryCancelBtn = document.getElementById('entryCountdownCancel');
+if (_entryCancelBtn) _entryCancelBtn.onclick = _cancelEntryCountdown;
+// ESC in the countdown aborts back to start. Capture phase so we beat any
+// in-game ESC handler that opens a pause menu / etc.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const overlay = document.getElementById('entryCountdown');
+    if (overlay && overlay.style.display !== 'none') {
+      _cancelEntryCountdown();
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }
+}, true);
+// Pre-fill the input with whatever callsign is in localStorage so a
+// returning player doesn't have to retype each visit.
+(function _prefillCallsign() {
+  const input = document.getElementById('callsignInput');
+  if (input && typeof getOperatorName === 'function') {
+    input.value = getOperatorName();
+  }
+  // Enter key inside the input triggers PLAY.
+  if (input) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); _startEntryCountdown(); }
+    });
+  }
+})();
 const _tutorialDoneBtn = document.getElementById('tutorialDoneBtn');
 if (_tutorialDoneBtn) {
   _tutorialDoneBtn.onclick = () => {
