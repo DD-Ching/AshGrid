@@ -1,0 +1,236 @@
+// ============ TOUCH INPUT (mobile) ============
+// Detect touch device once at load. Touch overlays (virtual sticks +
+// action buttons) only render when this is true, so desktop is unchanged.
+//
+// Classic-script. Declares globally:
+//   touchInput (object — { enabled, moveTouch, aimTouch })
+//   TOUCH_STICK_RADIUS · TOUCH_STICK_DEAD (constants)
+//   _touchHitButton(x, y) · _touchTriggerAction(id)
+//   The IIFE at the bottom auto-attaches touchstart/move/end/cancel
+//   listeners when touchInput.enabled — same as before extraction.
+//
+// External deps (resolved at call-time):
+//   game · player · buildMode · isWallKind · screenToWorld
+//   placeBuildBlock · _hitRect · togglePause · setAudioMuted ·
+//   exitMatchToMenu · _radialKindUnderCursor · _snapAndCheckPlace ·
+//   placeStructure · _editorCellAtScreen · _editorPlaceCell ·
+//   _editorLineCells · _editorPlaceLine · swapPlayerToAlly ·
+//   shareSurvivalRun · mission · showSwapToast · T
+
+const touchInput = {
+  enabled: ('ontouchstart' in window) || (navigator.maxTouchPoints > 0),
+  moveTouch: null,    // { id, anchorX, anchorY, dx, dy } — left half drag
+  aimTouch: null,     // same shape — right half drag
+};
+const TOUCH_STICK_RADIUS = 60;
+const TOUCH_STICK_DEAD = 6;
+
+function _touchHitButton(x, y) {
+  if (!game._touchActionButtons) return null;
+  for (const b of game._touchActionButtons) {
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.id;
+  }
+  return null;
+}
+function _touchTriggerAction(id) {
+  if (game._paused) {
+    if (id === 'pause') togglePause();
+    return;
+  }
+  if (game.state !== 'playing') return;
+  switch (id) {
+    case 'q':     toggleDrone(); break;
+    case 'e':     launchFPV(); break;
+    case 'g':     throwGrenade(); break;
+    case 'r':     startReload(); break;
+    case 'v':
+      player._aimAssist = !player._aimAssist;
+      try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (err) {}
+      break;
+    case 'b':     toggleBuildMode(); break;
+    case 'pause': togglePause(); break;
+  }
+}
+
+if (touchInput.enabled) {
+  // Touch users default to aim-assist ON (they have less precise aim than
+  // mouse) and to a sane minimap state.
+  if (localStorage.getItem('ag.aimAssist') == null) {
+    player._aimAssist = true;
+    try { localStorage.setItem('ag.aimAssist', '1'); } catch (e) {}
+  }
+  // Prevent the page from scrolling / pinch-zooming under our gestures.
+  document.body.style.touchAction = 'none';
+
+  const onStart = (e) => {
+    for (const t of e.changedTouches) {
+      // 1) Action buttons (top-right)
+      const btn = _touchHitButton(t.clientX, t.clientY);
+      if (btn) { _touchTriggerAction(btn); continue; }
+      // 2) Pause overlay buttons (when paused)
+      if (game._paused) {
+        if (_hitRect(game._pauseResumeRect, t.clientX, t.clientY)) togglePause();
+        else if (_hitRect(game._pauseMuteRect, t.clientX, t.clientY)) setAudioMuted(!AUDIO.muted);
+        else if (_hitRect(game._pauseExitRect, t.clientX, t.clientY)) exitMatchToMenu();
+        continue;
+      }
+      // 3) HUD pause button (top-left)
+      if (_hitRect(game._pauseBtnRect, t.clientX, t.clientY)) {
+        togglePause(); continue;
+      }
+      // 4) Squad chip swap
+      if (game._squadChipRects) {
+        let hit = false;
+        for (const c of game._squadChipRects) {
+          if (c.alive && _hitRect(c, t.clientX, t.clientY)) {
+            swapPlayerToAlly(c.allyIdx);
+            hit = true; break;
+          }
+        }
+        if (hit) continue;
+      }
+      // 4a) Defense radial picker — tap a wedge to select; tap dead-zone
+      // or outside to soft-cancel. Must come BEFORE the stick logic so
+      // the tap doesn't get consumed as a movement input.
+      if (_canBuildPlace() && buildMode.radialOpen) {
+        const picked = _radialKindUnderCursor(t.clientX, t.clientY);
+        if (picked) {
+          buildMode.kind = picked;
+          buildMode.radialOpen = false;
+          showSwapToast(`${T('已选', 'Selected')}: ${STRUCTURE_DEFS[picked].label()}`);
+        } else {
+          buildMode.radialOpen = false;
+        }
+        hit = true;
+        continue;
+      }
+      // 4a2) Defense placing-mode tap — single helper does snap + reach.
+      if (_canBuildPlace() && !buildMode.radialOpen) {
+        const cell = _snapAndCheckPlace(t.clientX, t.clientY, true);
+        if (cell) {
+          const { gx, gy } = cell;
+          if (isWallKind(buildMode.kind)) {
+            buildMode._dragStart = { gx, gy };
+            buildMode._dragEnd   = { gx, gy };
+          }
+          placeStructure(buildMode.kind, gx, gy);
+        }
+        hit = true;
+        continue;
+      }
+      // 4b) Survival revive CTA — rewarded-ad on tap
+      if (_hitRect(game._reviveBtnRect, t.clientX, t.clientY)) {
+        if (mission && typeof mission.tryRevive === 'function') mission.tryRevive();
+        continue;
+      }
+      // 4b2) Survival share-run on tap
+      if (_hitRect(game._shareRunBtnRect, t.clientX, t.clientY)) {
+        if (mission && typeof mission.getRunSummary === 'function') {
+          shareSurvivalRun(mission.getRunSummary());
+        }
+        continue;
+      }
+      // 4c2) Build-phase skip-wave button
+      if (_hitRect(game._skipWaveAdRect, t.clientX, t.clientY)) {
+        if (mission && typeof mission.trySkipWave === 'function') mission.trySkipWave();
+        continue;
+      }
+      // 4c) Build-phase ad-extend button
+      if (_hitRect(game._buildPhaseAdRect, t.clientX, t.clientY)) {
+        if (game._buildPhase && !game._buildPhase._adExtended) {
+          game._buildPhase._adExtended = true;
+          requestRewardedAd('build_phase_extend', (ok) => {
+            if (!ok) { game._buildPhase._adExtended = false; return; }
+            if (game._buildPhase) {
+              game._buildPhase.left += 2;
+              showSwapToast(T(`+2 掩体 · 时间延长 5s`, `+2 covers · +5s timer`));
+            }
+            if (mission && typeof mission._extendBreather === 'function') {
+              mission._extendBreather(300);
+            }
+          });
+        }
+        continue;
+      }
+      // 5a) BUILD PHASE: between-wave cover placement takes precedence
+      if (game._buildPhase && game._buildPhase.active && game._buildPhase.left > 0) {
+        placeBuildBlock(t.clientX, t.clientY);
+        continue;
+      }
+      // 5b) Otherwise: stick assignment by screen half
+      if (t.clientX < window.innerWidth / 2) {
+        if (!touchInput.moveTouch) {
+          touchInput.moveTouch = { id: t.identifier, anchorX: t.clientX, anchorY: t.clientY, dx: 0, dy: 0 };
+        }
+      } else {
+        if (!touchInput.aimTouch) {
+          touchInput.aimTouch = { id: t.identifier, anchorX: t.clientX, anchorY: t.clientY, dx: 0, dy: 0 };
+        }
+      }
+    }
+    e.preventDefault();
+  };
+  const onMove = (e) => {
+    for (const t of e.changedTouches) {
+      if (touchInput.moveTouch && touchInput.moveTouch.id === t.identifier) {
+        touchInput.moveTouch.dx = t.clientX - touchInput.moveTouch.anchorX;
+        touchInput.moveTouch.dy = t.clientY - touchInput.moveTouch.anchorY;
+      }
+      if (touchInput.aimTouch && touchInput.aimTouch.id === t.identifier) {
+        touchInput.aimTouch.dx = t.clientX - touchInput.aimTouch.anchorX;
+        touchInput.aimTouch.dy = t.clientY - touchInput.aimTouch.anchorY;
+      }
+    }
+    // Defense wall drag: update preview end while finger is held down on
+    // the canvas, mirroring the mousemove path.
+    if (buildMode.active && isWallKind(buildMode.kind) && buildMode._dragStart
+        && !buildMode.radialOpen && game.state === 'playing' && !game._paused) {
+      const t = e.changedTouches[0];
+      if (t) {
+        const wp = screenToWorld(t.clientX, t.clientY);
+        const SNAP = 30;
+        const gx = Math.round(wp.x / SNAP) * SNAP;
+        const gy = Math.round(wp.y / SNAP) * SNAP;
+        buildMode._dragEnd = { gx, gy };
+      }
+    }
+    e.preventDefault();
+  };
+  const onEnd = (e) => {
+    for (const t of e.changedTouches) {
+      if (touchInput.moveTouch && touchInput.moveTouch.id === t.identifier) {
+        touchInput.moveTouch = null;
+      }
+      if (touchInput.aimTouch && touchInput.aimTouch.id === t.identifier) {
+        touchInput.aimTouch = null;
+      }
+    }
+    // Defense wall drag-release: commit the Bresenham line on touchend
+    // (same path as the mouseup handler) so the user can stretch + lift.
+    if (buildMode.active && isWallKind(buildMode.kind) && buildMode._dragStart && buildMode._dragEnd) {
+      const a = buildMode._dragStart, b = buildMode._dragEnd;
+      if (a.gx !== b.gx || a.gy !== b.gy) {
+        const cells = _editorLineCells(a.gx, a.gy, b.gx, b.gy, 30);
+        const kind = buildMode.kind;
+        for (let i = 1; i < cells.length; i++) {
+          const c = cells[i];
+          const occupied = (game._structures || []).some(s =>
+            isWallKind(s.kind) && s.hp > 0 && s.x === c.cx && s.y === c.cy);
+          if (occupied) continue;
+          if (!canAffordStructure(kind)) {
+            showSwapToast(T('能源不足', 'Out of energy'));
+            break;
+          }
+          placeStructure(kind, c.cx, c.cy);
+        }
+      }
+      buildMode._dragStart = null;
+      buildMode._dragEnd   = null;
+    }
+    e.preventDefault();
+  };
+  window.addEventListener('touchstart',  onStart, { passive: false });
+  window.addEventListener('touchmove',   onMove,  { passive: false });
+  window.addEventListener('touchend',    onEnd,   { passive: false });
+  window.addEventListener('touchcancel', onEnd,   { passive: false });
+}
