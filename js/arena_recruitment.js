@@ -22,8 +22,53 @@
 //   showSwapToast() · playRadioStatic() · T()
 
 const ARENA_RECRUIT_CHANCE = 0.25;     // natural kill conversion roll
-const ARENA_SED_RANGE      = 220;      // px
+const ARENA_SED_RANGE      = 220;      // px — kept for back-compat; the
+                                       // active gate is ARENA_TOUCH_RANGE
 const ARENA_SQUAD_CAP      = 5;        // hard cap on bots you own at once
+
+// ---- Phase 4: SEED mechanic ----
+// SEED is a per-unit experience number 0–100. Rises +1/sec while the unit
+// is HUMAN-piloted and alive; AI bots stay at 0 forever (they never tick).
+// SEED follows the BODY through pawn-swap: when you swap out, the ex-op
+// slot keeps the SEED you built up (in case you swap back). When you swap
+// IN, you inherit the target ally's SEED (usually 0 since it was AI).
+//
+// Active recruit (G key) requires FOUR gates — all must pass:
+//   1. Distance ≤ (myR + targetR + buffer) ≈ touching (was 220 px)
+//   2. Target HP < maxHp * ARENA_HP_GATE (must damage NPC to half first)
+//   3. (my SEED) - (target SEED) > ARENA_SEED_GAP (skill differential)
+//   4. !target._humanPiloted (human-piloted units are IMMUNE — silent fail
+//      so the player can't tell whether failure was the SEED/HP/range
+//      gate or because the target is a human; that ambiguity IS the design
+//      tension when PvP arrives)
+//
+// Passive 25% natural-kill recruit (`_arenaTickRecruitment`) is unchanged.
+const ARENA_SEED_MAX       = 100;      // hard cap
+const ARENA_SEED_PER_SEC   = 1;        // rise rate when human-piloted+alive
+const ARENA_SEED_GAP       = 10;       // minimum SEED differential to recruit
+const ARENA_HP_GATE        = 0.5;      // target HP must be below maxHp * gate
+const ARENA_TOUCH_BUFFER   = 5;        // px added to radii sum for touch range
+
+// _arenaTickSeed — per-frame, called from the main update loop right next
+// to _arenaTickRecruitment. Raises SEED on every unit currently flagged
+// _humanPiloted. In solo NN that's only `player`; PvP just plugs more.
+function _arenaTickSeed() {
+  const inc = ARENA_SEED_PER_SEC / 60;
+  if (player && player.alive && player._humanPiloted) {
+    player._seed = Math.min(ARENA_SEED_MAX, (player._seed || 0) + inc);
+  }
+  // Forward-compat (PvP): if any ally / enemy is human-piloted, tick them too.
+  for (const a of allies) {
+    if (a && a.alive && a._humanPiloted && a !== player) {
+      a._seed = Math.min(ARENA_SEED_MAX, (a._seed || 0) + inc);
+    }
+  }
+  for (const e of enemies) {
+    if (e && e.alive && e._humanPiloted) {
+      e._seed = Math.min(ARENA_SEED_MAX, (e._seed || 0) + inc);
+    }
+  }
+}
 
 function _arenaAliveSquadCount() {
   let n = 0;
@@ -56,6 +101,11 @@ function _arenaConvertEnemyToAlly(e) {
   e._invulnUntil = (game.time || 0) + 90;
   // Tag so HUD / squad-chip / death-on-cap logic can recognize recruits
   e._arenaRecruit = true;
+  // Phase 4: ensure SEED bookkeeping exists. Converted enemies keep their
+  // accumulated SEED (almost always 0 for raw AI bots) and are explicitly
+  // NOT human-piloted (NN drives them once they're on your team).
+  if (typeof e._seed !== 'number') e._seed = 0;
+  e._humanPiloted = false;
   allies.push(e);
   // Feedback
   if (typeof showSwapToast === 'function') {
@@ -67,13 +117,32 @@ function _arenaConvertEnemyToAlly(e) {
 }
 
 // G-key handler. Returns true if we converted (so the dispatcher skips grenade).
+// Four gates: touch range, HP < 50%, SEED gap > 10, target not human-piloted.
+// Failure modes look identical to the player — they can't deduce why a recruit
+// missed (range / HP / SEED / human-piloted). That ambiguity is intentional.
 function _arenaTrySEDConvert() {
   if (!player || !player.alive) return false;
   if (_arenaAliveSquadCount() >= ARENA_SQUAD_CAP) return false;
-  let best = null, bestD = ARENA_SED_RANGE;
+  const mySeed = player._seed || 0;
+  const myR = player.radius || 13;
+  let best = null, bestD = Infinity;
   for (const e of enemies) {
     if (!e || !e.alive) continue;
+    // Gate 4 — human-piloted targets are immune (silent fail). Forward-compat
+    // for PvP; in solo NN no enemy is ever flagged human, so this is a no-op.
+    if (e._humanPiloted) continue;
+    // Gate 1 — touch range (radii sum + tiny buffer). Hard requirement.
+    const targetR = e.radius || 13;
+    const touchD = myR + targetR + ARENA_TOUCH_BUFFER;
     const d = Math.hypot(e.x - player.x, e.y - player.y);
+    if (d > touchD) continue;
+    // Gate 2 — NPC must be damaged below the HP gate. "招降要先打殘".
+    const maxHp = e.maxHp || 80;
+    if (e.hp >= maxHp * ARENA_HP_GATE) continue;
+    // Gate 3 — SEED differential. Player must out-skill the target by GAP.
+    const targetSeed = e._seed || 0;
+    if (mySeed - targetSeed <= ARENA_SEED_GAP) continue;
+    // All four gates pass. Tie-break by nearest in case multiple eligible.
     if (d < bestD) { bestD = d; best = e; }
   }
   if (!best) return false;
@@ -108,6 +177,9 @@ function _arenaSpawnFactoryBot(team, x, y) {
     _invulnUntil: (game.time || 0) + 60,
     _arenaFactoryBot: true,
     callsign: (team === 'blue' ? 'F-' : 'R-F-') + (++_arenaRecruitCount),
+    // Phase 4: factory bots start at SEED 0 (AI-piloted from the moment they spawn).
+    _seed: 0,
+    _humanPiloted: false,
   };
   if (typeof applyChassisToUnit === 'function') {
     applyChassisToUnit(u, chassisId, 2.5, 80, 13);

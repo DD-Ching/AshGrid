@@ -2284,6 +2284,12 @@ const player = {
   staminaRegenLockUntil: 0,
   // Grenades
   grenades: 3, maxGrenades: 3,
+  // Phase 4: SEED — per-vehicle skill stat 0–100. Rises +1/sec while
+  // human-piloted+alive (this body has YOU in it). Gates active recruit
+  // (G key) via _arenaTrySEDConvert. _humanPiloted is the immunity flag
+  // checked by gate 4. Pawn-swap snapshots/inherits this across bodies.
+  _seed: 0,
+  _humanPiloted: true,
 };
 
 // ============ STRUCTURES + BUILD + POWER + UPGRADES + AIRSTRIKES ============
@@ -5062,6 +5068,11 @@ function update() {
   if (game._nnMode && typeof _arenaTickRecruitment === 'function') {
     _arenaTickRecruitment();
   }
+  // Phase 4: SEED rises +1/sec on human-piloted units (in solo NN that's
+  // just `player`; PvP plugs more). Gates active recruit via G key.
+  if (game._nnMode && typeof _arenaTickSeed === 'function') {
+    _arenaTickSeed();
+  }
 
 
   // Footprint emission for allies + enemies — once every 30 ticks, drop a
@@ -7283,6 +7294,36 @@ function renderWorld() {
       ctx.fillStyle = '#42B7E8';
       ctx.fillRect(e.x-15, e.y-30, 30 * e.armor/e.maxArmor, 2);
     }
+    // Phase 4: SEED label + recruit-cue. Show enemy SEED when within
+    // engagement range (≤200u). When VISIBLE GATES (distance + HP + SEED
+    // diff) all pass, draw a red "▶ G" pulse so the player knows recruit
+    // is a press away. _humanPiloted is INTENTIONALLY excluded from the
+    // cue — that gate fails silently so the player learns by feel that
+    // some targets resist (forward-compat for PvP).
+    if (game._nnMode) {
+      const _ed = Math.hypot(e.x - player.x, e.y - player.y);
+      if (_ed < 200) {
+        const _eSeed = Math.floor(e._seed || 0);
+        ctx.fillStyle = COLORS.black;
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`SEED ${_eSeed}`, e.x, e.y - 36);
+        ctx.textAlign = 'left';
+        // Recruit cue — only when distance + HP + SEED gates all pass.
+        const _pR = (player.radius || 13) + (e.radius || 13) + ARENA_TOUCH_BUFFER;
+        const _gHp = e.hp < (e.maxHp || 80) * ARENA_HP_GATE;
+        const _gRng = _ed <= _pR;
+        const _gSeed = ((player._seed || 0) - _eSeed) > ARENA_SEED_GAP;
+        if (_gHp && _gRng && _gSeed) {
+          const _pulse = 0.6 + 0.4 * Math.sin(game.time * 0.2);
+          ctx.fillStyle = `rgba(230, 51, 41, ${_pulse})`;
+          ctx.font = 'bold 11px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('▶ G', e.x, e.y - 48);
+          ctx.textAlign = 'left';
+        }
+      }
+    }
     ctx.globalAlpha = 1;
   }
 
@@ -8493,6 +8534,36 @@ function renderHUD() {
       ctx.font = 'bold 9px sans-serif';
       ctx.fillText('● AIM-ASSIST · V', 110, 102);
     }
+  }
+  // Phase 4: SEED chip (NN mode only). Per-vehicle skill 0–100 — gates
+  // active recruit (G). Bar fills red, pulses gentle red once it crosses
+  // the recruit-gate threshold so the player knows they can G to capture.
+  if (game._nnMode) {
+    const _seedVal = Math.floor(player._seed || 0);
+    const _barX = 26, _barY = _narrow ? 72 : 108, _barW = _narrow ? 100 : 140, _barH = 8;
+    // Track
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.fillRect(_barX - 1, _barY - 1, _barW + 2, _barH + 2);
+    ctx.fillStyle = 'rgba(232, 228, 216, 0.18)';
+    ctx.fillRect(_barX, _barY, _barW, _barH);
+    // Fill
+    const _seedFrac = Math.max(0, Math.min(1, _seedVal / ARENA_SEED_MAX));
+    const _gateFrac = Math.min(1, ARENA_SEED_GAP / ARENA_SEED_MAX);
+    // Gate notch (visual marker at SEED=10) — below threshold = locked
+    ctx.fillStyle = 'rgba(200, 38, 28, 0.35)';
+    ctx.fillRect(_barX + _barW * _gateFrac - 1, _barY - 2, 2, _barH + 4);
+    // Filled portion — turns vivid red + pulses once over the gate
+    const _overGate = _seedVal > ARENA_SEED_GAP;
+    const _pulse = _overGate ? (0.85 + 0.15 * Math.sin(game.time * 0.18)) : 1;
+    ctx.fillStyle = _overGate
+      ? `rgba(230, 51, 41, ${_pulse})`
+      : 'rgba(184, 180, 168, 0.70)';
+    ctx.fillRect(_barX, _barY, _barW * _seedFrac, _barH);
+    // Label
+    ctx.fillStyle = _overGate ? COLORS.red : COLORS.gray;
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText(`SEED · ${_seedVal}` + (_overGate ? '  ▶ G' : ''), _barX, _barY - 3);
+    ctx.font = '9px sans-serif';
   }
 
   // Top-right: score. On narrow, shrink so multi-digit values don't reach

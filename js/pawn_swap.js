@@ -34,6 +34,12 @@ function swapPlayerToAlly(idx) {
   const targetGunRecoil = a.gunRecoil || 0;
   const targetHp        = a.hp, targetMaxHp = a.maxHp;
   const targetChassis   = a._chassis || 'humanoid';
+  // Phase 4: SEED follows the body. Snapshot the operator's pre-swap SEED
+  // so we can stamp it onto the ex-op slot below (body remembers its
+  // accumulated SEED in case you swap back). Target ally's SEED transfers
+  // into the player when we take over its body.
+  const operatorSeedBefore = player._seed || 0;
+  const targetSeed         = a._seed || 0;
 
   // What to put in the ally slot we just left behind:
   //   - If the operator was ALIVE, hand the live body to NN intact (full hp,
@@ -61,6 +67,11 @@ function swapPlayerToAlly(idx) {
       _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
       _respawnAt: null,
       _invulnUntil: game.time + 60,
+      // Phase 4: ex-op slot inherits the SEED the human player built up in
+      // this body. AI now drives, so _humanPiloted flips false (SEED no
+      // longer ticks here — but the accumulated value persists for swap-back).
+      _seed: operatorSeedBefore,
+      _humanPiloted: false,
     };
   } else {
     // Dead body — already an "explosion" was drawn. Slot becomes corpse +
@@ -84,6 +95,10 @@ function swapPlayerToAlly(idx) {
       _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
       _respawnAt: game.time + 5 * 60,   // RESPAWN_TICKS — same constant inline
       _invulnUntil: 0,
+      // Phase 4: dead ex-op body keeps its SEED (will respawn as AI with
+      // this value; the player chose to abandon it mid-respawn-countdown).
+      _seed: operatorSeedBefore,
+      _humanPiloted: false,
     };
   }
 
@@ -110,6 +125,11 @@ function swapPlayerToAlly(idx) {
   mouse.down = false;
   applyWeaponToPlayer(targetWeapon);
   player.hp = targetHp;   // applyWeaponToPlayer doesn't touch HP — be explicit
+  // Phase 4: SEED follows the body. Player inherits the target ally's SEED
+  // (almost always 0 since it was AI-driven, unless the player previously
+  // built it up and swapped back into a body they once piloted).
+  player._seed = targetSeed;
+  player._humanPiloted = true;
 
   showSwapToast(`${wasResurrected ? T('紧急接管', 'EMERGENCY SWAP') : T('接管', 'SWAP')} ${targetCallsign}`);
   playSfx('countdown', { freq: 1320, vol: 0.45 });
