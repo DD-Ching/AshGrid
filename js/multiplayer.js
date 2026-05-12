@@ -55,6 +55,15 @@ const _mpRemoteBullets = [];
 // Phase 20c — kill feed + peer scoreboard. Map: peerId → kill count.
 const _mpScoreboard = new Map();
 const _mpKillFeed = [];               // [{ killer, victim, weapon, at }, ...]
+// Phase 24 — emotes + pings. Emotes are a chat-bubble char that floats
+// over the sender for ~3 sec. Pings are world-coord markers that pulse
+// for ~4 sec so squad mates can call out a position without typing.
+// Both go P2P via Trystero so latency is human-fast.
+const MP_EMOTES = ['GG', 'LOL', 'GO!', '!', '?'];
+let _mpMyEmoteIdx = 0;
+let _mpLastEmoteAt = 0;
+let _mpLastPingAt = 0;
+const _mpPings = [];                  // [{ x, y, peerId, life, maxLife }]
 
 function _mpIsActive() { return !!_mpState.enabled; }
 function _mpPeerCount() { return _mpState.enabled ? (_mpState.remotePlayers.size + 1) : 0; }
@@ -158,6 +167,28 @@ async function _mpConnect() {
     _mpKillFeed.push({ killer: shooterName, victim: victimName, weapon: data.weapon || 'RIFLE', at: Date.now() });
     // Trim to last 6 lines
     if (_mpKillFeed.length > 6) _mpKillFeed.splice(0, _mpKillFeed.length - 6);
+  });
+  // Phase 24 — emote + ping channels. Emote sets a chat-bubble on the
+  // remote player's state; ping pushes a marker to _mpPings. Both are
+  // throttled on the SEND side (_mpTriggerEmote / _mpTriggerPing) so a
+  // spam-click can't flood the room.
+  const [sendEmote, getEmote] = _mpState.room.makeAction('emote');
+  const [sendPing,  getPing]  = _mpState.room.makeAction('ping');
+  _mpState.sendEmote = sendEmote;
+  _mpState.sendPing  = sendPing;
+  getEmote((data, peerId) => {
+    if (!data) return;
+    const rp = _mpState.remotePlayers.get(peerId);
+    if (!rp) return;
+    const idx = (typeof data.idx === 'number') ? data.idx : 0;
+    rp.emote = {
+      char: MP_EMOTES[((idx % MP_EMOTES.length) + MP_EMOTES.length) % MP_EMOTES.length] || '?',
+      until: Date.now() + 3000,
+    };
+  });
+  getPing((data, peerId) => {
+    if (!data || typeof data.x !== 'number' || typeof data.y !== 'number') return;
+    _mpPings.push({ x: data.x, y: data.y, peerId, life: 240, maxLife: 240 });
   });
   _mpState.room.onPeerJoin((peerId) => {
     console.log('[mp] peer joined:', peerId);
@@ -407,6 +438,115 @@ function _mpRenderHUD() {
   }
   ctx.restore();
   ctx.textAlign = 'left';
+}
+
+// ─── Phase 24: emotes + pings ─────────────────────────────────────
+// Both work in single-player too (your own bubble renders locally for
+// feedback) but only broadcast to peers when MP is active. 1-sec emote
+// cooldown / 1.5-sec ping cooldown so a key-spam can't flood the room.
+function _mpTriggerEmote() {
+  const now = Date.now();
+  if (now - _mpLastEmoteAt < 1000) return;
+  _mpLastEmoteAt = now;
+  const idx = _mpMyEmoteIdx;
+  _mpMyEmoteIdx = (_mpMyEmoteIdx + 1) % MP_EMOTES.length;
+  if (typeof player !== 'undefined') {
+    player._emote = { char: MP_EMOTES[idx], until: Date.now() + 3000 };
+  }
+  if (_mpState.enabled && _mpState.sendEmote) {
+    try { _mpState.sendEmote({ idx }); } catch (e) {}
+  }
+  if (typeof playSfx === 'function') playSfx('reload', { vol: 0.25, freq: 1100 });
+}
+function _mpTriggerPing(wx, wy) {
+  const now = Date.now();
+  if (now - _mpLastPingAt < 1500) return;
+  _mpLastPingAt = now;
+  _mpPings.push({
+    x: wx, y: wy,
+    peerId: _mpState.myId || 'local',
+    life: 240, maxLife: 240,
+  });
+  if (_mpState.enabled && _mpState.sendPing) {
+    try { _mpState.sendPing({ x: Math.round(wx), y: Math.round(wy) }); } catch (e) {}
+  }
+  if (typeof playSfx === 'function') playSfx('countdown', { vol: 0.35, freq: 880 });
+  if (typeof showSwapToast === 'function') showSwapToast('▶ PING');
+}
+// Tick pings every frame from updatePlayer so their life counts down.
+function _mpTickPings() {
+  for (let i = _mpPings.length - 1; i >= 0; i--) {
+    _mpPings[i].life--;
+    if (_mpPings[i].life <= 0) _mpPings.splice(i, 1);
+  }
+}
+// Render in world space (before HUD). Pings: expanding red ring + center
+// dot. Local-player emote: bubble. Remote-player emotes: same bubble over
+// each remote.
+function _mpRenderPings() {
+  if (typeof ctx === 'undefined') return;
+  for (const p of _mpPings) {
+    const t = p.life / p.maxLife;             // 1 → 0
+    const expand = (1 - t) * 50;              // 0 → 50u outward
+    ctx.save();
+    ctx.globalAlpha = 0.85 * t;
+    ctx.strokeStyle = COLORS.red;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 14 + expand, 0, Math.PI * 2);
+    ctx.stroke();
+    // Inner ring (pulses inversely so it reads as a 'bounce')
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.5 * t;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 6 + expand * 0.4, 0, Math.PI * 2);
+    ctx.stroke();
+    // Center dot
+    ctx.globalAlpha = t;
+    ctx.fillStyle = COLORS.red;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+function _mpRenderEmotes() {
+  if (typeof ctx === 'undefined') return;
+  const drawBubble = (x, y, char) => {
+    ctx.save();
+    ctx.font = 'bold 16px sans-serif';
+    const w = Math.max(40, ctx.measureText(char).width + 20);
+    const bx = x - w / 2, by = y - 64;
+    // Bubble background — cream, with a small tail pointing down
+    ctx.fillStyle = COLORS.cream;
+    ctx.fillRect(bx, by, w, 26);
+    // Tail (triangle)
+    ctx.beginPath();
+    ctx.moveTo(x - 6, by + 26);
+    ctx.lineTo(x + 6, by + 26);
+    ctx.lineTo(x,     by + 34);
+    ctx.closePath();
+    ctx.fill();
+    // Border
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(bx, by, w, 26);
+    // Char
+    ctx.fillStyle = COLORS.black;
+    ctx.textAlign = 'center';
+    ctx.fillText(char, x, by + 19);
+    ctx.restore();
+  };
+  // Local player emote
+  if (typeof player !== 'undefined' && player.alive && player._emote && Date.now() < player._emote.until) {
+    drawBubble(player.x, player.y, player._emote.char);
+  }
+  // Remote players
+  for (const rp of _mpState.remotePlayers.values()) {
+    if (rp.emote && Date.now() < rp.emote.until) {
+      drawBubble(rp.x, rp.y, rp.emote.char);
+    }
+  }
 }
 
 // Boot once the page is ready. Defer 1 sec so the rest of the engine

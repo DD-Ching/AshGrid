@@ -150,6 +150,21 @@ const KEY_BINDINGS = {
   y:   { action: () => {
     if (typeof _arenaTryRecycle === 'function') _arenaTryRecycle();
   } },
+  // Phase 24: T cycles through the emote list (GG → LOL → GO! → ! → ?),
+  // bubble pops over your head + broadcasts to peers in the room. SP mode
+  // still shows the bubble locally for visual feedback.
+  t:   { action: () => {
+    if (typeof _mpTriggerEmote === 'function') _mpTriggerEmote();
+  } },
+  // Phase 24: Z drops a ping at the mouse cursor's world position. All
+  // peers see a pulsing red marker + hear a tone — call out a target /
+  // route without typing.
+  z:   { action: () => {
+    if (typeof _mpTriggerPing !== 'function') return;
+    if (typeof screenToWorld !== 'function' || typeof mouse === 'undefined') return;
+    const wp = screenToWorld(mouse.x, mouse.y);
+    _mpTriggerPing(wp.x, wp.y);
+  } },
 };
 
 window.addEventListener('keydown', e => {
