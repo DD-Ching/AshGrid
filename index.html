@@ -6137,34 +6137,50 @@ function renderStructures() {
       ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
       ctx.fill();
     } else if (s.kind === 'factory') {
-      // Phase 3C: capturable factory. Renders team color (neutral=gray /
-      // blue / red), capture-radius ring on ground, capture progress arc,
-      // and 'next bot in Ns' countdown when owned.
-      const teamCol = s._team === 'blue' ? '#42B7E8'
-                    : s._team === 'red'  ? '#E63329' : '#B8B4A8';
+      // Phase 3C: capturable factory. Neutralized in Phase 4B per user
+      // feedback ('不要讓它有特別的顏色, 不然很突兀') — the body now blends
+      // with the TOD palette regardless of who owns it. The ONLY ownership
+      // tell is a faint red corner mark when the player owns it. Capture
+      // progress is shown via an arc in the capturing team's color so the
+      // ACTION still reads, but the idle state is just "neutral factory".
       const FD = STRUCTURE_DEFS['factory'];
-      // Ground capture-radius ring (faint, always visible so players see WHERE to stand)
-      ctx.strokeStyle = `rgba(${s._team === 'blue' ? '66,183,232' : s._team === 'red' ? '230,51,41' : '184,180,168'}, 0.32)`;
+      const playerOwned = s._team === 'blue';
+      // Ground capture-radius ring — neutral creamDark (TOD-aware), always
+      // shown so players see WHERE to stand without team-color noise.
+      ctx.strokeStyle = COLORS.creamDark;
+      ctx.globalAlpha = 0.30;
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 4]);
       ctx.beginPath();
       ctx.arc(s.x, s.y, FD.captureR, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
-      // Body — fat octagon-ish (TOD-tinted via COLORS.gray)
+      ctx.globalAlpha = 1.0;
+      // Body — neutral TOD-tinted gray
       ctx.fillStyle = COLORS.gray;
       ctx.fillRect(s.x - r, s.y - r, def.size, def.size);
-      ctx.strokeStyle = teamCol;
-      ctx.lineWidth = 3;
-      ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
-      // Inner core gear
-      ctx.fillStyle = teamCol;
+      ctx.strokeStyle = COLORS.cream;
       ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(s.x - r, s.y - r, def.size, def.size);
+      ctx.globalAlpha = 1.0;
+      // Inner core — neutral creamDark, no team flair
+      ctx.fillStyle = COLORS.creamDark;
+      ctx.globalAlpha = 0.45;
       ctx.fillRect(s.x - r * 0.55, s.y - r * 0.55, def.size * 0.55, def.size * 0.55);
       ctx.globalAlpha = 1.0;
-      // Capture progress arc on top of structure
+      // Player-owned indicator — tiny red rivet in top-right corner only.
+      // (Enemy ownership is intentionally invisible — the player learns
+      // through the spawn flow that an enemy bot just emerged.)
+      if (playerOwned) {
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(s.x + r - 6, s.y - r + 2, 4, 4);
+      }
+      // Capture progress arc — STILL team-colored because it shows live
+      // action, not idle ownership. Subtle enough not to read as a team
+      // signal when nobody's contesting.
       if (s._captureProgress > 0 && s._captureBy) {
-        const capCol = s._captureBy === 'blue' ? '#42B7E8' : '#E63329';
+        const capCol = s._captureBy === 'blue' ? COLORS.red : '#B8703A';
         const frac = s._captureProgress / FD.captureTicks;
         ctx.strokeStyle = capCol;
         ctx.lineWidth = 4;
@@ -6172,18 +6188,20 @@ function renderStructures() {
         ctx.arc(s.x, s.y, r + 6, -Math.PI/2, -Math.PI/2 + frac * Math.PI * 2);
         ctx.stroke();
       }
-      // 'FACTORY' label
-      ctx.fillStyle = '#FFFFFF';
+      // 'FACTORY' label — cream (TOD-stable, readable on any ambient)
+      ctx.fillStyle = COLORS.cream;
       ctx.font = 'bold 9px monospace';
       ctx.textAlign = 'center';
       ctx.fillText('FACTORY', s.x, s.y + 4);
-      // Owner-only: production countdown
+      // Owner-only: production countdown — cream so it doesn't shout team color
       if (s._team !== 'neutral' && s._nextProductionAt > 0) {
         const remTicks = Math.max(0, s._nextProductionAt - game.time);
         const remSec = Math.ceil(remTicks / 60);
         ctx.font = 'bold 8px monospace';
-        ctx.fillStyle = teamCol;
+        ctx.fillStyle = COLORS.cream;
+        ctx.globalAlpha = 0.85;
         ctx.fillText(`+1 IN ${remSec}s`, s.x, s.y + r + 14);
+        ctx.globalAlpha = 1.0;
       }
       ctx.textAlign = 'left';
     } else if (s.kind === 'spawn-relay') {
@@ -7159,25 +7177,62 @@ function renderWorld() {
   ctx.globalAlpha = 1;
 
   // Bullets — rockets render as a chunky missile body + flame tail; regular
-  // rounds keep the simple line streak.
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = COLORS.black;
+  // rounds get a 3-layer streak so they pop on ANY TOD background:
+  //   (1) wide dark outline (4 px) for contrast on bright TODs
+  //   (2) bright core (2 px) for visibility on dark TODs (night/dawn)
+  //   (3) tracer head dot at the bullet position
+  // Player bullets: cream core (universally readable). Enemy: bright red.
+  // Streak length 2.2× (was 1.6×) so the line is easier to track.
+  ctx.lineCap = 'round';
+  // --- Player bullets ---
   for (const b of bullets) {
     if (b.isRocket) { _drawRocket(b, false); continue; }
+    const tx = b.x - b.vx * 2.2;
+    const ty = b.y - b.vy * 2.2;
+    // Outline (dark, wider)
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(b.x, b.y);
-    ctx.lineTo(b.x - b.vx*1.6, b.y - b.vy*1.6);
+    ctx.moveTo(b.x, b.y); ctx.lineTo(tx, ty);
     ctx.stroke();
+    // Bright core
+    ctx.strokeStyle = COLORS.cream;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y); ctx.lineTo(tx, ty);
+    ctx.stroke();
+    // Head dot
+    ctx.fillStyle = COLORS.cream;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
   }
-  ctx.strokeStyle = COLORS.red;
+  // --- Enemy bullets ---
   for (const b of enemyBullets) {
     if (!isVisibleToFriendly(b.x, b.y)) continue;
     if (b.isRocket) { _drawRocket(b, true); continue; }
+    const tx = b.x - b.vx * 2.2;
+    const ty = b.y - b.vy * 2.2;
+    // Outline (deep red, wider)
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(b.x, b.y);
-    ctx.lineTo(b.x - b.vx*1.6, b.y - b.vy*1.6);
+    ctx.moveTo(b.x, b.y); ctx.lineTo(tx, ty);
     ctx.stroke();
+    // Bright red core
+    ctx.strokeStyle = COLORS.redBright || '#E63329';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y); ctx.lineTo(tx, ty);
+    ctx.stroke();
+    // Head dot
+    ctx.fillStyle = COLORS.redBright || '#E63329';
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
   }
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = 1;
 
   // Grenades — black sphere + pulsing red fuse light + flashing in last 0.5s
   for (const g of grenades) {

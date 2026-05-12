@@ -149,6 +149,56 @@ function _arenaTrySEDConvert() {
   return _arenaConvertEnemyToAlly(best);
 }
 
+// Phase 6B: recycle a recruit into build energy. Picks the LOWEST-SEED
+// alive squad bot (so newly-conscripted noobs get scrapped first, your
+// veterans stay on the field), removes them, and credits the player with
+// ARENA_RECYCLE_ENERGY. Returns true when something was actually scrapped.
+//
+// Why lowest-SEED: scrapping a high-SEED ally would feel terrible — that
+// SEED took match-time to build. Bots you just recruited from kills have
+// _seed=0 and are the natural candidates for conversion. Forms a soft
+// loop: kill → recruit → discard weakest for energy → build.
+const ARENA_RECYCLE_ENERGY = 60;          // energy refund per recycle
+const ARENA_RECYCLE_KEEP_LAST = 1;        // never recycle below this many bots
+function _arenaTryRecycle() {
+  if (!player || !player.alive) return false;
+  // Find all alive recruits, sort by SEED ascending — lowest first
+  const pool = [];
+  for (let i = 0; i < allies.length; i++) {
+    const a = allies[i];
+    if (a && a.alive && a._arenaRecruit && !a._humanPiloted) pool.push({ a, i });
+  }
+  if (pool.length <= ARENA_RECYCLE_KEEP_LAST) {
+    if (typeof showSwapToast === 'function') {
+      showSwapToast(T('▸ 沒有可回收的隊員', '▸ NO ALLY TO RECYCLE'));
+    }
+    return false;
+  }
+  pool.sort((p, q) => (p.a._seed || 0) - (q.a._seed || 0));
+  const victim = pool[0].a;
+  const idx = pool[0].i;
+  // Remove from allies, mark as harvested
+  allies.splice(idx, 1);
+  // Credit energy
+  if (typeof game !== 'undefined') {
+    game._energy = Math.min(999, (game._energy || 0) + ARENA_RECYCLE_ENERGY);
+  }
+  // Feedback
+  if (typeof showSwapToast === 'function') {
+    const name = victim.callsign || 'UNIT';
+    const seedTxt = Math.floor(victim._seed || 0);
+    showSwapToast(T(`♺ 回收 · ${name} (SEED ${seedTxt}) → +${ARENA_RECYCLE_ENERGY} ⚡`,
+                    `♺ RECYCLED · ${name} (SEED ${seedTxt}) → +${ARENA_RECYCLE_ENERGY} ⚡`));
+  }
+  if (typeof playRadioStatic === 'function') playRadioStatic(0.40, 0.30);
+  // Small visual cue at the victim's last position — re-use explosion fx
+  // if available so the player sees WHERE the bot disappeared from.
+  if (typeof createExplosion === 'function') {
+    createExplosion(victim.x, victim.y, 'small');
+  }
+  return true;
+}
+
 // Phase 3C: spawn a fresh NN bot for a captured factory. Called from
 // nn_deathmatch's _tickFactories when an owned factory's productionTicks
 // elapses. Spawned bot inherits the team's standard NN brain at the

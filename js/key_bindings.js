@@ -131,6 +131,11 @@ const KEY_BINDINGS = {
   x:   { action: () => swapPlayerWeapon() },
   u:   { action: () => upgradeNearestModule() },
   v:   { action: () => _toggleAimAssist() },
+  // Phase 6B: recycle the lowest-SEED squad bot into +60 build energy.
+  // Closes the wings.io loop: kill → recruit → scrap weakest → build.
+  y:   { action: () => {
+    if (typeof _arenaTryRecycle === 'function') _arenaTryRecycle();
+  } },
 };
 
 window.addEventListener('keydown', e => {
