@@ -4996,6 +4996,175 @@ if (touchInput.enabled) {
   window.addEventListener('touchend',    onEnd,   { passive: false });
   window.addEventListener('touchcancel', onEnd,   { passive: false });
 }
+// ============ MOUSE + KEY EVENT LISTENERS ============
+// keyup / mousemove / mousedown were inadvertently removed in commit
+// 3613df3 ('arena-mp: fork — cut story') along with the editor mode.
+// Restored from pre-fork main + guarded the editor-mode branches with
+// `typeof editor !== 'undefined'` so they safely no-op in arena-mp.
+//
+// Without these listeners the symptoms were:
+//   - mouse.x/y stuck at 0 → cursor never matched aim laser
+//   - keys[k] never cleared → press WASD once and direction "stuck"
+//   - left-click did nothing → can't shoot, can't dismiss modals
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+window.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  // Defense-mode wall drag: while the LMB is held with a wall anchor, track
+  // the snapped end cell so renderBuildPreview can ghost the full line.
+  if (buildMode.active && isWallKind(buildMode.kind) && buildMode._dragStart
+      && game.state === 'playing' && !game._paused) {
+    const wp = screenToWorld(e.clientX, e.clientY);
+    const SNAP = 30;
+    const gx = Math.round(wp.x / SNAP) * SNAP;
+    const gy = Math.round(wp.y / SNAP) * SNAP;
+    buildMode._dragEnd = { gx, gy };
+  }
+  // Map editor drag preview — only when editor mode is wired (arena-mp drops it).
+  if (game.state === 'editor' && typeof editor !== 'undefined' && editor._dragStart
+      && typeof _editorCellAtScreen === 'function') {
+    const c = _editorCellAtScreen(e.clientX, e.clientY);
+    if (c) editor._dragEnd = { gx: c.gx, gy: c.gy };
+  }
+});
+function _hitRect(r, x, y) {
+  return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+}
+window.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  // Click anywhere dismisses the death recap. Doesn't preventDefault so
+  // a click that ALSO hits a pawn-swap chip still triggers the swap.
+  if (_deathRecap.active) {
+    dismissDeathRecap();
+    // fall through — still process clicks normally
+  }
+  // While paused: click resume bar = unpause; click exit bar = back to menu.
+  if (game._paused) {
+    if (_hitRect(game._pauseResumeRect, e.clientX, e.clientY)) togglePause();
+    else if (_hitRect(game._pauseMuteRect, e.clientX, e.clientY)) setAudioMuted(!AUDIO.muted);
+    else if (_hitRect(game._pauseExitRect, e.clientX, e.clientY)) exitMatchToMenu();
+    e.preventDefault();
+    return;
+  }
+  // Pause button (top-left)
+  if (_hitRect(game._pauseBtnRect, e.clientX, e.clientY)) {
+    togglePause();
+    e.preventDefault();
+    return;
+  }
+  // Squad chip click → pawn-swap to that ally
+  if (game._squadChipRects) {
+    for (const chip of game._squadChipRects) {
+      if (chip.alive && _hitRect(chip, e.clientX, e.clientY)) {
+        swapPlayerToAlly(chip.allyIdx);
+        e.preventDefault();
+        return;
+      }
+    }
+  }
+  // Minimap collapse/expand toggle
+  if (_hitRect(game._minimapToggleRect, e.clientX, e.clientY)) {
+    game._minimapCollapsed = !game._minimapCollapsed;
+    try { localStorage.setItem('ag.minimapCollapsed', game._minimapCollapsed ? '1' : '0'); }
+    catch (err) {}
+    e.preventDefault();
+    return;
+  }
+  // Survival "watch ad to revive"
+  if (_hitRect(game._reviveBtnRect, e.clientX, e.clientY)) {
+    if (mission && typeof mission.tryRevive === 'function') mission.tryRevive();
+    e.preventDefault();
+    return;
+  }
+  // Survival "share run"
+  if (_hitRect(game._shareRunBtnRect, e.clientX, e.clientY)) {
+    if (mission && typeof mission.getRunSummary === 'function'
+        && typeof shareSurvivalRun === 'function') {
+      shareSurvivalRun(mission.getRunSummary());
+    }
+    e.preventDefault();
+    return;
+  }
+  // Build-phase skip-wave + ad-extend buttons (defense)
+  if (_hitRect(game._skipWaveAdRect, e.clientX, e.clientY)) {
+    if (mission && typeof mission.trySkipWave === 'function') mission.trySkipWave();
+    e.preventDefault();
+    return;
+  }
+  if (_hitRect(game._buildPhaseAdRect, e.clientX, e.clientY)) {
+    if (game._buildPhase && !game._buildPhase._adExtended
+        && typeof requestRewardedAd === 'function') {
+      game._buildPhase._adExtended = true;
+      requestRewardedAd('build_phase_extend', (ok) => {
+        if (!ok) { game._buildPhase._adExtended = false; return; }
+        if (game._buildPhase) {
+          game._buildPhase.left += 2;
+          showSwapToast(T(`+2 掩体 · 时间延长 5s`, `+2 covers · +5s timer`));
+        }
+        if (mission && typeof mission._extendBreather === 'function') {
+          mission._extendBreather(300);
+        }
+      });
+    }
+    e.preventDefault();
+    return;
+  }
+  // BUILD PHASE: between-wave cover placement
+  if (game._buildPhase && game._buildPhase.active && game._buildPhase.left > 0
+      && typeof placeBuildBlock === 'function') {
+    placeBuildBlock(e.clientX, e.clientY);
+    e.preventDefault();
+    return;
+  }
+  // Map editor click — only when editor mode is wired
+  if (game.state === 'editor' && typeof editor !== 'undefined'
+      && typeof _editorCellAtScreen === 'function'
+      && typeof _editorPlaceCell === 'function') {
+    const c = _editorCellAtScreen(e.clientX, e.clientY);
+    if (c) {
+      editor._dragStart = { gx: c.gx, gy: c.gy };
+      editor._dragEnd   = { gx: c.gx, gy: c.gy };
+      _editorPlaceCell(c.gx, c.gy);
+    }
+    e.preventDefault();
+    return;
+  }
+  // Build mode (Defense): radial-open vs placing-mode click handlers.
+  if (_canBuildPlace()) {
+    if (buildMode.radialOpen) {
+      const picked = _radialKindUnderCursor(e.clientX, e.clientY);
+      if (picked) {
+        buildMode.kind = picked;
+        buildMode.radialOpen = false;
+        showSwapToast(`${T('已选', 'Selected')}: ${STRUCTURE_DEFS[picked].label()}`);
+      } else {
+        buildMode.radialOpen = false;
+      }
+      e.preventDefault();
+      return;
+    }
+    // Placing mode — single helper does snap + reach + toast on fail.
+    const cell = _snapAndCheckPlace(e.clientX, e.clientY, true);
+    if (cell) {
+      const { gx, gy } = cell;
+      if (isWallKind(buildMode.kind)) {
+        buildMode._dragStart = { gx, gy };
+        buildMode._dragEnd   = { gx, gy };
+      }
+      placeStructure(buildMode.kind, gx, gy);
+    }
+    e.preventDefault();
+    return;
+  }
+  // Defense: shift+click anywhere = call airstrike (if terminal ready)
+  if (e.shiftKey && game._nnGameMode === 'defense' && typeof callAirstrike === 'function') {
+    const wp = screenToWorld(e.clientX, e.clientY);
+    callAirstrike(wp.x, wp.y);
+    e.preventDefault();
+    return;
+  }
+  mouse.down = true;
+});
+
 window.addEventListener('mouseup', e => {
   if (e.button !== 0) return;
   mouse.down = false;
