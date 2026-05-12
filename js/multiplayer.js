@@ -315,10 +315,30 @@ function _mpRespawnLocalPlayer() {
   player.reserve = Math.max(player.reserve || 0, 120);
   player.reloading = false;
   if (typeof game !== 'undefined') player._invulnUntil = game.time + 180;
-  // Pick a spawn anchor. Prefer game._nnSpawnBlue (set per match in
-  // startNNSkirmish); fall back to arena centre.
-  const sp = (typeof game !== 'undefined') && game._nnSpawnBlue;
-  if (sp) { player.x = sp.x; player.y = sp.y; }
+  // Phase 20e: pick a respawn anchor far from any remote player so the
+  // shooter can't death-camp the spawn point. Prefer the anchor in
+  // game._nnSpawnBlueList that's furthest from every alive remote;
+  // fall back to game._nnSpawnBlue or arena centre.
+  let anchors = (typeof game !== 'undefined') ? (game._nnSpawnBlueList || []) : [];
+  if (!Array.isArray(anchors) || anchors.length === 0) {
+    if (typeof game !== 'undefined' && game._nnSpawnBlue) anchors = [game._nnSpawnBlue];
+  }
+  if (anchors.length === 0) {
+    if (typeof game !== 'undefined' && typeof NN_ARENA !== 'undefined') {
+      anchors = [{ x: NN_ARENA.x0 + NN_ARENA.w / 2, y: NN_ARENA.y0 + NN_ARENA.h / 2 }];
+    }
+  }
+  let best = anchors[0], bestScore = -Infinity;
+  for (const a of anchors) {
+    let minD = Infinity;
+    for (const rp of _mpState.remotePlayers.values()) {
+      const d = Math.hypot(rp.x - a.x, rp.y - a.y);
+      if (d < minD) minD = d;
+    }
+    if (minD === Infinity) minD = 9999;
+    if (minD > bestScore) { bestScore = minD; best = a; }
+  }
+  if (best) { player.x = best.x; player.y = best.y; }
   if (typeof dismissDeathRecap === 'function') dismissDeathRecap();
 }
 function _mpRenderRemoteBullets() {
