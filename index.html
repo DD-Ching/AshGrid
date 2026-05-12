@@ -2781,8 +2781,12 @@ document.getElementById('restartBtn').onclick = () => {
 };
 
 // ---- NN Skirmish: button opens lobby for mode + difficulty selection ----
+// Phase 18: player STARTS SOLO. Squad grows only via recruitment ('我一開始
+// 是要一個人 但是敵人會自動加 我只能靠招降'). Red side keeps the wave system
+// (auto-spawn), Blue starts at 1 and you build up by reducing enemies to the
+// stunned state and pressing G to convert them.
 const _lobby = {
-  blue: 3, red: 3, min: 1, max: 8,
+  blue: 1, red: 3, min: 1, max: 8,
   difficulty: 'elite', weapon: 'RIFLE',
   chassis: 'humanoid',              // 'humanoid' | 'wolf' | 'heavy'
   mode: 'dm',                       // 'dm' | 'survival' | 'duel' | 'sniper'
@@ -2798,9 +2802,13 @@ try {
   if (raw) {
     const saved = JSON.parse(raw);
     if (saved && typeof saved === 'object') {
-      ['blue','red','difficulty','weapon','chassis','mode'].forEach(k => {
+      // Phase 18: blue squad size is now always 1 (solo start). Skip
+      // restoring 'blue' from saved configs so a returning player whose
+      // localStorage stored blue=3 still starts solo.
+      ['red','difficulty','weapon','chassis','mode'].forEach(k => {
         if (saved[k] != null) _lobby[k] = saved[k];
       });
+      _lobby.blue = 1;
     }
   }
 } catch (e) {}
@@ -4175,6 +4183,9 @@ async function nnTick() {
       // EMP-stunned NN skip the inference pass entirely so they freeze in
       // place + don't fire. _stunUntil is set by the EMP pylon's pulse.
       if (e._stunUntil != null && game.time < e._stunUntil) continue;
+      // Phase 18: KO-stunned (post-knockout, awaiting recruit) also skip
+      // — they're frozen in place until the player walks over + presses G.
+      if (e._koStunned) continue;
       nnUnits.push({u: e, friendly: enemies, hostile: [...allies, ...(player.alive ? [player] : [])], flipX: true,
                     diff: e._nnDifficulty || NN.difficulty || 'evolved'});
     }
@@ -4826,6 +4837,7 @@ function updateEnemies() {
   const visibleAttackers = [];
   for (const e of enemies) {
     if (!e.alive) continue;
+    if (e._koStunned) continue;     // Phase 18: stunned ⇒ no AI tick
     if (e._useNN) continue; // NN dispatcher owns this unit's per-tick movement
     e._sees = (e.attackTarget && e.attackTarget.alive)
       ? e.attackTarget
@@ -4847,6 +4859,7 @@ function updateEnemies() {
 
   for (const e of enemies) {
     if (!e.alive) continue;
+    if (e._koStunned) continue;     // Phase 18: stunned ⇒ no AI tick
     if (e._useNN) continue; // NN dispatcher owns this unit's per-tick movement
     if (e.angle == null) e.angle = Math.random() * Math.PI*2;
     if (e.alerted == null) e.alerted = 0;
@@ -5499,6 +5512,7 @@ function tickPlayerCombat(isMoving) {
     let bestE = null, bestD = Infinity;
     for (const e of enemies) {
       if (!e.alive) continue;
+      if (e._koStunned) continue;     // Phase 18: aim-assist ignores stunned
       const dx = e.x - player.x, dy = e.y - player.y;
       const d = Math.hypot(dx, dy);
       if (d > RANGE) continue;
@@ -5687,9 +5701,16 @@ function detonateRocket(b) {
     const dmg = Math.round(splashDmg * (1 - d / r));
     _applyDamageToUnit(e, dmg);
     if (e.hp <= 0 && e.alive) {
-      e.alive = false; game.score += 100; game.killCount++;
-      // Kill SFX intentionally removed — explosion + popup carry the feedback.
-      createExplosion(e.x, e.y, 'small');
+      // Phase 18: first KO → stun + freeze; second KO (already stunned)
+      // falls through to real death. Splash + explosions are the ONLY
+      // way to finish a stunned enemy because bullets / aim-assist skip
+      // them — user wants the player to walk over and recruit, not snipe.
+      if (typeof _tryStunOrKill === 'function' && _tryStunOrKill(e)) {
+        // stunned, no score awarded yet
+      } else {
+        e.alive = false; game.score += 100; game.killCount++;
+        createExplosion(e.x, e.y, 'small');
+      }
     }
   }
   // Enemy drones
@@ -5766,6 +5787,10 @@ function updateBullets() {
         // Spawn invuln: still consume the bullet so it doesn't pass through,
         // but don't apply damage. Visually the bullet vanishes on impact.
         if (e._invulnUntil != null && game.time < e._invulnUntil) { hit = true; break; }
+        // Phase 18: KO-stunned enemies are untargetable by bullets. The
+        // bullet passes through silently — the user wants stunned bodies
+        // to wait peacefully for recruit, not get strafed off the map.
+        if (e._koStunned) continue;
         _applyDamageToUnit(e, b.damage);
         e.recentDamage = 60;     // marks "I'm under fire" for FSM low-HP flee branch
         e.alerted = Math.max(e.alerted || 0, 240);
@@ -5774,6 +5799,14 @@ function updateBullets() {
         const isKill = e.hp <= 0;
         spawnDamagePopup(e.x, e.y - 14, b.damage, isKill);
         if (isKill) {
+          // Phase 18: first KO → stun, not death. _tryStunOrKill returns
+          // true if we stunned the enemy (skip the death branch); false if
+          // already stunned (let real death run — but stunned skips bullets
+          // above, so this branch only fires for non-stun KOs).
+          if (typeof _tryStunOrKill === 'function' && _tryStunOrKill(e)) {
+            spawnDamagePopup(e.x, e.y - 26, 'KO', true);
+            hit = true; break;
+          }
           e.alive = false; game.score += 100; game.killCount++;
           // (arena-mp: _maybeTriggerFirstKillAudit call stripped — was the
           // FTUE Phase 4 auto-popup. Audit Console reachable via lobby button.)
@@ -6134,7 +6167,14 @@ function createExplosion(x, y, size) {
       if (!e.alive) continue;
       if (Math.hypot(e.x-x, e.y-y) < radius) {
         e.hp -= (size === 'big' ? 80 : 60);
-        if (e.hp <= 0) { e.alive = false; game.score += 100; game.killCount++; }
+        if (e.hp <= 0) {
+          // Phase 18: first KO → stun + freeze, second KO → real death.
+          if (typeof _tryStunOrKill === 'function' && _tryStunOrKill(e)) {
+            // stunned, no kill credit yet
+          } else {
+            e.alive = false; game.score += 100; game.killCount++;
+          }
+        }
       }
     }
     for (const d of enemyDrones) {
@@ -7558,7 +7598,13 @@ function renderWorld() {
     const eInvuln = e._invulnUntil != null && game.time < e._invulnUntil;
     if (eInvuln) alpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
     ctx.globalAlpha = alpha;
-    drawHumanoid(e.x, e.y, e.angle, e.walkPhase, COLORS.red, true, e);
+    // Phase 18: KO-stunned enemies render in pale-cream + slow-pulse so
+    // they read as 'neutralized, waiting to be recruited' rather than
+    // 'live threat'. User: '他就變白色之類的'.
+    const _stunPulse = e._koStunned ? (0.6 + 0.25 * Math.sin(game.time * 0.10)) : 1;
+    if (e._koStunned) ctx.globalAlpha = alpha * _stunPulse;
+    const _bodyColor = e._koStunned ? COLORS.cream : COLORS.red;
+    drawHumanoid(e.x, e.y, e.angle, e.walkPhase, _bodyColor, true, e);
     if (e.hp < e.maxHp) {
       ctx.fillStyle = COLORS.black;
       ctx.fillRect(e.x-15, e.y-26, 30, 3);
@@ -7587,17 +7633,28 @@ function renderWorld() {
         ctx.textAlign = 'center';
         ctx.fillText(`SEED ${_eSeed}`, e.x, e.y - 36);
         ctx.textAlign = 'left';
-        // Recruit cue — only when distance + HP + SEED gates all pass.
+        // Recruit cue — STUNNED targets show a bright pulsing '▶ G' as
+        // soon as the player is within touch range (no SEED gate). Live
+        // targets still need the original 3-gate path.
         const _pR = (player.radius || 13) + (e.radius || 13) + ARENA_TOUCH_BUFFER;
-        const _gHp = e.hp < (e.maxHp || 80) * ARENA_HP_GATE;
         const _gRng = _ed <= _pR;
+        const _gHp = e.hp < (e.maxHp || 80) * ARENA_HP_GATE;
         const _gSeed = ((player._seed || 0) - _eSeed) > ARENA_SEED_GAP;
-        if (_gHp && _gRng && _gSeed) {
+        const _stunReady = e._koStunned && _gRng;
+        const _liveReady = !e._koStunned && _gHp && _gRng && _gSeed;
+        if (_stunReady || _liveReady) {
           const _pulse = 0.6 + 0.4 * Math.sin(game.time * 0.2);
           ctx.fillStyle = `rgba(230, 51, 41, ${_pulse})`;
           ctx.font = 'bold 11px monospace';
           ctx.textAlign = 'center';
           ctx.fillText('▶ G', e.x, e.y - 48);
+          ctx.textAlign = 'left';
+        } else if (e._koStunned) {
+          // Stunned but out of touch range — softer hint to walk closer.
+          ctx.fillStyle = 'rgba(232, 228, 216, 0.75)';
+          ctx.font = 'bold 10px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('NEUTRAL', e.x, e.y - 48);
           ctx.textAlign = 'left';
         }
       }

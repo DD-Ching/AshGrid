@@ -82,12 +82,55 @@ function _arenaAliveSquadCount() {
   return n;
 }
 
+// Phase 18: KO-stunned state. Enemy hp <= 0 the first time enters '_koStunned'
+// instead of dying — they freeze in place (no AI, no fire, untargetable by
+// bullets / aim-assist), turn pale-white, and wait for the player to walk up
+// and press G to convert them into a squad ally. If the player ignores them,
+// they auto-die after ARENA_STUN_TICKS. The flow ('我一開始要一個人 · 敵人會
+// 自動加 · 我只能靠招降 · 第一次不會爆掉 · 變白色等著你去周旋 · 然後變成正常
+// 友軍'). Skipping the SEED diff gate is the whole point of stun — by the time
+// you've KO'd them, you've earned the recruit.
+const ARENA_STUN_TICKS = 25 * 60;   // 25 sec window to walk over and press G
+function _stunEnemyKO(e) {
+  if (!e || e._koStunned || !e.alive) return false;
+  e._koStunned = true;
+  e._koStunnedAt = (typeof game !== 'undefined' && game.time) || 0;
+  e.hp = Math.max(5, Math.round((e.maxHp || 80) * 0.05));
+  // Cancel any inflight intent. NN-controlled units share the dispatcher
+  // skip via _koStunned check; legacy FSM units share the same flag.
+  e.target = null;
+  e._nnFireCd = 999999;
+  e.attackTarget = null;
+  e.alerted = 0;
+  if (typeof showSwapToast === 'function' && e.callsign) {
+    // Only toast on stuns of named units — anonymous fillers get quiet.
+    showSwapToast(T('▸ ' + e.callsign + ' 中立化 · 走近按 G 招降',
+                    '▸ ' + e.callsign + ' NEUTRALIZED · walk up + G to recruit'));
+  }
+  return true;
+}
+// Helper for caller sites that want to express "did the kill stun or finish?":
+// returns true if the unit was stunned (KO'd alive), false if already stunned
+// (caller should let it die for real).
+function _tryStunOrKill(e) {
+  if (!e || !e.alive) return false;
+  if (!e._koStunned) {
+    _stunEnemyKO(e);
+    return true;     // STUNNED — caller does NOT count as kill
+  }
+  return false;      // already stunned — caller treats as REAL kill
+}
+
 // Convert one enemy unit into a player ally. Caller is responsible for the
 // kill-vs-recruit decision; this function just flips the team and bookkeeping.
 // Recruit counter — gives sequential callsigns to converts so HUD chips read.
 let _arenaRecruitCount = 0;
 function _arenaConvertEnemyToAlly(e) {
   if (!e) return false;
+  // Phase 18: convert clears the KO-stun flag so the new ally rejoins
+  // bullets / AI / aim-assist normally.
+  e._koStunned = false;
+  e._koStunnedAt = null;
   const idx = enemies.indexOf(e);
   if (idx >= 0) enemies.splice(idx, 1);
   // Assign a callsign if missing (raw NN enemies often have none)
@@ -123,9 +166,15 @@ function _arenaConvertEnemyToAlly(e) {
 }
 
 // G-key handler. Returns true if we converted (so the dispatcher skips grenade).
-// Four gates: touch range, HP < 50%, SEED gap > 10, target not human-piloted.
-// Failure modes look identical to the player — they can't deduce why a recruit
-// missed (range / HP / SEED / human-piloted). That ambiguity is intentional.
+// Phase 18: TWO recruit paths now:
+//   (a) STUNNED targets — player walks up to a KO-stunned enemy (white, frozen)
+//       and presses G. Only the touch-range gate applies; HP and SEED gates
+//       are skipped (you already earned the recruit by knocking them down).
+//   (b) LIVE targets — the original four-gate path: touch range + HP < 50%
+//       + SEED gap > 10 + not human-piloted. Kept as a 'finisher' for players
+//       with high SEED who want to skip the stun-recruit loop entirely.
+// Failure modes still look identical to the player so they can't deduce why
+// a recruit missed.
 function _arenaTrySEDConvert() {
   if (!player || !player.alive) return false;
   if (_arenaAliveSquadCount() >= ARENA_SQUAD_CAP) return false;
@@ -137,18 +186,21 @@ function _arenaTrySEDConvert() {
     // Gate 4 — human-piloted targets are immune (silent fail). Forward-compat
     // for PvP; in solo NN no enemy is ever flagged human, so this is a no-op.
     if (e._humanPiloted) continue;
-    // Gate 1 — touch range (radii sum + tiny buffer). Hard requirement.
+    // Gate 1 — touch range. Hard requirement for BOTH paths.
     const targetR = e.radius || 13;
     const touchD = myR + targetR + ARENA_TOUCH_BUFFER;
     const d = Math.hypot(e.x - player.x, e.y - player.y);
     if (d > touchD) continue;
-    // Gate 2 — NPC must be damaged below the HP gate. "招降要先打殘".
+    // Path (a): KO-stunned → skip HP + SEED gates, recruit immediately.
+    if (e._koStunned) {
+      if (d < bestD) { bestD = d; best = e; }
+      continue;
+    }
+    // Path (b): live enemy — original gates apply.
     const maxHp = e.maxHp || 80;
     if (e.hp >= maxHp * ARENA_HP_GATE) continue;
-    // Gate 3 — SEED differential. Player must out-skill the target by GAP.
     const targetSeed = e._seed || 0;
     if (mySeed - targetSeed <= ARENA_SEED_GAP) continue;
-    // All four gates pass. Tie-break by nearest in case multiple eligible.
     if (d < bestD) { bestD = d; best = e; }
   }
   if (!best) return false;

@@ -82,7 +82,10 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   function _spawnRedWave() {
     if (typeof _arenaSpawnFactoryBot !== 'function') return;
     if (typeof game._nnSpawnRed === 'undefined' || !game._nnSpawnRed) return;
-    const alive = enemies.filter(e => e && e.alive).length;
+    // Phase 18: KO-stunned enemies don't count toward the cap — they're
+    // frozen / neutralized and waiting to be recruited, so we shouldn't
+    // let the wave system see them as 'active threats' or it'd stall.
+    const alive = enemies.filter(e => e && e.alive && !e._koStunned).length;
     if (alive >= ENEMY_HARD_CAP) return;
     const room = ENEMY_HARD_CAP - alive;
     const n = Math.min(_waveSize(_waveNum), room);
@@ -289,9 +292,22 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       // corpses would accumulate in the array forever (and still draw HP
       // bars / be checked by lots of loops). Mark a death tick once on
       // transition; drop the slot ~3 sec later.
+      // Phase 18: also expire KO-stunned units that the player never came
+      // to recruit. After ARENA_STUN_TICKS (25s) without a G press, the
+      // stunned body auto-dies (small explosion + score) and gets evicted
+      // a few seconds later by the regular dead-corpse path.
+      const _STUN_TICKS = (typeof ARENA_STUN_TICKS !== 'undefined') ? ARENA_STUN_TICKS : 1500;
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
-        if (!e || e.alive) continue;
+        if (!e) continue;
+        if (e._koStunned && e.alive
+            && (game.time - (e._koStunnedAt || 0)) > _STUN_TICKS) {
+          e.alive = false;
+          e._koStunned = false;
+          game.score += 100; game.killCount++;
+          if (typeof createExplosion === 'function') createExplosion(e.x, e.y, 'small');
+        }
+        if (e.alive) continue;
         if (e._deadAt == null) e._deadAt = game.time;
         else if (game.time - e._deadAt > 180) enemies.splice(i, 1);
       }
