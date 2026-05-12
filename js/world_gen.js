@@ -238,12 +238,17 @@ function spawnDroneEnemy(cfg) {
     radius: 11,
     alive: true,
     angle: Math.atan2(player.y - y, player.x - x),
-    speed: 3.4 + Math.random()*0.8,    // was 4.6+1.2 — slower so the player has time to react
-    turnRate: 0.034,                   // low — hard to turn (committed approach)
+    // Phase 7 (user feedback '飛得更快 ... 更痛'):
+    //   speed       3.4+0.8  → 5.5+1.5  (now 5.5–7.0; ~70% faster)
+    //   turnRate    0.034    → 0.046   (slightly more tracking — harder to dodge)
+    //   explodeR    55       → 100     (~82% bigger blast — area-denial threat)
+    //   explodeDmg  35       → 75      (>2× pain; still survivable at full HP via falloff)
+    speed: 5.5 + Math.random()*1.5,
+    turnRate: 0.046,
     armed: true,
     hoverPhase: Math.random()*Math.PI*2,
-    explodeRadius: 55,                 // was 70 — smaller blast
-    explodeDamage: 35,                 // was 60 — survivable at full HP
+    explodeRadius: 100,
+    explodeDamage: 75,
   });
 }
 

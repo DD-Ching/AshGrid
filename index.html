@@ -2425,7 +2425,9 @@ const fpv = {
   available: 3, max: 3,
   x: 0, y: 0,
   angle: 0,
-  speed: 7,
+  // Phase 7 (user feedback '飛得更快'): 7 → 10. Faster commit window so
+  // the player can spike a moving target before they break cover.
+  speed: 10,
   trail: [],
 };
 
@@ -5019,15 +5021,21 @@ function updateEnemies() {
 
 function kamikazeExplode(d) {
   d.alive = false;
-  createExplosion(d.x, d.y, 'medium');
+  // Phase 7: 'big' (radius 90 / dmg 80) replaces 'medium' so the visual
+  // matches the wider blast logic. createExplosion also auto-damages any
+  // enemies / enemyDrones in the radius (friendly fire — fine for kamikaze).
+  createExplosion(d.x, d.y, 'big');
   emitSound(d.x, d.y, 700, false);
+  // Camera kick + lower-pitched boom so the player FEELS the hit.
+  if (typeof triggerShake === 'function') triggerShake(4.5);
+  emitSound(d.x, d.y, 380, false);
   // Damage friendlies in radius
   if (player.alive) {
     const pd = Math.hypot(player.x - d.x, player.y - d.y);
     if (pd < d.explodeRadius) {
       const dmg = Math.round(d.explodeDamage * (1 - pd / d.explodeRadius));
       _applyDamageToUnit(player, dmg);
-      game.hitFlash = 18;
+      game.hitFlash = 28;
       if (player.hp <= 0) {
         player.hp = 0;
         player.alive = false;
@@ -6020,7 +6028,12 @@ function updateFPV() {
   }
   if (fpv.x < 0 || fpv.x > WORLD.w || fpv.y < 0 || fpv.y > WORLD.h) exploded = true;
   if (exploded) {
-    createExplosion(fpv.x, fpv.y, 'medium');
+    // Phase 7 (user feedback '爆炸效果更強 更痛'):
+    // 'medium' → 'big' (radius 65→90, AoE dmg 60→80 to enemies + enemyDrones).
+    // Add camera shake + low-pitch boom for impact.
+    createExplosion(fpv.x, fpv.y, 'big');
+    if (typeof triggerShake === 'function') triggerShake(5);
+    if (typeof emitSound === 'function') emitSound(fpv.x, fpv.y, 360, false);
     fpv.active = false;
     if (game.mode === 'fpv') game.mode = 'tactical';
     showMessage(T(`FPV 命中 · 剩余 ${fpv.available}`, `FPV hit · ${fpv.available} left`), 60);
