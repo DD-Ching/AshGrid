@@ -1,0 +1,53 @@
+# Auto-deploy AshGrid to GitHub Pages on every push to arena-mp.
+# The repo is already a static site (HTML + JS + ONNX models served as-is),
+# so the "build" step is just "upload everything except .git". GitHub Pages
+# then serves the artifact at https://<user>.github.io/<repo>/.
+#
+# Setup (one-time, in repo Settings → Pages):
+#   - Source: 'GitHub Actions' (NOT 'Deploy from a branch')
+#   - This workflow takes over and pushes a Pages artifact on every commit.
+#
+# After enabling, the URL is shown at the top of the Pages settings page,
+# typically: https://dd-ching.github.io/AshGrid/?nn=1&mp=1
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [arena-mp]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Coalesce queued runs so rapid-fire pushes only deploy the latest.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # The whole repo IS the site. No build step.
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

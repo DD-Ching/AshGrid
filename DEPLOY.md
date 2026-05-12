@@ -7,31 +7,39 @@ onnxruntime-web,多人對戰用 Trystero WebRTC P2P + Firebase 做 signaling)。
 
 ---
 
-## 部署方式 A — GitHub Pages(零設定,推 commit 就更新)
+## 部署方式 A — GitHub Pages(已自動化 · 推 commit 就更新)
 
-1. GitHub 上開啟 Pages:**Repo Settings → Pages → Source: `arena-mp` branch → root**
-2. 等 1-2 分鐘,網址會出現在頂上,長這樣:
-   ```
-   https://ddh.github.io/AshGrid/?nn=1&mp=1
-   ```
-3. 之後每次 `git push origin arena-mp` 自動部署。
+`.github/workflows/pages.yml` 已經配好。**一次性設定**:
 
-> Firebase 規則目前是 `".read": true, ".write": true`,公開可讀寫(我們只
-> 拿來做 WebRTC signaling,沒有任何敏感資料)。Trystero 通訊握手完成後
-> 一切遊戲流量走 P2P,Firebase 流量幾乎是零。
+1. 進 https://github.com/DD-Ching/AshGrid/settings/pages
+2. **Source** 選 **GitHub Actions**(不是 'Deploy from a branch')
+3. 按 Save
+
+完成。之後每次 `git push origin arena-mp` 都會自動部署。網址在 Pages
+settings 頁面頂上,通常長這樣:
+```
+https://dd-ching.github.io/AshGrid/?nn=1&mp=1
+```
+
+> Firebase 規則目前是 `".read": "now < 1781100000000", ".write": ...",`
+> (到 2026-06-11)。Trystero 只拿 RTDB 做 WebRTC signaling — 兩個 peer
+> 握手完之後一切流量走 P2P,Firebase 流量幾乎是零。Leaderboard 用 REST
+> 寫入,有效期內無限免費。
 >
-> Firebase 規則內建到 **2026-06-11** 過期,記得定期續期(或改成永久 `true`)。
+> **到期前去 Firebase Console 把規則改成永久 `true`**(三個字、30 秒)。
 
 ---
 
 ## 部署方式 B — CrazyGames(主流量入口,有廣告分潤)
 
 1. **註冊開發者帳號:** [developer.crazygames.com](https://developer.crazygames.com)
-2. **打包遊戲:** 把整個 repo 壓成 zip(`index.html` 放最頂,其他資料夾如 `js/`、`ai_arena/`、`icons/` 一起進)
+2. **打包遊戲:** 跑打包腳本:
    ```bash
    cd /Users/ddh/Downloads/AshGrid
-   zip -r ashgrid.zip index.html sw.js manifest.webmanifest icons/ js/ ai_arena/ 3d/
+   ./scripts/build-zip.sh
    ```
+   產生 `ashgrid.zip`(約 1.6MB)。腳本只把 production 需要的檔案打包進
+   去,不會包 `.git` / `.claude` / dev-only 檔案。
 3. **CrazyGames 後台上傳:**
    - **Game type:** HTML5
    - **Entry file:** `index.html`
