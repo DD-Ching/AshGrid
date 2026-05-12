@@ -9325,7 +9325,7 @@ function renderHUDOverlays() {
   // Mode-specific overlays
   if (game.mode === 'fpv') renderFPVOverlay();
   if (game.mode === 'drone') renderDroneOverlay();
-  if (game.mode === 'command') renderCommandOverlay();
+  if (game._cmdOpen || game.mode === 'command') renderCommandOverlay();
 
   // Crosshair — shown in every mode including FPV. When aim-assist is locked
   // the reticle DOES NOT follow the mouse — it sticks to the predicted lead
@@ -9816,7 +9816,18 @@ function renderCommandOverlay() {
   ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 10px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(lang === 'zh' ? '隊伍指令 · 1-7 下令' : 'SQUAD ORDERS · 1-7 to issue', W()/2, y - 8);
+  // Phase 14: heading shows '集合/護衛 → UAV' when the player is piloting
+  // the recon drone, so they know rally + protect now escort the UAV rather
+  // than the player's body.
+  const _droneAnchor = (typeof drone !== 'undefined' && drone.deployed && game.mode === 'drone');
+  if (_droneAnchor) {
+    ctx.fillText(lang === 'zh' ? '隊伍指令 · 1/5 跟隨 UAV · 1-7 下令'
+                                : 'SQUAD ORDERS · 1/5 ESCORT UAV · 1-7 to issue',
+                 W()/2, y - 8);
+  } else {
+    ctx.fillText(lang === 'zh' ? '隊伍指令 · 1-7 下令' : 'SQUAD ORDERS · 1-7 to issue',
+                 W()/2, y - 8);
+  }
   for (let i = 0; i < ids.length; i++) {
     const def = SQUAD_ORDERS[ids[i]];
     const x = baseX + i * (slotW + gap);

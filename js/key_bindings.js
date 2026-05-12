@@ -43,8 +43,20 @@ function _recallToSpawn() {
 }
 
 function _toggleCommandView() {
-  game.mode = (game.mode === 'command') ? 'tactical' : 'command';
-  const inCmd = (game.mode === 'command');
+  // Phase 14: command overlay is orthogonal to view mode. `game._cmdOpen`
+  // is the canonical flag for "command UI + 1-7 bindings active"; renders
+  // and number-key handlers check it. From tactical we still flip
+  // game.mode to 'command' so the existing zoom-out camera kicks in.
+  // From drone / FPV view game.mode stays put and the overlay layers on
+  // top, so the player can still pilot while issuing squad orders (user
+  // asked: '按 Q 的時候也一樣會有領導大獎的功能'). Toggle is driven
+  // purely by _cmdOpen so the state machine doesn't desync when the
+  // player exits drone via Q while command was open.
+  game._cmdOpen = !game._cmdOpen;
+  if (game.mode === 'tactical' || game.mode === 'command') {
+    game.mode = game._cmdOpen ? 'command' : 'tactical';
+  }
+  const inCmd = !!game._cmdOpen;
   if (typeof showSwapToast === 'function') {
     showSwapToast(inCmd
       ? T('▶ 指令模式 · 1-7 下令', '▶ COMMAND MODE · 1-7 to order')
@@ -71,8 +83,10 @@ function _pickBuildModuleByNumber(eKey) {
 }
 
 function _handleNumberKey(eKey) {
-  // COMMAND mode + NN: 1-7 issue squad orders.
-  if (eKey >= '1' && eKey <= '7' && game.mode === 'command' && game._nnMode) {
+  // COMMAND overlay open + NN: 1-7 issue squad orders. Works whether the
+  // player is in tactical view (game.mode='command') or piloting the UAV /
+  // FPV with command layered on top (_cmdOpen=true, game.mode='drone'|'fpv').
+  if (eKey >= '1' && eKey <= '7' && game._cmdOpen && game._nnMode) {
     const orderById = { '1': 'rally', '2': 'spread', '3': 'attack', '4': 'defend',
                         '5': 'protect', '6': 'suppress', '7': 'retreat' };
     const id = orderById[eKey];

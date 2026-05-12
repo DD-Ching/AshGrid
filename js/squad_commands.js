@@ -65,10 +65,22 @@ function _vectorToMoveDir(dx, dy) {
 }
 // Compute the order-biased move direction for a friendly unit. Returns
 // `null` if the order doesn't dictate movement (e.g. SUPPRESS holds).
+// Phase 14: when the player is piloting the UAV (game.mode === 'drone' &&
+// drone.deployed), rally + protect target the DRONE's position instead of
+// the player's so the squad escorts the UAV as the user explicitly asked
+// for ('進入無人機的視角,我可以讓大家跟著無人機,保護無人機').
+function _squadAnchor() {
+  if (typeof drone !== 'undefined' && drone.deployed
+      && typeof game !== 'undefined' && game.mode === 'drone') {
+    return { x: drone.x, y: drone.y };
+  }
+  return { x: player.x, y: player.y };
+}
 function _squadOrderMoveDirFor(unit, friendlies, enemies, orderId) {
   const tx = (a, b) => a - b;
   if (orderId === 'rally') {
-    const dx = player.x - unit.x, dy = player.y - unit.y;
+    const a = _squadAnchor();
+    const dx = a.x - unit.x, dy = a.y - unit.y;
     if (Math.hypot(dx, dy) < 100) return 0;          // close enough → idle
     return _vectorToMoveDir(dx, dy);
   }
@@ -107,11 +119,14 @@ function _squadOrderMoveDirFor(unit, friendlies, enemies, orderId) {
     return _vectorToMoveDir(nearest.x - unit.x, nearest.y - unit.y);
   }
   if (orderId === 'protect') {
-    // Orbit ~80u from player, on a slot determined by ally index
+    // Orbit ~80u from the squad anchor (player normally, drone when the
+    // player is piloting UAV — see _squadAnchor) on a slot derived from
+    // ally index so they spread evenly around the target.
+    const a = _squadAnchor();
     const idx = Math.max(0, friendlies.indexOf(unit));
-    const angle = (idx / Math.max(1, friendlies.length - 1)) * Math.PI * 2;
-    const desiredX = player.x + Math.cos(angle) * 80;
-    const desiredY = player.y + Math.sin(angle) * 80;
+    const ang = (idx / Math.max(1, friendlies.length - 1)) * Math.PI * 2;
+    const desiredX = a.x + Math.cos(ang) * 80;
+    const desiredY = a.y + Math.sin(ang) * 80;
     const dx = desiredX - unit.x, dy = desiredY - unit.y;
     if (Math.hypot(dx, dy) < 30) return 0;
     return _vectorToMoveDir(dx, dy);
