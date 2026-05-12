@@ -27,11 +27,60 @@ const _deathRecap = {
   victimX: 0, victimY: 0,
   distance: 0,
   lastHits: [],               // {dmg, weapon} for the 3 most recent hits
+  adReviveUsed: false,        // one revive ad per match
+  adReviveBtnRect: null,      // hit rect for the watch-ad button (canvas coords)
 };
+
+// Watch-ad revive — caller fires the Crazy Games rewarded ad path; on
+// success we revive the player in place (full HP, ammo, clear killer).
+// One use per match so the loop stays honest. Falls back to the local
+// stub if SDK isn't loaded yet, so dev / itch.io / direct hosts also work.
+function _adRevivePlayer() {
+  if (_deathRecap.adReviveUsed) return;
+  _deathRecap.adReviveUsed = true;
+  const doRevive = () => {
+    if (!player) return;
+    player.alive = true;
+    player.hp = player.maxHp;
+    player.ammo = player.maxAmmo;
+    player.reloading = false;
+    player.reloadTime = 0;
+    player._respawnAt = null;
+    player._killer = null;
+    player._killerWeapon = '';
+    player._invulnUntil = (game.time || 0) + 90;  // 1.5s spawn protection
+    dismissDeathRecap();
+    if (typeof showSwapToast === 'function') {
+      showSwapToast(_r('▶ 廣告收看完成 · 復活', '▶ AD WATCHED · REVIVED'));
+    }
+  };
+  if (typeof crazyAd_rewarded === 'function') {
+    crazyAd_rewarded((ok) => { if (ok) doRevive(); else _deathRecap.adReviveUsed = false; });
+  } else if (typeof requestRewardedAd === 'function') {
+    requestRewardedAd('revive', (ok) => { if (ok) doRevive(); else _deathRecap.adReviveUsed = false; });
+  } else {
+    // No ad system at all — just revive (dev fallback)
+    doRevive();
+  }
+}
+
+// Hit-test the ad-revive button on canvas mousedown. Called from the main
+// mousedown handler; returns true if the click was consumed.
+function tryDeathRecapAdClick(x, y) {
+  if (!_deathRecap.active || _deathRecap.adReviveUsed) return false;
+  const r = _deathRecap.adReviveBtnRect;
+  if (!r) return false;
+  if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+    _adRevivePlayer();
+    return true;
+  }
+  return false;
+}
 function triggerDeathRecap() {
   // Skip in non-NN modes (campaign hands its own end card; killcam noise)
   if (!game._nnMode) return;
   _deathRecap.active = true;
+  _deathRecap.adReviveBtnRect = null;
   _deathRecap.startTick = game.time;
   const k = player._killer;
   _deathRecap.killer = k;
@@ -114,6 +163,34 @@ function renderDeathRecap() {
        '▼ PRESS 1-4 TO TAKE OVER A TEAMMATE · YOU DON\'T SIT OUT ▼'),
     W_ / 2, H_ - hintH / 2 + 6,
   );
+
+  // ---- Rewarded-ad revive button (mid-screen) ----
+  // One use per match. Hidden after used. SDK env (Crazy Games portal)
+  // serves a real rewarded ad; local dev shows the SDK's dev-mode overlay
+  // and resolves on close.
+  if (!_deathRecap.adReviveUsed) {
+    const btnW = 280, btnH = 56;
+    const btnX = W_ / 2 - btnW / 2;
+    const btnY = H_ / 2 - btnH / 2 + 24;
+    _deathRecap.adReviveBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+    const pulse2 = 0.85 + 0.15 * Math.sin(game.time * 0.22);
+    ctx.fillStyle = `rgba(63, 230, 63, ${pulse2})`;
+    ctx.fillRect(btnX, btnY, btnW, btnH);
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(btnX, btnY, btnW, btnH);
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(_r('▶ 看廣告 · 原地復活', '▶ WATCH AD · INSTANT REVIVE'),
+                 W_ / 2, btnY + btnH / 2 + 6);
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText(_r('(本場一次)', '(once per match)'),
+                 W_ / 2, btnY + btnH - 6);
+  } else {
+    _deathRecap.adReviveBtnRect = null;
+  }
+
   ctx.textAlign = 'left';
   ctx.restore();
 }

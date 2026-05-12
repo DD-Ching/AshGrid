@@ -58,6 +58,10 @@
 <script src="js/global_stats.js"></script>
 <script src="js/progressive_unlock.js"></script>
 <script src="js/ad_stubs.js"></script>
+<!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
+     requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
+     portal it serves real ads. -->
+<script src="js/crazygames.js"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
 <script src="js/missions/nn_deathmatch.js"></script>
 <script src="js/world_gen.js"></script>
@@ -2557,8 +2561,16 @@ function _hitRect(r, x, y) {
 }
 window.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
-  // Click anywhere dismisses the death recap. Doesn't preventDefault so
-  // a click that ALSO hits a pawn-swap chip still triggers the swap.
+  // Click on the watch-ad button first (mid-screen during recap). If it
+  // matches we consume the click — don't fall through to dismiss / fire.
+  if (_deathRecap.active && typeof tryDeathRecapAdClick === 'function'
+      && tryDeathRecapAdClick(e.clientX, e.clientY)) {
+    e.preventDefault();
+    return;
+  }
+  // Otherwise: click anywhere dismisses the death recap. Doesn't
+  // preventDefault so a click that ALSO hits a pawn-swap chip still
+  // triggers the swap.
   if (_deathRecap.active) {
     dismissDeathRecap();
     // fall through — still process clicks normally
@@ -3010,6 +3022,11 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   document.getElementById('start').classList.add('hidden');
   document.getElementById('nnLobby')?.classList.add('hidden');
   document.getElementById('end').classList.add('hidden');
+  // Crazy Games — tell the SDK the player is now in gameplay (allows ad
+  // placement choices). No-op if SDK isn't loaded (local dev / no internet).
+  if (typeof crazyEvent_gameplayStart === 'function') crazyEvent_gameplayStart();
+  // Reset per-match flags: watch-ad-revive is one-shot per skirmish
+  if (typeof _deathRecap !== 'undefined') { _deathRecap.adReviveUsed = false; }
 
   // Mode-specific overrides
   if (gameMode === 'duel') { blueSize = 1; redSize = 1; }
@@ -5573,7 +5590,9 @@ function updateBullets() {
             triggerShake(4, 8);
             unlockAchievement('killstreak3');
             if (player._killStreak >= 5) unlockAchievement('killstreak5');
-            // FTUE: 3-streak advances the final tutorial step
+            // Crazy Games — 3+ streak is a 'happytime' beat (positive
+            // gameplay moment; SDK uses it for analytics + ad-cadence cues).
+            if (typeof crazyEvent_happytime === 'function') crazyEvent_happytime();
           } else {
             triggerShake(2, 4);
           }
@@ -5730,6 +5749,10 @@ function updateBullets() {
           player._killStreakFlashUntil = 0;
           createExplosion(player.x, player.y, 'big');
           playSfx('death');
+          // Crazy Games — fire 'sadtime' telemetry + count the death for
+          // the midgame-ad cadence. SDK throttles internally so this is safe.
+          if (typeof crazyEvent_sadtime === 'function') crazyEvent_sadtime();
+          if (typeof crazyNoteDeath === 'function')     crazyNoteDeath();
           // Trigger the death-recap overlay — captures the kill state at
           // this instant so the render later doesn't have to recompute.
           if (typeof triggerDeathRecap === 'function') {
