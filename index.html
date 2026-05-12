@@ -9078,16 +9078,26 @@ function renderHUD() {
     ctx.fillStyle = `rgba(200, 38, 28, ${game.hitFlash / 12 * 0.35})`;
     ctx.fillRect(0, 0, W(), H());
   }
-  // Phase 20a: MP indicator — top-right corner shows 'MP · 3 / room'.
-  // Tells the player whether they're in single-player or PvP at a glance.
+  // Phase 20a/28: MP indicator — top-right corner. Shows TWO counts:
+  // 'MP · 3p · 2v / room'
+  //   3p = peers Firebase signaling matched in the room
+  //   2v = peers whose position WebRTC actually delivered
+  // If p > v, the WebRTC handshake hasn't fully landed (still tunneling
+  // through TURN, or NAT blocked) so the player understands the lag.
   if (typeof _mpIsActive === 'function' && _mpIsActive()) {
-    const count = (typeof _mpPeerCount === 'function') ? _mpPeerCount() : 1;
+    const visible = _mpState ? _mpState.remotePlayers.size + 1 : 1;
+    const peers = (_mpState && _mpState.room && _mpState.room.getPeers)
+      ? Object.keys(_mpState.room.getPeers()).length + 1
+      : visible;
     const roomLbl = (_mpState && _mpState.roomName) ? _mpState.roomName.slice(0, 12) : 'room';
     ctx.save();
     ctx.fillStyle = COLORS.red;
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'right';
-    ctx.fillText(`MP · ${count} · ${roomLbl}`, W() - 18, 18);
+    const label = (peers === visible)
+      ? `MP · ${peers} · ${roomLbl}`
+      : `MP · ${peers}p · ${visible}v · ${roomLbl}`;   // mismatch = WebRTC catching up
+    ctx.fillText(label, W() - 18, 18);
     ctx.textAlign = 'left';
     ctx.restore();
   }

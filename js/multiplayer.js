@@ -133,8 +133,31 @@ async function _mpConnect() {
     return;
   }
   console.log('[mp] joining room:', roomName, 'via', MP_FIREBASE_URL);
+  // Phase 28 — explicit ICE servers. Default WebRTC tries direct + Google
+  // STUN, which works on the same LAN / cone-NAT but fails for symmetric
+  // NAT (most carrier NATs + many home routers + corporate). When STUN
+  // alone fails, two clients sit on Firebase signalling waving SDPs at
+  // each other forever — Trystero reports them in the room but the
+  // actual data channel never opens. We add OpenRelay's public free
+  // TURN servers (UDP + TCP + TLS variants) so the connection falls
+  // back to relayed traffic when direct fails. Bandwidth-bound by
+  // OpenRelay's free tier — replace with Cloudflare TURN / your own
+  // Coturn when traffic justifies it.
+  const rtcConfig = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: 'stun:openrelay.metered.ca:80' },
+      { urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+        username: 'openrelayproject', credential: 'openrelayproject' },
+    ],
+  };
   try {
-    _mpState.room = joinRoom({ appId: MP_FIREBASE_URL }, roomName);
+    _mpState.room = joinRoom({ appId: MP_FIREBASE_URL, rtcConfig }, roomName);
   } catch (e) {
     _mpState.loadError = String(e);
     console.error('[mp] joinRoom failed:', e);
@@ -230,16 +253,31 @@ async function _mpConnect() {
     _mpPings.push({ x: data.x, y: data.y, peerId, life: 240, maxLife: 240 });
   });
   _mpState.room.onPeerJoin((peerId) => {
-    console.log('[mp] peer joined:', peerId);
+    const total = _mpState.room.getPeers ? Object.keys(_mpState.room.getPeers()).length : '?';
+    console.log('[mp] peer joined:', peerId, '· connected peers:', total);
     if (typeof showSwapToast === 'function') {
       showSwapToast('▸ 玩家加入 ' + peerId.slice(0, 6));
     }
   });
   _mpState.room.onPeerLeave((peerId) => {
-    console.log('[mp] peer left:', peerId);
+    const total = _mpState.room.getPeers ? Object.keys(_mpState.room.getPeers()).length : '?';
+    console.log('[mp] peer left:', peerId, '· remaining peers:', total);
     _mpState.remotePlayers.delete(peerId);
     _mpScoreboard.delete(peerId);
   });
+  // Phase 28 — periodic connection diagnostic every 8 s. Lets the player
+  // verify in DevTools that peers are actually connected vs just listed
+  // in the Firebase presence index. Surfaces the most common silent
+  // failure: 'Firebase says there are 2 peers but my WebRTC channel
+  // never opened so I see nothing'.
+  setInterval(() => {
+    if (!_mpState.enabled || !_mpState.room) return;
+    const peers = _mpState.room.getPeers ? Object.keys(_mpState.room.getPeers()) : [];
+    const remoteWithPos = _mpState.remotePlayers.size;
+    if (peers.length > 0 || remoteWithPos > 0) {
+      console.log(`[mp/diag] room:${_mpState.roomName} peers:${peers.length} positions:${remoteWithPos}`);
+    }
+  }, 8000);
   _mpState.enabled = true;
   if (typeof showSwapToast === 'function') {
     showSwapToast('▶ 多人連線 · room: ' + roomName);
