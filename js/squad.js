@@ -37,10 +37,10 @@ function spawnAllies() {
     };
     // Chassis stats — wolves take less HP but move fast, heavies the opposite
     applyChassisToUnit(ally, ld.chassis || 'humanoid', 2.5, 80, 13);
-    // Spawn invuln: 90 ticks (1.5 s) so squadmates aren't insta-melted by
-    // the wave already on the map at mission start. Mirrors the skirmish
-    // setup at startNNSkirmish().
-    ally._invulnUntil = (typeof game !== 'undefined' && game.time != null) ? game.time + 90 : 90;
+    // Phase 21: spawn invuln 90 → 180 ticks (3 s) per user '無敵時間需增長'.
+    // Combined with no-fire-during-invuln (updatePlayer + tickAlly) so the
+    // shield can't double as a respawn-camp turret.
+    ally._invulnUntil = (typeof game !== 'undefined' && game.time != null) ? game.time + 180 : 180;
     allies.push(ally);
   }
 }
@@ -250,6 +250,9 @@ function updateAllies() {
     // blocks our shot — hold fire (no wasted bullets, no shooting through walls).
     let canFire = !!target && lineOfSight(a.x, a.y, target.x, target.y);
     if (a.allyMode === 'cornerPeek' && !a._peekingNow) canFire = false;
+    // Phase 21: invuln mutes the trigger. Same rule the player follows so
+    // allies don't snipe under the spawn shield either.
+    if (a._invulnUntil != null && (typeof game !== 'undefined') && game.time < a._invulnUntil) canFire = false;
     if (a.fireCd <= 0 && canFire) {
       const ang = barrel + (Math.random()-0.5)*w.spread;
       bullets.push({

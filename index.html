@@ -2306,7 +2306,17 @@ const player = {
   // checked by gate 4. Pawn-swap snapshots/inherits this across bodies.
   _seed: 0,
   _humanPiloted: true,
+  // Phase 21: aim-assist (+ auto-fire) ON by default per user '自動射擊
+  // 默認開啟'. Restored from localStorage in the boot block below — if the
+  // user toggled it off with V last session, that decision sticks; new
+  // players get it on. V key toggles in-match.
+  _aimAssist: true,
 };
+try {
+  const _saved = localStorage.getItem('ag.aimAssist');
+  if (_saved === '0') player._aimAssist = false;
+  // else (null or '1') leave the default true value alone
+} catch (e) {}
 
 // ============ STRUCTURES + BUILD + POWER + UPGRADES + AIRSTRIKES ============
 // → Moved to js/structures.js (785 lines). Declares globally:
@@ -3374,9 +3384,12 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   _heartNextBeat = 0;
   // (arena-mp: _scheduleFirstMatchToasts call stripped — was no-op stub.)
 
-  // Initial spawn protection — same 1.5s immunity as a respawn so the very
-  // first frame of the match isn't decided by who's already aimed at you.
-  const initialInvuln = game.time + 90;
+  // Initial spawn protection — Phase 21 bumped from 1.5s → 3s (90→180
+  // ticks) per user '無敵時間需增長'. Long enough that a fresh spawn can
+  // re-orient + start moving before any line-of-sight enemy lands a shot.
+  // Combined with the no-fire-during-invuln rule (also Phase 21) so the
+  // invuln isn't a "spawn camp + insta-kill" exploit window.
+  const initialInvuln = game.time + 180;
   player._invulnUntil = initialInvuln;
   for (const a of allies)  a._invulnUntil = initialInvuln;
   for (const e of enemies) e._invulnUntil = initialInvuln;
@@ -3459,10 +3472,10 @@ async function startGame() {
   player.reserve = 240;
   player.reloading = false;
   player.alive = true;
-  // Spawn invuln — 90 ticks (1.5 s) so the player doesn't insta-die to the
-  // initial wave already on the map. Allies + initial enemies pick up the
-  // same invuln in spawnAllies / spawnWave (see below).
-  player._invulnUntil = 90;
+  // Spawn invuln — Phase 21: 180 ticks (3 s, was 90/1.5s) per user
+  // '無敵時間需增長'. Tighter is welcome but only after we have spawn-zone
+  // teleport-out so respawned units aren't dropped into bullet hail.
+  player._invulnUntil = 180;
 
   drone.deployed = false;
   drone.battery = drone.maxBattery;
@@ -4034,6 +4047,11 @@ function nnApplyAction(unit, action, friendlies, enemies) {
   // Decrement fire cooldown
   if (unit._nnFireCd > 0) unit._nnFireCd--;
   if (unit._nnRecentDmg > 0) unit._nnRecentDmg--;
+  // Phase 21: invuln mutes the trigger for NN units too. Aligns with the
+  // player + ally + FSM enemy fire-gate so the spawn shield never doubles
+  // as a one-way snipe window.
+  const _nnInvuln = unit._invulnUntil != null && game.time < unit._invulnUntil;
+  if (_nnInvuln) return;
 
   if (fire && unit._nnFireCd <= 0) {
     const tgt = nnNearestVisibleEnemy(unit, enemies);
@@ -5044,6 +5062,8 @@ function updateEnemies() {
     } else {
       canFire = canSee && dist < 520 && losClear && e.fireCd <= 0;
     }
+    // Phase 21: invuln mutes the trigger. Same rule applied to player + allies.
+    if (e._invulnUntil != null && game.time < e._invulnUntil) canFire = false;
     if (canFire) {
       const aimX = (mode === 'suppress') ? e.lastSeenX : tx;
       const aimY = (mode === 'suppress') ? e.lastSeenY : ty;
@@ -5566,13 +5586,22 @@ function tickPlayerCombat(isMoving) {
   }
 
   player.fireCooldown--;
+  // Phase 21:
+  //  (a) AUTO-FIRE BY DEFAULT — when aim-assist is on (default state), the
+  //      gun fires continuously without needing mouse-hold. You aim with
+  //      mouse, the gun handles trigger discipline. Turn aim-assist OFF
+  //      (V key) to revert to mouse-hold-to-fire.
+  //  (b) INVULN MUTES THE TRIGGER — '無敵期間需禁止開火'. Fresh spawns
+  //      can't insta-snipe under the shield; either you defend (move +
+  //      reposition) or you wait for the invuln to lift then engage.
   const autoFireFromLock = !!player._aimAssistLockedAt;
-  const triggerOK = autoFireFromLock
+  const triggerOK = (autoFireFromLock || !!player._aimAssist)
                     ? true
                     : (w.auto !== false
                         ? mouse.down
                         : (mouse.down && !mouse._wasDown));
-  if (triggerOK && player.fireCooldown <= 0 && player.ammo > 0 && !player.reloading) fire();
+  const pInvuln = player._invulnUntil != null && game.time < player._invulnUntil;
+  if (triggerOK && !pInvuln && player.fireCooldown <= 0 && player.ammo > 0 && !player.reloading) fire();
 }
 
 function updateDroneControl() {

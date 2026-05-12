@@ -57,7 +57,9 @@ function _adRevivePlayer() {
       player.alive = true;
       player.hp = player.maxHp;
       player._respawnAt = null;
-      player._invulnUntil = (game.time || 0) + 90;
+      // Phase 21: ad-revive invuln 90 → 180 ticks (3 s) to match the
+      // rest of the spawn-shield set after user '無敵時間需增長'.
+      player._invulnUntil = (game.time || 0) + 180;
     }
     dismissDeathRecap();
     if (typeof showSwapToast === 'function') {
