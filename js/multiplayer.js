@@ -24,7 +24,10 @@
 
 const MP_FIREBASE_URL = 'https://ashgo-1bfec-default-rtdb.asia-southeast1.firebasedatabase.app';
 const MP_DEFAULT_ROOM = 'ashgrid-main';
-const MP_TRYSTERO_CDN = 'https://esm.sh/trystero@0.21.5/firebase';
+// Trystero was renamed: trystero/firebase → @trystero-p2p/firebase. The old
+// path throws 'Importing from "trystero/firebase" is deprecated' on the
+// latest release.
+const MP_TRYSTERO_CDN = 'https://esm.sh/@trystero-p2p/firebase';
 const MP_SEND_HZ      = 20;          // position broadcasts per second per peer
 const MP_LERP_K       = 0.25;        // remote interpolation rate
 
@@ -53,11 +56,12 @@ async function _mpConnect() {
   // Lazy ESM import — Trystero is ESM-only and brings firebase as a
   // dependency. esm.sh handles transitive deps so this single import
   // pulls everything in. Browser cache makes subsequent matches instant.
-  let joinRoom;
+  let joinRoom, selfId;
   try {
     console.log('[mp] loading Trystero from CDN…');
     const trystero = await import(MP_TRYSTERO_CDN);
     joinRoom = trystero.joinRoom;
+    selfId = trystero.selfId;       // module-level in @trystero-p2p (was room.selfId in old API)
   } catch (e) {
     _mpState.loadError = String(e);
     console.error('[mp] failed to load Trystero:', e);
@@ -74,7 +78,7 @@ async function _mpConnect() {
     console.error('[mp] joinRoom failed:', e);
     return;
   }
-  _mpState.myId = _mpState.room.selfId;
+  _mpState.myId = selfId;
   // 'pos' action — position broadcast. Other actions ('fire', 'hit', 'kill')
   // arrive in Phase 20b. makeAction returns [send, receive].
   const [sendPos, getPos] = _mpState.room.makeAction('pos');
