@@ -629,6 +629,30 @@ function pickMapForMode(mode) {
   if (pool.length === 0) {
     return Math.floor(Math.random() * NN_MAP_VARIANTS.length);
   }
+  // Phase 22: when MP is on, the map is DETERMINISTIC per room name so
+  // every peer in the room renders the same walls. The user spotted '兩
+  // 個玩家看的地圖不一樣' — random pick per client meant two browsers in
+  // the same room generated different layouts and players appeared to
+  // walk through invisible walls on each other's screen. We hash the
+  // room name into the dm pool so 'ashgrid-main' always → same map for
+  // everyone, while a custom room name still gets its own consistent
+  // layout. The URL is read directly so this works even if the MP
+  // module hasn't finished its async load by the time startNNSkirmish
+  // fires.
+  if (typeof location !== 'undefined') {
+    const params = new URLSearchParams(location.search);
+    if (params.get('mp') === '1') {
+      const roomName = params.get('room') || 'ashgrid-main';
+      // Simple FNV-1a-ish hash, deterministic across browsers.
+      let h = 2166136261 >>> 0;
+      for (let i = 0; i < roomName.length; i++) {
+        h ^= roomName.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+      }
+      const v = pool[h % pool.length];
+      return NN_MAP_VARIANTS.indexOf(v);
+    }
+  }
   // Phase 13: deathmatch pool is heavily biased toward the 'industrial'
   // variant — that's the user's preferred shape (multi-building factory
   // district with streets). Other variants still rotate in ~30% of matches
