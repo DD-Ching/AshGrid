@@ -5754,16 +5754,17 @@ function tickPlayerCombat(isMoving) {
   }
 
   player.fireCooldown--;
-  // Phase 21:
-  //  (a) AUTO-FIRE BY DEFAULT — when aim-assist is on (default state), the
-  //      gun fires continuously without needing mouse-hold. You aim with
-  //      mouse, the gun handles trigger discipline. Turn aim-assist OFF
-  //      (V key) to revert to mouse-hold-to-fire.
-  //  (b) INVULN MUTES THE TRIGGER — '無敵期間需禁止開火'. Fresh spawns
-  //      can't insta-snipe under the shield; either you defend (move +
-  //      reposition) or you wait for the invuln to lift then engage.
+  // Phase 21 → 26: AIM-ASSIST is on by default, but it does NOT fire
+  // continuously — that would broadcast the player's position to every
+  // bot every frame. User clarified: '我說的是自動瞄準的意思 · 不要自動
+  // 開火 · 一直暴露我的位置給敵人'. So the trigger only auto-pulls when
+  // aim-assist has actually LOCKED a target (autoFireFromLock); without
+  // a lock the player must click mouse. Aim-assist still auto-aims the
+  // gun toward visible enemies (Phase 21 default-on stays).
+  // INVULN mutes the trigger regardless so fresh spawns can't snipe
+  // under the shield.
   const autoFireFromLock = !!player._aimAssistLockedAt;
-  const triggerOK = (autoFireFromLock || !!player._aimAssist)
+  const triggerOK = autoFireFromLock
                     ? true
                     : (w.auto !== false
                         ? mouse.down

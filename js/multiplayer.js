@@ -310,11 +310,9 @@ function _mpTickRemoteBullets() {
       if (player.hp <= 0 && player.alive) {
         player.alive = false;
         if (typeof _lbBumpDeath === 'function') _lbBumpDeath();
-        // Broadcast death so remote peers pop the kill feed + bump the
-        // shooter's score. Trystero does NOT echo a sender's own message
-        // back to them, so we ALSO update the local scoreboard / feed
-        // ourselves — otherwise the victim's view would never see their
-        // own death recorded.
+        // Broadcast death so peers update kill feed + score. Trystero does
+        // NOT echo a sender's own message back, so ALSO bump locally —
+        // otherwise the victim never sees their own death recorded.
         if (_mpState.sendKill) {
           try { _mpState.sendKill({ shooterId: b.shooterId, weapon: b.weapon }); } catch {}
         }
@@ -326,10 +324,18 @@ function _mpTickRemoteBullets() {
           at: Date.now(),
         });
         if (_mpKillFeed.length > 6) _mpKillFeed.splice(0, _mpKillFeed.length - 6);
-        // Mirror the death-recap path for ad-revive flow.
+        // Death-recap context.
         if (typeof player._killer === 'undefined') player._killer = null;
         player._killer = { callsign: (_mpState.remotePlayers.get(b.shooterId)?.name) || 'ENEMY' };
         player._killerWeapon = b.weapon;
+        // Phase 26: sync game._teamWipe.blue so death-recap's countdown
+        // ticks visibly ('沒有廣告的時候 那倒數計時應該也要繼續') instead
+        // of being stuck on RESPAWN IN 0s. The 180-tick (3-sec) matches
+        // the setTimeout below so they expire together.
+        if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
+          game._teamWipe.blue.wipedSince = game.time;
+          game._teamWipe.blue.respawnAt = game.time + 180;
+        }
         // Auto-respawn after 3 sec — drop at the blue spawn anchor with
         // a fresh 3-sec invuln (Phase 21 default).
         setTimeout(_mpRespawnLocalPlayer, 3000);
@@ -347,6 +353,12 @@ function _mpRespawnLocalPlayer() {
   player.reserve = Math.max(player.reserve || 0, 120);
   player.reloading = false;
   if (typeof game !== 'undefined') player._invulnUntil = game.time + 180;
+  // Phase 26: clear the team-wipe flag we set on death so the death-recap
+  // countdown dismisses cleanly + the next death starts a fresh timer.
+  if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
+    game._teamWipe.blue.wipedSince = null;
+    game._teamWipe.blue.respawnAt = null;
+  }
   // Phase 20e: pick a respawn anchor far from any remote player so the
   // shooter can't death-camp the spawn point. Prefer the anchor in
   // game._nnSpawnBlueList that's furthest from every alive remote;
