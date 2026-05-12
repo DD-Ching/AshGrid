@@ -11,7 +11,12 @@
 // gets a fresh cache and old caches are evicted on activate. If you
 // add files to ASSETS, bump the suffix or the precache will not run
 // (skipWaiting + clients.claim makes the new SW take over instantly).
-const CACHE = 'ashgrid-v2-2026-05-08';
+// Bump suffix any time JS / asset wiring changes meaningfully — old SW
+// will evict its cache on `activate` (see below) and the new SW will
+// network-first /js/* to avoid the cache-first staleness that bit users
+// during Phase 4–10 (player console showed `ARENA_SEED_MAX is not
+// defined` because cached arena_recruitment.js predated the SEED block).
+const CACHE = 'ashgrid-v3-2026-05-13';
 const ASSETS = [
   './manifest.webmanifest',
   './icons/icon-192.png',
@@ -47,11 +52,18 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== location.origin || e.request.method !== 'GET') return;
   // Network-first for HTML / manifest / sw.js itself — guarantees fresh
   // app shell on every reload while we still ship a working offline mode.
+  // Network-first ALSO for /js/* — these change every commit and the
+  // previous cache-first behaviour caused 'X is not defined' errors when
+  // a freshly-pushed JS file kept getting the stale cached copy. ONNX
+  // models, icons, sound assets stay cache-first below (they're big and
+  // rarely change).
   const isHTML = url.pathname === '/' ||
                  url.pathname.endsWith('/') ||
                  url.pathname.endsWith('.html') ||
                  url.pathname.endsWith('.webmanifest') ||
-                 url.pathname.endsWith('sw.js');
+                 url.pathname.endsWith('sw.js') ||
+                 url.pathname.startsWith('/js/') ||
+                 url.pathname.endsWith('.js');
   if (isHTML) {
     e.respondWith(
       fetch(e.request).then((res) => {
