@@ -43,16 +43,8 @@ const CAMERA_MODES = [
     target:   () => player,
     scale:    () => 0.42,
     rotation: () => 0 },
-  // FTUE override — only when in tactical mode AND a script registered a
-  // cameraScaleTarget. Beats the catch-all so the prologue's 0.55 / 0.65
-  // / 0.7 / 0.32 zoom-ramp wins over the default 1.0.
-  { id: 'ftue',
-    when:     () => game.mode === 'tactical'
-                  && typeof _ftueCameraScale === 'function'
-                  && _ftueCameraScale() != null,
-    target:   () => player,
-    scale:    () => _ftueCameraScale(),
-    rotation: () => 0 },
+  // (arena-mp: FTUE camera override stripped — _ftueCameraScale was a
+  // no-op stub; the prologue's zoom-ramp is gone.)
   // Default — covers tactical mode in normal NN matches.
   { id: 'tactical',
     when:     () => true,

@@ -154,16 +154,7 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
     return;
   }
-  // FTUE key lock — _ftueKeyLocked() returns false outside FTUE; the new
-  // canvas-FTUE doesn't lock keys (gameplay is already constrained).
-  if (typeof _ftueKeyLocked === 'function' && _ftueKeyLocked(k)
-      && game.state === 'playing') {
-    if (typeof showSwapToast === 'function' && !game._ftueLockToastTick) {
-      game._ftueLockToastTick = (game.time || 0) + 60;
-      showSwapToast(T('▸ 教學中 · 該功能稍後解鎖', '▸ Tutorial · key unlocks shortly'));
-    }
-    return;
-  }
+  // (arena-mp: FTUE key-lock check stripped — arena never locks keys.)
   // All gameplay key paths require state=playing.
   if (game.state !== 'playing') return;
   // Single-key bindings (Q/E/H/TAB/R/G/B/X/U/V) — table-driven.

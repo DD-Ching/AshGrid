@@ -1034,62 +1034,8 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   background: transparent;
 }
 
-/* FTUE DIALOGUE BAR — text-adventure strip across the full bottom of the
-   screen. NOT a floating window. Pure black background, full width,
-   speaker tag on left, text on right, pulsing ▼ at far right. User
-   reference image (Steins;Gate / 文字冒險). Only one line at a time;
-   advances when the player performs the step's required action. */
-#ftueDialogue {
-  position: fixed; left: 0; right: 0; bottom: 0;
-  width: 100%;
-  background: #000;
-  border-top: 1px solid rgba(232, 228, 216, 0.35);
-  color: var(--cream);
-  font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
-  z-index: 300;
-  pointer-events: none;
-  padding: 22px 28px 18px;
-  opacity: 0; transition: opacity 0.35s ease;
-}
-#ftueDialogue.show { opacity: 1; }
-.ftue-row {
-  display: flex; align-items: flex-start; gap: 18px;
-  max-width: 1200px; margin: 0 auto;
-}
-.ftue-speaker {
-  flex: 0 0 auto;
-  background: var(--red); color: var(--cream);
-  font-weight: 800; letter-spacing: 3px; font-size: 12px;
-  padding: 7px 16px;
-  text-transform: uppercase;
-}
-.ftue-text {
-  flex: 1 1 auto;
-  font-size: 16px; line-height: 1.55;
-  letter-spacing: 0.5px;
-  padding-top: 5px;
-}
-.ftue-pulse {
-  flex: 0 0 auto;
-  font-size: 14px; opacity: 0.6;
-  padding-top: 7px;
-  animation: ftue-pulse 1.4s ease-in-out infinite;
-}
-@keyframes ftue-pulse {
-  0%, 100% { opacity: 0.25; transform: translateY(0); }
-  50%      { opacity: 0.85; transform: translateY(2px); }
-}
-.ftue-hint {
-  font-size: 11px; letter-spacing: 3px; color: var(--gray);
-  margin-top: 10px; text-align: right;
-  font-family: monospace;
-  max-width: 1200px; margin-left: auto; margin-right: auto;
-}
-@media (max-width: 600px) {
-  #ftueDialogue { padding: 14px 16px 12px; }
-  .ftue-text { font-size: 14px; }
-  .ftue-speaker { font-size: 10px; padding: 5px 10px; letter-spacing: 2px; }
-}
+/* (arena-mp: #ftueDialogue + .ftue-* CSS removed — text-adventure bar
+   was tied to the cut FTUE prologue.) */
 .editor-toolbar {
   position: fixed; top: 0; left: 0; right: 0;
   display: flex; align-items: center; gap: 8px;
@@ -1191,20 +1137,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 <body>
 <canvas id="game"></canvas>
 
-<!-- ============ FTUE DIALOGUE BAR ============ -->
-<!-- Bottom-of-screen visual-novel-style dialogue used during the player's
-     very first match. Replaces the old stacked radio toast pile-up. One
-     line at a time, sequential, advances on a specific player action.
-     Spec: user reference image (visual novel speaker chip + line + ▼).
-     Only visible when game._ftue.active === true. -->
-<div id="ftueDialogue" hidden>
-  <div class="ftue-row">
-    <div class="ftue-speaker" id="ftueSpeaker">LUMEN</div>
-    <div class="ftue-text" id="ftueText"></div>
-    <div class="ftue-pulse" id="ftuePulse">▼</div>
-  </div>
-  <div class="ftue-hint" id="ftueHint"></div>
-</div>
+<!-- (arena-mp: #ftueDialogue bar removed — tied to the cut FTUE prologue.) -->
 
 <!-- ============ INTRO / AWAKEN SEQUENCE ============ -->
 <!-- Shown on first boot. The lobby is reframed as a "comm center" through
@@ -1876,33 +1809,10 @@ function _wireFooterModals() {
 // just did. Gated on ag.firstAuditSeen ('1' once played) so veterans see
 // no popup. Game pauses while modal is open; close path unpauses.
 // Spec: GAME DESIGN.md Section 25.B Phase 4.
-function _maybeTriggerFirstKillAudit(playerWasShooter) {
-  if (!playerWasShooter) return;            // only fire on player's own kill
-  // FTUE freeze — user '別一開始就要搞文書工作'. The Audit Card auto-popup
-  // mid-tutorial reads as paperwork interrupting a training-ground flow.
-  // Skip while the tutorial owns the screen; veterans can still trigger the
-  // Audit Console manually via the lobby footer button.
-  if (game._ftue && game._ftue.active) return;
-  let alreadySeen = false;
-  try { alreadySeen = localStorage.getItem('ag.firstAuditSeen') === '1'; } catch (e) {}
-  if (alreadySeen) return;
-  try { localStorage.setItem('ag.firstAuditSeen', '1'); } catch (e) {}
-  const auditModal = document.getElementById('auditModal');
-  if (!auditModal || typeof buildAuditConsole !== 'function') return;
-  // Pause the running match while the player reads + chooses
-  game._paused = true;
-  game._auditPaused = true;
-  // showSwapToast immediately so the player understands what's happening
-  if (typeof showSwapToast === 'function') {
-    showSwapToast(T('▸ FIRST AUDIT — 你剛剛處決了一個 Syndrome carrier',
-                    '▸ FIRST AUDIT — you just executed a Syndrome carrier'));
-  }
-  // Slight delay so the kill VFX lands first before world freezes mid-frame
-  setTimeout(() => {
-    buildAuditConsole();
-    auditModal.removeAttribute('hidden');
-  }, 260);
-}
+// (arena-mp: _maybeTriggerFirstKillAudit removed — was FTUE Phase 4
+// auto-popup. The Audit Console is still reachable via the lobby footer
+// button; this was the interrupt-on-first-kill flow which felt like
+// 'paperwork mid-fight'.)
 
 // ============ GREY VECTOR — AUDIT CONSOLE ============
 // → Moved to js/audit_console.js. Declares globally:
@@ -2101,12 +2011,6 @@ function _wireIntro() {
 }
 
 // First-boot routing was the legacy INTRO 90s + WAKE button hand-off.
-// REWRITE per FTUE/00 Section 5.4: first-session players go straight into
-// startNarrativeFTUE (handled by setupFirstSessionFTUE IIFE). This
-// function is kept as a no-op so old call sites stay safe. The legacy
-// INTRO overlay lives on as a manual replay-from-start-screen affordance.
-function _maybeShowIntro() { /* see setupFirstSessionFTUE() — first-session flow is now narrative prologue */ }
-
 // Radio toast — small in-match story callout. Stacks at bottom-left,
 // auto-dismisses after `ttl` ms. Used during first match for narrative
 // beats: "they fall faster when you flank", "the NN reads your trail", etc.
@@ -2159,10 +2063,9 @@ function showRadioToast(label, text, ttl = 5500) {
 // Apply on first paint
 setLang(getLang());
 
-// Wire intro overlay buttons + maybe show on first boot.
+// Wire intro overlay buttons (arena-mp: first-boot intro auto-show stripped).
 _wireIntro();
 _wireFooterModals();
-_maybeShowIntro();
 
 // ============ SETUP ============
 const canvas = document.getElementById('game');
@@ -3074,60 +2977,8 @@ document.getElementById('lobbyStartBtn').onclick = () => {
 };
 
 
-// FTUE Dev Monitor — top-right overlay panel that ticks every 250 ms with
-// the current step idx, expected advance condition, flags collected, ally
-// + enemy counts, and the lock state. Visible only when ?ftue=1 was used
-// (or sessionStorage.ag._ftueDevMonitor is set manually). Dev-only; never
-// shown to a normal first-session player.
-(function setupFtueDevMonitor() {
-  let on = false;
-  try { on = sessionStorage.getItem('ag._ftueDevMonitor') === '1'; } catch (e) {}
-  if (!on) return;
-  const panel = document.createElement('div');
-  panel.id = 'ftueDevMonitor';
-  panel.style.cssText =
-    'position: fixed; top: 12px; right: 12px; z-index: 999;' +
-    'background: rgba(20, 18, 24, 0.94); color: #E8E4D8;' +
-    'font: 11px/1.45 monospace; padding: 10px 12px;' +
-    'border: 1px solid #C8261C; min-width: 240px; max-width: 320px;' +
-    'pointer-events: none; letter-spacing: 0.5px;' +
-    'box-shadow: 2px 2px 0 #C8261C;';
-  document.body.appendChild(panel);
-  const tick = () => {
-    const f = (typeof game !== 'undefined' && game._ftue) ? game._ftue : null;
-    if (!f) {
-      panel.innerHTML = '<b style="color:#C8261C">FTUE MONITOR</b><br>(no game._ftue yet)';
-    } else if (!f.active) {
-      panel.innerHTML = `<b style="color:#C8261C">FTUE MONITOR</b><br>` +
-        `<span style="color:#999">DONE — idx ${f.idx}</span><br>` +
-        `ag.firstMatch: ${localStorage.getItem('ag.firstMatch') || 'null'}`;
-    } else {
-      const cur = f.steps[f.idx] || {};
-      const flagsTxt = Object.entries(f.flags || {})
-        .map(([k, v]) => `${k}:${v}`).join(' · ');
-      const ally = (typeof allies !== 'undefined') ? allies.filter(a => a.alive).length : '?';
-      const enemy = (typeof enemies !== 'undefined') ? enemies.filter(e => e.alive).length : '?';
-      const recentLog = (f.log || []).slice(-5)
-        .map(l => `<div style="opacity:0.7;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${l}</div>`)
-        .join('');
-      const shownAgo = f.stepShownAt != null
-        ? Math.round(((game.time - f.stepShownAt) * 16.67))
-        : '—';
-      panel.innerHTML =
-        `<b style="color:#C8261C">FTUE · STEP ${f.idx}/${f.steps.length - 1}</b>` +
-        `<br><span style="color:#FFD24A">${cur.speaker || '—'}</span> ` +
-        `→ wait <span style="color:#FFD24A">${cur.advance || '—'}</span>` +
-        `<br><span style="opacity:0.7">"${(cur.text || '').slice(0, 60)}…"</span>` +
-        `<br><span style="opacity:0.85">flags: ${flagsTxt}</span>` +
-        `<br>allies ${ally} · enemies ${enemy} · shown-for ${shownAgo}ms` +
-        `<br><span style="opacity:0.7">cam ${(typeof camera !== 'undefined' ? camera.targetScale.toFixed(2) : '?')} · paused ${!!(game && game._paused)}</span>` +
-        `<br><b style="color:#C8261C;font-size:10px;">RECENT LOG</b>` +
-        recentLog;
-    }
-    requestAnimationFrame(() => setTimeout(tick, 250));
-  };
-  tick();
-})();
+// (arena-mp: FTUE Dev Monitor IIFE removed — it polled a game._ftue
+// state that no longer exists. Was only enabled via the cut ?ftue=1 dev flag.)
 
 function startSkirmish() {
   document.getElementById('start').classList.add('hidden');
@@ -3404,8 +3255,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   if (typeof _resetRadioCooldowns === 'function') _resetRadioCooldowns();
   if (typeof _resetMatchAchievementUnlocks === 'function') _resetMatchAchievementUnlocks();
   _heartNextBeat = 0;
-  // First-match story beats (no-op after first run — flag in localStorage)
-  _scheduleFirstMatchToasts();
+  // (arena-mp: _scheduleFirstMatchToasts call stripped — was no-op stub.)
 
   // Initial spawn protection — same 1.5s immunity as a respawn so the very
   // first frame of the match isn't decided by who's already aimed at you.
@@ -4296,12 +4146,6 @@ function updateMission() {
     updateAirstrikes();
   }
   game._structuresTickedThisFrame = false;
-  // FTUE freeze: while the tutorial dialogue is running, suppress the
-  // mission's win/loss check entirely. Otherwise a 2v2 DM with kill
-  // threshold 6 can fire VICTORY before the player has reached the
-  // streak3 step. User report: '明明就還在教程,根本就沒有什麼勝利
-  // 或失敗 … 完全亂搞一通'.
-  if (game._ftue && game._ftue.active) return;
   if (mission.isComplete && mission.isComplete()) {
     mission.status = 'success';
     onMissionSuccess();
@@ -4374,15 +4218,6 @@ function returnToNNLobby() {
 // unlocks if the bumpMatchPlayed call crossed a threshold this match.
 // PLAY AGAIN restarts the same mode immediately; LOBBY returns to menu.
 function showNNEndCard(result) {
-  // Hard FTUE guard — the tutorial owns the screen until streak3 fires.
-  // Any path that tries to drop a VICTORY / DEFEAT card while FTUE is
-  // still active is suppressed (the mission update gate above usually
-  // catches it, but this is the failsafe).
-  if (game._ftue && game._ftue.active) return;
-  // Match ended — close the tutorial bar (no-op if already done) and flip
-  // ag.firstMatch so the next match is clean even if the player exited
-  // before reaching the streak3 step.
-  if (typeof _finalizeFtue === 'function') _finalizeFtue();
   const card = document.getElementById('nnEndCard');
   if (!card) return;
   const lang = (typeof getLang === 'function') ? getLang() : 'en';
@@ -5171,17 +5006,6 @@ function update() {
     _arenaTickRecruitment();
   }
 
-  // FTUE: detect death of the UAV/FPV target spawned by step 'q'. Single
-  // watcher (instead of hooking every kill site) — fires the advance event
-  // once per spawn. Independent of the killing weapon (FPV, bullet, grenade).
-  if (typeof ftue !== 'undefined' && ftue.active && typeof enemies !== 'undefined') {
-    for (const e of enemies) {
-      if (e._ftueSpawn && !e.alive && !e._ftueDeathFired) {
-        e._ftueDeathFired = true;
-        _ftueEvent('ftueTargetDown');
-      }
-    }
-  }
 
   // Footprint emission for allies + enemies — once every 30 ticks, drop a
   // print at each living unit's position if they actually moved this tick.
@@ -5708,15 +5532,8 @@ function updateBullets() {
         spawnDamagePopup(e.x, e.y - 14, b.damage, isKill);
         if (isKill) {
           e.alive = false; game.score += 100; game.killCount++;
-          // GREY VECTOR FTUE Phase 4 — on the player's FIRST KILL of their
-          // FIRST MATCH, pop an Audit Card so the diagnose-and-execute
-          // mechanic gets introduced through the very killing they just did.
-          // Once-per-account: ag.firstAuditSeen guards re-trigger; subsequent
-          // matches see no popup.
-          if (typeof _maybeTriggerFirstKillAudit === 'function') {
-            _maybeTriggerFirstKillAudit(b.fromUnit === player);
-          }
-          // FTUE: a player kill advances step 1 → step 2 (Audit Card popup)
+          // (arena-mp: _maybeTriggerFirstKillAudit call stripped — was the
+          // FTUE Phase 4 auto-popup. Audit Console reachable via lobby button.)
           // Kill SFX + ally-kill radio callout BOTH removed on user request
           // ('移除擊殺音效!!!', third escalation). The radio callout was the
           // 'ding-dong' the user kept hearing — showRadioToast plays a 2-tone
@@ -8416,20 +8233,10 @@ function drawObjectivePanel(lines) {
 //     renderBuildPreview
 
 // ============ HUD ============
-// HUD render — FTUE-aware via the data-driven _ftueRevealed(key) accessor.
-// Outside the FTUE every key returns true (full HUD). During FTUE the
-// reveal map on each step config (above, FTUE_STEPS) decides what shows.
+// (arena-mp: FTUE-reveal gating was always-true → inlined.)
 function renderHUD() {
-  // Compute reveal flags ONCE per frame so we don't trip the data lookup
-  // dozens of times. Keys: hp, ammo, mission, minimap, energy.
-  const showHp     = _ftueRevealed('hp');
-  const showAmmo   = _ftueRevealed('ammo');
-  const showMin    = _ftueRevealed('minimap');
-  const showMsn    = _ftueRevealed('mission');
-  const showEnergy = _ftueRevealed('energy');
-  // Step 0 ('wake') has nothing revealed → bail before drawing any chunk.
-  // Dialog bar is HTML so it stays. Player + crosshair come from
-  // renderHUDOverlays which we still call below.
+  // Full HUD: HP / ammo / minimap / mission / energy all visible.
+  const showMin = true, showMsn = true;
   // Hit flash
   if (game.hitFlash > 0) {
     ctx.fillStyle = `rgba(200, 38, 28, ${game.hitFlash / 12 * 0.35})`;
