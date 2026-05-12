@@ -24,6 +24,12 @@
 
 const MP_FIREBASE_URL = 'https://ashgo-1bfec-default-rtdb.asia-southeast1.firebasedatabase.app';
 const MP_DEFAULT_ROOM = 'ashgrid-main';
+const MP_ROOM_CAP        = 20;        // Phase 27: rollover threshold per user
+                                      // '20-30 才會開第二間 · 以下都希望
+                                      // 他們能遇到 · 不要平行世界'
+const MP_PRESENCE_TTL_MS = 30000;     // peers without a heartbeat in 30s
+                                      // are treated as gone for matchmaking
+const MP_HEARTBEAT_MS    = 10000;     // PUT /rooms/<room>/<peer> every 10s
 // Trystero was renamed: trystero/firebase → @trystero-p2p/firebase. The old
 // path throws 'Importing from "trystero/firebase" is deprecated' on the
 // latest release. We also PIN the version (@0.24.0) because esm.sh's
@@ -68,13 +74,46 @@ const _mpPings = [];                  // [{ x, y, peerId, life, maxLife }]
 function _mpIsActive() { return !!_mpState.enabled; }
 function _mpPeerCount() { return _mpState.enabled ? (_mpState.remotePlayers.size + 1) : 0; }
 
+// Phase 27 — auto-matchmaking. Pick the smallest room number that's
+// under MP_ROOM_CAP so everyone clusters in one room until traffic
+// justifies a second. URL ?room= overrides this entirely (private games).
+async function _mpPickRoom() {
+  try {
+    const r = await fetch(`${MP_FIREBASE_URL}/rooms.json`);
+    if (!r.ok) return MP_DEFAULT_ROOM;
+    const data = (await r.json()) || {};
+    const now = Date.now();
+    const counts = {};
+    for (const [roomName, peers] of Object.entries(data)) {
+      let alive = 0;
+      for (const p of Object.values(peers || {})) {
+        if (p && p.ts && (now - p.ts) < MP_PRESENCE_TTL_MS) alive++;
+      }
+      counts[roomName] = alive;
+    }
+    // Default room first — everyone funnels there until it hits MP_ROOM_CAP.
+    if ((counts[MP_DEFAULT_ROOM] || 0) < MP_ROOM_CAP) return MP_DEFAULT_ROOM;
+    // Roll over to ashgrid-2, ashgrid-3, ... — first non-full room wins.
+    let n = 2;
+    while ((counts[`ashgrid-${n}`] || 0) >= MP_ROOM_CAP) {
+      n++;
+      if (n > 50) break;        // sanity stop
+    }
+    return `ashgrid-${n}`;
+  } catch (e) {
+    return MP_DEFAULT_ROOM;
+  }
+}
+
 async function _mpConnect() {
   if (_mpState.enabled) return;
   // Activation gate. ?mp=1 in URL is the opt-in. Single-player path is
   // 100% untouched when the flag is absent.
   const params = new URLSearchParams(location.search);
   if (params.get('mp') !== '1') return;
-  const roomName = params.get('room') || MP_DEFAULT_ROOM;
+  // Phase 27: auto-pick room when URL doesn't specify one, so all
+  // unrouted MP players land in the same room until it fills.
+  const roomName = params.get('room') || await _mpPickRoom();
   _mpState.roomName = roomName;
   // Lazy ESM import — Trystero is ESM-only and brings firebase as a
   // dependency. esm.sh handles transitive deps so this single import
@@ -205,7 +244,49 @@ async function _mpConnect() {
   if (typeof showSwapToast === 'function') {
     showSwapToast('▶ 多人連線 · room: ' + roomName);
   }
+  // Phase 27 — start presence heartbeat so other clients' room picker
+  // sees us. First beat fires immediately so a player who joins right
+  // after this one already counts us.
+  _mpStartPresence();
 }
+
+// Presence heartbeat — write { name, ts } into /rooms/<room>/<peer>
+// every MP_HEARTBEAT_MS. Stale entries (older than MP_PRESENCE_TTL_MS)
+// are filtered out by _mpPickRoom so a crashed tab doesn't pin a slot.
+let _mpPresenceTimer = null;
+function _mpPresenceUrl() {
+  if (!_mpState.myId || !_mpState.roomName) return null;
+  return `${MP_FIREBASE_URL}/rooms/${encodeURIComponent(_mpState.roomName)}/${encodeURIComponent(_mpState.myId)}.json`;
+}
+async function _mpHeartbeat() {
+  const url = _mpPresenceUrl();
+  if (!url) return;
+  try {
+    await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: (typeof getOperatorName === 'function') ? getOperatorName().slice(0, 12) : 'PLAYER',
+        ts: Date.now(),
+      }),
+    });
+  } catch (e) {/* network blip — try again next interval */}
+}
+function _mpStartPresence() {
+  if (_mpPresenceTimer) clearInterval(_mpPresenceTimer);
+  _mpHeartbeat();
+  _mpPresenceTimer = setInterval(_mpHeartbeat, MP_HEARTBEAT_MS);
+}
+// Cleanup on tab close. `keepalive: true` lets the request complete
+// even after the page is unloading. We DELETE the presence entry so
+// the next room picker doesn't count us as 'alive'.
+window.addEventListener('pagehide', () => {
+  if (_mpPresenceTimer) { clearInterval(_mpPresenceTimer); _mpPresenceTimer = null; }
+  const url = _mpPresenceUrl();
+  if (url) {
+    try { fetch(url, { method: 'DELETE', keepalive: true }); } catch {}
+  }
+});
 
 // Per-frame: throttled to MP_SEND_HZ so the room doesn't get spammed at
 // 60 fps. Position is rounded to 1u + angle to 3 decimals so each message

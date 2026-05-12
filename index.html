@@ -2956,7 +2956,21 @@ function _refreshModeButtons() {
 const _modeSoloBtn = document.getElementById('modeSoloBtn');
 if (_modeSoloBtn) _modeSoloBtn.onclick = () => { _entryMode = 'solo'; _refreshModeButtons(); };
 const _modeMpBtn = document.getElementById('modeMpBtn');
-if (_modeMpBtn) _modeMpBtn.onclick = () => { _entryMode = 'mp'; _refreshModeButtons(); };
+if (_modeMpBtn) _modeMpBtn.onclick = async () => {
+  _entryMode = 'mp';
+  _refreshModeButtons();
+  // Phase 27: auto-fill the room input with the matchmaking pick so
+  // the player drops into the most-populated non-full room by default.
+  // They can still type a custom name to override (private games).
+  const roomEl = document.getElementById('roomInput');
+  if (roomEl && !roomEl.value.trim() && typeof _mpPickRoom === 'function') {
+    try {
+      const picked = await _mpPickRoom();
+      if (!roomEl.value.trim()) roomEl.value = picked;
+      roomEl.placeholder = `ROOM · 自動 ${picked}(空白 = 自動配對)`;
+    } catch (e) {}
+  }
+};
 
 const _nnBtn = document.getElementById('nnBtn');
 if (_nnBtn) {
@@ -2971,9 +2985,13 @@ if (_nnBtn) {
     const inMp = (p.get('mp') === '1');
     if (_entryMode === 'mp' && !inMp) {
       const roomEl = document.getElementById('roomInput');
-      const typedRoom = (roomEl && roomEl.value.trim()) || 'ashgrid-main';
+      const typedRoom = roomEl && roomEl.value.trim();
       p.set('mp', '1');
-      p.set('room', typedRoom);
+      // Phase 27: empty room input means "auto-match me" — leave room=
+      // out of the URL so _mpConnect's _mpPickRoom() picks the most-
+      // populated non-full room. A typed name overrides matchmaking.
+      if (typedRoom) p.set('room', typedRoom);
+      else p.delete('room');
       // Save callsign before nav so it survives the reload
       const input = document.getElementById('callsignInput');
       if (input && typeof setOperatorName === 'function' && input.value.trim()) {
@@ -2995,11 +3013,11 @@ if (_nnBtn) {
     // Already in MP — but maybe the player typed a new room. Reload only
     // if the room changed; otherwise just countdown.
     if (_entryMode === 'mp' && inMp) {
-      const currentRoom = p.get('room') || 'ashgrid-main';
+      const currentRoom = p.get('room') || '';
       const roomEl = document.getElementById('roomInput');
-      const typedRoom = (roomEl && roomEl.value.trim()) || 'ashgrid-main';
+      const typedRoom = (roomEl && roomEl.value.trim()) || '';
       if (typedRoom !== currentRoom) {
-        p.set('room', typedRoom);
+        if (typedRoom) p.set('room', typedRoom); else p.delete('room');
         try { sessionStorage.setItem('ag.autoEnter', '1'); } catch (e) {}
         location.search = p.toString();
         return;
