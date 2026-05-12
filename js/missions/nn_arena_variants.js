@@ -157,6 +157,83 @@ const NN_MAP_VARIANTS = [
     ],
     modes: ['dm', 'sniper', 'survival', 'helo'],
   },
+  // ============ Phase 13: industrial zone — flagship dm variant ============
+  // User feedback (screenshot of empty arena): '可能這裡曾經是一個工廠、工業區
+  // 被規劃過 · 有街道、有大樓、有室內'. So this variant places four corner
+  // warehouses around a cross-shaped street grid. Each warehouse is a 220u
+  // rectangle perimeter with ONE or TWO door gaps facing the streets, so you
+  // can flank around the back wall or push through the door. The factory
+  // landmark sits at the crossroads (separate spawn done by world_gen, not
+  // here). Inner crates give each warehouse a peek-shoot anchor; outer
+  // crates dot the streets for traversal cover.
+  //
+  // Doorway openings are 90u wide — slightly wider than the NN training
+  // pillars-variant so the trained PPO can still path through without
+  // jamming on the door frame. Walls use the existing 'building' kind
+  // (HP 220 after Phase 8 doubling) so they take a few rockets to breach.
+  { id: 'industrial', name: '工业区 INDUSTRIAL ZONE',
+    walls: () => {
+      const out = [];
+      const T = 22;       // wall thickness — clearly readable but not boxy
+      const D = 90;       // door opening width (slightly > NN min for pathing)
+      // Place a hollow rectangular building (x1..x2, y1..y2) with optional
+      // door gaps. Each `doors.side` is the door's center coordinate on the
+      // opposite axis (top/bottom = x, left/right = y), or null for sealed.
+      const building = (x1, y1, x2, y2, doors) => {
+        const d = doors || {};
+        // Top wall
+        if (d.top != null) {
+          out.push({ x: x1, y: y1, w: d.top - D/2 - x1, h: T, kind: 'building' });
+          out.push({ x: d.top + D/2, y: y1, w: x2 - (d.top + D/2), h: T, kind: 'building' });
+        } else out.push({ x: x1, y: y1, w: x2 - x1, h: T, kind: 'building' });
+        // Bottom wall
+        if (d.bottom != null) {
+          out.push({ x: x1, y: y2 - T, w: d.bottom - D/2 - x1, h: T, kind: 'building' });
+          out.push({ x: d.bottom + D/2, y: y2 - T, w: x2 - (d.bottom + D/2), h: T, kind: 'building' });
+        } else out.push({ x: x1, y: y2 - T, w: x2 - x1, h: T, kind: 'building' });
+        // Left wall
+        if (d.left != null) {
+          out.push({ x: x1, y: y1, w: T, h: d.left - D/2 - y1, kind: 'building' });
+          out.push({ x: x1, y: d.left + D/2, w: T, h: y2 - (d.left + D/2), kind: 'building' });
+        } else out.push({ x: x1, y: y1, w: T, h: y2 - y1, kind: 'building' });
+        // Right wall
+        if (d.right != null) {
+          out.push({ x: x2 - T, y: y1, w: T, h: d.right - D/2 - y1, kind: 'building' });
+          out.push({ x: x2 - T, y: d.right + D/2, w: T, h: y2 - (d.right + D/2), kind: 'building' });
+        } else out.push({ x: x2 - T, y: y1, w: T, h: y2 - y1, kind: 'building' });
+      };
+      // Four corner warehouses — doors face the central crossroads so combat
+      // funnels inward. Each warehouse has TWO doors (one facing each
+      // intersecting street) so the player can flank without being penned in.
+      // NW warehouse — doors on S + E
+      building(140, 140, 420, 420, { bottom: 280, right: 280 });
+      // NE warehouse — doors on S + W
+      building(780, 140, 1060, 420, { bottom: 920, left: 920 });
+      // SW warehouse — doors on N + E
+      building(140, 780, 420, 1060, { top: 280, right: 920 });
+      // SE warehouse — doors on N + W
+      building(780, 780, 1060, 1060, { top: 920, left: 280 });
+      // Interior covers — one mid-floor peek crate per warehouse
+      out.push({ x: 250, y: 250, w: 60, h: 60, kind: 'cover' });
+      out.push({ x: 890, y: 250, w: 60, h: 60, kind: 'cover' });
+      out.push({ x: 250, y: 890, w: 60, h: 60, kind: 'cover' });
+      out.push({ x: 890, y: 890, w: 60, h: 60, kind: 'cover' });
+      // Street-level industrial debris — sits in the crossroads + outer ring.
+      // Gives mid-street cover so the lanes aren't pure sightline corridors.
+      // Crates avoid the centre 80u where the factory sits.
+      out.push({ x: 540, y: 220, w: 120, h: 40, kind: 'cover' });  // N alley
+      out.push({ x: 540, y: 940, w: 120, h: 40, kind: 'cover' });  // S alley
+      out.push({ x: 220, y: 540, w: 40, h: 120, kind: 'cover' });  // W alley
+      out.push({ x: 940, y: 540, w: 40, h: 120, kind: 'cover' });  // E alley
+      // Two oblique cover stacks closer to spawn so the first 5 sec of the
+      // match has something to break the long sightline.
+      out.push({ x: 480, y: 460, w: 60, h: 60, kind: 'cover' });
+      out.push({ x: 660, y: 680, w: 60, h: 60, kind: 'cover' });
+      return out;
+    },
+    spawn: { blue: { x: 240, y: 600 }, red: { x: 960, y: 600 } },
+    modes: ['dm', 'helo', 'duel'],
+  },
   // ========= Indoor variants — single-room interiors with cover =========
   // Spawn anchors are placed INSIDE the perimeter so the whole match plays
   // out indoors. Internal walls are kept short / wide-doored so the trained
@@ -461,6 +538,18 @@ function pickMapForMode(mode) {
   });
   if (pool.length === 0) {
     return Math.floor(Math.random() * NN_MAP_VARIANTS.length);
+  }
+  // Phase 13: deathmatch pool is heavily biased toward the 'industrial'
+  // variant — that's the user's preferred shape (multi-building factory
+  // district with streets). Other variants still rotate in ~30% of matches
+  // so the experience isn't monotonous. Other modes (sniper, duel,
+  // survival, etc.) keep their unweighted pool.
+  if (mode === 'dm') {
+    const INDUSTRIAL_BIAS = 0.70;
+    const industrial = pool.find(v => v.id === 'industrial');
+    if (industrial && Math.random() < INDUSTRIAL_BIAS) {
+      return NN_MAP_VARIANTS.indexOf(industrial);
+    }
   }
   const v = pool[Math.floor(Math.random() * pool.length)];
   return NN_MAP_VARIANTS.indexOf(v);
