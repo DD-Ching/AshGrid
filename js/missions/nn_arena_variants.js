@@ -629,28 +629,24 @@ function pickMapForMode(mode) {
   if (pool.length === 0) {
     return Math.floor(Math.random() * NN_MAP_VARIANTS.length);
   }
-  // Phase 22: when MP is on, the map is DETERMINISTIC per room name so
-  // every peer in the room renders the same walls. The user spotted '兩
-  // 個玩家看的地圖不一樣' — random pick per client meant two browsers in
-  // the same room generated different layouts and players appeared to
-  // walk through invisible walls on each other's screen. We hash the
-  // room name into the dm pool so 'ashgrid-main' always → same map for
-  // everyone, while a custom room name still gets its own consistent
-  // layout. The URL is read directly so this works even if the MP
-  // module hasn't finished its async load by the time startNNSkirmish
-  // fires.
+  // Phase 22 → 29: MP mode FORCES 'industrial'. Previous hash-by-room
+  // gave deterministic-per-room maps, BUT the room name could diverge
+  // between peers when URL ?room= was set on one side and absent on
+  // another (URL fallback was 'ashgrid-main' but the actual MP join
+  // might have picked 'ashgrid-2'). Result: same room name in /rooms,
+  // different map hash → 'PLAYER 走進牆裡了' bug.
+  // Fix: in MP mode, never hash. Always industrial. All peers see the
+  // exact same 8-warehouse layout regardless of which room they're in.
+  // Variety can come back later via the room name once we move map
+  // selection into the room presence record (so the host of room X
+  // picks a variant and all others sync to it).
   if (typeof location !== 'undefined') {
     const params = new URLSearchParams(location.search);
     if (params.get('mp') === '1') {
-      const roomName = params.get('room') || 'ashgrid-main';
-      // Simple FNV-1a-ish hash, deterministic across browsers.
-      let h = 2166136261 >>> 0;
-      for (let i = 0; i < roomName.length; i++) {
-        h ^= roomName.charCodeAt(i);
-        h = Math.imul(h, 16777619) >>> 0;
-      }
-      const v = pool[h % pool.length];
-      return NN_MAP_VARIANTS.indexOf(v);
+      const industrial = pool.find(v => v.id === 'industrial');
+      if (industrial) return NN_MAP_VARIANTS.indexOf(industrial);
+      // Fall through to hash if industrial somehow not in pool (no-op
+      // for the current mode list — industrial is tagged ['dm','helo','duel']).
     }
   }
   // Phase 13: deathmatch pool is heavily biased toward the 'industrial'

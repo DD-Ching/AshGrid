@@ -2956,20 +2956,19 @@ function _refreshModeButtons() {
 const _modeSoloBtn = document.getElementById('modeSoloBtn');
 if (_modeSoloBtn) _modeSoloBtn.onclick = () => { _entryMode = 'solo'; _refreshModeButtons(); };
 const _modeMpBtn = document.getElementById('modeMpBtn');
-if (_modeMpBtn) _modeMpBtn.onclick = async () => {
+if (_modeMpBtn) _modeMpBtn.onclick = () => {
   _entryMode = 'mp';
   _refreshModeButtons();
-  // Phase 27: auto-fill the room input with the matchmaking pick so
-  // the player drops into the most-populated non-full room by default.
-  // They can still type a custom name to override (private games).
+  // Phase 29: NO pre-fill. Pre-filling forced ?room= into the URL,
+  // which sometimes diverged between players (one had explicit
+  // ?room=ashgrid-main, another had ?room=ashgrid-2 because their
+  // auto-pick fired at a different moment) and broke map sync.
+  // Leave the input empty → URL stays without ?room= → _mpConnect's
+  // auto-pick fires fresh on each side → both land in ashgrid-main
+  // until it caps at 20. Custom room (private games) still works by
+  // typing a name explicitly.
   const roomEl = document.getElementById('roomInput');
-  if (roomEl && !roomEl.value.trim() && typeof _mpPickRoom === 'function') {
-    try {
-      const picked = await _mpPickRoom();
-      if (!roomEl.value.trim()) roomEl.value = picked;
-      roomEl.placeholder = `ROOM · 自動 ${picked}(空白 = 自動配對)`;
-    } catch (e) {}
-  }
+  if (roomEl) roomEl.placeholder = '空白 = 自動配對(20人滿才開新房 · ROOM 自訂 = 私人房)';
 };
 
 const _nnBtn = document.getElementById('nnBtn');
