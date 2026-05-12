@@ -278,6 +278,7 @@ function _mpTickRemoteBullets() {
       if (typeof game !== 'undefined') game.hitFlash = Math.max(game.hitFlash || 0, 6);
       if (player.hp <= 0 && player.alive) {
         player.alive = false;
+        if (typeof _lbBumpDeath === 'function') _lbBumpDeath();
         // Broadcast death so remote peers pop the kill feed + bump the
         // shooter's score. Trystero does NOT echo a sender's own message
         // back to them, so we ALSO update the local scoreboard / feed
