@@ -385,17 +385,18 @@ function _mpHandleSnapshot(snap) {
           player.x += dx * 0.3;
           player.y += dy * 0.3;
         }
-        // Phase 56 — HP reconciliation via min(local, server).
-        //   • NN bullet hit → local.hp drops, server.hp unchanged → keep
-        //     local (lower wins). Player can take NN damage in MP rooms
-        //     without losing it on the next snapshot.
-        //   • MP bullet hit → server.hp drops, local.hp unchanged → take
-        //     server's lower value. Server is still authoritative for
-        //     PvP.
-        //   • Respawn (server hp jumps from low → max) is handled by
-        //     `_mpRespawnLocalPlayer` which snaps local hp explicitly,
-        //     bypassing this min(). For per-tick snapshots, the min
-        //     keeps both damage sources persistent.
+        // HP has TWO writers because NN bots live client-only (see fire()
+        // ghost-bullet note in index.html). min(local, server) picks the
+        // lower of:
+        //   • local hp (NN bullet just hit us — server doesn't know)
+        //   • server hp (MP bullet hit us — server is authoritative)
+        // Both kinds of damage stay durable across snapshots. Respawn —
+        // where server hp jumps low→max — is handled by
+        // _mpRespawnLocalPlayer which snaps local hp explicitly, bypassing
+        // this min(). The trade-off this loses: simultaneous NN+MP damage
+        // in the same tick collapses to whichever is lower. Acceptable
+        // for casual .io play; would need delta-based reconciliation if
+        // we ever moved NN inference server-side.
         if (typeof sp.hp === 'number') {
           player.hp = Math.min(
             (typeof player.hp === 'number') ? player.hp : sp.hp,
@@ -630,13 +631,11 @@ function _mpSendInput() {
   };
   _mpSendRaw(input);
 
-  // Phase 44: muzzle flash + 'shoot' SFX are NOT spawned here. The local
-  // single-player fire() function (index.html:5851) still runs every frame
-  // in MP — it just skips the bullet push (gated by _mpFireSkip) but still
-  // does muzzleFlashes.push + applyRecoil + playSfx('shoot'). My Phase 41
-  // attempt to add a SECOND flash here was double-firing on every shot
-  // (with a 200ms throttle that didn't fully mask it). Trust fire() — it's
-  // the canonical single-player path.
+  // Muzzle flash + 'shoot' SFX are NOT spawned here. The local fire()
+  // function in index.html runs every frame and handles muzzleFlashes,
+  // applyRecoil, playSfx('shoot') — that's the canonical visual/audio
+  // path for our own gun. We just stamp `fire: true` into the input
+  // packet so the server spawns the network-authoritative bullet.
 
   // Phase 38 prediction — index.html's per-frame WASD code IS our
   // prediction. We just record the input here so reconciliation can
@@ -977,10 +976,6 @@ function _mpRenderHUD() {
   ctx.restore();
   ctx.textAlign = 'left';
 }
-
-// Fire is now server-side. _mpBroadcastFire is a no-op kept as a shim
-// so existing index.html call sites don't need to be deleted.
-function _mpBroadcastFire(/* payload */) { /* no-op — server handles firing */ }
 
 // Phase 43 — built-structure sync helpers.
 //

@@ -1,33 +1,22 @@
 // ============ ARENA RECRUITMENT ============
-// "Kill an enemy → chance they become your ally" is the arena-mp progression
-// hook. Two paths:
-//   • Passive (auto): each natural enemy kill rolls ARENA_RECRUIT_CHANCE.
-//     If hit, the corpse is "revived" as a blue ally with same chassis +
-//     weapon + NN brain (so they fight on your side at the level they
-//     fought against you).
-//   • Active (G key): _arenaTrySEDConvert() finds the nearest live enemy
-//     within ARENA_SED_RANGE and converts deterministically. Costs a
-//     grenade slot (caller falls back to throwGrenade if no target).
+// "Kill an enemy → they become your ally" is the arena-mp progression hook.
+// Recruitment is fully MANUAL (G key): _arenaTrySEDConvert() finds the
+// nearest live enemy within touch range and converts if HP/SEED gates pass.
+// Costs a grenade slot (caller falls back to throwGrenade if no target).
 //
 // Squad cap keeps the screen readable + preserves death stakes (lose your
-// army when you die). User intent: '我想要有些 npc 被幹掉會變自己人'.
+// army when you die). User intent: '我想要有些 npc 被幹掉會變自己人' +
+// '不會自動招降, 招降一定要靠手動的'.
 //
 // Classic-script. Declares globally:
-//   ARENA_RECRUIT_CHANCE · ARENA_SED_RANGE · ARENA_SQUAD_CAP (constants)
+//   ARENA_SED_RANGE · ARENA_SQUAD_CAP (constants)
 //   _arenaAliveSquadCount() · _arenaConvertEnemyToAlly(e)
-//   _arenaTrySEDConvert() · _arenaTickRecruitment()
+//   _arenaTrySEDConvert()
 //
 // External deps (resolved at call-time):
 //   player · allies · enemies · game.time
 //   showSwapToast() · playRadioStatic() · T()
 
-// Phase 9 (user feedback '不會自動招降, 招降一定要靠手動的'):
-// passive natural-kill recruit is OFF. The G-key path (gated by HP / range
-// / SEED / human-piloted — see _arenaTrySEDConvert below) is now the
-// ONLY way to recruit. Keep the constant at 0 (don't delete) so the
-// passive-tick function still exists and tracks deaths for cleanup, just
-// never converts.
-const ARENA_RECRUIT_CHANCE = 0;        // was 0.25 — passive recruit disabled
 const ARENA_SED_RANGE      = 220;      // px — kept for back-compat; the
                                        // active gate is ARENA_TOUCH_RANGE
 const ARENA_SQUAD_CAP      = 5;        // hard cap on bots you own at once
@@ -40,24 +29,20 @@ const ARENA_SQUAD_CAP      = 5;        // hard cap on bots you own at once
 // IN, you inherit the target ally's SEED (usually 0 since it was AI).
 //
 // Active recruit (G key) requires FOUR gates — all must pass:
-//   1. Distance ≤ (myR + targetR + buffer). Phase 48: bumped buffer 5→80,
-//      so effective reach ≈ 106 px (was 31). User: '招降距離再提升一點'.
-//      Original was 220 (too generous), Phase 9 over-corrected to "must
-//      touch", landed at 106 as the sweet spot — close enough to feel
-//      deliberate, loose enough to not require pixel-perfect alignment.
+//   1. Distance ≤ (myR + targetR + ARENA_TOUCH_BUFFER). Effective reach
+//      ≈ 106 px — close enough to feel deliberate, loose enough to not
+//      require pixel-perfect alignment.
 //   2. Target HP < maxHp * ARENA_HP_GATE (must damage NPC to half first)
 //   3. (my SEED) - (target SEED) > ARENA_SEED_GAP (skill differential)
 //   4. !target._humanPiloted (human-piloted units are IMMUNE — silent fail
 //      so the player can't tell whether failure was the SEED/HP/range
 //      gate or because the target is a human; that ambiguity IS the design
 //      tension when PvP arrives)
-//
-// Passive 25% natural-kill recruit (`_arenaTickRecruitment`) is unchanged.
 const ARENA_SEED_MAX       = 100;      // hard cap
 const ARENA_SEED_PER_SEC   = 1;        // rise rate when human-piloted+alive
 const ARENA_SEED_GAP       = 10;       // minimum SEED differential to recruit
 const ARENA_HP_GATE        = 0.5;      // target HP must be below maxHp * gate
-const ARENA_TOUCH_BUFFER   = 80;       // px added to radii sum for recruit reach
+const ARENA_TOUCH_BUFFER   = 80;       // px added to radii sum (~106px reach)
 
 // _arenaTickSeed — per-frame, called from the main update loop right next
 // to _arenaTickRecruitment. Raises SEED on every unit currently flagged
@@ -307,22 +292,3 @@ function _arenaSpawnFactoryBot(team, x, y) {
   }
 }
 
-// Per-frame sweep: when an enemy dies naturally, roll for recruitment.
-// We watch for the transition (alive: true → false) by tagging deaths with
-// `_arenaDeathSeen` so we only roll once per death.
-function _arenaTickRecruitment() {
-  if (_arenaAliveSquadCount() >= ARENA_SQUAD_CAP) {
-    // Still flag deaths so we don't roll later when there's room
-    for (const e of enemies) if (e && !e.alive && !e._arenaDeathSeen) e._arenaDeathSeen = true;
-    return;
-  }
-  for (let i = enemies.length - 1; i >= 0; i--) {
-    const e = enemies[i];
-    if (!e || e._arenaDeathSeen) continue;
-    if (e.alive) continue;
-    e._arenaDeathSeen = true;
-    if (Math.random() < ARENA_RECRUIT_CHANCE) {
-      _arenaConvertEnemyToAlly(e);
-    }
-  }
-}

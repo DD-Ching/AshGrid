@@ -157,11 +157,8 @@
     if (!_ready) return;
     try { _sdk.game.happytime(); } catch (e) {}
   }
-  // Phase 53: SDK v3 has no `sadtime()` — only `happytime()`. The wrapper
-  // stays so the death-path call site doesn't break, but we just no-op.
-  // Death telemetry still goes through `noteDeath()` for the midgame ad
-  // cadence, which is the actually useful signal.
-  function sadtime() { /* no-op in v3 */ }
+  // SDK v3 has no `sadtime()`; death telemetry rides on `noteDeath()` for
+  // the midgame-ad cadence, which is the only signal we actually use.
 
   // -------- Ads --------
   // Midgame interstitial — fired on schedule (every Nth death). Returns
@@ -252,7 +249,6 @@
   window.crazyMp_leftRoom         = leftMpRoom;
   window.crazyMp_inviteLink       = getInviteLink;
   window.crazyEvent_happytime     = happytime;
-  window.crazyEvent_sadtime       = sadtime;
   window.crazyAd_midgame          = midgame;
   window.crazyAd_rewarded         = rewarded;
   window.crazyNoteDeath           = noteDeath;

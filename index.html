@@ -42,40 +42,43 @@
 <script src="js/audio/positional.js"></script>
 <script src="js/audio/narrative.js"></script>
 <script src="js/audio/ambient.js"></script>
-<script src="js/audio/sfx.js?v=56"></script>
-<script src="js/arena_recruitment.js?v=48"></script>
-<script src="js/dynamic_radio.js"></script>
-<script src="js/i18n.js?v=55"></script>
-<script src="js/touch_input.js"></script>
-<script src="js/key_bindings.js?v=46"></script>
-<script src="js/grenades.js?v=43"></script>
-<script src="js/squad_commands.js"></script>
-<script src="js/multiplayer.js?v=56"></script>
-<script src="js/leaderboard.js"></script>
-<script src="js/structures.js?v=43"></script>
-<script src="js/tod.js"></script>
-<script src="js/weapons.js"></script>
-<script src="js/chassis.js"></script>
-<script src="js/death_recap.js?v=50"></script>
-<script src="js/mote_affinity.js"></script>
-<script src="js/stage_hints.js"></script>
-<script src="js/pawn_swap.js"></script>
-<script src="js/global_stats.js"></script>
-<script src="js/progressive_unlock.js"></script>
-<script src="js/ad_stubs.js"></script>
+<!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
+     SW is auto-unregistered for this fork (see <script> below), so this
+     query string IS the only browser-cache invalidation in play. -->
+<script src="js/audio/sfx.js?v=57"></script>
+<script src="js/arena_recruitment.js?v=57"></script>
+<script src="js/dynamic_radio.js?v=57"></script>
+<script src="js/i18n.js?v=57"></script>
+<script src="js/touch_input.js?v=57"></script>
+<script src="js/key_bindings.js?v=57"></script>
+<script src="js/grenades.js?v=57"></script>
+<script src="js/squad_commands.js?v=57"></script>
+<script src="js/multiplayer.js?v=57"></script>
+<script src="js/leaderboard.js?v=57"></script>
+<script src="js/structures.js?v=57"></script>
+<script src="js/tod.js?v=57"></script>
+<script src="js/weapons.js?v=57"></script>
+<script src="js/chassis.js?v=57"></script>
+<script src="js/death_recap.js?v=57"></script>
+<script src="js/mote_affinity.js?v=57"></script>
+<script src="js/stage_hints.js?v=57"></script>
+<script src="js/pawn_swap.js?v=57"></script>
+<script src="js/global_stats.js?v=57"></script>
+<script src="js/progressive_unlock.js?v=57"></script>
+<script src="js/ad_stubs.js?v=57"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=54"></script>
+<script src="js/crazygames.js?v=57"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=49"></script>
-<script src="js/world_gen.js"></script>
-<script src="js/squad.js"></script>
-<script src="js/drone_fpv.js"></script>
-<script src="js/vision_raycast.js"></script>
-<script src="js/camera.js"></script>
-<script src="js/defense_build_ui.js"></script>
-<script src="js/pause.js?v=46"></script>
+<script src="js/missions/nn_deathmatch.js?v=57"></script>
+<script src="js/world_gen.js?v=57"></script>
+<script src="js/squad.js?v=57"></script>
+<script src="js/drone_fpv.js?v=57"></script>
+<script src="js/vision_raycast.js?v=57"></script>
+<script src="js/camera.js?v=57"></script>
+<script src="js/defense_build_ui.js?v=57"></script>
+<script src="js/pause.js?v=57"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -2546,11 +2549,10 @@ const allies = [];
 
 // ============ ARENA RECRUITMENT ============
 // → Moved to js/arena_recruitment.js. Declares globally:
-//     ARENA_RECRUIT_CHANCE · ARENA_SED_RANGE · ARENA_SQUAD_CAP
+//     ARENA_SED_RANGE · ARENA_SQUAD_CAP
 //     _arenaAliveSquadCount() · _arenaConvertEnemyToAlly(e) ·
-//     _arenaTrySEDConvert() · _arenaTickRecruitment()
-// G-key handler routes to _arenaTrySEDConvert. Update loop calls
-// _arenaTickRecruitment() each frame to roll passive conversion.
+//     _arenaTrySEDConvert()
+// G-key handler routes to _arenaTrySEDConvert (manual recruit only).
 
 // Each campaign ally has its own personality so the squad isn't 3 identical
 // riflemen. BRAVO = balanced rifleman (default partner), CHARLIE = SMG wolf
@@ -5671,12 +5673,6 @@ function update() {
   if (game.state !== 'playing') return;
   game.time++;
 
-  // Arena recruitment — roll for "killed enemy converts to ally" once per
-  // death, capped at ARENA_SQUAD_CAP. Defined in the ARENA RECRUITMENT block
-  // above the FTUE compat stubs.
-  if (game._nnMode && typeof _arenaTickRecruitment === 'function') {
-    _arenaTickRecruitment();
-  }
   // Phase 4: SEED rises +1/sec on human-piloted units (in solo NN that's
   // just `player`; PvP plugs more). Gates active recruit via G key.
   if (game._nnMode && typeof _arenaTickSeed === 'function') {
@@ -6089,16 +6085,15 @@ function fire() {
   const spreadMul = (player._aimAssistLockedAt && (w.pellets || 1) === 1) ? 0.3 : 1.0;
   // Shotgun and similar: emit `pellets` bullets per shot with shared spread cone
   const pellets = w.pellets || 1;
-  // Phase 51: in MP, the SERVER owns the AUTHORITATIVE bullets that hit
-  // remote players (server tracks player positions, runs lag comp). But
-  // the SERVER doesn't know about local NN bots — those exist only on
-  // each client. Without a local bullet, NN bots in MP+NN mode are
-  // unkillable AND the player perceives '自動射擊 結果子彈直接穿過
-  // 敵人' (Phase 36 was over-aggressive in skipping local bullets).
-  // Fix: in MP, still spawn the local bullet but flag it `_mpGhost` so
-  // the renderer skips it (server's snapshot bullet is the canonical
-  // visual via _mpRenderRemoteBullets). The local bullet's update +
-  // collision still runs and can hit local NN enemies normally.
+  // Design trade-off: NN bots run client-only (the ONNX inference happens
+  // on each player's machine — we don't ship models to PartyKit). So MP
+  // bullets must travel two parallel tracks:
+  //   • Local bullet → hits local NN bots (server doesn't know they exist)
+  //   • Server bullet → hits remote players (server runs lag comp + truth)
+  // The local copy is flagged `_mpGhost` so the renderer skips it; the
+  // server's snapshot bullet (drawn by _mpRenderRemoteBullets) is the
+  // canonical visual tracer. If we ever move NN inference server-side,
+  // this whole branch collapses to "server owns all bullets."
   const _mpActive = typeof _mpIsActive === 'function' && _mpIsActive();
   for (let i = 0; i < pellets; i++) {
     const barrel = baseAngle + (Math.random()-0.5) * w.spread * spreadMul;
@@ -6113,9 +6108,9 @@ function fire() {
       // Rocket flag — turn the bullet into an AOE projectile on impact
       isRocket: !!w.isRocket,
       blastR: w.blastR, blastDmg: w.blastDmg, structDmgMul: w.structDmgMul,
-      // Phase 51: in MP this bullet is "ghost" — its update + collision
-      // still runs (so NN bots take damage) but the renderer skips it
-      // (the server's bullet provides the visual tracer for MP players).
+      // In MP: render-suppressed (server's bullet is canonical visual)
+      // but collision still runs locally so NN bots — which exist only
+      // client-side — take damage. See ghost-bullet rationale above.
       _mpGhost: _mpActive,
     });
   }
@@ -6123,17 +6118,9 @@ function fire() {
   muzzleFlashes.push({ x: player.x + Math.cos(baseAngle)*22, y: player.y + Math.sin(baseAngle)*22, angle: baseAngle, life: 5 });
   applyRecoil(player, w);
   emitSound(player.x, player.y, w.soundIntensity, true, true, w.soundProfile);
-  // _mpBroadcastFire is a no-op in Phase 36 (server fires from input flag).
-  // Kept as a shim for future weapon-spec sync if we ever revisit.
-  if (typeof _mpBroadcastFire === 'function') {
-    _mpBroadcastFire({
-      x: player.x, y: player.y, angle: baseAngle,
-      speed: w.bulletSpeed, damage: w.damage, life: w.bulletLife,
-      spread: w.spread, pellets: w.pellets || 1, spreadMul,
-      weapon: w.name, isRocket: !!w.isRocket,
-      blastR: w.blastR, blastDmg: w.blastDmg,
-    });
-  }
+  // MP fire intent travels via the per-tick input packet (`fire: true` in
+  // _mpSendInput). Server is authoritative for spawning the network bullet
+  // — no separate broadcast needed here.
 }
 
 // Rocket projectile sprite — chunky black body + flame trail, oriented to
@@ -6549,10 +6536,8 @@ function updateBullets() {
           player._killStreakFlashUntil = 0;
           createExplosion(player.x, player.y, 'big');
           playSfx('death');
-          // Crazy Games — fire 'sadtime' telemetry + count the death for
-          // the midgame-ad cadence. SDK throttles internally so this is safe.
-          if (typeof crazyEvent_sadtime === 'function') crazyEvent_sadtime();
-          if (typeof crazyNoteDeath === 'function')     crazyNoteDeath();
+          // Crazy Games — count the death for the midgame-ad cadence.
+          if (typeof crazyNoteDeath === 'function') crazyNoteDeath();
           // Trigger the death-recap overlay — captures the kill state at
           // this instant so the render later doesn't have to recompute.
           if (typeof triggerDeathRecap === 'function') {
@@ -7992,9 +7977,8 @@ function renderWorld() {
   ctx.lineCap = 'round';
   // --- Player bullets ---
   for (const b of bullets) {
-    // Phase 51: skip rendering MP "ghost" bullets — the server's snapshot
-    // bullet (rendered by _mpRenderRemoteBullets) is the canonical visual,
-    // and double-rendering caused twin tracers separated by ~RTT/2.
+    // Skip ghost bullets in MP — server's snapshot bullet is the visual.
+    // Double-rendering would show twin tracers separated by ~RTT/2.
     if (b._mpGhost) continue;
     if (b.isRocket) { _drawRocket(b, false); continue; }
     const tx = b.x - b.vx * 2.2;
@@ -10419,9 +10403,8 @@ function renderFPVOverlay() {
 }
 
 function renderDroneOverlay() {
-  // Phase 50: same gate as renderCommandOverlay — UAV HUD panel sits at
-  // H()/2 and crowds the WATCH AD button while wiped. Skip while the
-  // squad is dead so the recap stays readable.
+  // No drone HUD when the team is wiped — there's no live operator to
+  // watch the feed, and the panel would crowd the SQUAD WIPED recap.
   if (typeof _isBlueTeamWiped === 'function' && _isBlueTeamWiped()) return;
   // UAV HUD panel
   ctx.fillStyle = 'rgba(232, 228, 216, 0.94)';
@@ -10528,12 +10511,8 @@ function renderDroneOverlay() {
 }
 
 function renderCommandOverlay() {
-  // Phase 50: skip the COMMAND VIEW chrome entirely while the squad is
-  // wiped — there are no live allies to command anyway, and the left
-  // panel + bottom squad-orders strip otherwise crowd / cover the SQUAD
-  // WIPED countdown + WATCH AD button (user '倒時計時有時候會消掉不見').
-  // Once the team revives, the overlay snaps back automatically because
-  // _isBlueTeamWiped() flips false.
+  // No command HUD when the team is wiped — no live allies to command,
+  // and the chrome would crowd the SQUAD WIPED countdown + WATCH AD CTA.
   if (typeof _isBlueTeamWiped === 'function' && _isBlueTeamWiped()) return;
   // Strategic overlay (left side)
   ctx.fillStyle = 'rgba(232, 228, 216, 0.94)';
