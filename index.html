@@ -53,7 +53,7 @@
 <script src="js/tod.js"></script>
 <script src="js/weapons.js"></script>
 <script src="js/chassis.js"></script>
-<script src="js/death_recap.js?v=49"></script>
+<script src="js/death_recap.js?v=50"></script>
 <script src="js/mote_affinity.js"></script>
 <script src="js/stage_hints.js"></script>
 <script src="js/pawn_swap.js"></script>
@@ -10369,6 +10369,10 @@ function renderFPVOverlay() {
 }
 
 function renderDroneOverlay() {
+  // Phase 50: same gate as renderCommandOverlay — UAV HUD panel sits at
+  // H()/2 and crowds the WATCH AD button while wiped. Skip while the
+  // squad is dead so the recap stays readable.
+  if (typeof _isBlueTeamWiped === 'function' && _isBlueTeamWiped()) return;
   // UAV HUD panel
   ctx.fillStyle = 'rgba(232, 228, 216, 0.94)';
   ctx.fillRect(20, H()/2 - 80, 140, 160);
@@ -10420,6 +10424,13 @@ function renderDroneOverlay() {
 }
 
 function renderCommandOverlay() {
+  // Phase 50: skip the COMMAND VIEW chrome entirely while the squad is
+  // wiped — there are no live allies to command anyway, and the left
+  // panel + bottom squad-orders strip otherwise crowd / cover the SQUAD
+  // WIPED countdown + WATCH AD button (user '倒時計時有時候會消掉不見').
+  // Once the team revives, the overlay snaps back automatically because
+  // _isBlueTeamWiped() flips false.
+  if (typeof _isBlueTeamWiped === 'function' && _isBlueTeamWiped()) return;
   // Strategic overlay (left side)
   ctx.fillStyle = 'rgba(232, 228, 216, 0.94)';
   ctx.fillRect(20, H()/2 - 60, 240, 120);

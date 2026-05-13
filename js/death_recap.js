@@ -177,9 +177,15 @@ function renderDeathRecap() {
   // ---- Bottom hint bar — strong red CTA telling the player WHAT TO DO ----
   // Pulses so it draws the eye, can't be missed mid-firefight. Bigger text
   // (16px bold) per user feedback '下面這個文字組線內容要更強勢一點'.
+  // Phase 50: bottom-bar background is now FULLY opaque (was alpha-pulsing
+  // 0.34→0.85). The pulse caused the SQUAD WIPED text to render behind a
+  // half-transparent red and visually wash out when other UI (squad-order
+  // chips, build pill, drone HUD) drew into the same area
+  // (user report '倒時計時有時候會消掉不見'). The pulse is preserved as a
+  // brightness wobble on the text colour instead.
   const pulse = 0.7 + 0.3 * Math.sin(game.time * 0.18);
   const hintH = 56;
-  ctx.fillStyle = `rgba(200, 38, 28, ${0.85 * pulse})`;
+  ctx.fillStyle = COLORS.red;
   ctx.fillRect(0, H_ - hintH, W_, hintH);
   ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 16px sans-serif';
