@@ -45,41 +45,41 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=63"></script>
-<script src="js/arena_recruitment.js?v=63"></script>
-<script src="js/dynamic_radio.js?v=63"></script>
-<script src="js/i18n.js?v=63"></script>
-<script src="js/touch_input.js?v=63"></script>
-<script src="js/key_bindings.js?v=63"></script>
-<script src="js/grenades.js?v=63"></script>
-<script src="js/squad_commands.js?v=63"></script>
-<script src="js/multiplayer.js?v=63"></script>
-<script src="js/leaderboard.js?v=63"></script>
-<script src="js/structures.js?v=63"></script>
-<script src="js/tod.js?v=63"></script>
-<script src="js/weapons.js?v=63"></script>
-<script src="js/chassis.js?v=63"></script>
-<script src="js/respawn_buff.js?v=63"></script>
-<script src="js/death_recap.js?v=63"></script>
-<script src="js/mote_affinity.js?v=63"></script>
-<script src="js/stage_hints.js?v=63"></script>
-<script src="js/pawn_swap.js?v=63"></script>
-<script src="js/global_stats.js?v=63"></script>
-<script src="js/progressive_unlock.js?v=63"></script>
-<script src="js/ad_stubs.js?v=63"></script>
+<script src="js/audio/sfx.js?v=64"></script>
+<script src="js/arena_recruitment.js?v=64"></script>
+<script src="js/dynamic_radio.js?v=64"></script>
+<script src="js/i18n.js?v=64"></script>
+<script src="js/touch_input.js?v=64"></script>
+<script src="js/key_bindings.js?v=64"></script>
+<script src="js/grenades.js?v=64"></script>
+<script src="js/squad_commands.js?v=64"></script>
+<script src="js/multiplayer.js?v=64"></script>
+<script src="js/leaderboard.js?v=64"></script>
+<script src="js/structures.js?v=64"></script>
+<script src="js/tod.js?v=64"></script>
+<script src="js/weapons.js?v=64"></script>
+<script src="js/chassis.js?v=64"></script>
+<script src="js/respawn_buff.js?v=64"></script>
+<script src="js/death_recap.js?v=64"></script>
+<script src="js/mote_affinity.js?v=64"></script>
+<script src="js/stage_hints.js?v=64"></script>
+<script src="js/pawn_swap.js?v=64"></script>
+<script src="js/global_stats.js?v=64"></script>
+<script src="js/progressive_unlock.js?v=64"></script>
+<script src="js/ad_stubs.js?v=64"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=63"></script>
+<script src="js/crazygames.js?v=64"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=63"></script>
-<script src="js/world_gen.js?v=63"></script>
-<script src="js/squad.js?v=63"></script>
-<script src="js/drone_fpv.js?v=63"></script>
-<script src="js/vision_raycast.js?v=63"></script>
-<script src="js/camera.js?v=63"></script>
-<script src="js/defense_build_ui.js?v=63"></script>
-<script src="js/pause.js?v=63"></script>
+<script src="js/missions/nn_deathmatch.js?v=64"></script>
+<script src="js/world_gen.js?v=64"></script>
+<script src="js/squad.js?v=64"></script>
+<script src="js/drone_fpv.js?v=64"></script>
+<script src="js/vision_raycast.js?v=64"></script>
+<script src="js/camera.js?v=64"></script>
+<script src="js/defense_build_ui.js?v=64"></script>
+<script src="js/pause.js?v=64"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -4585,10 +4585,24 @@ const NN_AI = {
   COMBAT_TIMEOUT_TICKS:  15 * 60,   // 15s of no detection → patrol
   SOUND_DETECTION_TICKS: 90,        // enemy gunshot heard < 1.5s ago = detection
   LAST_SEEN_WINDOW:      240,       // 4s of stale 'last seen' still counts as detection
-  PATROL_RETARGET_MIN:   5 * 60,    // 5s minimum dwell per waypoint
-  PATROL_RETARGET_MAX:   10 * 60,   // +0–10s extra (so units don't sync up)
-  PATROL_REACH_DIST:     40,        // within 40u → pick a new waypoint
-  PATROL_COVER_BIAS:     0.7,       // 70% of new waypoints snap to a cover point
+  // Phase 64: looser patrol — bigger reach radius so units don't stall
+  // exactly on the waypoint, more variance in retarget timing so a squad
+  // doesn't sync-tick its waypoints, and three distinct waypoint sources
+  // (wander offset, cover point, center-biased random) so movement reads
+  // as exploration not stamping a grid. PATROL_COVER_BIAS dropped from
+  // 0.70 → 0.25 (was clumping bots on the same handful of cover spots
+  // → 'stuck in the corner' look the user reported).
+  PATROL_RETARGET_MIN:   4 * 60,
+  PATROL_RETARGET_MAX:   12 * 60,
+  PATROL_REACH_DIST:     55,        // 40 → 55: stop chasing exact coords
+  PATROL_COVER_BIAS:     0.25,
+  PATROL_WANDER_BIAS:    0.50,      // 50%: random offset from current pos
+  PATROL_WANDER_MIN:     120,       // 120-260u wander step (further than reach)
+  PATROL_WANDER_MAX:     260,
+  PATROL_PAUSE_CHANCE:   0.35,      // 35% chance to briefly idle on retarget
+  PATROL_PAUSE_MIN:      30,        // 0.5–1.5s pause = look-around beat
+  PATROL_PAUSE_MAX:      90,
+  PATROL_JITTER_CHANCE:  0.15,      // 15% of frames: off-axis step
 };
 
 // Detection: visible enemy NOW, recent last-seen, or recent enemy gunshot.
@@ -4620,28 +4634,62 @@ function _nnUpdateAiMode(unit, hostile) {
   }
 }
 
-// Pick a new patrol waypoint. Biases toward cover points (familiar bot
-// pacing — they end up at the spots a player would pre-aim) with a fall-
-// back to a random arena point so units don't ping-pong on the same cover.
+// Pick a new patrol waypoint. Three sources, weighted to avoid the
+// 'every bot crowds the same cover' clump the user reported ('卡在牆角').
+//   50% — wander offset from current position (organic exploration)
+//   25% — random cover point (still favored but no longer dominant)
+//   25% — center-biased random (pulls units away from arena edges,
+//         which is the actual root cause of corner clumping — Phase 61
+//         picked uniformly across the arena, so units already near the
+//         edge tended to stay there)
+// When the picked waypoint lands inside a wall or off-arena we still
+// have nnApplyAction's stuck-breaker + clamp to catch it next tick.
 function _nnPickPatrolTarget(unit) {
-  if (coverPoints.length > 0 && Math.random() < NN_AI.PATROL_COVER_BIAS) {
+  const r = Math.random();
+  if (r < NN_AI.PATROL_WANDER_BIAS) {
+    const ang  = Math.random() * Math.PI * 2;
+    const dist = NN_AI.PATROL_WANDER_MIN
+               + Math.random() * (NN_AI.PATROL_WANDER_MAX - NN_AI.PATROL_WANDER_MIN);
+    const pad = 120;
+    return {
+      x: Math.max(NN_ARENA.x0 + pad,
+            Math.min(NN_ARENA.x0 + NN_ARENA.w - pad, unit.x + Math.cos(ang) * dist)),
+      y: Math.max(NN_ARENA.y0 + pad,
+            Math.min(NN_ARENA.y0 + NN_ARENA.h - pad, unit.y + Math.sin(ang) * dist)),
+    };
+  }
+  if (coverPoints.length > 0 && r < NN_AI.PATROL_WANDER_BIAS + NN_AI.PATROL_COVER_BIAS) {
     const cp = coverPoints[Math.floor(Math.random() * coverPoints.length)];
     return { x: cp.x, y: cp.y };
   }
-  const pad = 120;
-  return {
-    x: NN_ARENA.x0 + pad + Math.random() * (NN_ARENA.w - 2 * pad),
-    y: NN_ARENA.y0 + pad + Math.random() * (NN_ARENA.h - 2 * pad),
-  };
+  // Center-biased random: pull toward the arena's middle so units near
+  // the edge naturally migrate inward instead of orbiting the perimeter.
+  const cx = NN_ARENA.x0 + NN_ARENA.w / 2;
+  const cy = NN_ARENA.y0 + NN_ARENA.h / 2;
+  const ang  = Math.random() * Math.PI * 2;
+  const rad  = Math.random() * (NN_ARENA.w * 0.30);
+  return { x: cx + Math.cos(ang) * rad, y: cy + Math.sin(ang) * rad };
 }
 
 // Per-tick patrol mover. Replaces NN inference for units in 'patrol'
 // state. Uses the same nnApplyAction pipeline so stuck-breaker + wall
 // slide + arena clamp all apply — no path-finding here, just nudge toward
 // the waypoint and let the existing collision response work. Re-target on
-// reach OR after retarget timer expires (whichever first) so a blocked
-// unit eventually moves on instead of head-butting a wall forever.
+// reach OR after retarget timer expires (whichever first).
+//
+// Phase 64 — three knobs that make patrol read as 'organic' instead of
+// 'cron job': (1) a 35% chance to PAUSE for 0.5–1.5s on each retarget,
+// idling in place + slow gun rotation; (2) 15% of frames take an off-axis
+// step (random ±90° kick) so the path bends instead of going laser-straight
+// to the waypoint; (3) bigger reach radius (55u) so units don't twitch on
+// the spot trying to land exactly on the waypoint. The user wanted patrol
+// to not 'look robotic' — these three together break the visible grid.
 function _nnRunPatrol(unit, friendly, hostile) {
+  // Pause state: stand still + slow rotate, no movement input.
+  if (unit._patrolPauseUntil && game.time < unit._patrolPauseUntil) {
+    unit.angle = (unit.angle || 0) + 0.015 * (unit._patrolPauseDir || 1);
+    return;
+  }
   const needNew = !unit._patrolTarget
     || Math.hypot(unit._patrolTarget.x - unit.x, unit._patrolTarget.y - unit.y) < NN_AI.PATROL_REACH_DIST
     || game.time > (unit._patrolRetargetAt || 0);
@@ -4649,9 +4697,26 @@ function _nnRunPatrol(unit, friendly, hostile) {
     unit._patrolTarget = _nnPickPatrolTarget(unit);
     unit._patrolRetargetAt = game.time + NN_AI.PATROL_RETARGET_MIN
       + Math.random() * (NN_AI.PATROL_RETARGET_MAX - NN_AI.PATROL_RETARGET_MIN);
+    // Roll a pause beat — visible "look around" moment between waypoints.
+    if (Math.random() < NN_AI.PATROL_PAUSE_CHANCE) {
+      unit._patrolPauseUntil = game.time + NN_AI.PATROL_PAUSE_MIN
+        + Math.random() * (NN_AI.PATROL_PAUSE_MAX - NN_AI.PATROL_PAUSE_MIN);
+      unit._patrolPauseDir = Math.random() < 0.5 ? -1 : 1;
+      return;
+    }
   }
-  const dx = unit._patrolTarget.x - unit.x;
-  const dy = unit._patrolTarget.y - unit.y;
+  let dx = unit._patrolTarget.x - unit.x;
+  let dy = unit._patrolTarget.y - unit.y;
+  // Off-axis jitter — rotate the direction vector by a random ±90° kick
+  // a fraction of frames so the path curves instead of being a straight
+  // line to the waypoint.
+  if (Math.random() < NN_AI.PATROL_JITTER_CHANCE) {
+    const len = Math.hypot(dx, dy);
+    const baseAng = Math.atan2(dy, dx);
+    const kick = (Math.random() - 0.5) * Math.PI;   // ±90°
+    dx = Math.cos(baseAng + kick) * len;
+    dy = Math.sin(baseAng + kick) * len;
+  }
   const moveDir = _vectorToMoveDir(dx, dy);
   // Fire bit OFF in patrol — bots don't shoot ghosts. Squad orders, stuck-
   // breaker, and clamp logic still run inside nnApplyAction.

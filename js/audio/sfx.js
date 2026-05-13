@@ -133,25 +133,27 @@ function playSfx(name, opts = {}) {
   if (!AUDIO.ctx) return;
   const ctx = AUDIO.ctx;
   const presets = {
-    hit:          { freq:  220, dur: 0.10, decay: 14, type: 'lowpass',  vol: 0.40, sweepTo: 80   },
-    // Phase 56 — death cue softened from 0.85 to 0.45 (user
-    // '激殺音效, 小聲一點'). Carries the same low thump but no longer
-    // blasts the master mix when multiple bots die in a sweep.
-    death:        { freq:  140, dur: 0.55, decay:  4, type: 'lowpass',  vol: 0.45, sweepTo: 50   },
-    // Phase 56 — fresh subtle "kill" cue — a brief mid-freq noise scrape
-    // that reads as debris / scatter, not a melodic ding. Earlier
-    // 'kill_confirm' preset was burnt by the user '把那個叮咚鈴聲移除';
-    // this one is intentionally quiet (vol 0.18) + short (60ms) so it
-    // sells the moment without becoming the dominant sound.
-    kill_crackle: { freq: 1800, dur: 0.06, decay: 30, type: 'bandpass', vol: 0.18, q: 4  },
-    respawn:      { freq:  440, dur: 0.25, decay:  9, type: 'bandpass', vol: 0.40, sweepTo: 1320, q: 4 },
-    reload:       { freq: 2400, dur: 0.06, decay: 30, type: 'bandpass', vol: 0.30, q: 6 },
-    whiz:         { freq: 4500, dur: 0.06, decay: 35, type: 'bandpass', vol: 0.32, q: 12 },
+    // Phase 64 — bump every non-kill cue ~25% (user '其他的声音太小'). Hit
+    // / reload / whiz / crack were getting drowned out by the death thump
+    // and crackle. Tonal balance unchanged, just louder.
+    hit:          { freq:  220, dur: 0.10, decay: 14, type: 'lowpass',  vol: 0.55, sweepTo: 80   },
+    // Phase 56 → 64 — death cue softened progressively (0.85 → 0.45 → 0.32).
+    // User keeps reporting kill audio as dominant; the explosion VFX + damage
+    // popup carry the moment, audio should accent not announce. Same low
+    // thump, just further behind the rest of the mix.
+    death:        { freq:  140, dur: 0.55, decay:  4, type: 'lowpass',  vol: 0.32, sweepTo: 50   },
+    // Phase 64 — kill cue lowered (0.18 → 0.08) + freq dropped from 1800
+    // bandpass to 600 lowpass-ish (still bandpass for shape) so it reads
+    // as 'scatter' not 'ding'. User: '擊殺的那個叮咚的聲音讓我感覺很奇怪'.
+    kill_crackle: { freq:  600, dur: 0.06, decay: 30, type: 'bandpass', vol: 0.08, q: 2  },
+    respawn:      { freq:  440, dur: 0.25, decay:  9, type: 'bandpass', vol: 0.50, sweepTo: 1320, q: 4 },
+    reload:       { freq: 2400, dur: 0.06, decay: 30, type: 'bandpass', vol: 0.42, q: 6 },
+    whiz:         { freq: 4500, dur: 0.06, decay: 35, type: 'bandpass', vol: 0.44, q: 12 },
     // Supersonic crack — sharp transient layered on top of whiz when a fast
     // round (sniper / rifle) passes very close. Gives the "snap" you hear
     // when a round breaks the sound barrier near your head.
-    crack:        { freq: 5800, dur: 0.04, decay: 50, type: 'bandpass', vol: 0.34, q: 18 },
-    countdown:    { freq:  660, dur: 0.10, decay: 22, type: 'bandpass', vol: 0.30, q: 8 },
+    crack:        { freq: 5800, dur: 0.04, decay: 50, type: 'bandpass', vol: 0.46, q: 18 },
+    countdown:    { freq:  660, dur: 0.10, decay: 22, type: 'bandpass', vol: 0.40, q: 8 },
     // New presets
     // kill_confirm: REMOVED on user request ('擊殺音效還在!!!把那個叮咚
     // 鈴聲移除!!!'). Tried bandpass-noise sweep, then sine sweep at lower

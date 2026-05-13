@@ -39,6 +39,47 @@ const CHASSIS = {
 };
 const CHASSIS_ORDER = ['humanoid', 'wolf', 'heavy'];
 
+// Phase 64 — per-chassis equipment budget. Each chassis has a total budget
+// (in 'points') and items cost a fixed number of points:
+//   grenade = 2 pts, FPV suicide drone = 3 pts
+// Budgets are randomly distributed at spawn so a wolf might come out with
+// 5 grenades + 0 drones, or 2 grenades + 2 drones, etc — and two wolves
+// from the same spawn rarely share an identical loadout. The user's spec
+// was '機器狼 額度 10 / 正常人 15 / 重型 20'.
+const CHASSIS_LOADOUT_BUDGET = {
+  wolf:     10,
+  humanoid: 15,
+  heavy:    20,
+};
+const LOADOUT_COSTS = {
+  grenade: 2,
+  fpv:     3,
+};
+
+// Roll a random {grenades, fpv} split given a chassis's total budget. Used
+// at spawn (applyChassisToUnit) and respawn (server snapshot side). Caller
+// stores the result on the unit as _grenadeAmmo / _fpvAmmo.
+function rollUnitLoadout(chassisId) {
+  const budget = CHASSIS_LOADOUT_BUDGET[chassisId] || CHASSIS_LOADOUT_BUDGET.humanoid;
+  let remaining = budget;
+  let grenades = 0, fpv = 0;
+  // Bias slightly toward FPV early (more expensive item gets first crack at
+  // the budget) but flip on every roll so distributions vary across units.
+  // Stop when neither item fits the remaining budget.
+  while (remaining >= LOADOUT_COSTS.grenade) {
+    const canFpv = remaining >= LOADOUT_COSTS.fpv;
+    const pickFpv = canFpv && Math.random() < 0.45;
+    if (pickFpv) {
+      fpv++;
+      remaining -= LOADOUT_COSTS.fpv;
+    } else {
+      grenades++;
+      remaining -= LOADOUT_COSTS.grenade;
+    }
+  }
+  return { grenades, fpv };
+}
+
 // Apply a chassis profile to a unit (player or NN). Stores _chassis on the
 // unit so render + NN inference can read it later. Stats are computed from
 // a base value × the chassis multiplier, so weapon picks still drive their
@@ -60,6 +101,13 @@ function applyChassisToUnit(u, chassisId, baseSpeed, baseHp, baseRadius) {
     u.maxArmor = 0;
     u.armor = 0;
   }
+  // Phase 64 — roll the random grenade/FPV loadout from this chassis's
+  // budget. Stamped onto the unit even if it'll never use them yet; the
+  // bot grenade-throw / drone-launch AI hooks will read these counters
+  // when (eventually) wired.
+  const loadout = rollUnitLoadout(u._chassis);
+  u._grenadeAmmo = loadout.grenades;
+  u._fpvAmmo     = loadout.fpv;
 }
 
 // ============ DAMAGE ROUTING (heavy armor) ============
