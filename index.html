@@ -45,7 +45,7 @@
 <script src="js/audio/sfx.js"></script>
 <script src="js/arena_recruitment.js?v=48"></script>
 <script src="js/dynamic_radio.js"></script>
-<script src="js/i18n.js"></script>
+<script src="js/i18n.js?v=55"></script>
 <script src="js/touch_input.js"></script>
 <script src="js/key_bindings.js?v=46"></script>
 <script src="js/grenades.js?v=43"></script>
@@ -135,10 +135,7 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 
 .start-screen {
   background: var(--cream);
-  padding: 4vh 6vw;
-  /* Stay fixed across the whole viewport — without this the rule
-     dropped to 'position: relative' which only covered content height
-     and let the in-game canvas HUD bleed through at the bottom. */
+  padding: 3vh 6vw;
   position: fixed; inset: 0;
   overflow: auto;
 }
@@ -148,32 +145,40 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   width: 100%; height: 100%;
 }
 .start-content {
+  /* Phase 55: stack tightly from the top so primary CTA stays
+     above-the-fold even on 1280×720 iframe heights. Previous
+     justify-content: space-between let the title float to the top and
+     the leaderboard sit at the bottom — with the CTA sandwiched in
+     the middle and frequently below the fold. */
   position: relative;
   z-index: 2;
-  height: 100%;
-  display: flex; flex-direction: column; justify-content: space-between;
-  max-width: 1400px;
+  display: flex; flex-direction: column;
+  gap: 14px;
+  max-width: 540px;
   margin: 0 auto;
 }
+.lobby-hero { display: flex; flex-direction: column; gap: 4px; }
 .brand-mark {
-  font-size: 12px; letter-spacing: 6px; font-weight: 800;
+  font-size: 11px; letter-spacing: 5px; font-weight: 800;
   color: var(--red); text-transform: uppercase;
-  border-top: 3px solid var(--black);
+  border-top: 2px solid var(--black);
   border-bottom: 1px solid var(--black);
-  padding: 8px 12px;
+  padding: 6px 10px;
   display: inline-block; align-self: flex-start;
   background: var(--cream);
 }
 .title {
-  font-size: clamp(60px, 11vw, 180px);
-  line-height: 0.82;
+  /* Phase 55: smaller cap (was 180px) so 1280×720 iframes don't push the
+     CTA below the fold. Still scales up on large desktops. */
+  font-size: clamp(42px, 7vw, 96px);
+  line-height: 0.85;
   font-weight: 900;
   color: var(--black);
-  letter-spacing: -4px;
-  margin-top: 16px;
+  letter-spacing: -3px;
+  margin-top: 8px;
   position: relative;
 }
-.title .red { color: var(--red); display: inline-block; transform: translateX(-8px); }
+.title .red { color: var(--red); display: inline-block; transform: translateX(-6px); }
 .title .slash { color: var(--red); }
 .subtitle {
   font-size: clamp(14px, 1.5vw, 22px);
@@ -185,10 +190,10 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   padding-left: 16px;
 }
 .tagline {
-  font-size: 12px; letter-spacing: 4px;
+  font-size: 11px; letter-spacing: 4px;
   color: var(--gray);
-  margin-top: 8px;
-  padding-left: 22px;
+  margin-top: 4px;
+  padding-left: 18px;
 }
 
 .controls-grid {
@@ -1167,7 +1172,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 </div>
 
 <div class="overlay start-screen" id="start">
-  <button class="lang-toggle" data-lang-toggle><span class="seg on" data-seg="zh">中</span>/<span class="seg" data-seg="en">EN</span></button>
+  <button class="lang-toggle" data-lang-toggle><span class="seg" data-seg="zh">中</span>/<span class="seg on" data-seg="en">EN</span></button>
   <svg class="start-bg" viewBox="0 0 100 100" preserveAspectRatio="none">
     <circle cx="78" cy="28" r="20" fill="#C8261C"/>
     <polygon points="0,100 0,42 48,100" fill="#C8261C"/>
@@ -1178,69 +1183,57 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     <line x1="55" y1="55" x2="78" y2="28" stroke="#1A1A1A" stroke-width="0.15" stroke-dasharray="0.4,0.6"/>
   </svg>
   <div class="start-content">
-    <div>
-      <div class="brand-mark">单元 0451 · 战术模拟 / TACTICAL SIM</div>
-      <h1 class="title">未来<span class="slash">·</span><span class="red">战场</span></h1>
-      <div class="subtitle">深度 · 持久 · 无人化</div>
-      <div class="tagline">FUTURE BATTLEFIELD — DEEP / PERSISTENT / UNMANNED</div>
+    <div class="lobby-hero">
+      <div class="brand-mark">UNIT 0451 · TACTICAL SIM</div>
+      <h1 class="title">FUTURE<span class="slash">·</span><span class="red">BATTLEFIELD</span></h1>
+      <div class="tagline">DEEP / PERSISTENT / UNMANNED</div>
     </div>
 
 
-    <!-- Phase 11: stripped lobby. Wings.io-style entry — type a callsign,
-         hit ENTER ARENA, watch the 5-second countdown, drop into the match.
-         All the old setup picker (team size / mode / weapon / chassis /
-         difficulty / lineup) is bypassed; defaults from `_lobby` are used.
-         Other entry points (campaign, editor, dossier, settings, dev) are
-         still wired up but hidden until we decide what to bring back. -->
-    <div id="primaryCards" style="display:flex; flex-direction:column; gap:14px; max-width:520px; width:100%;">
-      <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7; color:var(--cream);">CALLSIGN · 代號 (英文 / 數字 · 最多 12 字)</div>
+    <!-- Phase 55 (lobby above-the-fold redesign): all primary CTAs visible
+         without scrolling in a 1280×720 CrazyGames iframe. Hero text
+         compacted, callsign input + SOLO/MULTI toggle + ENTER ARENA stack
+         tight, leaderboard panel sits at the bottom with a fixed-height
+         scroll body. User: '在這個大廳能一看就看到那個最重要的按鈕'. -->
+    <div id="primaryCards" style="display:flex; flex-direction:column; gap:10px; max-width:520px; width:100%;">
+      <div id="callsignLabel" style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7; color:var(--cream);">CALLSIGN</div>
       <input id="callsignInput" type="text" maxlength="12" placeholder="0451" autocomplete="off" spellcheck="false"
-        style="background:var(--black); color:var(--cream); border:3px solid var(--cream-dark); padding:16px 20px; font:bold 24px monospace; letter-spacing:6px; text-transform:uppercase; outline:none; width:100%; box-sizing:border-box;" />
-      <!-- Phase 20d: solo / multiplayer toggle. Default SOLO so first-time
-           players just hit ENTER ARENA and play. Switching to MULTI reveals
-           the optional room input + repoints the entry countdown to
-           ?mp=1&room=. Room defaults to 'ashgrid-main' so anyone who picks
-           MULTI without a custom room lands in the lobby together — user
-           '人很少的時候盡量擠在同一個房間'. -->
+        style="background:var(--black); color:var(--cream); border:3px solid var(--cream-dark); padding:12px 18px; font:bold 22px monospace; letter-spacing:6px; text-transform:uppercase; outline:none; width:100%; box-sizing:border-box;" />
       <div style="display:flex; gap:8px; align-items:stretch;">
         <button id="modeSoloBtn" type="button"
-          style="flex:1; background:var(--cream); color:var(--black); border:3px solid var(--black); padding:14px; font:bold 14px monospace; letter-spacing:4px; cursor:pointer;">
+          style="flex:1; background:var(--cream); color:var(--black); border:3px solid var(--black); padding:12px; font:bold 13px monospace; letter-spacing:4px; cursor:pointer;">
           ◯ SOLO
         </button>
         <button id="modeMpBtn" type="button"
-          style="flex:1; background:var(--black); color:var(--cream); border:3px solid var(--black); padding:14px; font:bold 14px monospace; letter-spacing:4px; cursor:pointer; opacity:0.55;">
+          style="flex:1; background:var(--black); color:var(--cream); border:3px solid var(--black); padding:12px; font:bold 13px monospace; letter-spacing:4px; cursor:pointer; opacity:0.55;">
           ◯ MULTI · PvP
         </button>
       </div>
-      <!-- Phase 48: room input hidden behind a tiny "advanced" toggle so the
-           MP path feels like a single button (auto-match handles 99% of cases).
-           Power users wanting a private room click the toggle to reveal it. -->
       <div id="roomAdvancedRow" style="display:none; flex-direction:column; gap:6px;">
         <button id="roomAdvancedToggle" type="button"
           style="background:transparent; color:var(--cream); border:none; padding:0; font:bold 10px monospace; letter-spacing:3px; cursor:pointer; opacity:0.55; text-align:left;">
           ▸ ADVANCED · CUSTOM ROOM
         </button>
-        <input id="roomInput" type="text" maxlength="20" placeholder="ROOM · 房間名 (空白 = 自動配對)" autocomplete="off" spellcheck="false"
-          style="display:none; background:var(--black); color:var(--cream); border:3px solid var(--cream-dark); padding:12px 16px; font:bold 14px monospace; letter-spacing:3px; outline:none; width:100%; box-sizing:border-box; text-transform:lowercase;" />
+        <input id="roomInput" type="text" maxlength="20" placeholder="ROOM (blank = auto-match)" autocomplete="off" spellcheck="false"
+          style="display:none; background:var(--black); color:var(--cream); border:3px solid var(--cream-dark); padding:10px 14px; font:bold 14px monospace; letter-spacing:3px; outline:none; width:100%; box-sizing:border-box; text-transform:lowercase;" />
       </div>
       <button id="nnBtn" type="button"
-        style="background:var(--red); color:var(--cream); border:none; padding:26px 28px; font:bold 26px sans-serif; letter-spacing:8px; cursor:pointer; box-shadow:6px 6px 0 var(--black); text-align:center; transition:transform .12s, box-shadow .12s;">
-        進入戰場 ▶ ENTER ARENA
+        style="background:var(--red); color:var(--cream); border:none; padding:22px 28px; font:bold 24px sans-serif; letter-spacing:8px; cursor:pointer; box-shadow:6px 6px 0 var(--black); text-align:center; transition:transform .12s, box-shadow .12s;">
+        ENTER ARENA ▶
       </button>
       <button id="campaignBtn" type="button" style="display:none;"></button>
       <div id="skirmishHint" style="display:none;"></div>
       <div id="campaignHint" style="display:none;"></div>
     </div>
 
-    <!-- Phase 23: persistent global leaderboard. Populated async from
-         Firebase REST API on boot; refreshes every time the start screen
-         is shown. Highlights the current player's UUID row in red. -->
-    <div id="leaderboardPanel" style="margin-top:24px; max-width:520px; width:100%;">
-      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;">
-        <div style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7; color:var(--cream);">排行榜 · LEADERBOARD</div>
-        <button id="lbRefreshBtn" type="button" style="background:transparent; color:var(--cream); border:1px solid rgba(232,228,216,0.4); padding:4px 10px; font:bold 9px monospace; letter-spacing:2px; cursor:pointer;">↻ REFRESH</button>
+    <!-- Leaderboard: compact + max-height clipped so it never pushes the
+         ENTER ARENA button off-screen on shorter viewports. -->
+    <div id="leaderboardPanel" style="margin-top:14px; max-width:520px; width:100%;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
+        <div id="lbLabel" style="font:bold 11px monospace; letter-spacing:5px; opacity:0.7; color:var(--cream);">LEADERBOARD</div>
+        <button id="lbRefreshBtn" type="button" style="background:transparent; color:var(--cream); border:1px solid rgba(232,228,216,0.4); padding:3px 9px; font:bold 9px monospace; letter-spacing:2px; cursor:pointer;">↻ REFRESH</button>
       </div>
-      <div id="lbList" style="background:rgba(20,18,24,0.85); padding:10px 14px; max-height:260px; overflow:auto; font:bold 11px monospace; color:var(--cream); line-height:1.55; min-height:60px;">
+      <div id="lbList" style="background:rgba(20,18,24,0.85); padding:8px 12px; max-height:140px; overflow:auto; font:bold 11px monospace; color:var(--cream); line-height:1.5; min-height:44px;">
         <span style="opacity:0.5;">loading…</span>
       </div>
     </div>
@@ -1264,24 +1257,24 @@ body.lang-en .lang-toggle .on { color: var(--black); }
          the '? CONTROLS' link above when they want a refresher; new
          players don't have to scan a wall of keys on every visit. -->
     <div class="controls-grid" id="controlsDrawer" style="display:none;">
-      <div class="ctrl-item"><span class="ctrl-key">WASD</span><span>移动 / 飞行</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">鼠标</span><span>瞄准 / 射击</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">R</span><span>装填弹药</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">X</span><span>切换武器</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">Q</span><span>UAV 侦察</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">E</span><span>FPV 自杀无人机</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">G</span><span>投掷手雷</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">B</span><span>建造模式</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">TAB</span><span>战术指挥 + 1-7 下令</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">1-4</span><span>接管隊友 (NN 模式)</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">H</span><span>回到出生點 (卡關時)</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">WASD</span><span>Move / fly</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">Mouse</span><span>Aim / fire</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">R</span><span>Reload</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">X</span><span>Swap weapon</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">Q</span><span>UAV recon</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">E</span><span>FPV kamikaze</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">G</span><span>Throw grenade</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">B</span><span>Build mode</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">TAB</span><span>Command view + 1-7 orders</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">1-4</span><span>Pawn-swap (NN mode)</span></div>
+      <div class="ctrl-item"><span class="ctrl-key">H</span><span>Recall to spawn</span></div>
     </div>
 
     <!-- Phase 11: footer chips hidden — keeping nodes so DAY/CYCLE/MOTE
          updaters elsewhere don't null-ref. -->
     <div class="footer-bar" style="display:none;">
       <span><span class="day-chip" id="dayChip">DAY 14</span><span class="day-chip" id="cycleChip" style="background:#1a1a1a; color:var(--cream); margin-right:8px;">CYCLE #347</span><span class="day-chip" id="moteChip" style="background:#3a3a3a; color:var(--cream); margin-right:8px;">MOTE 50%</span><span id="startStatsLine">VECTOR-7 · OBJECTIVE AUDITOR</span></span>
-      <span><span id="nextUnlockHint" style="margin-right:8px; opacity:0.55; letter-spacing:1px; font-size:10px;"></span><button class="footer-link" id="unlockAllBtn" style="display:none; margin-right:14px;">SKIP ALL ▶</button><span id="resHint" style="opacity:0.55; font-size:10px;">建议 1080p+ 全屏体验</span></span>
+      <span><span id="nextUnlockHint" style="margin-right:8px; opacity:0.55; letter-spacing:1px; font-size:10px;"></span><button class="footer-link" id="unlockAllBtn" style="display:none; margin-right:14px;">SKIP ALL ▶</button><span id="resHint" style="opacity:0.55; font-size:10px;">1080p+ fullscreen recommended</span></span>
     </div>
   </div>
 </div>

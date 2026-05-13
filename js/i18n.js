@@ -22,23 +22,22 @@
 
 const I18N = {
   // ---- Start screen ----
-  '#start .brand-mark':     { zh: '单元 0451 · 战术模拟 / TACTICAL SIM', en: 'UNIT 0451 · TACTICAL SIM' },
-  '#start .title':          { zh: '未来<span class="slash">·</span><span class="red">战场</span>',
+  // Phase 55: HTML defaults are now English (no FOUC of Chinese on first
+  // paint). I18N table only kicks in when user explicitly flips to zh.
+  '#start .brand-mark':     { zh: '單元 0451 · 戰術模擬', en: 'UNIT 0451 · TACTICAL SIM' },
+  '#start .title':          { zh: '未來<span class="slash">·</span><span class="red">戰場</span>',
                               en: 'FUTURE<span class="slash">·</span><span class="red">BATTLEFIELD</span>' },
-  '#start .subtitle':       { zh: '深度 · 持久 · 无人化', en: 'DEEP · PERSISTENT · UNMANNED' },
-  '#start .tagline':        { zh: '神经网络驱动 · 双方共用同一 PPO 模型',
-                              en: 'NN-DRIVEN · BOTH TEAMS SHARE A SINGLE PPO MODEL' },
-  // ---- Primary cards ----
-  // The two big SKIRMISH / CAMPAIGN buttons have nested spans (eyebrow,
-  // big label, hint), so we i18n each inner element separately rather
-  // than replacing the whole button's innerHTML.
-  '#nnBtn > div:nth-child(1) > span:first-child':       { zh: 'A1 · 快速對戰', en: 'A1 · QUICK PLAY' },
-  '#nnBtn > div:nth-child(2)':                          { zh: '遭遇戰 SKIRMISH ▶', en: 'SKIRMISH ▶' },
-  '#skirmishHint':                                      { zh: 'PvAI · 7 種模式 · 雙方都用 NN · 自選陣容', en: 'PvAI · 7 modes · NN both teams · pick lineup' },
+  '#start .tagline':        { zh: '深度 · 持久 · 無人化', en: 'DEEP / PERSISTENT / UNMANNED' },
+  '#callsignLabel':         { zh: '代號 CALLSIGN', en: 'CALLSIGN' },
+  '#callsignInput':         { zh: '0451', en: '0451' },  // placeholder only via attr
+  '#modeSoloBtn':           { zh: '◯ 單人', en: '◯ SOLO' },
+  '#modeMpBtn':             { zh: '◯ 多人 PvP', en: '◯ MULTI · PvP' },
+  '#roomAdvancedToggle':    { zh: '▸ 進階 · 自訂房間', en: '▸ ADVANCED · CUSTOM ROOM' },
+  '#nnBtn':                 { zh: '進入戰場 ▶', en: 'ENTER ARENA ▶' },
+  '#lbLabel':               { zh: '排行榜', en: 'LEADERBOARD' },
+  '#lbRefreshBtn':          { zh: '↻ 重新整理', en: '↻ REFRESH' },
+  // ---- Primary cards (Phase 55 — flat #nnBtn, no nested spans) ----
   '#resHint':                                           { zh: '建議 1080p+ 全屏體驗', en: '1080p+ fullscreen recommended' },
-  '#campaignBtn > div:nth-child(1) > span:first-child': { zh: 'A2 · 故事', en: 'A2 · STORY' },
-  '#campaignBtn > div:nth-child(2)':                    { zh: '戰役 CAMPAIGN', en: 'CAMPAIGN' },
-  '#campaignHint':                                      { zh: '6 個手工關卡 · 護送 · 突破 · 蜂巢 · 中繼', en: '6 hand-crafted missions · escort · breach · hive · relay' },
   '#editorBtn':                      { zh: '▦ 地圖編輯器', en: '▦ MAP EDITOR' },
   '#dossierBtn':                     { zh: '⌂ 檔案 DOSSIER', en: '⌂ DOSSIER' },
   '#achievementsBtn':                { zh: '✦ 戰績 RECORDS', en: '✦ RECORDS' },
@@ -183,7 +182,7 @@ function missionTitle(m) {
   return (m.title) || '';
 }
 function setLang(lang) {
-  if (lang !== 'zh' && lang !== 'en') lang = 'zh';
+  if (lang !== 'zh' && lang !== 'en') lang = 'en';
   for (const [sel, T] of Object.entries(I18N)) {
     const els = document.querySelectorAll(sel);
     els.forEach(el => { if (T[lang] != null) el.innerHTML = T[lang]; });
