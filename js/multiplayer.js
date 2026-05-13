@@ -406,7 +406,21 @@ function _mpHandleSnapshot(snap) {
         // alive is more nuanced — we let the local death-recap state
         // machine drive 'alive' to keep its UI sequence intact. We just
         // sync the kill/respawn signals via 'kill' events below.
-        player._invulnUntil = sp.invuln ? Infinity : (player._invulnUntil || 0);
+        // Invuln pin: server is authoritative for spawn protection.
+        //   • sp.invuln=true  → pin to Infinity (server says we're invuln NOW)
+        //   • sp.invuln=false AND we're currently pinned to Infinity →
+        //     release the pin (server's spawn protect ended)
+        //   • sp.invuln=false AND _invulnUntil is finite (e.g. local NN
+        //     spawn-safety from arena_recruitment) → leave it alone, it
+        //     will tick down on its own.
+        // The previous code did `_invulnUntil = sp.invuln ? Infinity : (old || 0)`
+        // which never released the Infinity pin → permanent post-respawn
+        // invulnerability in MP (user '復活之後就一直保持在無敵模式').
+        if (sp.invuln) {
+          player._invulnUntil = Infinity;
+        } else if (player._invulnUntil === Infinity) {
+          player._invulnUntil = 0;
+        }
       }
     } else {
       // Remote player — push this sample into a timestamped buffer so the
@@ -829,11 +843,16 @@ function _mpRenderRemoteBullets() {
   if (typeof ctx === 'undefined') return;
   ctx.lineCap = 'round';
   const enemyColor = (typeof COLORS !== 'undefined' && COLORS.redBright) || '#E63329';
-  const myColor    = (typeof COLORS !== 'undefined' && COLORS.cream) || '#E8E4D8';
   const blackColor = (typeof COLORS !== 'undefined' && COLORS.black) || '#1A1A1A';
   for (const b of _mpState.remoteBullets.values()) {
-    const mine = b.s === _mpState.myId;
-    const coreColor = mine ? myColor : enemyColor;
+    // Skip server-echoes of our OWN bullets — those are rendered locally
+    // by the main bullet draw loop (predicted at 60 fps so they feel
+    // snappy). Server's echo arrives ~RTT/2 late and would either show
+    // as a twin tracer (Phase 51 bug) or, if we suppress local rendering
+    // instead, make our bullets feel slower than NN bullets — which IS
+    // the bug user reported: '敵人NPC的子彈都超級快, 我們的都超級慢'.
+    if (b.s === _mpState.myId) continue;
+    const coreColor = enemyColor;
     const tx = b.x - b.vx * 2.2;
     const ty = b.y - b.vy * 2.2;
     // Outline (dark, wider) — readable on bright TODs.

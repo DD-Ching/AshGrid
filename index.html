@@ -45,40 +45,40 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=57"></script>
-<script src="js/arena_recruitment.js?v=57"></script>
-<script src="js/dynamic_radio.js?v=57"></script>
-<script src="js/i18n.js?v=57"></script>
-<script src="js/touch_input.js?v=57"></script>
-<script src="js/key_bindings.js?v=57"></script>
-<script src="js/grenades.js?v=57"></script>
-<script src="js/squad_commands.js?v=57"></script>
-<script src="js/multiplayer.js?v=57"></script>
-<script src="js/leaderboard.js?v=57"></script>
-<script src="js/structures.js?v=57"></script>
-<script src="js/tod.js?v=57"></script>
-<script src="js/weapons.js?v=57"></script>
-<script src="js/chassis.js?v=57"></script>
-<script src="js/death_recap.js?v=57"></script>
-<script src="js/mote_affinity.js?v=57"></script>
-<script src="js/stage_hints.js?v=57"></script>
-<script src="js/pawn_swap.js?v=57"></script>
-<script src="js/global_stats.js?v=57"></script>
-<script src="js/progressive_unlock.js?v=57"></script>
-<script src="js/ad_stubs.js?v=57"></script>
+<script src="js/audio/sfx.js?v=58"></script>
+<script src="js/arena_recruitment.js?v=58"></script>
+<script src="js/dynamic_radio.js?v=58"></script>
+<script src="js/i18n.js?v=58"></script>
+<script src="js/touch_input.js?v=58"></script>
+<script src="js/key_bindings.js?v=58"></script>
+<script src="js/grenades.js?v=58"></script>
+<script src="js/squad_commands.js?v=58"></script>
+<script src="js/multiplayer.js?v=58"></script>
+<script src="js/leaderboard.js?v=58"></script>
+<script src="js/structures.js?v=58"></script>
+<script src="js/tod.js?v=58"></script>
+<script src="js/weapons.js?v=58"></script>
+<script src="js/chassis.js?v=58"></script>
+<script src="js/death_recap.js?v=58"></script>
+<script src="js/mote_affinity.js?v=58"></script>
+<script src="js/stage_hints.js?v=58"></script>
+<script src="js/pawn_swap.js?v=58"></script>
+<script src="js/global_stats.js?v=58"></script>
+<script src="js/progressive_unlock.js?v=58"></script>
+<script src="js/ad_stubs.js?v=58"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=57"></script>
+<script src="js/crazygames.js?v=58"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=57"></script>
-<script src="js/world_gen.js?v=57"></script>
-<script src="js/squad.js?v=57"></script>
-<script src="js/drone_fpv.js?v=57"></script>
-<script src="js/vision_raycast.js?v=57"></script>
-<script src="js/camera.js?v=57"></script>
-<script src="js/defense_build_ui.js?v=57"></script>
-<script src="js/pause.js?v=57"></script>
+<script src="js/missions/nn_deathmatch.js?v=58"></script>
+<script src="js/world_gen.js?v=58"></script>
+<script src="js/squad.js?v=58"></script>
+<script src="js/drone_fpv.js?v=58"></script>
+<script src="js/vision_raycast.js?v=58"></script>
+<script src="js/camera.js?v=58"></script>
+<script src="js/defense_build_ui.js?v=58"></script>
+<script src="js/pause.js?v=58"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -6089,10 +6089,13 @@ function fire() {
   // on each player's machine — we don't ship models to PartyKit). So MP
   // bullets must travel two parallel tracks:
   //   • Local bullet → hits local NN bots (server doesn't know they exist)
-  //   • Server bullet → hits remote players (server runs lag comp + truth)
-  // The local copy is flagged `_mpGhost` so the renderer skips it; the
-  // server's snapshot bullet (drawn by _mpRenderRemoteBullets) is the
-  // canonical visual tracer. If we ever move NN inference server-side,
+  //     AND renders locally so OUR bullets feel snappy (60 fps, no RTT).
+  //   • Server bullet → hits remote players (server runs lag comp + truth).
+  //     _mpRenderRemoteBullets skips server-echoes whose shooter == us so
+  //     there's no twin tracer.
+  // The `_mpGhost` flag is preserved on the local bullet so callers that
+  // need to know "this is the local mirror in MP" still can — but it no
+  // longer gates rendering. If we ever move NN inference server-side,
   // this whole branch collapses to "server owns all bullets."
   const _mpActive = typeof _mpIsActive === 'function' && _mpIsActive();
   for (let i = 0; i < pellets; i++) {
@@ -7977,9 +7980,12 @@ function renderWorld() {
   ctx.lineCap = 'round';
   // --- Player bullets ---
   for (const b of bullets) {
-    // Skip ghost bullets in MP — server's snapshot bullet is the visual.
-    // Double-rendering would show twin tracers separated by ~RTT/2.
-    if (b._mpGhost) continue;
+    // No ghost-skip here anymore. In MP, OUR bullets render locally
+    // (predicted at 60 fps so they feel snappy and match NN-bullet
+    // speed). _mpRenderRemoteBullets skips server-echoes whose shooter
+    // id == our id, so there's no twin-tracer. Phase 51's "skip ghost"
+    // approach made our bullets feel laggy — see the matching note in
+    // _mpRenderRemoteBullets and in fire().
     if (b.isRocket) { _drawRocket(b, false); continue; }
     const tx = b.x - b.vx * 2.2;
     const ty = b.y - b.vy * 2.2;

@@ -41,13 +41,22 @@ function drawDefenseShop() {
 function drawDefenseStatusPill() {
   const def = STRUCTURE_DEFS[buildMode.kind];
   if (!def) return;
+  // Idle build pill removed from gameplay — it's a HINT pill that just
+  // told the player "press B to build", and it crowded the bottom of the
+  // play area every frame. User: '左下角的文字訊息會一直擋住重要的遊戲版面'.
+  // Press-B opens the radial picker regardless; the pill only shows
+  // while build mode is ACTIVELY engaged so the player sees energy +
+  // place/exit hints during placement.
+  if (!buildMode.active) return;
+  const cur = Math.floor(game._energy || 0);
   const can = canAffordStructure(buildMode.kind);
   const W_ = W(), H_ = H();
-  const pillW = 240, pillH = 38;
+  // Narrower pill now that the verbose hint text is gone (was 240).
+  const pillW = 220, pillH = 32;
   const x = W_ / 2 - pillW / 2;
   const y = H_ - pillH - 16;
   ctx.save();
-  ctx.fillStyle = buildMode.active ? 'rgba(200, 38, 28, 0.92)' : 'rgba(20, 18, 24, 0.85)';
+  ctx.fillStyle = 'rgba(200, 38, 28, 0.92)';
   ctx.fillRect(x, y, pillW, pillH);
   ctx.strokeStyle = COLORS.cream;
   ctx.lineWidth = 1.5;
@@ -55,25 +64,17 @@ function drawDefenseStatusPill() {
   ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 12px sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText(`${def.label()}`, x + 12, y + 16);
+  ctx.fillText(`${def.label()}`, x + 10, y + 14);
   ctx.font = '9px monospace';
   ctx.fillStyle = can ? '#FFD24A' : COLORS.gray;
-  const cur = Math.floor(game._energy || 0);
-  ctx.fillText(`${def.cost}⚡ / ${cur}⚡`, x + 12, y + 30);
+  ctx.fillText(`${def.cost}⚡ / ${cur}⚡`, x + 10, y + 26);
   ctx.fillStyle = COLORS.cream;
-  ctx.font = 'bold 10px sans-serif';
+  ctx.font = 'bold 9px sans-serif';
   ctx.textAlign = 'right';
-  ctx.fillText(buildMode.active
-    ? T('B 切换 · Esc 退出 · 左键放置', 'B = switch · Esc = exit · L-click place')
-    : T('B = 建造 · Shift+点击 = 空袭', 'B = build · Shift+click = airstrike'),
-    x + pillW - 12, y + 16);
-  ctx.font = '9px sans-serif';
-  ctx.textAlign = 'right';
-  ctx.fillStyle = buildMode.active ? COLORS.cream : COLORS.gray;
   ctx.fillText(buildMode.radialOpen
     ? T('选择模块', 'Pick a module')
-    : (buildMode.active ? T('放置中', 'Placing') : T('待命', 'Idle')),
-    x + pillW - 12, y + 30);
+    : T('左键放置 · Esc 退出', 'L-click place · Esc exit'),
+    x + pillW - 10, y + 20);
   ctx.textAlign = 'left';
   ctx.restore();
 }
