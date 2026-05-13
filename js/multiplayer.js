@@ -592,6 +592,9 @@ function _mpTickRemote() {
     if (id === _mpState.myId) continue;
     const buf = rp.buffer;
     let used = false;
+    // Capture pre-update position for walkPhase increment (matches single-
+    // player's per-frame "if moving, advance walkPhase" behaviour).
+    const prevX = rp.x, prevY = rp.y;
     if (renderT != null && buf && buf.length >= 2) {
       // Find the latest sample with t ≤ renderT (a) and the earliest with
       // t > renderT (b). Linear search from the back is O(buf.length) but
@@ -618,6 +621,13 @@ function _mpTickRemote() {
       // Legacy fallback: ease toward last known target.
       if (rp.targetX != null) rp.x += (rp.targetX - rp.x) * MP_REMOTE_LERP;
       if (rp.targetY != null) rp.y += (rp.targetY - rp.y) * MP_REMOTE_LERP;
+    }
+    // Phase 42: drive walkPhase off measured displacement so the leg-swing
+    // animation actually plays for remote players (single-player parity).
+    // The threshold (>0.5px/frame) ignores sub-pixel jitter from interp.
+    const moved = Math.hypot(rp.x - prevX, rp.y - prevY);
+    if (moved > 0.5) {
+      rp.walkPhase = (rp.walkPhase || 0) + 0.18;
     }
   }
 }
@@ -658,7 +668,12 @@ function _mpRenderRemote() {
     if (alpha === 0) continue;
     ctx.save();
     ctx.globalAlpha = alpha;
-    drawHumanoid(rp.x, rp.y, rp.angle || 0, 0, COLORS.red, true, { _chassis: 'humanoid' });
+    // Phase 42: parity with single-player enemy render (index.html:7878):
+    //   drawHumanoid(e.x, e.y, e.angle, e.walkPhase, _bodyColor, true, e)
+    // Pass walkPhase so legs swing while moving. `rp` itself is the unit
+    // object — drawHumanoid reads `_chassis` off it (defaults to humanoid
+    // when absent, which is what we want until server tracks chassis).
+    drawHumanoid(rp.x, rp.y, rp.angle || 0, rp.walkPhase || 0, COLORS.red, true, rp);
     ctx.fillStyle = COLORS.black;
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
@@ -673,27 +688,49 @@ function _mpRenderRemote() {
   }
 }
 
-// Render server-owned bullets. Phase 41: vision-gated. Bullets outside our
-// cone are invisible — same rule as single-player. Otherwise a hidden enemy
-// shooting from across the map shows tracer streams pointing at their exact
-// position, defeating the vision system.
+// Render server-owned bullets. Phase 42 (post-Phase-41): mirror the latest
+// single-player bullet style verbatim (index.html:7720-7767):
+//   • 3-layer streak — black outline (4px) + bright core (2px) + head dot
+//   • Streak length 2.2× velocity (matches single-player's tracer length —
+//     the old 0.45× I used was a stripped-down stub from Phase 33's relay
+//     prototype, not the polished version)
+//   • Player bullets use COLORS.cream (the "white" look the user noted as
+//     missing), enemy bullets use COLORS.redBright. We discriminate by
+//     comparing the bullet's shooter id against our own.
+//   • Vision-gated — hidden shooter's tracers stay hidden (no wallhack).
 function _mpRenderRemoteBullets() {
   if (!_mpState.enabled) return;
   if (typeof ctx === 'undefined') return;
+  ctx.lineCap = 'round';
+  const enemyColor = (typeof COLORS !== 'undefined' && COLORS.redBright) || '#E63329';
+  const myColor    = (typeof COLORS !== 'undefined' && COLORS.cream) || '#E8E4D8';
+  const blackColor = (typeof COLORS !== 'undefined' && COLORS.black) || '#1A1A1A';
   for (const b of _mpState.remoteBullets.values()) {
     if (typeof isVisibleToFriendly === 'function' && !isVisibleToFriendly(b.x, b.y)) continue;
-    ctx.strokeStyle = '#1A1A1A';
-    ctx.lineWidth = 4; ctx.lineCap = 'round';
+    const mine = b.s === _mpState.myId;
+    const coreColor = mine ? myColor : enemyColor;
+    const tx = b.x - b.vx * 2.2;
+    const ty = b.y - b.vy * 2.2;
+    // Outline (dark, wider) — readable on bright TODs.
+    ctx.strokeStyle = blackColor;
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - b.vx * 0.45, b.y - b.vy * 0.45);
+    ctx.moveTo(b.x, b.y); ctx.lineTo(tx, ty);
     ctx.stroke();
-    ctx.strokeStyle = COLORS.red; ctx.lineWidth = 2;
+    // Bright core — readable on dark TODs.
+    ctx.strokeStyle = coreColor;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - b.vx * 0.45, b.y - b.vy * 0.45);
+    ctx.moveTo(b.x, b.y); ctx.lineTo(tx, ty);
     ctx.stroke();
-    ctx.fillStyle = COLORS.red;
-    ctx.beginPath(); ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2); ctx.fill();
+    // Head dot.
+    ctx.fillStyle = coreColor;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
   }
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = 1;
 }
 
 // HUD: kill feed + scoreboard + Phase 39 additions (hit marker, ping dot,
