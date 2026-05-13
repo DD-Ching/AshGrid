@@ -566,7 +566,23 @@ function _mpHandleKill(data) {
   if (typeof createExplosion === 'function' && typeof dx === 'number') {
     createExplosion(dx, dy, 'big');
   }
-  if (typeof playSfx === 'function') playSfx('death', { vol: 0.5 });
+  // Phase 65 — burning wreckage on MP kills too (parity with NN-mode kills).
+  // remotePlayers don't carry a _chassis field yet (server snapshot doesn't
+  // broadcast it), so remote victims default to humanoid. Local player gets
+  // its own _chassis. Either way the user sees the same smoldering effect
+  // as in single-player.
+  if (typeof spawnWreckage === 'function' && typeof dx === 'number') {
+    let chassis = 'humanoid';
+    if (data.victim === _mpState.myId && typeof player !== 'undefined') {
+      chassis = player._chassis || 'humanoid';
+    } else {
+      const rp = _mpState.remotePlayers.get(data.victim);
+      if (rp && rp.chassis) chassis = rp.chassis;
+    }
+    spawnWreckage(dx, dy, chassis);
+  }
+  // Phase 64 — softened kill cue + smaller volume (user '擊殺的声音太大').
+  if (typeof playSfx === 'function') playSfx('death', { vol: 0.32 });
 
   // Local player got killed?
   if (data.victim === _mpState.myId && typeof player !== 'undefined') {
