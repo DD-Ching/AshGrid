@@ -116,4 +116,31 @@ function explodeGrenade(g) {
       if (u === player) playSfx('death');
     }
   }
+  // Phase 43: explosions also damage built structures.
+  //
+  // Single-player parity bug fix: previously bulletHitStructure existed but
+  // was never called, AND grenades never iterated game._structures. Result:
+  // built walls were invincible — you could trap yourself behind your own
+  // bunker with no way out (user report: '不會說我會自己把自己搞住').
+  //
+  // In MP, structures are server-authoritative, so we send an explosion
+  // request and let the server apply damage + broadcast structureHit / Gone
+  // events. In SP, apply damage directly here.
+  const inMp = (typeof _mpIsActive === 'function') && _mpIsActive();
+  if (inMp && typeof _mpBroadcastExplosion === 'function') {
+    _mpBroadcastExplosion(g.x, g.y, GRENADE_RADIUS, GRENADE_DAMAGE_MAX);
+  } else if (typeof game !== 'undefined' && Array.isArray(game._structures)) {
+    for (let i = game._structures.length - 1; i >= 0; i--) {
+      const s = game._structures[i];
+      if (s.hp <= 0) continue;
+      const dd = Math.hypot(s.x - g.x, s.y - g.y);
+      if (dd > GRENADE_RADIUS) continue;
+      const sdmg = Math.max(1, Math.round(GRENADE_DAMAGE_MAX * (1 - dd / GRENADE_RADIUS)));
+      s.hp -= sdmg;
+      if (s.hp <= 0) {
+        createExplosion(s.x, s.y, 'small');
+        game._structures.splice(i, 1);
+      }
+    }
+  }
 }

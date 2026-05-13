@@ -28,9 +28,18 @@
 //               land, even if the target moved during the input's flight.
 //     {type: 'emote', idx}            (transient, just relayed)
 //     {type: 'ping', x, y}            (transient, just relayed)
+//     {type: 'build', sid, kind, x, y}    (Phase 43)
+//         Place a built structure. sid is client-generated so both sides
+//         agree on identity from frame zero (server uses sid verbatim).
+//     {type: 'explosionRequest', x, y, r, dmg}    (Phase 43)
+//         Apply AOE damage to structures within radius. Used by client-
+//         spawned grenades / FPV / airstrikes (those weapons are still
+//         client-only; this lets them touch server-authoritative walls).
 //
 //   server → client
-//     {type: 'welcome', id, tick}     (sent once on connect)
+//     {type: 'welcome', id, tick, structures}   (sent once on connect)
+//         Phase 43: structures = full snapshot of currently-built walls so
+//         late joiners see what others have built.
 //     {type: 'snapshot', tick, players, bullets, sT}
 //         sT = server Date.now() at broadcast time (for snapshot interp clock sync)
 //         players: [{id, x, y, angle, hp, alive, name, lastInputSeq, invuln, t}]
@@ -46,6 +55,14 @@
 //     {type: 'wallHit', x, y, kind}                            (event)
 //         Phase 41: bullet stopped on a wall/cover. kind = 'building' |
 //         'cover'. Client spawns an impact spark (createExplosion 'small').
+//     {type: 'structureAdd', s}                                (Phase 43)
+//         Another player (or you) just built `s`. Client mirrors into
+//         game._structures using `s.sid` as the identity key.
+//     {type: 'structureHit', sid, hp, x, y}                    (Phase 43)
+//         Built structure took damage. x,y = impact point (for spark).
+//     {type: 'structureGone', sid, x, y}                       (Phase 43)
+//         Structure was destroyed. Client removes from game._structures
+//         and spawns a small explosion at (x, y).
 //     {type: 'leave', id}
 //     {type: 'emote'|'ping', from, ...}
 //
@@ -242,6 +259,77 @@ function _spawnClearOfWalls(x, y) {
   return true;
 }
 
+// Phase 43: built structures. Mirrors the subset of STRUCTURE_DEFS the
+// server actually needs to enforce — HP for damage, size for collision,
+// blocks for whether bullets/players stop on it. Other client-side fields
+// (turret range, generator power, etc.) the server doesn't simulate; they
+// live purely on each client's update loop. Kinds we don't list get
+// rejected at build time so a malformed/spoofed kind can't crash anything.
+const _BUILD_DEFS = {
+  cover:   { hp: 120, size: 30, blocks: true,  blocksLOS: false },
+  wall:    { hp: 220, size: 30, blocks: true,  blocksLOS: true  },
+  bunker:  { hp: 500, size: 30, blocks: true,  blocksLOS: true  },
+  turret:  { hp: 160, size: 50, blocks: false, blocksLOS: false },
+  generator:{ hp: 120, size: 50, blocks: false, blocksLOS: false },
+  camera:  { hp:  90, size: 40, blocks: false, blocksLOS: false },
+  terminal:{ hp: 140, size: 50, blocks: false, blocksLOS: false },
+  mine:    { hp:   1, size: 24, blocks: false, blocksLOS: false },
+  tripmine:{ hp:   1, size: 28, blocks: false, blocksLOS: false },
+  sensor:  { hp:  70, size: 30, blocks: false, blocksLOS: false },
+  smoke:   { hp: 110, size: 36, blocks: false, blocksLOS: false },
+  tesla:   { hp: 150, size: 38, blocks: false, blocksLOS: false },
+  emp:     { hp: 130, size: 36, blocks: false, blocksLOS: false },
+  medstation:{ hp: 110, size: 32, blocks: false, blocksLOS: false },
+  dronebay:{ hp: 170, size: 38, blocks: false, blocksLOS: false },
+};
+
+// Push entity (circle) out of any structure rectangle it overlaps. Same
+// AABB push-out as _pushOutOfWalls; structures live in `this.structures`
+// (instance-side) so this helper is a method, not a free fn.
+function _pushOutOfStructure(p, radius, s) {
+  const def = _BUILD_DEFS[s.kind]; if (!def || !def.blocks) return;
+  const half = def.size / 2;
+  const ax = s.x - half, ay = s.y - half;
+  const bx = s.x + half, by = s.y + half;
+  const cx = p.x < ax ? ax : (p.x > bx ? bx : p.x);
+  const cy = p.y < ay ? ay : (p.y > by ? by : p.y);
+  const dx = p.x - cx, dy = p.y - cy;
+  const d2 = dx * dx + dy * dy;
+  if (d2 >= radius * radius) return;
+  if (d2 > 0.0001) {
+    const d = Math.sqrt(d2);
+    const push = radius - d + 0.5;
+    p.x += (dx / d) * push;
+    p.y += (dy / d) * push;
+  } else {
+    const left   = p.x - ax;
+    const right  = bx - p.x;
+    const top    = p.y - ay;
+    const bottom = by - p.y;
+    const m = Math.min(left, right, top, bottom);
+    if (m === left)        p.x = ax - radius - 0.5;
+    else if (m === right)  p.x = bx + radius + 0.5;
+    else if (m === top)    p.y = ay - radius - 0.5;
+    else                   p.y = by + radius + 0.5;
+  }
+}
+
+// Test whether a bullet is inside a structure (used for bullet-vs-structure
+// hit checks). Treat all structures as solid rectangles for projectile
+// purposes regardless of their `blocks` flag — a bullet should still hit a
+// turret even though players can walk past it (would be weird if rifle
+// rounds passed through a 50px metal box).
+function _bulletInStructure(b, structures) {
+  for (const s of structures.values()) {
+    if (s.hp <= 0) continue;
+    const def = _BUILD_DEFS[s.kind]; if (!def) continue;
+    const half = def.size / 2;
+    if (b.x >= s.x - half && b.x <= s.x + half &&
+        b.y >= s.y - half && b.y <= s.y + half) return s;
+  }
+  return null;
+}
+
 export default class AshGridRoom {
   constructor(party) {
     this.party = party;
@@ -251,6 +339,12 @@ export default class AshGridRoom {
     this.tickCount = 0;
     this.lastSnapshotTick = -SNAPSHOT_EVERY;
     this._tickHandle = null;
+    // Phase 43: player-built structures, keyed by client-generated sid.
+    // Server is authoritative for HP + collision; client behaviours (turret
+    // firing, generator power, etc.) still run client-side. New joiners get
+    // the full structure list in their welcome message so they see
+    // everything that's already on the field.
+    this.structures = new Map();       // sid → {sid, kind, x, y, hp, maxHp, owner}
   }
 
   // Lazy-start the tick. We don't burn CPU when nobody's connected.
@@ -298,6 +392,10 @@ export default class AshGridRoom {
       id: conn.id,
       tick: this.tickCount,
       arena: { w: ARENA_W, h: ARENA_H },
+      // Phase 43: rehydrate the new client with every structure currently
+      // on the field. Without this, late joiners can walk through walls
+      // others built before they connected.
+      structures: [...this.structures.values()],
     }));
     // Snapshot will reach the new client on the next broadcast cycle.
     this.party.broadcast(JSON.stringify({ type: 'join', id: conn.id }), [conn.id]);
@@ -333,7 +431,74 @@ export default class AshGridRoom {
       this.party.broadcast(JSON.stringify(data), [sender.id]);
       return;
     }
+    // Phase 43: build request. Client sends a sid it generated locally so
+    // both sides agree on identity from frame zero (the client's optimistic
+    // local copy and the server's authoritative entry share an id).
+    if (data.type === 'build') {
+      const kind = String(data.kind || '');
+      const def = _BUILD_DEFS[kind];
+      if (!def) return;                 // unknown kind — silently drop
+      const x = num(data.x), y = num(data.y);
+      if (x < 0 || x > ARENA_W || y < 0 || y > ARENA_H) return;
+      const sid = num(data.sid) | 0;
+      if (!sid || this.structures.has(sid)) return;  // duplicate or missing sid
+      // Reject placement INSIDE a static map building — would lock players in.
+      for (const b of _MAP_BUILDINGS) {
+        if (x >= b.x - 4 && x <= b.x + b.w + 4 &&
+            y >= b.y - 4 && y <= b.y + b.h + 4) return;
+      }
+      const s = {
+        sid, kind, x, y,
+        hp: def.hp, maxHp: def.hp,
+        owner: sender.id,
+      };
+      this.structures.set(sid, s);
+      // Echo to ALL — including the originator. Their client treats the
+      // duplicate as a no-op (already in local list), but the round-trip
+      // confirms server accepted the build, and other clients see it for
+      // the first time.
+      this.party.broadcast(JSON.stringify({ type: 'structureAdd', s }));
+      return;
+    }
+    // Phase 43: explosion request from a client. Used for grenades / FPV /
+    // airstrikes — server validates and applies AOE damage to structures
+    // (and broadcasts hit/gone events). Bullets damage structures via the
+    // tick path; this exists for the explicit AOE weapons whose lifecycle
+    // lives on the client.
+    if (data.type === 'explosionRequest') {
+      const x = num(data.x), y = num(data.y);
+      const r = clamp(num(data.r), 10, 400);
+      const dmg = clamp(num(data.dmg), 1, 500);
+      this._applyExplosionToStructures(x, y, r, dmg);
+      return;
+    }
     // Unknown types ignored (forward-compat).
+  }
+
+  // Server-authoritative AOE damage to structures. Falloff is linear from
+  // 100% at centre to ~20% at edge so a grenade right next to a wall does
+  // far more than one that grazes it. Removes the structure outright if HP
+  // drops to 0 — broadcasts 'structureGone' (clients spawn an impact spark
+  // at the demolished position).
+  _applyExplosionToStructures(x, y, radius, dmg) {
+    for (const s of [...this.structures.values()]) {
+      if (s.hp <= 0) continue;
+      const d = Math.hypot(s.x - x, s.y - y);
+      if (d > radius) continue;
+      const fall = Math.max(0.2, 1 - d / radius);
+      const applied = Math.max(1, Math.round(dmg * fall));
+      s.hp -= applied;
+      if (s.hp <= 0) {
+        this.structures.delete(s.sid);
+        this.party.broadcast(JSON.stringify({
+          type: 'structureGone', sid: s.sid, x: s.x, y: s.y,
+        }));
+      } else {
+        this.party.broadcast(JSON.stringify({
+          type: 'structureHit', sid: s.sid, hp: s.hp, x: s.x, y: s.y,
+        }));
+      }
+    }
   }
 
   onClose(conn) {
@@ -363,6 +528,13 @@ export default class AshGridRoom {
       // put the player inside a building. Without this, MP players phase
       // through walls because the server doesn't know the map exists.
       _pushOutOfWalls(p, PLAYER_RADIUS);
+      // Phase 43: also push out of player-built structures (cover, wall,
+      // bunker — anything with `blocks: true`). Same AABB push-out as the
+      // map walls. Without this, players walk straight through their own
+      // built cover (user report: '自己蓋的牆會直接穿過去').
+      for (const s of this.structures.values()) {
+        _pushOutOfStructure(p, PLAYER_RADIUS, s);
+      }
       p.angle = inp.angle;
       // Phase 40: record this tick's position into the per-player history
       // BEFORE the lag-comp check below (so the shooter's own position is
@@ -404,6 +576,27 @@ export default class AshGridRoom {
         this.party.broadcast(JSON.stringify({
           type: 'wallHit', x: round1(b.x), y: round1(b.y), kind: obs.kind,
         }));
+        this.bullets.splice(i, 1);
+        continue;
+      }
+      // Phase 43: bullet vs built structure. Damage the structure, broadcast
+      // hit (or removal if HP drops to 0). Same single-bullet-stops-on-first
+      // behaviour as walls. Static map walls are indestructible (just stop
+      // bullets); built structures take damage and can be removed.
+      const struct = _bulletInStructure(b, this.structures);
+      if (struct) {
+        struct.hp -= BULLET_DAMAGE;
+        if (struct.hp <= 0) {
+          this.structures.delete(struct.sid);
+          this.party.broadcast(JSON.stringify({
+            type: 'structureGone', sid: struct.sid, x: struct.x, y: struct.y,
+          }));
+        } else {
+          this.party.broadcast(JSON.stringify({
+            type: 'structureHit', sid: struct.sid, hp: struct.hp,
+            x: round1(b.x), y: round1(b.y),
+          }));
+        }
         this.bullets.splice(i, 1);
         continue;
       }

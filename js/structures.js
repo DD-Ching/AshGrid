@@ -227,12 +227,26 @@ function placeStructure(kind, wx, wy) {
   }
   // Normal structure
   game._structures = game._structures || [];
+  // Phase 43: in MP, generate a sid that the server will agree on. Both
+  // sides keep the same id so the local optimistic copy and the server's
+  // authoritative entry refer to the same wall — and any later
+  // structureHit / structureGone events from the server can patch THIS
+  // entry by sid lookup. In SP the sid is just bookkeeping.
+  const sid = (typeof _mpNextSid === 'function') ? _mpNextSid() : 0;
   const s = {
+    sid,
     kind, x: wx, y: wy, hp: def.hp, maxHp: def.hp,
     fireCd: 0, airstrikeCd: 0, _placedAt: game.time,
   };
   game._structures.push(s);
   game._energy -= def.cost;
+  // Phase 43: in MP, tell the server we built this so it can enforce
+  // collision + accept damage from other players' bullets/grenades, and
+  // broadcast to other clients so they see the wall too.
+  if (typeof _mpIsActive === 'function' && _mpIsActive()
+      && typeof _mpBroadcastBuild === 'function') {
+    _mpBroadcastBuild(sid, kind, wx, wy);
+  }
   showSwapToast(T(`部署 ${def.label()}`, `Deployed ${def.label()}`));
   // FTUE: first placement advances step 4 → step 5 (streak training)
   // Cumulative build counter — feeds the ARCHITECT achievement

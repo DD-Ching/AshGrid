@@ -214,6 +214,13 @@ function _mpHandleMessage(data) {
       _mpState.serverTick = data.tick || 0;
       _mpState.enabled   = true;
       console.log('[mp] welcomed as', _mpState.myId, '· tick:', _mpState.serverTick);
+      // Phase 43: rehydrate built structures from server's authoritative
+      // snapshot. Wipe any stale local entries first — anything we built
+      // before reconnecting should be re-broadcast through 'structureAdd'.
+      if (Array.isArray(data.structures) && typeof game !== 'undefined') {
+        game._structures = [];
+        for (const s of data.structures) _mpAdoptStructure(s);
+      }
       break;
     case 'join':
       console.log('[mp] peer joined:', data.id);
@@ -240,6 +247,40 @@ function _mpHandleMessage(data) {
       // same impact spark single-player uses (small explosion w/ embers).
       // Gated by visibility — no spark for hits beyond our cone, otherwise
       // we'd hear / see invisible shots which is a wallhack-tier info leak.
+      if (typeof createExplosion === 'function'
+          && typeof data.x === 'number' && typeof data.y === 'number') {
+        const visible = (typeof isVisibleToFriendly === 'function')
+          ? isVisibleToFriendly(data.x, data.y) : true;
+        if (visible) createExplosion(data.x, data.y, 'small');
+      }
+      break;
+    case 'structureAdd':
+      // Phase 43: server broadcasted a new built structure. Skip if we
+      // already have it (the originator's optimistic local copy will
+      // match by sid; receivers add fresh).
+      _mpAdoptStructure(data.s);
+      break;
+    case 'structureHit':
+      // Sync HP from server. Sparks at impact point if visible.
+      if (typeof game !== 'undefined' && Array.isArray(game._structures)) {
+        const s = game._structures.find(x => x.sid === data.sid);
+        if (s) s.hp = data.hp;
+      }
+      if (typeof createExplosion === 'function'
+          && typeof data.x === 'number' && typeof data.y === 'number') {
+        const visible = (typeof isVisibleToFriendly === 'function')
+          ? isVisibleToFriendly(data.x, data.y) : true;
+        if (visible) createExplosion(data.x, data.y, 'small');
+      }
+      break;
+    case 'structureGone':
+      // Server destroyed a structure (HP <= 0). Remove from local + spawn
+      // a confirmation spark. Single-player parity: the structures.js tick
+      // also does createExplosion('small') when HP hits 0.
+      if (typeof game !== 'undefined' && Array.isArray(game._structures)) {
+        const idx = game._structures.findIndex(x => x.sid === data.sid);
+        if (idx >= 0) game._structures.splice(idx, 1);
+      }
       if (typeof createExplosion === 'function'
           && typeof data.x === 'number' && typeof data.y === 'number') {
         const visible = (typeof isVisibleToFriendly === 'function')
@@ -855,6 +896,61 @@ function _mpRenderHUD() {
 // Fire is now server-side. _mpBroadcastFire is a no-op kept as a shim
 // so existing index.html call sites don't need to be deleted.
 function _mpBroadcastFire(/* payload */) { /* no-op — server handles firing */ }
+
+// Phase 43 — built-structure sync helpers.
+//
+// Generate a sid that's globally unique-ish without coordination. We use the
+// myId fragment (hex chars) plus a monotonic counter — millions of sids
+// before any collision risk, and even then duplicates would just be ignored
+// by the server's `if (this.structures.has(sid)) return` guard.
+let _mpNextSidCounter = 1;
+function _mpNextSid() {
+  if (!_mpState.myId) return Math.floor(Math.random() * 0x7fffffff);
+  // First 8 hex chars of myId as numeric prefix, then counter — fits in i32.
+  const prefix = parseInt(_mpState.myId.replace(/-/g, '').slice(0, 6), 16) & 0x7fff;
+  const c = (_mpNextSidCounter++) & 0xffff;
+  return (prefix << 16) | c;
+}
+
+// Adopt a server-broadcast structure into the local game._structures array.
+// Idempotent: if the sid already exists locally (the originator's optimistic
+// copy), update HP and return without inserting. Otherwise push a fresh
+// entry. The local entry needs the same shape as a single-player-built one
+// (kind, x, y, hp, maxHp, fireCd, _placedAt) so the existing render +
+// behaviour code can treat it identically.
+function _mpAdoptStructure(s) {
+  if (typeof game === 'undefined') return;
+  game._structures = game._structures || [];
+  const existing = game._structures.find(x => x.sid === s.sid);
+  if (existing) {
+    existing.hp = s.hp;
+    existing.maxHp = s.maxHp;
+    return;
+  }
+  game._structures.push({
+    sid: s.sid, kind: s.kind, x: s.x, y: s.y,
+    hp: s.hp, maxHp: s.maxHp,
+    fireCd: 0, airstrikeCd: 0,
+    _placedAt: (typeof game !== 'undefined' && game.time) || 0,
+    _mpOwner: s.owner,
+  });
+}
+
+// Send a build request to the server. Caller owns the sid (so its local
+// optimistic add and the server's broadcast match by id).
+function _mpBroadcastBuild(sid, kind, x, y) {
+  if (!_mpState.enabled) return;
+  _mpSendRaw({ type: 'build', sid, kind, x, y });
+}
+
+// Send an explosion request to the server. Server applies AOE damage to
+// structures (player damage is still client-side because grenades are
+// client-only). Used by explodeGrenade / detonateRocket / _detonateFPV when
+// MP is active so built walls actually take damage from explosions.
+function _mpBroadcastExplosion(x, y, radius, dmg) {
+  if (!_mpState.enabled) return;
+  _mpSendRaw({ type: 'explosionRequest', x, y, r: radius, dmg });
+}
 
 // Respawn handler — when server says we respawned, the snapshot will
 // flip alive=true. Local recap UI is driven by server's 'kill' event +

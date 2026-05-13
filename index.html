@@ -44,12 +44,12 @@
 <script src="js/dynamic_radio.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/touch_input.js"></script>
-<script src="js/key_bindings.js?v=42"></script>
-<script src="js/grenades.js"></script>
+<script src="js/key_bindings.js?v=43"></script>
+<script src="js/grenades.js?v=43"></script>
 <script src="js/squad_commands.js"></script>
-<script src="js/multiplayer.js?v=42"></script>
+<script src="js/multiplayer.js?v=43"></script>
 <script src="js/leaderboard.js"></script>
-<script src="js/structures.js"></script>
+<script src="js/structures.js?v=43"></script>
 <script src="js/tod.js"></script>
 <script src="js/weapons.js"></script>
 <script src="js/chassis.js"></script>
@@ -72,7 +72,7 @@
 <script src="js/vision_raycast.js"></script>
 <script src="js/camera.js"></script>
 <script src="js/defense_build_ui.js"></script>
-<script src="js/pause.js?v=42"></script>
+<script src="js/pause.js?v=43"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -5984,8 +5984,14 @@ function detonateRocket(b) {
       if (d.hp <= 0) { d.alive = false; createExplosion(d.x, d.y, 'small'); }
     }
   }
-  // Player-built structures — friendly fire on own modules CAN happen
-  if (game._structures) {
+  // Player-built structures — friendly fire on own modules CAN happen.
+  // Phase 43: in MP, structures are server-authoritative; broadcast the
+  // explosion and let the server apply damage + emit structureHit / Gone
+  // events. In SP we apply directly.
+  if (typeof _mpIsActive === 'function' && _mpIsActive()
+      && typeof _mpBroadcastExplosion === 'function') {
+    _mpBroadcastExplosion(b.x, b.y, r, splashDmg * structMul);
+  } else if (game._structures) {
     for (let si = game._structures.length - 1; si >= 0; si--) {
       const s = game._structures[si];
       const def = STRUCTURE_DEFS[s.kind]; if (!def || s.hp <= 0) continue;
