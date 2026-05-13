@@ -66,7 +66,7 @@
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js"></script>
+<script src="js/crazygames.js?v=52"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
 <script src="js/missions/nn_deathmatch.js?v=49"></script>
 <script src="js/world_gen.js"></script>
@@ -2601,6 +2601,9 @@ function exitMatchToMenu() {
   game._paused = false;
   game.state = 'menu';
   game._skirmish = false;
+  // Phase 52 — Crazy Games SDK lifecycle. Tell the portal we're no longer
+  // in active gameplay so it can place an inter-round ad if appropriate.
+  if (typeof crazyEvent_gameplayStop === 'function') crazyEvent_gameplayStop();
   document.getElementById('start').classList.remove('hidden');
 }
 
@@ -3261,6 +3264,13 @@ async function _renderLeaderboardPanel(force = false) {
   listEl.innerHTML = rows;
 }
 _renderLeaderboardPanel().catch(() => {});
+// Phase 52 — Crazy Games SDK: signal "loading complete" once the start
+// screen is interactive (lobby buttons wired, leaderboard request
+// in-flight, listeners attached). The portal needs this to dismiss its
+// own loader spinner + warm up ad inventory.
+if (typeof crazyEvent_loadingStop === 'function') {
+  setTimeout(() => crazyEvent_loadingStop(), 0);
+}
 const _lbRefreshBtn = document.getElementById('lbRefreshBtn');
 if (_lbRefreshBtn) _lbRefreshBtn.onclick = () => _renderLeaderboardPanel(true);
 // Also refresh when the start screen becomes visible again after a match.
@@ -4794,6 +4804,10 @@ function returnToNNLobby() {
 // unlocks if the bumpMatchPlayed call crossed a threshold this match.
 // PLAY AGAIN restarts the same mode immediately; LOBBY returns to menu.
 function showNNEndCard(result) {
+  // Phase 52 — Crazy Games SDK lifecycle. The end-card pause IS the
+  // natural "between rounds" boundary, so signal gameplayStop now so the
+  // portal can serve a midgame interstitial during the result screen.
+  if (typeof crazyEvent_gameplayStop === 'function') crazyEvent_gameplayStop();
   const card = document.getElementById('nnEndCard');
   if (!card) return;
   const lang = (typeof getLang === 'function') ? getLang() : 'en';

@@ -38,18 +38,36 @@ https://dd-ching.github.io/AshGrid/?nn=1&mp=1
    cd /Users/ddh/Downloads/AshGrid
    ./scripts/build-zip.sh
    ```
-   產生 `ashgrid.zip`(約 1.6MB)。腳本只把 production 需要的檔案打包進
-   去,不會包 `.git` / `.claude` / dev-only 檔案。
+   產生 `ashgrid.zip`(約 1.4MB · Phase 52 trim:只含 `.onnx` 模型,不含
+   訓練筆記,加上 favicon)。腳本只把 production 需要的檔案打包進去,
+   不會包 `.git` / `.claude` / dev-only 檔案。
 3. **CrazyGames 後台上傳:**
    - **Game type:** HTML5
    - **Entry file:** `index.html`
    - **Default URL params:** `?nn=1&mp=1`(讓玩家直接進多人戰場)
    - **Aspect ratio:** Responsive(任意)
-   - **Categories:** Action / Multiplayer / Shooter
-4. **SDK 已經接好了**(`js/crazygames.js` 處理獎勵廣告 + happytime 事件 +
-   loadingStop 回呼),CrazyGames 會自動把廣告分潤打到你帳號。
+   - **Categories:** Action / Multiplayer / .IO / Shooter
+4. **SDK 已經接好了**(Phase 52 完整 lifecycle —
+   `js/crazygames.js`):
+   - **`sdkGameLoadingStart` / `sdkGameLoadingStop`** — boot 完就發,
+     讓 CrazyGames 解開自家 loader spinner + 暖起廣告 inventory
+   - **`gameplayStart` / `gameplayStop`** — 進場開,離場/結算開卡關
+     就停。讓 portal 可在 round 切換點插 mid-round 廣告
+   - **`happytime` / `sadtime`** — 擊殺 / 死亡發出情緒事件,讓 Crazy
+     避開玩家高張力時段
+   - **`requestAd('rewarded')`** — `WATCH AD · SQUAD REVIVE` 按鈕觸發
+   - **`requestAd('midgame')`** — 玩家死亡每 5 次自動播一支
+     interstitial(throttle 90s 防止快速死亡爆量)
 5. **送審:** Crazy 通常 3-7 個工作天回覆。第一次過審後,後續更新走 OTA
    (你重新上傳 zip 就會替換版本)。
+
+### 廣告觸發點一覽(Phase 52 完整盤點)
+
+| 類型 | 觸發位置 | 條件 | 玩家報酬 |
+|---|---|---|---|
+| **rewarded** | `WATCH AD · SQUAD REVIVE` 綠色按鈕 | 全隊覆滅倒數中 | 玩家立即單獨復活 |
+| **rewarded** | Build phase extend | DEFENSE 模式倒數結束時 | 延長建造期 30s |
+| **midgame** | 死亡計數每 5 次 | 90s 內未播過 | 無(廣告分潤給你)|
 
 預期收入:CrazyGames 獎勵廣告 CPM 約 $1-4 美金。穩定 200 DAU 大概一個月
 $20-80;爆紅到 5k DAU 是月 $1k-4k。

@@ -25,12 +25,10 @@ KEEP=(
   index.html
   sw.js
   manifest.webmanifest
-  serve.py            # bundled for self-host friendliness; CrazyGames ignores
+  favicon.ico         # browsers always request this; without it = 404 noise
   icons
   js
-  ai_arena
   3d
-  DEPLOY.md
 )
 for item in "${KEEP[@]}"; do
   if [ -e "$item" ]; then
@@ -38,10 +36,21 @@ for item in "${KEEP[@]}"; do
   fi
 done
 
+# AI models — runtime needs ONLY the .onnx files. Training notebooks
+# (.ipynb) and kaggle_train.py are dev-only and bloat the upload by
+# ~600 KB. Phase 52: pulled out of the blanket KEEP list above.
+if [ -d ai_arena/onnx ]; then
+  mkdir -p "$TMP/ai_arena/onnx"
+  cp ai_arena/onnx/*.onnx "$TMP/ai_arena/onnx/" 2>/dev/null || true
+fi
+
 # Drop any nested .DS_Store / __MACOSX / .git that snuck in
 find "$TMP" -name '.DS_Store' -delete 2>/dev/null || true
 find "$TMP" -name '__MACOSX'  -prune -exec rm -rf {} + 2>/dev/null || true
 find "$TMP" -name '.git'      -prune -exec rm -rf {} + 2>/dev/null || true
+# Drop test / debug fixtures (kept editable in repo, not part of runtime)
+find "$TMP/js" -name '*.test.js' -delete 2>/dev/null || true
+find "$TMP/js" -name '*.spec.js' -delete 2>/dev/null || true
 
 # Build the zip — `-r` recurses, `-X` strips macOS extended attrs that
 # inflate the archive and aren't part of any web spec.

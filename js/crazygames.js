@@ -70,6 +70,10 @@
       _sdk = sdk;
       _ready = true;
       console.log('[crazygames] SDK ready (env: ' + (sdk.environment || 'unknown') + ')');
+      // Phase 52 — REQUIRED by CrazyGames cert: signal that the SDK has
+      // booted so the portal's loader can advance + ad inventory can warm
+      // up. Without this the portal might never serve any ads.
+      try { _sdk.game.sdkGameLoadingStart(); } catch (e) {}
       // Override the local stub with the real rewarded-ad path once we're
       // wired. Any existing caller using requestRewardedAd() now gets a
       // real ad on the portal, dev-mode overlay locally.
@@ -79,9 +83,21 @@
           crazyAd_rewarded((ok) => cb && cb(ok, { rewardId, amount: 1 }));
         };
       }
+      // If the page already signaled "fully loaded" before our async init
+      // resolved, fire loadingStop now so we don't get stuck on the
+      // CrazyGames loader.
+      if (window._crazyGameReady) loadingStop();
     } catch (e) {
       console.warn('[crazygames] init failed', e);
     }
+  }
+  // Called by index.html the moment the start screen is interactive (game
+  // boot is complete, scripts parsed, listeners attached). CrazyGames uses
+  // this to dismiss its own loader + start serving preroll ads.
+  function loadingStop() {
+    window._crazyGameReady = true;
+    if (!_ready) return;   // init() will replay the call when SDK lands
+    try { _sdk.game.sdkGameLoadingStop(); } catch (e) {}
   }
 
   // -------- Game events (telemetry) --------
@@ -147,6 +163,7 @@
   }
 
   // -------- Exports --------
+  window.crazyEvent_loadingStop   = loadingStop;
   window.crazyEvent_gameplayStart = gameplayStart;
   window.crazyEvent_gameplayStop  = gameplayStop;
   window.crazyEvent_happytime     = happytime;
