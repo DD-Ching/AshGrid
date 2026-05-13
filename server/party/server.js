@@ -36,11 +36,16 @@
 //         players: [{id, x, y, angle, hp, alive, name, lastInputSeq, invuln, t}]
 //             t = echoed client timestamp for own player only (used for RTT)
 //         bullets: [{id, x, y, vx, vy, s}]    s = shooter id (short)
-//     {type: 'hit', victim, shooter, hp, weapon, lc?}   (event)
-//         lc = 1 if the hit was lag-compensated (resolved at fire time
-//              against historic position rather than physics-based bullet
-//              hit-test). Clients can use it for diagnostic display.
-//     {type: 'kill', shooter, victim, weapon, lc?}      (event)
+//     {type: 'hit', victim, shooter, hp, weapon, x, y, lc?}   (event)
+//         x, y = world coordinates where the bullet landed (used by the
+//                client to spawn blood / damage popup at the right spot)
+//         lc   = 1 if the hit was lag-compensated (resolved at fire time
+//                against historic position rather than physics-based bullet
+//                hit-test). Clients can use it for diagnostic display.
+//     {type: 'kill', shooter, victim, weapon, x, y, lc?}       (event)
+//     {type: 'wallHit', x, y, kind}                            (event)
+//         Phase 41: bullet stopped on a wall/cover. kind = 'building' |
+//         'cover'. Client spawns an impact spark (createExplosion 'small').
 //     {type: 'leave', id}
 //     {type: 'emote'|'ping', from, ...}
 //
@@ -88,6 +93,154 @@ const HISTORY_TICKS     = 30;         // 1 second of position history per player
 const LAG_INTERP_OFFSET = 3;          // matches client's MP_INTERP_DELAY (100ms = 3 ticks)
 const LAG_COMP_MAX      = 18;         // cap rewind at 600ms — beyond this we don't trust
                                       //   the prediction; client is too laggy to favor.
+
+// Phase 41: server-side wall data for the "industrial" arena. Mirrors the
+// procedural map in /js/missions/nn_arena_variants.js (the 'industrial'
+// variant). MP mode forces this map for all rooms (Phase 22→29). Both the
+// shape AND the coordinates have to match the client byte-for-byte so that
+// what the player sees on their screen is exactly what the server enforces
+// for collision — otherwise we get the corner-clip / phasing artifacts that
+// were the whole reason for moving to an authoritative server in the first
+// place.
+//
+// Shape: { x, y, w, h, kind: 'building' | 'cover' }
+//   building → blocks player movement AND bullets
+//   cover    → walk-through but blocks bullets (waist-high crates)
+function _buildIndustrialMap() {
+  const out = [];
+  const T = 22;       // wall thickness
+  const D = 90;       // door opening width
+  // Hollow rectangular building with optional door gaps. Each `doors.side`
+  // is the door's center coordinate on the opposite axis.
+  const wall = (x1, y1, x2, y2, doors) => {
+    const d = doors || {};
+    if (d.top != null) {
+      out.push({ x: x1, y: y1, w: d.top - D/2 - x1, h: T, kind: 'building' });
+      out.push({ x: d.top + D/2, y: y1, w: x2 - (d.top + D/2), h: T, kind: 'building' });
+    } else out.push({ x: x1, y: y1, w: x2 - x1, h: T, kind: 'building' });
+    if (d.bottom != null) {
+      out.push({ x: x1, y: y2 - T, w: d.bottom - D/2 - x1, h: T, kind: 'building' });
+      out.push({ x: d.bottom + D/2, y: y2 - T, w: x2 - (d.bottom + D/2), h: T, kind: 'building' });
+    } else out.push({ x: x1, y: y2 - T, w: x2 - x1, h: T, kind: 'building' });
+    if (d.left != null) {
+      out.push({ x: x1, y: y1, w: T, h: d.left - D/2 - y1, kind: 'building' });
+      out.push({ x: x1, y: d.left + D/2, w: T, h: y2 - (d.left + D/2), kind: 'building' });
+    } else out.push({ x: x1, y: y1, w: T, h: y2 - y1, kind: 'building' });
+    if (d.right != null) {
+      out.push({ x: x2 - T, y: y1, w: T, h: d.right - D/2 - y1, kind: 'building' });
+      out.push({ x: x2 - T, y: d.right + D/2, w: T, h: y2 - (d.right + D/2), kind: 'building' });
+    } else out.push({ x: x2 - T, y: y1, w: T, h: y2 - y1, kind: 'building' });
+  };
+  // 8 warehouses on a 3×3 grid (centre = open plaza w/ factory).
+  wall( 120,  120,  480,  480, { bottom: 300,  right: 300 });
+  wall( 720,  120, 1080,  480, { bottom: 900,  left: 300, right: 300 });
+  wall(1320,  120, 1680,  480, { bottom: 1500, left: 300 });
+  wall( 120,  720,  480, 1080, { top: 300,    bottom: 300, right: 900 });
+  wall(1320,  720, 1680, 1080, { top: 1500,   bottom: 1500, left: 900 });
+  wall( 120, 1320,  480, 1680, { top: 300,    right: 1500 });
+  wall( 720, 1320, 1080, 1680, { top: 900,    left: 1500, right: 1500 });
+  wall(1320, 1320, 1680, 1680, { top: 1500,   left: 1500 });
+  // Interior partitions (one per warehouse) — short stubs splitting each
+  // warehouse into two rooms.
+  out.push({ x:  150, y:  300, w: 190, h: T,   kind: 'building' }); // NW horiz
+  out.push({ x:  900, y:  150, w: T,   h: 190, kind: 'building' }); // N  vert
+  out.push({ x: 1460, y:  300, w: 190, h: T,   kind: 'building' }); // NE horiz
+  out.push({ x:  150, y:  900, w: 190, h: T,   kind: 'building' }); // W  horiz
+  out.push({ x: 1460, y:  900, w: 190, h: T,   kind: 'building' }); // E  horiz
+  out.push({ x:  150, y: 1500, w: 190, h: T,   kind: 'building' }); // SW horiz
+  out.push({ x:  900, y: 1500, w: T,   h: 150, kind: 'building' }); // S  vert
+  out.push({ x: 1460, y: 1500, w: 190, h: T,   kind: 'building' }); // SE horiz
+  // Interior crates — 50×50, one per warehouse room.
+  const interior = [
+    [ 200, 200], [ 380, 400],   [ 800, 200], [ 980, 400],
+    [1400, 200], [1580, 400],   [ 200, 800], [ 380, 1000],
+    [1400, 800], [1580, 1000],  [ 200, 1400],[ 380, 1600],
+    [ 800, 1400],[ 980, 1600],  [1400, 1400],[1580, 1600],
+  ];
+  for (const [cx, cy] of interior) {
+    out.push({ x: cx - 25, y: cy - 25, w: 50, h: 50, kind: 'cover' });
+  }
+  // Alley crates — 40×40, sit mid-alley so lanes aren't pure sniper sightlines.
+  const alleys = [
+    [ 600,  220], [ 600,  380],  [1200,  220], [1200,  380],
+    [ 600, 1420], [ 600, 1580],  [1200, 1420], [1200, 1580],
+    [ 220,  600], [ 380,  600],  [1420,  600], [1580,  600],
+    [ 220, 1200], [ 380, 1200],  [1420, 1200], [1580, 1200],
+  ];
+  for (const [cx, cy] of alleys) {
+    out.push({ x: cx - 20, y: cy - 20, w: 40, h: 40, kind: 'cover' });
+  }
+  // Plaza crates — 4 around the central factory for sightline breaks.
+  const plaza = [[760, 760], [1040, 760], [760, 1040], [1040, 1040]];
+  for (const [cx, cy] of plaza) {
+    out.push({ x: cx - 25, y: cy - 25, w: 50, h: 50, kind: 'cover' });
+  }
+  return out;
+}
+const _MAP_OBSTACLES = _buildIndustrialMap();
+const _MAP_BUILDINGS = _MAP_OBSTACLES.filter(o => o.kind === 'building');
+const _MAP_COVERS    = _MAP_OBSTACLES.filter(o => o.kind === 'cover');
+
+// Push entity (circle) out of any axis-aligned building rectangle it overlaps.
+// Mirrors client-side `pushOutOfBuildings`. Cheap O(N) — N ≈ 50 obstacles
+// for industrial; runs once per player per tick, cost is negligible.
+function _pushOutOfWalls(p, radius) {
+  for (const b of _MAP_BUILDINGS) {
+    // Closest point on the AABB to the circle centre.
+    const cx = p.x < b.x ? b.x : (p.x > b.x + b.w ? b.x + b.w : p.x);
+    const cy = p.y < b.y ? b.y : (p.y > b.y + b.h ? b.y + b.h : p.y);
+    const dx = p.x - cx, dy = p.y - cy;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= radius * radius) continue;
+    if (d2 > 0.0001) {
+      // Outside the AABB but penetrating the inflated capsule — push
+      // perpendicularly outward.
+      const d = Math.sqrt(d2);
+      const push = radius - d + 0.5;
+      p.x += (dx / d) * push;
+      p.y += (dy / d) * push;
+    } else {
+      // Centre is INSIDE the rectangle (e.g. spawned inside, or pushed in
+      // by a chain of inputs). Eject through the nearest edge.
+      const left   = p.x - b.x;
+      const right  = (b.x + b.w) - p.x;
+      const top    = p.y - b.y;
+      const bottom = (b.y + b.h) - p.y;
+      const m = Math.min(left, right, top, bottom);
+      if (m === left)        p.x = b.x - radius - 0.5;
+      else if (m === right)  p.x = b.x + b.w + radius + 0.5;
+      else if (m === top)    p.y = b.y - radius - 0.5;
+      else                   p.y = b.y + b.h + radius + 0.5;
+    }
+  }
+}
+
+// Test whether a bullet's centre is inside any obstacle (building OR cover).
+// Returns the obstacle hit or null. Buildings AND covers stop bullets — covers
+// are waist-high, bullets pass over only in the truly-airborne sense which we
+// don't model, so the safe assumption is "if the line of fire intersects a
+// crate, the bullet stops on the crate." Same as single-player.
+function _bulletInWall(b) {
+  for (const obs of _MAP_OBSTACLES) {
+    if (b.x >= obs.x && b.x <= obs.x + obs.w &&
+        b.y >= obs.y && b.y <= obs.y + obs.h) {
+      return obs;
+    }
+  }
+  return null;
+}
+
+// Test whether a candidate spawn is too close to any building (within
+// PLAYER_RADIUS + small margin). Used by the spawn picker so respawning
+// players never appear half-clipped through a wall.
+function _spawnClearOfWalls(x, y) {
+  const r = PLAYER_RADIUS + 6;
+  for (const b of _MAP_BUILDINGS) {
+    if (x >= b.x - r && x <= b.x + b.w + r &&
+        y >= b.y - r && y <= b.y + b.h + r) return false;
+  }
+  return true;
+}
 
 export default class AshGridRoom {
   constructor(party) {
@@ -206,6 +359,10 @@ export default class AshGridRoom {
       if (mag > 1) { dx /= mag; dy /= mag; }
       p.x = clamp(p.x + dx * PLAYER_SPEED, ARENA_PAD, ARENA_W - ARENA_PAD);
       p.y = clamp(p.y + dy * PLAYER_SPEED, ARENA_PAD, ARENA_H - ARENA_PAD);
+      // Phase 41: server-side wall collision. Reject any movement that would
+      // put the player inside a building. Without this, MP players phase
+      // through walls because the server doesn't know the map exists.
+      _pushOutOfWalls(p, PLAYER_RADIUS);
       p.angle = inp.angle;
       // Phase 40: record this tick's position into the per-player history
       // BEFORE the lag-comp check below (so the shooter's own position is
@@ -234,6 +391,22 @@ export default class AshGridRoom {
         this.bullets.splice(i, 1);
         continue;
       }
+      // Phase 41: bullet vs wall. Check before player collision so a bullet
+      // that crosses both a wall AND a player (rare with 14px/tick steps but
+      // possible at glancing angles) gets consumed by the wall — matches the
+      // single-player wallLines + buildings hit-check ordering, where the
+      // wall claims the bullet first.
+      const obs = _bulletInWall(b);
+      if (obs) {
+        // Spark at the bullet's current position. Sent as a single event
+        // (not part of the snapshot) so the visual fires immediately on the
+        // client; snapshot rate is too slow for a sub-frame impact effect.
+        this.party.broadcast(JSON.stringify({
+          type: 'wallHit', x: round1(b.x), y: round1(b.y), kind: obs.kind,
+        }));
+        this.bullets.splice(i, 1);
+        continue;
+      }
       // Players are circles of PLAYER_RADIUS
       let consumed = false;
       for (const p of this.players.values()) {
@@ -246,12 +419,16 @@ export default class AshGridRoom {
           this.party.broadcast(JSON.stringify({
             type: 'hit', victim: p.id, shooter: b.shooterId,
             hp: Math.max(0, p.hp), weapon: b.weapon,
+            // Include impact coords so client can spawn blood / damage popup
+            // at the right spot without guessing from the player's lerped pos.
+            x: round1(b.x), y: round1(b.y),
           }));
           if (p.hp <= 0) {
             p.alive = false;
             p.respawnAt = this.tickCount + RESPAWN_TICKS;
             this.party.broadcast(JSON.stringify({
               type: 'kill', shooter: b.shooterId, victim: p.id, weapon: b.weapon,
+              x: round1(p.x), y: round1(p.y),
             }));
           }
           break;
@@ -371,9 +548,16 @@ export default class AshGridRoom {
     // physics-based hit check downstream doesn't re-trigger.
     bestVictim.hp -= BULLET_DAMAGE;
     if (this.bullets.length > 0) this.bullets.pop();
+    // Phase 41: include impact coords for client-side blood/popup placement.
+    // Use the historic position (where the shooter SAW them) so the spark
+    // appears at the visually-correct spot.
+    const histVictim = this._historicalPos(bestVictim, this.tickCount - 1);
+    const impactX = histVictim ? histVictim.x : bestVictim.x;
+    const impactY = histVictim ? histVictim.y : bestVictim.y;
     this.party.broadcast(JSON.stringify({
       type: 'hit', victim: bestVictim.id, shooter: shooter.id,
       hp: Math.max(0, bestVictim.hp), weapon: 'RIFLE',
+      x: round1(impactX), y: round1(impactY),
       lc: 1,    // marker: this hit was lag-compensated (clients can stat it)
     }));
     if (bestVictim.hp <= 0) {
@@ -382,6 +566,7 @@ export default class AshGridRoom {
       this.party.broadcast(JSON.stringify({
         type: 'kill', shooter: shooter.id, victim: bestVictim.id,
         weapon: 'RIFLE', lc: 1,
+        x: round1(impactX), y: round1(impactY),
       }));
     }
   }
@@ -401,17 +586,23 @@ export default class AshGridRoom {
     p.history.length = 0;
   }
 
-  // Pick a spawn point that maximises distance from existing players.
-  // Sample 8 candidates, take the one with the largest min-distance to any
-  // alive player. Avoids the spawn-camp griefer pattern.
+  // Pick a spawn point that (1) is clear of walls/buildings and (2)
+  // maximises distance from existing players. Sample up to 32 candidates.
+  // Anti-spawn-camp + anti-spawn-in-wall.
+  //
+  // Phase 41: rejection-sample on _spawnClearOfWalls. If we can't find a
+  // wall-free spot in 32 tries (basically impossible in industrial — most
+  // of the arena is open street + plaza), fall back to the canonical
+  // industrial spawn anchors (W and E alley centres from the variant def).
   _pickSpawn() {
-    let best = { x: ARENA_W / 2, y: ARENA_H / 2 };
+    let best = null;
     let bestScore = -1;
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 32; i++) {
       const cand = {
         x: 200 + Math.random() * (ARENA_W - 400),
         y: 200 + Math.random() * (ARENA_H - 400),
       };
+      if (!_spawnClearOfWalls(cand.x, cand.y)) continue;
       let minD = Infinity;
       for (const p of this.players.values()) {
         if (!p.alive) continue;
@@ -421,7 +612,11 @@ export default class AshGridRoom {
       if (minD === Infinity) minD = 9999;
       if (minD > bestScore) { bestScore = minD; best = cand; }
     }
-    return best;
+    if (best) return best;
+    // Last-ditch fallback — industrial map's named spawn anchors. These are
+    // hand-tuned to be wall-free, so they're guaranteed safe.
+    const fallbacks = [{ x: 580, y: 900 }, { x: 1220, y: 900 }];
+    return fallbacks[Math.floor(Math.random() * fallbacks.length)];
   }
 
   _broadcastSnapshot() {

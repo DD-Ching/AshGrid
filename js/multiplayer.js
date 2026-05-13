@@ -235,6 +235,18 @@ function _mpHandleMessage(data) {
     case 'kill':
       _mpHandleKill(data);
       break;
+    case 'wallHit':
+      // Phase 41: server says a bullet stopped on a wall/cover. Spawn the
+      // same impact spark single-player uses (small explosion w/ embers).
+      // Gated by visibility — no spark for hits beyond our cone, otherwise
+      // we'd hear / see invisible shots which is a wallhack-tier info leak.
+      if (typeof createExplosion === 'function'
+          && typeof data.x === 'number' && typeof data.y === 'number') {
+        const visible = (typeof isVisibleToFriendly === 'function')
+          ? isVisibleToFriendly(data.x, data.y) : true;
+        if (visible) createExplosion(data.x, data.y, 'small');
+      }
+      break;
     case 'emote': {
       const rp = _mpState.remotePlayers.get(data.from);
       if (!rp) return;
@@ -380,16 +392,35 @@ function _mpHandleSnapshot(snap) {
 // place that ever flashes the marker.
 let _mpHitMarker = { until: 0, kind: 'hit' };  // kind: 'hit' | 'kill'
 function _mpHandleHit(data) {
-  // Victim-side: flash red, play hit sound.
+  // Phase 41: server now sends impact coords; fall back to remote pos if
+  // event is from older deploy (dev still in flight).
+  const ix = (typeof data.x === 'number') ? data.x : null;
+  const iy = (typeof data.y === 'number') ? data.y : null;
+  // Victim-side: flash red, screen shake, play hit sound, blood spray.
   if (data.victim === _mpState.myId) {
-    if (typeof game !== 'undefined') game.hitFlash = Math.max(game.hitFlash || 0, 6);
+    if (typeof game !== 'undefined') game.hitFlash = Math.max(game.hitFlash || 0, 12);
     if (typeof playSfx === 'function') playSfx('hit', { vol: 0.4 });
+    // Phase 41: screen shake scales with damage. Single-player parity
+    // (index.html: triggerShake(min(6, b.damage * 0.25), 8) on player hit).
+    if (typeof triggerShake === 'function') {
+      triggerShake(Math.min(6, 25 * 0.25), 8);
+    }
+    // Floating damage popup at the impact point so we know which side took it.
+    if (typeof spawnDamagePopup === 'function' && ix != null && iy != null) {
+      spawnDamagePopup(ix, iy, 25, false);
+    }
     return;
   }
-  // Shooter-side: hitmarker on the crosshair.
+  // Shooter-side: hitmarker on the crosshair + damage popup at victim.
   if (data.shooter === _mpState.myId) {
     _mpHitMarker = { until: Date.now() + 180, kind: 'hit' };
     if (typeof playSfx === 'function') playSfx('beep', { vol: 0.25, freq: 1320 });
+    // Phase 41: floating "-25" at the victim — single-player has this for
+    // every hit on enemies. Anchored to impact coords, not victim's lerped
+    // pos, so it stays put while the body drifts.
+    if (typeof spawnDamagePopup === 'function' && ix != null && iy != null) {
+      spawnDamagePopup(ix, iy, 25, false);
+    }
     // Phase 40 telemetry: track lag-compensated vs physics hits so the F3
     // overlay can show the favor-the-shooter rate.
     _mpState.totalHitsAsShooter++;
@@ -409,23 +440,45 @@ function _mpHandleKill(data) {
   _mpKillFeed.push({ killer: shooterName, victim: victimName, weapon: data.weapon || 'RIFLE', at: Date.now() });
   if (_mpKillFeed.length > 6) _mpKillFeed.splice(0, _mpKillFeed.length - 6);
 
+  // Phase 41: death explosion — visible to ALL players, anchored at the
+  // victim's last known position. Server includes x,y in the kill event;
+  // fall back to the remote's lerped pos if absent (older server build).
+  let dx = data.x, dy = data.y;
+  if (typeof dx !== 'number' || typeof dy !== 'number') {
+    if (data.victim === _mpState.myId && typeof player !== 'undefined') {
+      dx = player.x; dy = player.y;
+    } else {
+      const rp = _mpState.remotePlayers.get(data.victim);
+      if (rp) { dx = rp.x; dy = rp.y; }
+    }
+  }
+  if (typeof createExplosion === 'function' && typeof dx === 'number') {
+    createExplosion(dx, dy, 'big');
+  }
+  if (typeof playSfx === 'function') playSfx('death', { vol: 0.5 });
+
   // Local player got killed?
   if (data.victim === _mpState.myId && typeof player !== 'undefined') {
     if (typeof _lbBumpDeath === 'function') _lbBumpDeath();
     player.alive = false;
     player._killer = { callsign: shooterName };
     player._killerWeapon = data.weapon;
+    if (typeof triggerShake === 'function') triggerShake(8, 18);
     if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
       game._teamWipe.blue.wipedSince = game.time;
       game._teamWipe.blue.respawnAt  = game.time + 180; // matches server RESPAWN_TICKS
     }
     if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
   }
-  // Local player got the kill? Fattest hitmarker variant + confirm tone.
+  // Local player got the kill? Fattest hitmarker variant + confirm tone +
+  // KILL popup at victim.
   if (data.shooter === _mpState.myId) {
     if (typeof _lbBumpKill === 'function') _lbBumpKill();
     _mpHitMarker = { until: Date.now() + 350, kind: 'kill' };
     if (typeof playSfx === 'function') playSfx('beep', { vol: 0.4, freq: 1760 });
+    if (typeof spawnDamagePopup === 'function' && typeof dx === 'number') {
+      spawnDamagePopup(dx, dy, 0, true);  // `true` = kill flag → "KILL" label
+    }
   }
 }
 
@@ -445,8 +498,18 @@ function _mpSendInput() {
   _mpState.lastSendAt = now;
 
   // Read raw movement input from the keys[] global (index.html maintains it).
+  // Phase 41: while piloting the drone (Q) or FPV (E), WASD belongs to the
+  // aerial vehicle, NOT the avatar. If we still send those keys as player
+  // movement, the server moves the avatar in the same direction — and since
+  // it doesn't (yet) know walls, the avatar can be shoved through warehouses
+  // toward wherever the drone is heading. User report: '長按某個方向 我就
+  // 會瞬移到那個牆壁的另外一端'. Fix: zero the move vector for those modes.
+  // The avatar still RECEIVES inputs (fire/angle still matter if we want to
+  // shoot from inside the drone — currently we don't, but harmless to send).
   let dx = 0, dy = 0;
-  if (typeof keys !== 'undefined') {
+  const droneOrFpv = (typeof game !== 'undefined' &&
+                      (game.mode === 'drone' || game.mode === 'fpv'));
+  if (typeof keys !== 'undefined' && !droneOrFpv) {
     if (keys['d'] || keys['arrowright']) dx += 1;
     if (keys['a'] || keys['arrowleft'])  dx -= 1;
     if (keys['s'] || keys['arrowdown'])  dy += 1;
@@ -454,7 +517,10 @@ function _mpSendInput() {
   }
   const angle = player.angle || 0;
   // Fire if mouse held and player alive (server will gate on cooldown).
-  const fire = !!(typeof mouse !== 'undefined' && mouse.down && player.alive);
+  // Also gated on drone/FPV: while piloting we don't want avatar fire to
+  // double-tap (drone has its own weapon, avatar is meant to be passive).
+  const fire = !!(typeof mouse !== 'undefined' && mouse.down && player.alive
+                  && !droneOrFpv);
 
   const seq = ++_mpState.localInputSeq;
   const input = {
@@ -472,6 +538,27 @@ function _mpSendInput() {
     name: (typeof getOperatorName === 'function') ? getOperatorName() : 'PLAYER',
   };
   _mpSendRaw(input);
+
+  // Phase 41: visual fire feedback. Server owns the bullet (we don't push
+  // into the local `bullets` array in MP) but the muzzle flash is purely
+  // cosmetic and tied to the ACT of firing, not the bullet object. Spawn it
+  // here, throttled to match server's FIRE_COOLDOWN (6 ticks @ 30Hz =
+  // 200ms), so visual cadence matches what the server actually accepts.
+  // Without this, MP players fire silently and feel "muffled" — the user
+  // wanted offline-grade fidelity.
+  if (fire && typeof muzzleFlashes !== 'undefined') {
+    const nowFire = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+    if (nowFire - (_mpState._lastMuzzleAt || 0) >= 200) {
+      _mpState._lastMuzzleAt = nowFire;
+      const ax = Math.cos(angle), ay = Math.sin(angle);
+      muzzleFlashes.push({
+        x: player.x + ax * 22, y: player.y + ay * 22,
+        angle, life: 5,
+      });
+      // Tiny audio feedback (single-player has this for player.fire too).
+      if (typeof playSfx === 'function') playSfx('shoot', { vol: 0.35 });
+    }
+  }
 
   // Phase 38 prediction — index.html's per-frame WASD code IS our
   // prediction. We just record the input here so reconciliation can
@@ -545,14 +632,32 @@ function _mpTickRemoteBullets() {
   }
 }
 
-// Render remote players (server-known, smoothed)
+// Render remote players. Phase 41: gated on `isVisibleToFriendly()` so an
+// opponent across the map isn't visible just because the server sent their
+// position. This is the same fairness rule single-player uses for AI enemies.
+// Players outside the cone get a fading silhouette for ~3s (matches single-
+// player's _lastSeen mechanic) — gives memory of "I just saw them dart in"
+// without being a wallhack.
 function _mpRenderRemote() {
   if (!_mpState.enabled) return;
   if (typeof ctx === 'undefined' || typeof drawHumanoid !== 'function') return;
+  const now = (typeof game !== 'undefined') ? game.time : 0;
   for (const [id, rp] of _mpState.remotePlayers) {
     if (id === _mpState.myId) continue;
     if (!rp.alive) continue;
+    let alpha = 0;
+    const visible = (typeof isVisibleToFriendly === 'function')
+      ? isVisibleToFriendly(rp.x, rp.y) : true;
+    if (visible) {
+      rp._lastSeen = now;
+      alpha = 1;
+    } else if (rp._lastSeen != null && now - rp._lastSeen < 180) {
+      // 3-second fade-out (180 frames @ 60fps), matches single-player.
+      alpha = Math.max(0.18, 1 - (now - rp._lastSeen) / 180);
+    }
+    if (alpha === 0) continue;
     ctx.save();
+    ctx.globalAlpha = alpha;
     drawHumanoid(rp.x, rp.y, rp.angle || 0, 0, COLORS.red, true, { _chassis: 'humanoid' });
     ctx.fillStyle = COLORS.black;
     ctx.font = 'bold 10px monospace';
@@ -568,11 +673,15 @@ function _mpRenderRemote() {
   }
 }
 
-// Render server-owned bullets
+// Render server-owned bullets. Phase 41: vision-gated. Bullets outside our
+// cone are invisible — same rule as single-player. Otherwise a hidden enemy
+// shooting from across the map shows tracer streams pointing at their exact
+// position, defeating the vision system.
 function _mpRenderRemoteBullets() {
   if (!_mpState.enabled) return;
   if (typeof ctx === 'undefined') return;
   for (const b of _mpState.remoteBullets.values()) {
+    if (typeof isVisibleToFriendly === 'function' && !isVisibleToFriendly(b.x, b.y)) continue;
     ctx.strokeStyle = '#1A1A1A';
     ctx.lineWidth = 4; ctx.lineCap = 'round';
     ctx.beginPath();
