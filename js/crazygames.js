@@ -105,6 +105,30 @@
           });
         }
       } catch (e) {}
+      // Phase 54 — Instant Multiplayer integration. The CrazyGames portal
+      // generates invite links like `crazygames.com/game/ashgrid?invite={
+      // "roomName":"abc"}` — when a friend opens one, the SDK fires
+      // addJoinRoomListener with that data and we should jump to the room.
+      // Required by the QA gate: 'Multiplayer requirements · Reload with
+      // Instant Multiplayer'.
+      try {
+        if (sdk.game && typeof sdk.game.addJoinRoomListener === 'function') {
+          sdk.game.addJoinRoomListener((data) => {
+            const roomName = data && data.roomName;
+            if (!roomName) return;
+            // Mid-game invite — reload with the new room so MP connects fresh.
+            // (Trying to re-handshake the live socket without reload caused
+            // ghost peers in earlier phases.)
+            try {
+              const p = new URLSearchParams(location.search);
+              p.set('mp', '1');
+              p.set('room', String(roomName));
+              try { sessionStorage.setItem('ag.autoEnter', '1'); } catch (e) {}
+              location.search = p.toString();
+            } catch (e) {}
+          });
+        }
+      } catch (e) {}
     } catch (e) {
       console.warn('[crazygames] init failed', e);
     }
@@ -181,10 +205,52 @@
     }
   }
 
+  // -------- Phase 54: Instant Multiplayer wrappers --------
+  // Synchronous read of the invite-room param the portal stuffs into our
+  // launch URL when a friend's invite link is opened. Returns null when
+  // not invited (normal direct lobby visit) or when SDK isn't ready yet
+  // (caller should treat null as "no invite").
+  function getInviteRoom() {
+    if (!_ready) return null;
+    try { return _sdk.game.getInviteParam('roomName') || null; }
+    catch (e) { return null; }
+  }
+  // Tell the portal which room we're in + how full it is, so it can
+  // surface 'join friend' affordances and refresh invite links. Call
+  // after the MP welcome arrives + on every peer-join / peer-leave.
+  function updateMpRoom(roomName, maxPlayers, hasFreeSlot) {
+    if (!_ready) return;
+    try {
+      _sdk.game.updateRoom({
+        roomName: String(roomName || ''),
+        maxPlayers: Number(maxPlayers) || 20,
+        hasFreeSlot: !!hasFreeSlot,
+      });
+    } catch (e) {}
+  }
+  // Call when the local player leaves an MP room (back to lobby / mode
+  // switch). Lets the portal stop listing them as "in room X."
+  function leftMpRoom() {
+    if (!_ready) return;
+    try { _sdk.game.leftRoom(); } catch (e) {}
+  }
+  // Build a shareable invite URL for the current room. Returns a string
+  // synchronously (SDK builds it from the host frame). Null if SDK isn't
+  // ready or the call throws.
+  function getInviteLink(roomName) {
+    if (!_ready) return null;
+    try { return _sdk.game.inviteLink({ roomName: String(roomName) }); }
+    catch (e) { return null; }
+  }
+
   // -------- Exports --------
   window.crazyEvent_loadingStop   = loadingStop;
   window.crazyEvent_gameplayStart = gameplayStart;
   window.crazyEvent_gameplayStop  = gameplayStop;
+  window.crazyMp_getInviteRoom    = getInviteRoom;
+  window.crazyMp_updateRoom       = updateMpRoom;
+  window.crazyMp_leftRoom         = leftMpRoom;
+  window.crazyMp_inviteLink       = getInviteLink;
   window.crazyEvent_happytime     = happytime;
   window.crazyEvent_sadtime       = sadtime;
   window.crazyAd_midgame          = midgame;

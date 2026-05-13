@@ -151,12 +151,31 @@ function _mpPeerCount() {
   // remotePlayers includes self; count is just its size.
   return _mpState.remotePlayers.size;
 }
+// Phase 54 — push current room state to the CrazyGames Instant Multiplayer
+// SDK. Fires on welcome, peer-join, and peer-leave so the portal's
+// 'rejoin friend's room' link stays accurate. Safe no-op outside the
+// CrazyGames iframe.
+const _MP_ROOM_CAP = 20;
+function _mpReportRoomToCrazy() {
+  if (typeof crazyMp_updateRoom !== 'function') return;
+  if (!_mpState.enabled || !_mpState.roomName) return;
+  const filled = _mpState.remotePlayers.size;     // includes self
+  const hasFreeSlot = filled < _MP_ROOM_CAP;
+  crazyMp_updateRoom(_mpState.roomName, _MP_ROOM_CAP, hasFreeSlot);
+}
 
 async function _mpConnect() {
   if (_mpState.enabled || _mpState.ws) return;
   const params = new URLSearchParams(location.search);
   if (params.get('mp') !== '1') return;
-  const roomName = params.get('room') || 'ashgrid-main';
+  // Phase 54 — Instant Multiplayer: a friend's invite link gives the
+  // CrazyGames SDK a roomName via getInviteParam. Honour it over the URL
+  // ?room= param + over the auto-match default. The portal already
+  // surfaced 'join your friend' when they shared the link; if we didn't
+  // honour the param we'd dump them into a different room.
+  const inviteRoom = (typeof crazyMp_getInviteRoom === 'function')
+    ? crazyMp_getInviteRoom() : null;
+  const roomName = inviteRoom || params.get('room') || 'ashgrid-main';
   _mpState.roomName = roomName;
 
   const host = _mpResolveHost();
@@ -221,17 +240,23 @@ function _mpHandleMessage(data) {
         game._structures = [];
         for (const s of data.structures) _mpAdoptStructure(s);
       }
+      // Phase 54 — tell CrazyGames Instant Multiplayer about our room so
+      // the portal can surface 'join your friend' affordances + refresh
+      // invite links. Cap at 20 (matches our Phase 27 auto-pick max).
+      _mpReportRoomToCrazy();
       break;
     case 'join':
       console.log('[mp] peer joined:', data.id);
       if (typeof showSwapToast === 'function') {
         showSwapToast('▸ 玩家加入 ' + String(data.id).slice(0, 6));
       }
+      _mpReportRoomToCrazy();
       break;
     case 'leave':
       _mpState.remotePlayers.delete(data.id);
       _mpScoreboard.delete(data.id);
       console.log('[mp] peer left:', data.id);
+      _mpReportRoomToCrazy();
       break;
     case 'snapshot':
       _mpHandleSnapshot(data);
