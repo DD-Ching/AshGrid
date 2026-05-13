@@ -70,10 +70,11 @@
       _sdk = sdk;
       _ready = true;
       console.log('[crazygames] SDK ready (env: ' + (sdk.environment || 'unknown') + ')');
-      // Phase 52 — REQUIRED by CrazyGames cert: signal that the SDK has
+      // Phase 53 — REQUIRED by CrazyGames cert: signal that the SDK has
       // booted so the portal's loader can advance + ad inventory can warm
-      // up. Without this the portal might never serve any ads.
-      try { _sdk.game.sdkGameLoadingStart(); } catch (e) {}
+      // up. Real SDK method is `loadingStart()` (Phase 52 used the wrong
+      // name `sdkGameLoadingStart` — silently no-op'd through the try).
+      try { _sdk.game.loadingStart(); } catch (e) {}
       // Override the local stub with the real rewarded-ad path once we're
       // wired. Any existing caller using requestRewardedAd() now gets a
       // real ad on the portal, dev-mode overlay locally.
@@ -87,6 +88,23 @@
       // resolved, fire loadingStop now so we don't get stuck on the
       // CrazyGames loader.
       if (window._crazyGameReady) loadingStop();
+      // Phase 53 — wire SDK audio-mute events into our setAudioMuted().
+      // The CrazyGames portal header has a mute toggle that posts a
+      // settings-change event into the iframe whenever the user flips it.
+      // Real surface: sdk.game.addSettingsChangeListener(settings => …)
+      // where `settings.audio` is true/false. Honoring this lets us tick
+      // 'supports CrazyGames muting audio through SDK' on the upload form.
+      try {
+        if (sdk.game && typeof sdk.game.addSettingsChangeListener === 'function') {
+          sdk.game.addSettingsChangeListener((settings) => {
+            const audioOn = (settings && typeof settings.audio === 'boolean')
+              ? settings.audio : true;
+            if (typeof window.setAudioMuted === 'function') {
+              window.setAudioMuted(!audioOn);
+            }
+          });
+        }
+      } catch (e) {}
     } catch (e) {
       console.warn('[crazygames] init failed', e);
     }
@@ -97,7 +115,7 @@
   function loadingStop() {
     window._crazyGameReady = true;
     if (!_ready) return;   // init() will replay the call when SDK lands
-    try { _sdk.game.sdkGameLoadingStop(); } catch (e) {}
+    try { _sdk.game.loadingStop(); } catch (e) {}
   }
 
   // -------- Game events (telemetry) --------
@@ -115,10 +133,11 @@
     if (!_ready) return;
     try { _sdk.game.happytime(); } catch (e) {}
   }
-  function sadtime() {
-    if (!_ready) return;
-    try { _sdk.game.sadtime(); } catch (e) {}
-  }
+  // Phase 53: SDK v3 has no `sadtime()` — only `happytime()`. The wrapper
+  // stays so the death-path call site doesn't break, but we just no-op.
+  // Death telemetry still goes through `noteDeath()` for the midgame ad
+  // cadence, which is the actually useful signal.
+  function sadtime() { /* no-op in v3 */ }
 
   // -------- Ads --------
   // Midgame interstitial — fired on schedule (every Nth death). Returns
