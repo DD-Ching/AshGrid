@@ -53,7 +53,7 @@ const MP_BULLET_LERP    = 0.5;       // remote bullet smoothing rate (faster —
 // That's invisible to the eye at this latency and is what every multiplayer FPS
 // from Quake3 onward does. Hit detection is server-side, so the visual lag never
 // affects "did I hit them" — server already settled that.
-const MP_INTERP_DELAY   = 100;       // ms — render remotes this far in the past
+const MP_INTERP_DELAY   = 150;       // ms — render remotes this far in the past (Phase 59: was 100, bumped to absorb snapshot jitter that surfaced as 'stutter on W↔S toggle' — every extra 50ms gives the interpolator one more snapshot of cushion at 30Hz tick rate, still imperceptible)
 const MP_BUFFER_KEEP    = 1000;      // ms — discard buffer entries older than this
 
 // RTT (round-trip-time, "ping") thresholds for the connection-quality dot.
@@ -362,6 +362,21 @@ function _mpHandleSnapshot(snap) {
       _mpState.serverSelfHp    = sp.hp;
       _mpState.serverSelfAlive = sp.alive;
       _mpState.serverSelfInvuln = !!sp.invuln;
+      // Phase 59: dead→alive transition. _mpRespawnLocalPlayer() was defined
+      // but had NO caller — nothing connected the server's respawn snapshot
+      // back to player.alive=true, which was the user's '死掉瞬間復活的bug'
+      // (actually opposite — visually felt 'instant' because no UI marked
+      //  the dead window, then state ended up resyncing some other path).
+      // Guard: only fire if (1) we were locally dead AND server says alive
+      // AND (2) we actually died via the kill handler (_killedAtTime set)
+      // AND (3) at least 1.5s elapsed since death — defensive in case a
+      // single late snapshot races the kill event.
+      if (typeof player !== 'undefined' && !player.alive && sp.alive) {
+        const _t = (typeof game !== 'undefined' && game.time) ? game.time : 0;
+        if (player._killedAtTime && (_t - player._killedAtTime) >= 90) {
+          _mpRespawnLocalPlayer();
+        }
+      }
       // Drop inputs the server has already processed
       _mpState.pendingInputs = _mpState.pendingInputs.filter(i => i.seq > sp.lastInputSeq);
       // Replay remaining inputs from the server's confirmed position
@@ -554,6 +569,15 @@ function _mpHandleKill(data) {
     player.alive = false;
     player._killer = { callsign: shooterName };
     player._killerWeapon = data.weapon;
+    // Phase 59: set _respawnAt + _killedAtTime so (a) the dead-state
+    // countdown overlay at index.html:9546 actually renders (was checking
+    // player._respawnAt != null and that was never set on MP death → user
+    // saw 'instant respawn' because no UI marked the 3s window), and (b)
+    // the snapshot dead→alive transition above has a death-time anchor
+    // to gate against insta-flip races.
+    const _gt = (typeof game !== 'undefined' && game.time) ? game.time : 0;
+    player._respawnAt = _gt + 180;        // 3s at 60fps client frames
+    player._killedAtTime = _gt;
     if (typeof triggerShake === 'function') triggerShake(8, 18);
     if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
       game._teamWipe.blue.wipedSince = game.time;
@@ -1064,6 +1088,11 @@ function _mpRespawnLocalPlayer() {
   player.ammo = player.maxAmmo;
   player.reserve = Math.max(player.reserve || 0, 120);
   player.reloading = false;
+  // Phase 59: clear the per-player death markers so the dead-state overlay
+  // (index.html:9546) hides + the snapshot dead→alive check no longer fires
+  // until the next kill.
+  player._respawnAt = null;
+  player._killedAtTime = 0;
   if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
     game._teamWipe.blue.wipedSince = null;
     game._teamWipe.blue.respawnAt = null;
