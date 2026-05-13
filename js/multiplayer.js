@@ -685,32 +685,26 @@ function _mpTickRemoteBullets() {
   }
 }
 
-// Render remote players. Phase 41: gated on `isVisibleToFriendly()` so an
-// opponent across the map isn't visible just because the server sent their
-// position. This is the same fairness rule single-player uses for AI enemies.
-// Players outside the cone get a fading silhouette for ~3s (matches single-
-// player's _lastSeen mechanic) — gives memory of "I just saw them dart in"
-// without being a wallhack.
+// Render remote players. Phase 46: NO vision gate — always render remote
+// players. The Phase 41 isVisibleToFriendly + _lastSeen fade was causing
+// the user-reported '掩體外的人 即便進入同掩體 也看不到掩體內人' bug:
+// two players in the same warehouse couldn't see each other because a
+// partition wall or interior crate blocked LoS, even though they were
+// 200 px apart in the same room.
+//
+// Vision cones are a single-player anti-AI mechanic (lets you sneak past
+// NN bots). In PvP it's just friction — wings.io / surviv.io / krunker
+// all show all opponents on screen and trust the player's own awareness.
+// Aim-assist still gates on LoS (you can't auto-lock through a wall),
+// which keeps a small reward for staying behind cover without making the
+// player invisible.
 function _mpRenderRemote() {
   if (!_mpState.enabled) return;
   if (typeof ctx === 'undefined' || typeof drawHumanoid !== 'function') return;
-  const now = (typeof game !== 'undefined') ? game.time : 0;
   for (const [id, rp] of _mpState.remotePlayers) {
     if (id === _mpState.myId) continue;
     if (!rp.alive) continue;
-    let alpha = 0;
-    const visible = (typeof isVisibleToFriendly === 'function')
-      ? isVisibleToFriendly(rp.x, rp.y) : true;
-    if (visible) {
-      rp._lastSeen = now;
-      alpha = 1;
-    } else if (rp._lastSeen != null && now - rp._lastSeen < 180) {
-      // 3-second fade-out (180 frames @ 60fps), matches single-player.
-      alpha = Math.max(0.18, 1 - (now - rp._lastSeen) / 180);
-    }
-    if (alpha === 0) continue;
     ctx.save();
-    ctx.globalAlpha = alpha;
     // Phase 42: parity with single-player enemy render (index.html:7878):
     //   drawHumanoid(e.x, e.y, e.angle, e.walkPhase, _bodyColor, true, e)
     // Pass walkPhase so legs swing while moving. `rp` itself is the unit
@@ -740,7 +734,10 @@ function _mpRenderRemote() {
 //   • Player bullets use COLORS.cream (the "white" look the user noted as
 //     missing), enemy bullets use COLORS.redBright. We discriminate by
 //     comparing the bullet's shooter id against our own.
-//   • Vision-gated — hidden shooter's tracers stay hidden (no wallhack).
+//   • Phase 46: NO vision gate (consistent with _mpRenderRemote dropping
+//     the same gate). Players are always visible now, so hiding tracers
+//     would be inconsistent — and tracers are the main signal that
+//     "someone over there is shooting."
 function _mpRenderRemoteBullets() {
   if (!_mpState.enabled) return;
   if (typeof ctx === 'undefined') return;
@@ -749,7 +746,6 @@ function _mpRenderRemoteBullets() {
   const myColor    = (typeof COLORS !== 'undefined' && COLORS.cream) || '#E8E4D8';
   const blackColor = (typeof COLORS !== 'undefined' && COLORS.black) || '#1A1A1A';
   for (const b of _mpState.remoteBullets.values()) {
-    if (typeof isVisibleToFriendly === 'function' && !isVisibleToFriendly(b.x, b.y)) continue;
     const mine = b.s === _mpState.myId;
     const coreColor = mine ? myColor : enemyColor;
     const tx = b.x - b.vx * 2.2;
