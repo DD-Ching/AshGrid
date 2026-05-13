@@ -55,10 +55,19 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   // Phase 3A: team-wipe state. When a whole team is 0-alive, halt
   // individual respawns and start a longer countdown. During the
   // countdown the ad-revive button is the only way to skip the wait.
-  // Phase 10D (user: '不看廣告是30秒, 看廣告15秒 = 兩倍速復活'): no-ad wait
-  // is now 30 sec, ad-revive bypasses the wait entirely (the ad itself is
-  // ~15 sec — so effectively 2× speed when watched).
-  const TEAM_WIPE_TICKS       = 30 * 60;  // was 15*60
+  // Phase 49 (user: '縮短成15秒 / 顯示廣告狀態下的話只需要五秒'):
+  //   • Default no-ad wait: 15 s (was 30).
+  //   • While the WATCH-AD button is on offer (i.e. !_deathRecap.adReviveUsed),
+  //     wait shrinks to 5 s — incentivises the ad-watcher path; the player
+  //     just sees a quick countdown rather than a chore.
+  //   • Once the ad has been used in this match, button disappears and the
+  //     subsequent wipe falls back to the 15 s default.
+  const TEAM_WIPE_TICKS         = 15 * 60;  // no-ad / ad-already-used wait
+  const TEAM_WIPE_TICKS_AD_OPEN =  5 * 60;  // shorter wait while ad CTA visible
+  function _wipeWaitTicks() {
+    const adOpen = (typeof _deathRecap !== 'undefined') && !_deathRecap.adReviveUsed;
+    return adOpen ? TEAM_WIPE_TICKS_AD_OPEN : TEAM_WIPE_TICKS;
+  }
   const startTick = game.time;
   const teamKills = [0, 0];               // [blue, red] — running totals, never resets
   let lastBlueAlive = -1, lastRedAlive = -1;
@@ -264,7 +273,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         const state = game._teamWipe[team];
         if (aliveCount === 0 && !state.wipedSince) {
           state.wipedSince = game.time;
-          state.respawnAt  = game.time + TEAM_WIPE_TICKS;
+          state.respawnAt  = game.time + _wipeWaitTicks();
           // Clear pending individual respawns — wipe gates them all
           for (const u of units) { if (u) u._respawnAt = null; }
         }

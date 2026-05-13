@@ -53,7 +53,7 @@
 <script src="js/tod.js"></script>
 <script src="js/weapons.js"></script>
 <script src="js/chassis.js"></script>
-<script src="js/death_recap.js"></script>
+<script src="js/death_recap.js?v=49"></script>
 <script src="js/mote_affinity.js"></script>
 <script src="js/stage_hints.js"></script>
 <script src="js/pawn_swap.js"></script>
@@ -65,7 +65,7 @@
      portal it serves real ads. -->
 <script src="js/crazygames.js"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js"></script>
+<script src="js/missions/nn_deathmatch.js?v=49"></script>
 <script src="js/world_gen.js"></script>
 <script src="js/squad.js"></script>
 <script src="js/drone_fpv.js"></script>
@@ -2656,7 +2656,12 @@ window.addEventListener('mousedown', e => {
   // Otherwise: click anywhere dismisses the death recap. Doesn't
   // preventDefault so a click that ALSO hits a pawn-swap chip still
   // triggers the swap.
-  if (_deathRecap.active) {
+  // Phase 49: SKIP this dismiss when the team is wiped — otherwise a
+  // mis-click anywhere on screen kills both the SQUAD WIPED countdown
+  // and the WATCH AD button, leaving the player staring at nothing
+  // (user: '倒時計時有時候會消失'). When wiped, the recap is the
+  // ONLY way to see the timer + claim the ad revive — keep it alive.
+  if (_deathRecap.active && !(typeof _isBlueTeamWiped === 'function' && _isBlueTeamWiped())) {
     dismissDeathRecap();
     // fall through — still process clicks normally
   }
