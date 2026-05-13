@@ -701,20 +701,61 @@ function _mpTickRemoteBullets() {
 function _mpRenderRemote() {
   if (!_mpState.enabled) return;
   if (typeof ctx === 'undefined' || typeof drawHumanoid !== 'function') return;
+  // Phase 47: human players must read as DISTINCT from wild NPCs at a
+  // glance. User: '敵人玩家看起來必須跟野生npc有所差異'. Four stacked cues:
+  //   1. brighter body (redBright vs NPC's flat red)
+  //   2. pulsing cream foot-halo (suppressed during spawn invuln, which
+  //      already has its own ring at radius 18 — avoid double-ring)
+  //   3. downward ▼ chevron floating above with gentle bob — universally
+  //      read as "player marker" in .io / MOBA UIs
+  //   4. HP bar mirroring NPC bar (same width/offset) so existing muscle
+  //      memory still works
+  const t = (typeof game !== 'undefined' && game.time) ? game.time : 0;
+  const bob = Math.sin(t * 0.08) * 1.5;
+  const haloAlpha = 0.30 + 0.20 * Math.abs(Math.sin(t * 0.08));
   for (const [id, rp] of _mpState.remotePlayers) {
     if (id === _mpState.myId) continue;
     if (!rp.alive) continue;
     ctx.save();
+    // Foot halo BEFORE chassis so the body sits on top.
+    if (!rp.invuln) {
+      ctx.globalAlpha = haloAlpha;
+      ctx.strokeStyle = COLORS.cream;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(rp.x, rp.y, 19, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
     // Phase 42: parity with single-player enemy render (index.html:7878):
     //   drawHumanoid(e.x, e.y, e.angle, e.walkPhase, _bodyColor, true, e)
-    // Pass walkPhase so legs swing while moving. `rp` itself is the unit
-    // object — drawHumanoid reads `_chassis` off it (defaults to humanoid
-    // when absent, which is what we want until server tracks chassis).
-    drawHumanoid(rp.x, rp.y, rp.angle || 0, rp.walkPhase || 0, COLORS.red, true, rp);
+    // Pass walkPhase so legs swing while moving. Phase 47 swaps the body
+    // colour to redBright so MP players read brighter than NPCs.
+    drawHumanoid(rp.x, rp.y, rp.angle || 0, rp.walkPhase || 0, COLORS.redBright, true, rp);
+    // HP bar — matches NPC bar at index.html:7910 (30×3 @ y-26).
+    const hp = (typeof rp.hp === 'number') ? rp.hp : 100;
+    if (hp < 100) {
+      ctx.fillStyle = COLORS.black;
+      ctx.fillRect(rp.x - 15, rp.y - 22, 30, 3);
+      ctx.fillStyle = COLORS.red;
+      ctx.fillRect(rp.x - 15, rp.y - 22, 30 * Math.max(0, hp) / 100, 3);
+    }
+    // Name label — sits between chevron and HP bar.
     ctx.fillStyle = COLORS.black;
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(rp.name || '?', rp.x, rp.y - 22);
+    ctx.fillText(rp.name || '?', rp.x, rp.y - 28);
+    // ▼ chevron above the name (filled cream, black outline so it stays
+    // readable on every TOD).
+    const cy = rp.y - 44 + bob;
+    ctx.fillStyle = COLORS.cream;
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(rp.x - 5, cy);
+    ctx.lineTo(rp.x + 5, cy);
+    ctx.lineTo(rp.x,     cy + 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
     if (rp.invuln) {
       ctx.strokeStyle = COLORS.cream;
       ctx.lineWidth = 2;
