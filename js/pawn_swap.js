@@ -21,6 +21,21 @@ function swapPlayerToAlly(idx) {
   if (idx < 0 || idx >= allies.length) return;
   const a = allies[idx];
   if (!a || !a.alive) return;
+  // Phase 63: pawn-swap is fundamentally incompatible with MP. The local
+  // swap teleports player.x/y by hundreds of units; server has no concept
+  // of this, sends back a snapshot at the old server position, and
+  // multiplayer.js's reconciliation snap-back (dist > 80) yanks the player
+  // back to where they were. Visually it looks like the OTHER ally
+  // teleported onto the player ('其他載具的位置順移到我這邊'). Proper fix
+  // is a 'swap' message + server-side body switch, but that's a Phase
+  // 70+ task. For now: refuse + tell the user why.
+  if (typeof _mpIsActive === 'function' && _mpIsActive()) {
+    if (typeof showSwapToast === 'function') {
+      showSwapToast(T('▶ 聯機模式不支援角色切換',
+                      '▶ Pawn-swap disabled in MP'));
+    }
+    return;
+  }
   // Pawn-swap auto-dismisses the death recap — player wants to see the
   // new body, not stare at the killer card.
   if (typeof dismissDeathRecap === 'function') dismissDeathRecap();

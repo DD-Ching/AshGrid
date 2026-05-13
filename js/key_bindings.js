@@ -131,12 +131,14 @@ const KEY_BINDINGS = {
   tab: { action: (e) => { e.preventDefault(); _toggleCommandView(); } },
   r:   { action: () => startReload() },
   g:   { action: () => {
-    // Context-sensitive: during S4 with a live Sentinel target, G fires
-    // an SED bomb that converts the unit. Otherwise G is a hand grenade.
-    // Arena recruitment SED — if there's a live enemy within 220 px,
-    // throwing G converts them into an ally (chance-gated in Batch 6).
-    // Until that mechanic is wired, G is just a grenade.
+    // Context-sensitive priority order:
+    //   (1) Arena recruit SED on a downed enemy nearby (Phase 18+)
+    //   (2) Phase 63: defuse the nearest hostile mine
+    //   (3) Fallback: throw a hand grenade
     if (typeof _arenaTrySEDConvert === 'function' && _arenaTrySEDConvert()) {
+      return;
+    }
+    if (typeof _tryDefuseMine === 'function' && _tryDefuseMine()) {
       return;
     }
     throwGrenade();

@@ -109,19 +109,23 @@ const STRUCTURE_DEFS = {
     label: () => T('審計台 AUDIT CONSOLE', 'AUDIT CONSOLE'),
   },
   // Mine: invisible (to enemies; faint to player) — detonates when an enemy
-  // enters TRIGGER_R. Cheap one-shot AOE; great for choke points but loses
-  // value against scattered formations.
+  // enters TRIGGER_R. Phase 63: bumped dmg 70 → 130 + blastR 110 → 140 per
+  // user '讓它傷害高一點'; bulletImmune so the only way to clear a hostile
+  // mine is the G-key defuse (defuseTicks = 5s). Cost stays at 40 — high
+  // damage is balanced by the slow defuse counter, not by build cost.
   mine: {
-    cost: 40, hp: 1, size: 24, blocks: false, blocksLOS: false,
-    triggerR: 30, blastR: 110, dmg: 70,
+    cost: 40, hp: 9999, size: 24, blocks: false, blocksLOS: false,
+    bulletImmune: true, defuseTicks: 5 * 60,
+    triggerR: 30, blastR: 140, dmg: 130,
     label: () => T('地雷', 'MINE'),
   },
   // Trip-mine: places a hair-trigger that explodes when ANY enemy crosses
-  // within TRIGGER_R of a 60u-extended line in front of the structure. Higher
-  // cost than a single mine but covers a wider arc.
+  // within TRIGGER_R of a 60u-extended line in front of the structure. Wider
+  // arc than the mine, slightly higher damage, same defuse rules.
   tripmine: {
-    cost: 70, hp: 1, size: 28, blocks: false, blocksLOS: false,
-    triggerR: 50, blastR: 130, dmg: 70,
+    cost: 70, hp: 9999, size: 28, blocks: false, blocksLOS: false,
+    bulletImmune: true, defuseTicks: 5 * 60,
+    triggerR: 50, blastR: 170, dmg: 150,
     label: () => T('诡雷', 'TRIPMINE'),
   },
   // Sensor: passive — pings enemies in radius onto the minimap (no damage).

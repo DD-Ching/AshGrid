@@ -120,19 +120,32 @@ function swapPlayerWeapon() {
   if (player.reloading) return;                  // can't swap mid-reload
   // Stash current weapon's ammo
   const cur = playerWeapon;
+  const curKey = cur.name || cur.blurb || 'cur';
   player._weaponSlots = player._weaponSlots || {};
-  player._weaponSlots[cur.name || cur.blurb || 'cur'] = {
+  player._weaponSlots[curKey] = {
     weapon: cur,
     ammo: player.ammo,
     reserve: player.reserve,
   };
-  // Pick the other slot. If only one weapon recorded, fall back to RIFLE.
+  // Pick the other slot. If only one weapon recorded, fall back to a
+  // random pick from NN_WEAPON_POOL — Phase 63 fix per user '按X一定要切換
+  // 到不一樣的槍'. Old code fell back to WEAPONS.RIFLE which silently
+  // collided when the player's current weapon WAS already RIFLE → X did
+  // nothing, looked broken.
   let next = null;
   for (const k of Object.keys(player._weaponSlots)) {
-    if (k !== (cur.name || cur.blurb || 'cur')) { next = player._weaponSlots[k]; break; }
+    if (k !== curKey) { next = player._weaponSlots[k]; break; }
   }
-  if (!next) {
-    next = { weapon: WEAPONS.RIFLE, ammo: WEAPONS.RIFLE.magSize, reserve: WEAPONS.RIFLE.reserveStart };
+  if (!next || (next.weapon && (next.weapon.name || next.weapon.blurb) === curKey)) {
+    // Roll a random weapon that ISN'T the current one. Use the NN pool
+    // since it's the canonical "valid loadout weapons" list.
+    const others = NN_WEAPON_POOL.filter(id => {
+      const w = WEAPONS[id];
+      return w && (w.name || w.blurb) !== curKey;
+    });
+    const pickId = others[Math.floor(Math.random() * others.length)] || 'SMG';
+    const pickW  = WEAPONS[pickId] || WEAPONS.SMG;
+    next = { weapon: pickW, ammo: pickW.magSize, reserve: pickW.reserveStart };
   }
   applyWeaponToPlayer(next.weapon);
   player.ammo = next.ammo;

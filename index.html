@@ -45,41 +45,41 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=62"></script>
-<script src="js/arena_recruitment.js?v=62"></script>
-<script src="js/dynamic_radio.js?v=62"></script>
-<script src="js/i18n.js?v=62"></script>
-<script src="js/touch_input.js?v=62"></script>
-<script src="js/key_bindings.js?v=62"></script>
-<script src="js/grenades.js?v=62"></script>
-<script src="js/squad_commands.js?v=62"></script>
-<script src="js/multiplayer.js?v=62"></script>
-<script src="js/leaderboard.js?v=62"></script>
-<script src="js/structures.js?v=62"></script>
-<script src="js/tod.js?v=62"></script>
-<script src="js/weapons.js?v=62"></script>
-<script src="js/chassis.js?v=62"></script>
-<script src="js/respawn_buff.js?v=62"></script>
-<script src="js/death_recap.js?v=62"></script>
-<script src="js/mote_affinity.js?v=62"></script>
-<script src="js/stage_hints.js?v=62"></script>
-<script src="js/pawn_swap.js?v=62"></script>
-<script src="js/global_stats.js?v=62"></script>
-<script src="js/progressive_unlock.js?v=62"></script>
-<script src="js/ad_stubs.js?v=62"></script>
+<script src="js/audio/sfx.js?v=63"></script>
+<script src="js/arena_recruitment.js?v=63"></script>
+<script src="js/dynamic_radio.js?v=63"></script>
+<script src="js/i18n.js?v=63"></script>
+<script src="js/touch_input.js?v=63"></script>
+<script src="js/key_bindings.js?v=63"></script>
+<script src="js/grenades.js?v=63"></script>
+<script src="js/squad_commands.js?v=63"></script>
+<script src="js/multiplayer.js?v=63"></script>
+<script src="js/leaderboard.js?v=63"></script>
+<script src="js/structures.js?v=63"></script>
+<script src="js/tod.js?v=63"></script>
+<script src="js/weapons.js?v=63"></script>
+<script src="js/chassis.js?v=63"></script>
+<script src="js/respawn_buff.js?v=63"></script>
+<script src="js/death_recap.js?v=63"></script>
+<script src="js/mote_affinity.js?v=63"></script>
+<script src="js/stage_hints.js?v=63"></script>
+<script src="js/pawn_swap.js?v=63"></script>
+<script src="js/global_stats.js?v=63"></script>
+<script src="js/progressive_unlock.js?v=63"></script>
+<script src="js/ad_stubs.js?v=63"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=62"></script>
+<script src="js/crazygames.js?v=63"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=62"></script>
-<script src="js/world_gen.js?v=62"></script>
-<script src="js/squad.js?v=62"></script>
-<script src="js/drone_fpv.js?v=62"></script>
-<script src="js/vision_raycast.js?v=62"></script>
-<script src="js/camera.js?v=62"></script>
-<script src="js/defense_build_ui.js?v=62"></script>
-<script src="js/pause.js?v=62"></script>
+<script src="js/missions/nn_deathmatch.js?v=63"></script>
+<script src="js/world_gen.js?v=63"></script>
+<script src="js/squad.js?v=63"></script>
+<script src="js/drone_fpv.js?v=63"></script>
+<script src="js/vision_raycast.js?v=63"></script>
+<script src="js/camera.js?v=63"></script>
+<script src="js/defense_build_ui.js?v=63"></script>
+<script src="js/pause.js?v=63"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -3550,11 +3550,34 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   const blueLineup = (lineup?.blue) || [];
   const redLineup  = (lineup?.red)  || [];
   const slotDiff = (team, idx) => (team === 'blue' ? blueLineup[idx] : redLineup[idx])?.difficulty || difficulty;
-  // Sniper mode: force every slot's weapon to SNIPER. Other modes: lineup or random.
-  const slotWpn  = (team, idx) => (gameMode === 'sniper'
-                                    ? 'SNIPER'
-                                    : ((team === 'blue' ? blueLineup[idx] : redLineup[idx])?.weapon
-                                       || pickRandomNNWeaponId()));
+  // Phase 63: per-team unique-weapon bag. User '兩把一樣的槍 這是不對的' —
+  // previously each slot rolled pickRandomNNWeaponId() independently so two
+  // bots on the same team could end up with identical loadouts (e.g. two
+  // RIFLEs). Now we shuffle the pool once per team and pull from it, only
+  // refilling if the team is larger than the pool (5 weapons currently).
+  // Lineup-overridden slots still use their explicit weapon — the bag only
+  // serves slots that need a random roll.
+  const _shuffledPool = () => {
+    const a = NN_WEAPON_POOL.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+  const _wpnBag = { blue: _shuffledPool(), red: _shuffledPool() };
+  const _pullFromBag = (team) => {
+    if (_wpnBag[team].length === 0) _wpnBag[team] = _shuffledPool();
+    return _wpnBag[team].shift();
+  };
+  // Sniper mode: force every slot's weapon to SNIPER. Other modes: lineup
+  // override → unique-bag pull → fallback RIFLE.
+  const slotWpn  = (team, idx) => {
+    if (gameMode === 'sniper') return 'SNIPER';
+    const lineupSlot = (team === 'blue' ? blueLineup[idx] : redLineup[idx]);
+    if (lineupSlot?.weapon) return lineupSlot.weapon;
+    return _pullFromBag(team) || 'RIFLE';
+  };
   // Chassis: per-slot override → random pick. Lobby chassis-picker is now
   // hidden (user: '讓載具不再可選 而是隨機'); every spawn rolls humanoid /
   // wolf / heavy independently so each side gets a varied roster.
@@ -5928,6 +5951,8 @@ function update() {
   // wreckage (glow decay, ember motion).
   tickWreckageSpawn();
   updateWreckages();
+  // Phase 63: advance any active mine defuse (range check + completion).
+  tickMineDefuse();
   updateSoundEvents();
   // Heavy chassis armor regen — after no damage for armorRegenDelay ticks,
   // top up toward maxArmor. Cheap loop over allies+enemies+player.
@@ -6351,6 +6376,7 @@ function detonateRocket(b) {
     for (let si = game._structures.length - 1; si >= 0; si--) {
       const s = game._structures[si];
       const def = STRUCTURE_DEFS[s.kind]; if (!def || s.hp <= 0) continue;
+      if (def.bulletImmune) continue;   // Phase 63: mines/tripmines no-clear
       const dist = Math.hypot(s.x - b.x, s.y - b.y);
       if (dist < r) s.hp -= splashDmg * structMul;
     }
@@ -6770,11 +6796,15 @@ function updateBullets() {
         hit = true; break;
       }
     }
-    // Player-built structures take damage from enemy bullets
+    // Player-built structures take damage from enemy bullets — EXCEPT
+    // mines/tripmines (Phase 63: bulletImmune). The only way to clear a
+    // mine is the G-key defuse (see _tryDefuseMine). Bullets passing over
+    // them just continue.
     if (!hit && game._structures) {
       for (let si = 0; si < game._structures.length; si++) {
         const s = game._structures[si];
         const def = STRUCTURE_DEFS[s.kind]; if (!def || s.hp <= 0) continue;
+        if (def.bulletImmune) continue;
         const r = def.size / 2;
         if (Math.abs(b.x - s.x) <= r && Math.abs(b.y - s.y) <= r) {
           s.hp -= b.damage || 12;
@@ -7023,6 +7053,112 @@ function renderWreckages() {
 
     ctx.restore();
   }
+}
+
+// ============ Phase 63 — MINE DEFUSE ============
+// Hostile mines are now bulletImmune (see structures.js mine + tripmine
+// defs). The only way to clear a mine is the G-key defuse: walk within
+// MINE_DEFUSE_RANGE, press G, hold position for `defuseTicks` (5s). State
+// is per-player (player._defuse = {sid, startedAt}); leaving range or the
+// mine detonating cancels it.
+const MINE_DEFUSE_RANGE = 60;
+
+// G-key handler — try to start a defuse on the nearest mine. Returns true
+// if a defuse target was selected this press (so the caller skips its
+// fallback action — grenade throw). No-op if already defusing the same
+// mine, or if no mine is in range.
+function _tryDefuseMine() {
+  if (!player.alive || !game._structures) return false;
+  let best = null, bestD = MINE_DEFUSE_RANGE + 0.001;
+  for (const s of game._structures) {
+    const def = STRUCTURE_DEFS[s.kind];
+    if (!def || s.hp <= 0) continue;
+    if (!(s.kind === 'mine' || s.kind === 'tripmine')) continue;
+    const d = Math.hypot(s.x - player.x, s.y - player.y);
+    if (d < bestD) { best = s; bestD = d; }
+  }
+  if (!best) return false;
+  // Already defusing this one? Treat as a no-op (don't reset progress) so
+  // the player can hammer G safely.
+  if (player._defuse && player._defuse.sid === best.sid) return true;
+  player._defuse = { sid: best.sid, startedAt: game.time };
+  if (typeof showSwapToast === 'function') {
+    showSwapToast(T('▶ 拆解中 · 不要離開',
+                    '▶ DEFUSING · stay close'));
+  }
+  if (typeof playRadioBeep === 'function') playRadioBeep(440, 0.1);
+  return true;
+}
+
+// Per-frame: advance any active defuse. Cancel if player moved out of
+// range, died, or the target mine vanished (it detonated, e.g. enemy
+// walked over it mid-defuse). Complete when defuseTicks elapsed.
+function tickMineDefuse() {
+  if (!player._defuse) return;
+  const d = player._defuse;
+  if (!player.alive) { player._defuse = null; return; }
+  const target = (game._structures || []).find(s => s.sid === d.sid);
+  if (!target || target.hp <= 0) { player._defuse = null; return; }
+  const dist = Math.hypot(target.x - player.x, target.y - player.y);
+  if (dist > MINE_DEFUSE_RANGE) {
+    if (typeof showSwapToast === 'function') {
+      showSwapToast(T('▶ 拆解中斷', '▶ DEFUSE INTERRUPTED'));
+    }
+    player._defuse = null;
+    return;
+  }
+  const def = STRUCTURE_DEFS[target.kind] || {};
+  const need = def.defuseTicks || (5 * 60);
+  if (game.time - d.startedAt >= need) {
+    // Complete — remove the mine + refund a tiny chunk of energy as a
+    // 'recovered components' reward.
+    target.hp = 0;
+    game._energy = Math.min(999, (game._energy || 0) + 10);
+    if (typeof showSwapToast === 'function') {
+      showSwapToast(T('▶ 拆解完成 +10⚡', '▶ DEFUSED +10⚡'));
+    }
+    if (typeof playRadioBeep === 'function') playRadioBeep(880, 0.18);
+    player._defuse = null;
+  }
+}
+
+// World-space render: ring filling around the target mine. Drawn in the
+// same coordinate space as the unit render loop, so call it AFTER ctx
+// camera transform is applied.
+function renderMineDefuseRing() {
+  if (!player._defuse || !game._structures) return;
+  const d = player._defuse;
+  const target = game._structures.find(s => s.sid === d.sid);
+  if (!target) return;
+  const def = STRUCTURE_DEFS[target.kind] || {};
+  const need = def.defuseTicks || (5 * 60);
+  const t = Math.max(0, Math.min(1, (game.time - d.startedAt) / need));
+  const r = (def.size || 24) / 2 + 8;
+  ctx.save();
+  // Backdrop ring (full circle, dim) — shows the player WHERE to look.
+  ctx.strokeStyle = COLORS.cream;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.30;
+  ctx.beginPath();
+  ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  // Progress ring — bright yellow arc from −π/2 (12 o'clock) sweeping
+  // clockwise. Reads as a 'charging' loader.
+  ctx.strokeStyle = '#FFD24A';
+  ctx.lineWidth = 4;
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.arc(target.x, target.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t);
+  ctx.stroke();
+  // Center label — countdown in seconds.
+  const secLeft = Math.max(0, Math.ceil((need - (game.time - d.startedAt)) / 60));
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = 0.9;
+  ctx.fillText(`${secLeft}s`, target.x, target.y - r - 4);
+  ctx.textAlign = 'left';
+  ctx.restore();
 }
 
 function updateFPV() {
@@ -8411,6 +8547,8 @@ function renderWorld() {
   // around it). Glow + silhouette + embers all decay with `life`; defined
   // near updateWreckages above.
   renderWreckages();
+  // Phase 63: mine defuse progress ring (only when actively defusing).
+  renderMineDefuseRing();
 
   // Enemies — visibility memory prevents flicker:
   //  - Visible right now → full alpha + refresh _lastSeen.
