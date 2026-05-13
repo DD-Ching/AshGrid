@@ -7,8 +7,8 @@
 //
 // Classic-script. Declares globally:
 //   crazyEvent_gameplayStart() · crazyEvent_gameplayStop() ·
-//   crazyEvent_happytime() · crazyEvent_sadtime() ·
-//   crazyAd_midgame() · crazyAd_rewarded(cb) · isCrazyReady()
+//   crazyEvent_happytime() · crazyAd_midgame() · crazyAd_rewarded(cb) ·
+//   crazyNoteDeath() · isCrazyReady()
 //
 // We also OVERRIDE the existing requestRewardedAd() stub (defined in
 // ad_stubs.js) once the SDK loads, so any existing rewarded-ad callsite

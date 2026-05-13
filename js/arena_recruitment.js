@@ -44,9 +44,9 @@ const ARENA_SEED_GAP       = 10;       // minimum SEED differential to recruit
 const ARENA_HP_GATE        = 0.5;      // target HP must be below maxHp * gate
 const ARENA_TOUCH_BUFFER   = 80;       // px added to radii sum (~106px reach)
 
-// _arenaTickSeed — per-frame, called from the main update loop right next
-// to _arenaTickRecruitment. Raises SEED on every unit currently flagged
-// _humanPiloted. In solo NN that's only `player`; PvP just plugs more.
+// _arenaTickSeed — per-frame, called from the main update loop. Raises
+// SEED on every unit currently flagged _humanPiloted. In solo NN that's
+// only `player`; PvP just plugs more.
 function _arenaTickSeed() {
   const inc = ARENA_SEED_PER_SEC / 60;
   if (player && player.alive && player._humanPiloted) {
