@@ -40,7 +40,11 @@ const ARENA_SQUAD_CAP      = 5;        // hard cap on bots you own at once
 // IN, you inherit the target ally's SEED (usually 0 since it was AI).
 //
 // Active recruit (G key) requires FOUR gates — all must pass:
-//   1. Distance ≤ (myR + targetR + buffer) ≈ touching (was 220 px)
+//   1. Distance ≤ (myR + targetR + buffer). Phase 48: bumped buffer 5→80,
+//      so effective reach ≈ 106 px (was 31). User: '招降距離再提升一點'.
+//      Original was 220 (too generous), Phase 9 over-corrected to "must
+//      touch", landed at 106 as the sweet spot — close enough to feel
+//      deliberate, loose enough to not require pixel-perfect alignment.
 //   2. Target HP < maxHp * ARENA_HP_GATE (must damage NPC to half first)
 //   3. (my SEED) - (target SEED) > ARENA_SEED_GAP (skill differential)
 //   4. !target._humanPiloted (human-piloted units are IMMUNE — silent fail
@@ -53,7 +57,7 @@ const ARENA_SEED_MAX       = 100;      // hard cap
 const ARENA_SEED_PER_SEC   = 1;        // rise rate when human-piloted+alive
 const ARENA_SEED_GAP       = 10;       // minimum SEED differential to recruit
 const ARENA_HP_GATE        = 0.5;      // target HP must be below maxHp * gate
-const ARENA_TOUCH_BUFFER   = 5;        // px added to radii sum for touch range
+const ARENA_TOUCH_BUFFER   = 80;       // px added to radii sum for recruit reach
 
 // _arenaTickSeed — per-frame, called from the main update loop right next
 // to _arenaTickRecruitment. Raises SEED on every unit currently flagged

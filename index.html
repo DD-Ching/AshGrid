@@ -40,14 +40,14 @@
 <script src="js/audio/narrative.js"></script>
 <script src="js/audio/ambient.js"></script>
 <script src="js/audio/sfx.js"></script>
-<script src="js/arena_recruitment.js"></script>
+<script src="js/arena_recruitment.js?v=48"></script>
 <script src="js/dynamic_radio.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/touch_input.js"></script>
 <script src="js/key_bindings.js?v=46"></script>
 <script src="js/grenades.js?v=43"></script>
 <script src="js/squad_commands.js"></script>
-<script src="js/multiplayer.js?v=47"></script>
+<script src="js/multiplayer.js?v=48"></script>
 <script src="js/leaderboard.js"></script>
 <script src="js/structures.js?v=43"></script>
 <script src="js/tod.js"></script>
@@ -1209,8 +1209,17 @@ body.lang-en .lang-toggle .on { color: var(--black); }
           ◯ MULTI · PvP
         </button>
       </div>
-      <input id="roomInput" type="text" maxlength="20" placeholder="ROOM · 房間名 (預設 ashgrid-main)" autocomplete="off" spellcheck="false"
-        style="display:none; background:var(--black); color:var(--cream); border:3px solid var(--cream-dark); padding:12px 16px; font:bold 14px monospace; letter-spacing:3px; outline:none; width:100%; box-sizing:border-box; text-transform:lowercase;" />
+      <!-- Phase 48: room input hidden behind a tiny "advanced" toggle so the
+           MP path feels like a single button (auto-match handles 99% of cases).
+           Power users wanting a private room click the toggle to reveal it. -->
+      <div id="roomAdvancedRow" style="display:none; flex-direction:column; gap:6px;">
+        <button id="roomAdvancedToggle" type="button"
+          style="background:transparent; color:var(--cream); border:none; padding:0; font:bold 10px monospace; letter-spacing:3px; cursor:pointer; opacity:0.55; text-align:left;">
+          ▸ ADVANCED · CUSTOM ROOM
+        </button>
+        <input id="roomInput" type="text" maxlength="20" placeholder="ROOM · 房間名 (空白 = 自動配對)" autocomplete="off" spellcheck="false"
+          style="display:none; background:var(--black); color:var(--cream); border:3px solid var(--cream-dark); padding:12px 16px; font:bold 14px monospace; letter-spacing:3px; outline:none; width:100%; box-sizing:border-box; text-transform:lowercase;" />
+      </div>
       <button id="nnBtn" type="button"
         style="background:var(--red); color:var(--cream); border:none; padding:26px 28px; font:bold 26px sans-serif; letter-spacing:8px; cursor:pointer; box-shadow:6px 6px 0 var(--black); text-align:center; transition:transform .12s, box-shadow .12s;">
         進入戰場 ▶ ENTER ARENA
@@ -1274,18 +1283,32 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   </div>
 </div>
 
-<!-- Phase 11 entry countdown — fullscreen overlay shown between PLAY and
-     the actual match. Matches the constructivist palette (cream + red),
-     5-second countdown, ESC/click cancels back to start screen. Calls
-     startNNSkirmish with _lobby defaults when the count hits zero. -->
-<div id="entryCountdown" style="display:none; position:fixed; inset:0; z-index:150; background:var(--cream); align-items:center; justify-content:center; flex-direction:column; gap:28px; pointer-events:auto;">
-  <div style="font:bold 11px monospace; letter-spacing:8px; color:var(--red);">NEURAL LINK SYNC</div>
-  <div id="entryCountdownNumber" style="font:bold 240px sans-serif; line-height:0.9; color:var(--black); letter-spacing:-8px;">5</div>
-  <div style="font:bold 14px sans-serif; letter-spacing:6px; color:var(--black);">AUDITOR <span id="entryCountdownName" style="color:var(--red);">0451</span> · ENTERING ARENA</div>
-  <button id="entryCountdownCancel" type="button"
-    style="margin-top:14px; background:transparent; color:var(--black); border:2px solid var(--black); padding:10px 24px; font:bold 11px monospace; letter-spacing:4px; cursor:pointer;">
-    CANCEL · ESC
-  </button>
+<!-- Phase 48 entry countdown — fullscreen "join hall" overlay. Replaces
+     the cream cardboard from Phase 11. Live-feed backdrop canvas (stylized
+     spectator camera with pan-spotlight + ghost silhouettes) gives the
+     "watching the arena while you're in queue" feel the user asked for
+     ('鏡頭是放在這個某個NPC裡面 / 視野追的這個上帝視角直播的感覺').
+     Big JOIN NOW button = the "start key" feel ('應該只有一個按鈕').
+     ESC / CANCEL still aborts back to start. -->
+<div id="entryCountdown" style="display:none; position:fixed; inset:0; z-index:150; background:#0F0F0F; align-items:stretch; justify-content:stretch; flex-direction:column; pointer-events:auto; overflow:hidden;">
+  <canvas id="entryBgCanvas" style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas>
+  <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; z-index:1;">
+    <div style="display:flex; align-items:center; gap:8px; font:bold 11px monospace; letter-spacing:6px; color:var(--cream); opacity:0.85;">
+      <span id="entryLiveDot" style="display:inline-block; width:9px; height:9px; background:var(--red); border-radius:50%;"></span>
+      <span>LIVE · ARENA FEED</span>
+      <span id="entryRoomTag" style="opacity:0.55;">· MATCHMAKING…</span>
+    </div>
+    <div id="entryCountdownNumber" style="font:bold 220px sans-serif; line-height:0.9; color:var(--cream); letter-spacing:-8px; text-shadow:0 0 18px rgba(0,0,0,0.6);">5</div>
+    <div style="font:bold 14px sans-serif; letter-spacing:6px; color:var(--cream); opacity:0.85;">AUDITOR <span id="entryCountdownName" style="color:var(--red);">0451</span> · ENTERING ARENA</div>
+    <button id="entryJoinNowBtn" type="button"
+      style="margin-top:8px; background:var(--red); color:var(--cream); border:none; padding:18px 42px; font:bold 18px sans-serif; letter-spacing:6px; cursor:pointer; box-shadow:5px 5px 0 var(--black);">
+      ▶ JOIN NOW
+    </button>
+    <button id="entryCountdownCancel" type="button"
+      style="background:transparent; color:var(--cream); border:1px solid rgba(232,228,216,0.4); padding:8px 20px; font:bold 10px monospace; letter-spacing:4px; cursor:pointer; opacity:0.7;">
+      CANCEL · ESC
+    </button>
+  </div>
 </div>
 
 <!-- Operator Dossier — service record summary -->
@@ -2876,15 +2899,167 @@ function _saveLobbyConfig() {
 // ESC or CANCEL aborts back to the start screen.
 const ENTRY_COUNTDOWN_SECS = 5;
 let _entryCountdownTimer = null;
+let _entryBgRaf = null;
+let _entryBgGhosts = null;
+let _entryBgT0 = 0;
 function _cancelEntryCountdown() {
   if (_entryCountdownTimer) {
     clearInterval(_entryCountdownTimer);
     _entryCountdownTimer = null;
   }
+  if (_entryBgRaf) {
+    cancelAnimationFrame(_entryBgRaf);
+    _entryBgRaf = null;
+  }
   const overlay = document.getElementById('entryCountdown');
   if (overlay) overlay.style.display = 'none';
   const start = document.getElementById('start');
   if (start) start.classList.remove('hidden');
+}
+function _finishEntryCountdown() {
+  if (_entryCountdownTimer) {
+    clearInterval(_entryCountdownTimer);
+    _entryCountdownTimer = null;
+  }
+  if (_entryBgRaf) {
+    cancelAnimationFrame(_entryBgRaf);
+    _entryBgRaf = null;
+  }
+  const overlay = document.getElementById('entryCountdown');
+  if (overlay) overlay.style.display = 'none';
+  // Defaults from _lobby (3v3 DM · elite · RIFLE · random chassis).
+  // startNNSkirmish hides #nnLobby itself.
+  const lineup = _lobby.lineupOpen ? _lobby.lineup : null;
+  startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty,
+                  _lobby.weapon, lineup, _lobby.mode);
+}
+// Phase 48: live arena backdrop for the countdown screen. Renders a
+// stylized "spectator-cam" view — drifting silhouettes + panning vision-
+// cone spotlight + scanlines — so the wait feels like watching the room
+// fill up rather than staring at a number. If the MP socket is connected
+// and snapshots are flowing, render the actual remote players on top of
+// the ghosts (real activity > simulated). Animation is RAF-driven and
+// short-circuits when the overlay is hidden.
+function _entryBgInit() {
+  const cv = document.getElementById('entryBgCanvas');
+  if (!cv) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.offsetWidth || window.innerWidth;
+  const h = cv.offsetHeight || window.innerHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Seed 9 ghost silhouettes scattered across the viewport with random
+  // drift + facing. Pretend they're units in the lobby roaming around.
+  _entryBgGhosts = [];
+  for (let i = 0; i < 9; i++) {
+    _entryBgGhosts.push({
+      x: 60 + Math.random() * (w - 120),
+      y: 60 + Math.random() * (h - 120),
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: (Math.random() - 0.5) * 0.5,
+      a: Math.random() * Math.PI * 2,
+      red: Math.random() < 0.5,  // mix red/cream factions for variety
+    });
+  }
+  _entryBgT0 = performance.now();
+  _entryBgRaf = requestAnimationFrame(_entryBgRender);
+}
+function _entryBgRender() {
+  _entryBgRaf = null;
+  const cv = document.getElementById('entryBgCanvas');
+  const overlay = document.getElementById('entryCountdown');
+  if (!cv || !overlay || overlay.style.display === 'none') return;
+  const c = cv.getContext('2d');
+  const w = cv.offsetWidth, h = cv.offsetHeight;
+  const t = (performance.now() - _entryBgT0) / 1000;
+  // Floor: dark with faint grid (echoes in-game floor).
+  c.fillStyle = '#0F0F0F';
+  c.fillRect(0, 0, w, h);
+  c.strokeStyle = 'rgba(232, 228, 216, 0.04)';
+  c.lineWidth = 1;
+  const gs = 56;
+  c.beginPath();
+  for (let x = (t * 6) % gs; x < w; x += gs) { c.moveTo(x, 0); c.lineTo(x, h); }
+  for (let y = 0; y < h; y += gs) { c.moveTo(0, y); c.lineTo(w, y); }
+  c.stroke();
+  // Ghost silhouettes drifting + slight rotation wobble.
+  if (_entryBgGhosts) {
+    for (const g of _entryBgGhosts) {
+      g.x += g.vx; g.y += g.vy;
+      if (g.x < 30 || g.x > w - 30) g.vx = -g.vx;
+      if (g.y < 30 || g.y > h - 30) g.vy = -g.vy;
+      g.a = Math.atan2(g.vy, g.vx);
+      c.save();
+      c.translate(g.x, g.y);
+      c.rotate(g.a);
+      // Body
+      c.fillStyle = g.red ? 'rgba(200, 38, 28, 0.55)' : 'rgba(232, 228, 216, 0.32)';
+      c.fillRect(-7, -7, 14, 14);
+      // Gun barrel
+      c.fillStyle = 'rgba(20, 20, 20, 0.55)';
+      c.fillRect(7, -1.5, 10, 3);
+      c.restore();
+    }
+  }
+  // If the MP socket has snapshots, paint real remote players on top so
+  // there's actual movement to look at when peers exist. Optional best-
+  // effort overlay — skipped silently when MP is offline.
+  if (typeof _mpState !== 'undefined' && _mpState.enabled && _mpState.remotePlayers) {
+    // Wide-camera mapping: shrink world (~1800 px arena) into the canvas
+    // with margin so units stay on-screen.
+    const scale = Math.min(w, h) / 2200;
+    const cx = w / 2, cy = h / 2;
+    for (const [, rp] of _mpState.remotePlayers) {
+      if (!rp.alive) continue;
+      const sx = cx + (rp.x - 900) * scale;
+      const sy = cy + (rp.y - 900) * scale;
+      c.save();
+      c.translate(sx, sy);
+      c.rotate(rp.angle || 0);
+      c.fillStyle = '#E63329';
+      c.fillRect(-7, -7, 14, 14);
+      c.fillStyle = 'rgba(20,20,20,0.7)';
+      c.fillRect(7, -1.5, 10, 3);
+      c.restore();
+    }
+  }
+  // Spotlight that pans (the "spectator camera following someone" feel).
+  const sx = w * (0.5 + 0.4 * Math.cos(t * 0.4));
+  const sy = h * (0.5 + 0.3 * Math.sin(t * 0.32));
+  const r0 = Math.min(w, h) * 0.18;
+  const r1 = Math.min(w, h) * 0.55;
+  const grad = c.createRadialGradient(sx, sy, r0, sx, sy, r1);
+  grad.addColorStop(0, 'rgba(232, 228, 216, 0.16)');
+  grad.addColorStop(1, 'rgba(232, 228, 216, 0)');
+  c.fillStyle = grad;
+  c.fillRect(0, 0, w, h);
+  // Vignette darkens the edges so the centre reads as the focus.
+  const vg = c.createRadialGradient(w / 2, h / 2, h * 0.25, w / 2, h / 2, h * 0.85);
+  vg.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  vg.addColorStop(1, 'rgba(0, 0, 0, 0.7)');
+  c.fillStyle = vg;
+  c.fillRect(0, 0, w, h);
+  // Subtle CRT scanlines.
+  c.fillStyle = 'rgba(0, 0, 0, 0.06)';
+  for (let y = 0; y < h; y += 3) c.fillRect(0, y, w, 1);
+  _entryBgRaf = requestAnimationFrame(_entryBgRender);
+}
+function _entryUpdateRoomTag() {
+  const tag = document.getElementById('entryRoomTag');
+  if (!tag) return;
+  const p = new URLSearchParams(location.search);
+  if (p.get('mp') === '1') {
+    const room = p.get('room') || 'AUTO';
+    let count = '';
+    if (typeof _mpState !== 'undefined' && _mpState.remotePlayers) {
+      const n = _mpState.remotePlayers.size;
+      count = ' · ' + n + ' / 20';
+    }
+    tag.textContent = '· ROOM ' + room.toUpperCase() + count;
+  } else {
+    tag.textContent = '· SOLO TRAINING';
+  }
 }
 function _startEntryCountdown() {
   // Persist whatever the player typed (skip if empty — getOperatorName
@@ -2904,21 +3079,14 @@ function _startEntryCountdown() {
   let secsLeft = ENTRY_COUNTDOWN_SECS;
   if (numEl) numEl.textContent = String(secsLeft);
   if (overlay) overlay.style.display = 'flex';
+  _entryUpdateRoomTag();
+  _entryBgInit();
   if (_entryCountdownTimer) clearInterval(_entryCountdownTimer);
   _entryCountdownTimer = setInterval(() => {
     secsLeft -= 1;
     if (numEl) numEl.textContent = String(Math.max(0, secsLeft));
-    if (secsLeft <= 0) {
-      clearInterval(_entryCountdownTimer);
-      _entryCountdownTimer = null;
-      if (overlay) overlay.style.display = 'none';
-      // Defaults straight from _lobby (3v3 DM · elite · RIFLE · random
-      // chassis). startNNSkirmish hides #nnLobby itself so we don't need
-      // to touch it here even though it's never opened.
-      const lineup = _lobby.lineupOpen ? _lobby.lineup : null;
-      startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty,
-                      _lobby.weapon, lineup, _lobby.mode);
-    }
+    _entryUpdateRoomTag();
+    if (secsLeft <= 0) _finishEntryCountdown();
   }, 1000);
 }
 // Phase 20d — SOLO / MULTI toggle. Tracks which mode the player is about
@@ -2943,7 +3111,15 @@ function _refreshModeButtons() {
     mpBtn.style.color = 'var(--cream)';
     mpBtn.firstChild && (mpBtn.textContent = (_entryMode === 'mp') ? '● MULTI · PvP' : '◯ MULTI · PvP');
   }
-  if (roomEl) roomEl.style.display = (_entryMode === 'mp') ? 'block' : 'none';
+  // Phase 48: in MP show the advanced toggle row (not the ROOM input
+  // directly). The toggle expands the input on demand — keeps the SOLO
+  // / MP toggle + a single PLAY button as the only visible chrome.
+  const advRow = document.getElementById('roomAdvancedRow');
+  if (advRow) advRow.style.display = (_entryMode === 'mp') ? 'flex' : 'none';
+  if (roomEl) {
+    if (_entryMode !== 'mp') roomEl.style.display = 'none';
+    // In MP, leave the ROOM input collapsed unless user explicitly expands.
+  }
 }
 (function _initModeFromUrl() {
   const p = new URLSearchParams(location.search);
@@ -2969,6 +3145,18 @@ if (_modeMpBtn) _modeMpBtn.onclick = () => {
   // typing a name explicitly.
   const roomEl = document.getElementById('roomInput');
   if (roomEl) roomEl.placeholder = '空白 = 自動配對(20人滿才開新房 · ROOM 自訂 = 私人房)';
+};
+// Phase 48: ADVANCED toggle reveals the ROOM input on demand.
+const _roomAdvToggle = document.getElementById('roomAdvancedToggle');
+if (_roomAdvToggle) _roomAdvToggle.onclick = () => {
+  const roomEl = document.getElementById('roomInput');
+  if (!roomEl) return;
+  const visible = roomEl.style.display !== 'none';
+  roomEl.style.display = visible ? 'none' : 'block';
+  _roomAdvToggle.textContent = visible
+    ? '▸ ADVANCED · CUSTOM ROOM'
+    : '▾ ADVANCED · CUSTOM ROOM';
+  if (!visible) roomEl.focus();
 };
 
 const _nnBtn = document.getElementById('nnBtn');
@@ -3073,6 +3261,8 @@ document.addEventListener('visibilitychange', () => {
 });
 const _entryCancelBtn = document.getElementById('entryCountdownCancel');
 if (_entryCancelBtn) _entryCancelBtn.onclick = _cancelEntryCountdown;
+const _entryJoinNowBtn = document.getElementById('entryJoinNowBtn');
+if (_entryJoinNowBtn) _entryJoinNowBtn.onclick = _finishEntryCountdown;
 // ESC in the countdown aborts back to start. Capture phase so we beat any
 // in-game ESC handler that opens a pause menu / etc.
 document.addEventListener('keydown', (e) => {
