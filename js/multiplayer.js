@@ -385,8 +385,23 @@ function _mpHandleSnapshot(snap) {
           player.x += dx * 0.3;
           player.y += dy * 0.3;
         }
-        // HP / alive always trust server
-        player.hp = sp.hp;
+        // Phase 56 — HP reconciliation via min(local, server).
+        //   • NN bullet hit → local.hp drops, server.hp unchanged → keep
+        //     local (lower wins). Player can take NN damage in MP rooms
+        //     without losing it on the next snapshot.
+        //   • MP bullet hit → server.hp drops, local.hp unchanged → take
+        //     server's lower value. Server is still authoritative for
+        //     PvP.
+        //   • Respawn (server hp jumps from low → max) is handled by
+        //     `_mpRespawnLocalPlayer` which snaps local hp explicitly,
+        //     bypassing this min(). For per-tick snapshots, the min
+        //     keeps both damage sources persistent.
+        if (typeof sp.hp === 'number') {
+          player.hp = Math.min(
+            (typeof player.hp === 'number') ? player.hp : sp.hp,
+            sp.hp
+          );
+        }
         // alive is more nuanced — we let the local death-recap state
         // machine drive 'alive' to keep its UI sequence intact. We just
         // sync the kill/respawn signals via 'kill' events below.

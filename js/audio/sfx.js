@@ -133,8 +133,17 @@ function playSfx(name, opts = {}) {
   if (!AUDIO.ctx) return;
   const ctx = AUDIO.ctx;
   const presets = {
-    hit:          { freq:  220, dur: 0.10, decay: 14, type: 'lowpass',  vol: 0.50, sweepTo: 80   },
-    death:        { freq:  140, dur: 0.55, decay:  4, type: 'lowpass',  vol: 0.85, sweepTo: 50   },
+    hit:          { freq:  220, dur: 0.10, decay: 14, type: 'lowpass',  vol: 0.40, sweepTo: 80   },
+    // Phase 56 — death cue softened from 0.85 to 0.45 (user
+    // '激殺音效, 小聲一點'). Carries the same low thump but no longer
+    // blasts the master mix when multiple bots die in a sweep.
+    death:        { freq:  140, dur: 0.55, decay:  4, type: 'lowpass',  vol: 0.45, sweepTo: 50   },
+    // Phase 56 — fresh subtle "kill" cue — a brief mid-freq noise scrape
+    // that reads as debris / scatter, not a melodic ding. Earlier
+    // 'kill_confirm' preset was burnt by the user '把那個叮咚鈴聲移除';
+    // this one is intentionally quiet (vol 0.18) + short (60ms) so it
+    // sells the moment without becoming the dominant sound.
+    kill_crackle: { freq: 1800, dur: 0.06, decay: 30, type: 'bandpass', vol: 0.18, q: 4  },
     respawn:      { freq:  440, dur: 0.25, decay:  9, type: 'bandpass', vol: 0.40, sweepTo: 1320, q: 4 },
     reload:       { freq: 2400, dur: 0.06, decay: 30, type: 'bandpass', vol: 0.30, q: 6 },
     whiz:         { freq: 4500, dur: 0.06, decay: 35, type: 'bandpass', vol: 0.32, q: 12 },
