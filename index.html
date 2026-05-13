@@ -44,10 +44,10 @@
 <script src="js/dynamic_radio.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/touch_input.js"></script>
-<script src="js/key_bindings.js?v=44"></script>
+<script src="js/key_bindings.js?v=45"></script>
 <script src="js/grenades.js?v=43"></script>
 <script src="js/squad_commands.js"></script>
-<script src="js/multiplayer.js?v=44"></script>
+<script src="js/multiplayer.js?v=45"></script>
 <script src="js/leaderboard.js"></script>
 <script src="js/structures.js?v=43"></script>
 <script src="js/tod.js"></script>
@@ -72,7 +72,7 @@
 <script src="js/vision_raycast.js"></script>
 <script src="js/camera.js"></script>
 <script src="js/defense_build_ui.js"></script>
-<script src="js/pause.js?v=44"></script>
+<script src="js/pause.js?v=45"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -5756,6 +5756,31 @@ function tickPlayerCombat(isMoving) {
       }
       if (!lineOfSight(player.x, player.y, e.x, e.y)) continue;
       if (d < bestD) { bestD = d; bestE = e; }
+    }
+    // Phase 45: MP remote players are kept in _mpState.remotePlayers (not in
+    // the enemies[] array NN bots use). Fold them into the aim-assist scan
+    // so the user gets the same lock + auto-fire experience targeting human
+    // opponents that they get against AI. User report: '沒有辦法互相開啟
+    // 送瞄的設計 但是如果朝著那個方向打 打真的會射到互相' — meaning the
+    // SERVER-side hit detection works, but the local aim-assist was blind to
+    // them. Same range / cone / LoS rules as enemies above.
+    if (typeof _mpState !== 'undefined' && _mpState.enabled && _mpState.remotePlayers) {
+      for (const [id, rp] of _mpState.remotePlayers) {
+        if (id === _mpState.myId) continue;
+        if (!rp.alive) continue;
+        if (rp.invuln) continue;       // skip spawn-shielded
+        const dx = rp.x - player.x, dy = rp.y - player.y;
+        const d = Math.hypot(dx, dy);
+        if (d > RANGE) continue;
+        if (tactical) {
+          let diff = Math.atan2(dy, dx) - player.angle;
+          while (diff >  Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          if (Math.abs(diff) > ARC_HALF) continue;
+        }
+        if (!lineOfSight(player.x, player.y, rp.x, rp.y)) continue;
+        if (d < bestD) { bestD = d; bestE = rp; }
+      }
     }
     if (bestE) {
       const flightTime = bestD / (w.bulletSpeed || 14);
