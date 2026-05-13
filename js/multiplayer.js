@@ -243,16 +243,12 @@ function _mpHandleMessage(data) {
       _mpHandleKill(data);
       break;
     case 'wallHit':
-      // Phase 41: server says a bullet stopped on a wall/cover. Spawn the
-      // same impact spark single-player uses (small explosion w/ embers).
-      // Gated by visibility — no spark for hits beyond our cone, otherwise
-      // we'd hear / see invisible shots which is a wallhack-tier info leak.
-      if (typeof createExplosion === 'function'
-          && typeof data.x === 'number' && typeof data.y === 'number') {
-        const visible = (typeof isVisibleToFriendly === 'function')
-          ? isVisibleToFriendly(data.x, data.y) : true;
-        if (visible) createExplosion(data.x, data.y, 'small');
-      }
+      // Phase 44: NO explosion. Single-player regular bullets just vanish
+      // when they hit a wall (only rockets detonate on impact, see
+      // detonateRocket). The Phase 41 createExplosion('small') here was
+      // wrong — user reported bullets-hit-wall feels like every shot is a
+      // grenade. Drop the spark; the bullet's absence in the next snapshot
+      // is the only feedback needed (it just disappears).
       break;
     case 'structureAdd':
       // Phase 43: server broadcasted a new built structure. Skip if we
@@ -261,16 +257,15 @@ function _mpHandleMessage(data) {
       _mpAdoptStructure(data.s);
       break;
     case 'structureHit':
-      // Sync HP from server. Sparks at impact point if visible.
+      // Sync HP from server. Phase 44: no spark for non-destroying hits —
+      // matches single-player where bullets damaging a wall don't explode.
+      // The HP-bar visual on the structure is the feedback. Keep the
+      // structureGone spark below since destruction IS a real event with
+      // a single-player parity (structures.js line 401: createExplosion
+      // 'small' on wall death).
       if (typeof game !== 'undefined' && Array.isArray(game._structures)) {
         const s = game._structures.find(x => x.sid === data.sid);
         if (s) s.hp = data.hp;
-      }
-      if (typeof createExplosion === 'function'
-          && typeof data.x === 'number' && typeof data.y === 'number') {
-        const visible = (typeof isVisibleToFriendly === 'function')
-          ? isVisibleToFriendly(data.x, data.y) : true;
-        if (visible) createExplosion(data.x, data.y, 'small');
       }
       break;
     case 'structureGone':
@@ -557,10 +552,19 @@ function _mpSendInput() {
     if (keys['w'] || keys['arrowup'])    dy -= 1;
   }
   const angle = player.angle || 0;
-  // Fire if mouse held and player alive (server will gate on cooldown).
-  // Also gated on drone/FPV: while piloting we don't want avatar fire to
-  // double-tap (drone has its own weapon, avatar is meant to be passive).
-  const fire = !!(typeof mouse !== 'undefined' && mouse.down && player.alive
+  // Fire condition. Three triggers:
+  //   (1) mouse held — manual fire
+  //   (2) Phase 44: aim-assist HARD LOCK — when aim-assist has snapped
+  //       onto a target (player._aimAssistLockedAt is set), single-player
+  //       sets autoFireFromLock=true and fires automatically (index.html
+  //       line 5799). MP needs the same trigger or aim-assist feels broken
+  //       — user just sees the reticle snap but no shots come out.
+  //   (3) NOT firing in drone/FPV: while piloting the avatar should be
+  //       passive (drone has its own weapon).
+  const aimAssistLock = !!(player._aimAssistLockedAt);
+  const fire = !!(typeof mouse !== 'undefined'
+                  && (mouse.down || aimAssistLock)
+                  && player.alive
                   && !droneOrFpv);
 
   const seq = ++_mpState.localInputSeq;
@@ -580,26 +584,13 @@ function _mpSendInput() {
   };
   _mpSendRaw(input);
 
-  // Phase 41: visual fire feedback. Server owns the bullet (we don't push
-  // into the local `bullets` array in MP) but the muzzle flash is purely
-  // cosmetic and tied to the ACT of firing, not the bullet object. Spawn it
-  // here, throttled to match server's FIRE_COOLDOWN (6 ticks @ 30Hz =
-  // 200ms), so visual cadence matches what the server actually accepts.
-  // Without this, MP players fire silently and feel "muffled" — the user
-  // wanted offline-grade fidelity.
-  if (fire && typeof muzzleFlashes !== 'undefined') {
-    const nowFire = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-    if (nowFire - (_mpState._lastMuzzleAt || 0) >= 200) {
-      _mpState._lastMuzzleAt = nowFire;
-      const ax = Math.cos(angle), ay = Math.sin(angle);
-      muzzleFlashes.push({
-        x: player.x + ax * 22, y: player.y + ay * 22,
-        angle, life: 5,
-      });
-      // Tiny audio feedback (single-player has this for player.fire too).
-      if (typeof playSfx === 'function') playSfx('shoot', { vol: 0.35 });
-    }
-  }
+  // Phase 44: muzzle flash + 'shoot' SFX are NOT spawned here. The local
+  // single-player fire() function (index.html:5851) still runs every frame
+  // in MP — it just skips the bullet push (gated by _mpFireSkip) but still
+  // does muzzleFlashes.push + applyRecoil + playSfx('shoot'). My Phase 41
+  // attempt to add a SECOND flash here was double-firing on every shot
+  // (with a 200ms throttle that didn't fully mask it). Trust fire() — it's
+  // the canonical single-player path.
 
   // Phase 38 prediction — index.html's per-frame WASD code IS our
   // prediction. We just record the input here so reconciliation can
@@ -674,12 +665,23 @@ function _mpTickRemote() {
 }
 
 // Bullets advance using their snapshot velocity between snapshots.
-// Each snapshot resets to authoritative pos; in-between we just glide.
+// Each snapshot resets to authoritative pos; in-between we glide forward.
+//
+// Phase 44 fix: divide vx/vy by 2 per frame. Rationale:
+//   • Server bullets move at BULLET_SPEED=14 px PER SERVER TICK
+//   • Server ticks at 30Hz → 14 * 30 = 420 px/sec server-true velocity
+//   • Client renders at ~60fps. If we naively did `b.x += b.vx` per frame,
+//     we'd get 14 * 60 = 840 px/sec — DOUBLE the actual server speed.
+//   • Result was bullets visually rocketing forward then snapping BACK
+//     to authoritative position when each snapshot arrived. User report:
+//     '子彈看起來像特效一樣 然後也不是很久'.
+//   • At vx/2 per frame: 7 * 60 = 420 px/sec → exactly matches server.
+//     Bullet appears as a continuous straight line of motion with no jump.
 function _mpTickRemoteBullets() {
   if (!_mpState.enabled) return;
   for (const b of _mpState.remoteBullets.values()) {
-    b.x += b.vx;
-    b.y += b.vy;
+    b.x += b.vx * 0.5;
+    b.y += b.vy * 0.5;
   }
 }
 
