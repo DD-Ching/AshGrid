@@ -369,11 +369,16 @@ function _mpHandleSnapshot(snap) {
       //  the dead window, then state ended up resyncing some other path).
       // Guard: only fire if (1) we were locally dead AND server says alive
       // AND (2) we actually died via the kill handler (_killedAtTime set)
-      // AND (3) at least 1.5s elapsed since death — defensive in case a
-      // single late snapshot races the kill event.
+      // AND (3) the buff/default respawn window elapsed — Phase 60 wires
+      // the client gate to getRespawnSeconds() so the UI countdown's full
+      // duration is honored before respawn fires (server also bumped to
+      // match so this doesn't stall waiting for a late server snapshot).
       if (typeof player !== 'undefined' && !player.alive && sp.alive) {
         const _t = (typeof game !== 'undefined' && game.time) ? game.time : 0;
-        if (player._killedAtTime && (_t - player._killedAtTime) >= 90) {
+        const _minDeadFrames = (typeof getRespawnSeconds === 'function')
+          ? getRespawnSeconds() * 60
+          : 90;
+        if (player._killedAtTime && (_t - player._killedAtTime) >= _minDeadFrames) {
           _mpRespawnLocalPlayer();
         }
       }
@@ -575,13 +580,21 @@ function _mpHandleKill(data) {
     // saw 'instant respawn' because no UI marked the 3s window), and (b)
     // the snapshot dead→alive transition above has a death-time anchor
     // to gate against insta-flip races.
+    //
+    // Phase 60: respawn duration is buffable via 'watch ad' rewarded video.
+    // Default 15s, buff active 5s (÷3, 30 min duration). Server-side
+    // RESPAWN_TICKS bumped to match (see server/party/server.js). Both
+    // sides must agree or dead→alive transition will stall.
     const _gt = (typeof game !== 'undefined' && game.time) ? game.time : 0;
-    player._respawnAt = _gt + 180;        // 3s at 60fps client frames
+    const _respawnFrames = (typeof getRespawnSeconds === 'function')
+      ? getRespawnSeconds() * 60
+      : 180;
+    player._respawnAt = _gt + _respawnFrames;
     player._killedAtTime = _gt;
     if (typeof triggerShake === 'function') triggerShake(8, 18);
     if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
       game._teamWipe.blue.wipedSince = game.time;
-      game._teamWipe.blue.respawnAt  = game.time + 180; // matches server RESPAWN_TICKS
+      game._teamWipe.blue.respawnAt  = game.time + _respawnFrames;
     }
     if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
   }
@@ -666,6 +679,10 @@ function _mpSendInput() {
     // during the input's flight to the server. Standard lag-compensation.
     vT: _mpState.serverTick | 0,
     name: (typeof getOperatorName === 'function') ? getOperatorName() : 'PLAYER',
+    // Phase 60: ad-rewarded respawn buff flag. Server reads this on death to
+    // decide RESPAWN_TICKS (default 15s vs buffed 5s). Cheap to send every
+    // input (1 boolean); avoids needing a dedicated 'buff-state' message.
+    buffActive: (typeof isRespawnBuffed === 'function') ? isRespawnBuffed() : false,
   };
   _mpSendRaw(input);
 

@@ -83,7 +83,16 @@ const ARENA_H           = 1800;
 const ARENA_PAD         = 50;         // wall margin
 const HP_MAX            = 100;
 const INVULN_TICKS      = 90;         // 3s spawn protection
-const RESPAWN_TICKS     = 90;         // 3s respawn timer
+// Phase 60: respawn time is ad-buffable. Default 15s (450 ticks @ 30Hz),
+// buffed 5s (150 ticks). Client sends `buffActive: boolean` in every input
+// payload — server reads the latest value when the player dies and stamps
+// the respawn deadline using the corresponding constant. Client UI countdown
+// at multiplayer.js:579 / 588 reads window.getRespawnSeconds() which honors
+// the same localStorage flag, so client + server agree on what the player
+// sees. If you change one constant, change the matching one (DEFAULT_SEC /
+// BUFFED_SEC in js/respawn_buff.js).
+const RESPAWN_TICKS_DEFAULT = 450;    // 15s @ 30Hz (no ad watched)
+const RESPAWN_TICKS_BUFFED  = 150;    // 5s @ 30Hz (ad watched in last 30 min)
 const FIRE_COOLDOWN     = 6;          // ticks between shots (≈ 5 shots/sec)
 const BULLET_SPEED      = 14;
 const BULLET_LIFE       = 60;         // ticks
@@ -373,6 +382,10 @@ export default class AshGridRoom {
       invulnUntil: this.tickCount + INVULN_TICKS,
       respawnAt: 0,
       name: 'PLAYER',
+      // Phase 60: client-driven buff flag — set from every input message
+      // by reading the player's localStorage `ag.respawnBuffUntil`. Used
+      // when the player dies to decide how long until respawn.
+      respawnBuffActive: false,
       // input applied next tick. vT = view tick (latest snapshot tick the
       // client has rendered). Used by lag-comp to rewind targets.
       input: { dx: 0, dy: 0, angle: 0, fire: false, seq: 0, vT: 0 },
@@ -423,6 +436,10 @@ export default class AshGridRoom {
       // Stamp the freshest client timestamp; echoed back in snapshot for RTT.
       if (typeof data.t === 'number' && data.t > p.lastInputT) p.lastInputT = data.t;
       if (data.name) p.name = String(data.name).slice(0, 12);
+      // Phase 60: latest buff state from client. Cheap to overwrite every
+      // input — server only reads this on death (~once per 5–15s per player)
+      // so cost is the boolean parse, not the dispatch.
+      if (typeof data.buffActive === 'boolean') p.respawnBuffActive = data.buffActive;
       return;
     }
     if (data.type === 'emote' || data.type === 'ping') {
@@ -637,7 +654,9 @@ export default class AshGridRoom {
           }));
           if (p.hp <= 0) {
             p.alive = false;
-            p.respawnAt = this.tickCount + RESPAWN_TICKS;
+            p.respawnAt = this.tickCount + (p.respawnBuffActive
+              ? RESPAWN_TICKS_BUFFED
+              : RESPAWN_TICKS_DEFAULT);
             this.party.broadcast(JSON.stringify({
               type: 'kill', shooter: b.shooterId, victim: p.id, weapon: b.weapon,
               x: round1(p.x), y: round1(p.y),
@@ -786,7 +805,9 @@ export default class AshGridRoom {
     }));
     if (bestVictim.hp <= 0) {
       bestVictim.alive = false;
-      bestVictim.respawnAt = this.tickCount + RESPAWN_TICKS;
+      bestVictim.respawnAt = this.tickCount + (bestVictim.respawnBuffActive
+        ? RESPAWN_TICKS_BUFFED
+        : RESPAWN_TICKS_DEFAULT);
       this.party.broadcast(JSON.stringify({
         type: 'kill', shooter: shooter.id, victim: bestVictim.id,
         weapon: 'RIFLE', lc: 1,

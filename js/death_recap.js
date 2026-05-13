@@ -61,10 +61,14 @@ function _adRevivePlayer() {
       // rest of the spawn-shield set after user '無敵時間需增長'.
       player._invulnUntil = (game.time || 0) + 180;
     }
+    // Phase 60: bundle the 30-minute fast-respawn buff with the revive.
+    // One ad watch = both benefits → higher perceived ad value, more
+    // willing watches. Same rewarded ad, double payoff.
+    if (typeof applyRespawnBuff === 'function') applyRespawnBuff();
     dismissDeathRecap();
     if (typeof showSwapToast === 'function') {
-      showSwapToast(_r('▶ 廣告收看完成 · 你獨自復活',
-                       '▶ AD WATCHED · SOLO REVIVE'));
+      showSwapToast(_r('▶ 廣告收看完成 · 復活 + 30 分鐘加成',
+                       '▶ AD WATCHED · REVIVE + 30 MIN BUFF'));
     }
   };
   if (typeof crazyAd_rewarded === 'function') {
@@ -76,14 +80,57 @@ function _adRevivePlayer() {
   }
 }
 
-// Hit-test the ad-revive button on canvas mousedown.
+// Phase 60: standalone buff-only ad. No revive, just the 30-min fast-respawn
+// buff (5s instead of 15s). Used by the second button in the death recap
+// that appears when the player is dead but NOT team-wiped (single death with
+// allies still alive — most common scenario, can't trigger the revive button)
+// AND the buff isn't already active.
+function _adGrantRespawnBuff(onDone) {
+  const finish = (ok) => {
+    if (ok && typeof applyRespawnBuff === 'function') {
+      applyRespawnBuff();
+      if (typeof showSwapToast === 'function') {
+        const mins = (typeof RESPAWN_BUFF_CONFIG === 'object') ? RESPAWN_BUFF_CONFIG.DURATION_MIN : 30;
+        const buffed = (typeof RESPAWN_BUFF_CONFIG === 'object') ? RESPAWN_BUFF_CONFIG.BUFFED_SEC : 5;
+        showSwapToast(_r(`▶ 加成生效 · ${mins} 分鐘 ${buffed} 秒復活`,
+                         `▶ BUFF ON · ${buffed}s RESPAWN · ${mins} MIN`));
+      }
+    }
+    if (typeof onDone === 'function') onDone(!!ok);
+  };
+  if (typeof crazyAd_rewarded === 'function') {
+    crazyAd_rewarded(finish);
+  } else if (typeof requestRewardedAd === 'function') {
+    requestRewardedAd('respawn_buff', finish);
+  } else {
+    finish(true);   // dev fallback
+  }
+}
+
+// Hit-test the ad buttons on canvas mousedown. Two possible buttons:
+//   • adReviveBtnRect    — team-wipe scenario, "revive squad + buff"
+//   • adBuffBtnRect      — Phase 60, single-death scenario, "buff only"
+// Returns true if either was consumed so the caller doesn't fall through
+// to dismissDeathRecap / fire.
 function tryDeathRecapAdClick(x, y) {
-  if (!_deathRecap.active || _deathRecap.adReviveUsed) return false;
-  if (!_isBlueTeamWiped()) return false;
-  const r = _deathRecap.adReviveBtnRect;
-  if (!r) return false;
-  if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+  if (!_deathRecap.active) return false;
+  // Revive button (team-wipe only, single-use per match).
+  const rRevive = _deathRecap.adReviveBtnRect;
+  if (rRevive && !_deathRecap.adReviveUsed && _isBlueTeamWiped()
+      && x >= rRevive.x && x <= rRevive.x + rRevive.w
+      && y >= rRevive.y && y <= rRevive.y + rRevive.h) {
     _adRevivePlayer();
+    return true;
+  }
+  // Phase 60: buff-only button. Available whenever the buff isn't already
+  // active (regardless of team-wipe). Doesn't consume the death recap —
+  // player keeps watching the countdown / waiting for auto-swap.
+  const rBuff = _deathRecap.adBuffBtnRect;
+  if (rBuff
+      && x >= rBuff.x && x <= rBuff.x + rBuff.w
+      && y >= rBuff.y && y <= rBuff.y + rBuff.h
+      && typeof isRespawnBuffed === 'function' && !isRespawnBuffed()) {
+    _adGrantRespawnBuff();
     return true;
   }
   return false;
@@ -207,9 +254,10 @@ function renderDeathRecap() {
          `▼ SQUAD WIPED — RESPAWN IN ${sLeft}s ▼`),
       W_ / 2, H_ - hintH / 2 + 6,
     );
-    // Watch-ad-to-skip button
+    // Watch-ad-to-skip button — Phase 60 copy bundles 30-min respawn buff
+    // with the squad revive (single ad watch = both benefits).
     if (!_deathRecap.adReviveUsed) {
-      const btnW = 320, btnH = 64;
+      const btnW = 360, btnH = 70;
       const btnX = W_ / 2 - btnW / 2;
       const btnY = H_ / 2 - btnH / 2 + 24;
       _deathRecap.adReviveBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
@@ -220,15 +268,20 @@ function renderDeathRecap() {
       ctx.lineWidth = 2;
       ctx.strokeRect(btnX, btnY, btnW, btnH);
       ctx.fillStyle = COLORS.black;
-      ctx.font = 'bold 18px sans-serif';
-      ctx.fillText(_r('▶ 看廣告 · 全隊立即復活', '▶ WATCH AD · SQUAD REVIVE'),
-                   W_ / 2, btnY + btnH / 2 + 4);
+      ctx.font = 'bold 16px sans-serif';
+      ctx.fillText(_r('▶ 看廣告 · 全隊復活 + 30 分鐘加成',
+                      '▶ WATCH AD · REVIVE + 30 MIN BUFF'),
+                   W_ / 2, btnY + btnH / 2 - 2);
       ctx.font = 'bold 10px monospace';
-      ctx.fillText(_r('(跳過倒數)', '(skip the countdown)'),
-                   W_ / 2, btnY + btnH - 8);
+      ctx.fillText(_r('(復活時間 15s → 5s,半小時)',
+                      '(respawn 15s → 5s, half-hour)'),
+                   W_ / 2, btnY + btnH - 10);
     } else {
       _deathRecap.adReviveBtnRect = null;
     }
+    // Phase 60: hide the buff-only button in team-wipe — the bundled revive
+    // button already grants the buff. Don't double-offer.
+    _deathRecap.adBuffBtnRect = null;
   } else {
     // Single death, allies alive — operator auto-swaps. Tell them.
     ctx.fillStyle = COLORS.cream;
@@ -240,6 +293,50 @@ function renderDeathRecap() {
       W_ / 2, H_ - hintH / 2 + 6,
     );
     _deathRecap.adReviveBtnRect = null;
+    // Phase 60: buff-only button. Visible when buff isn't already active.
+    // Compact, mid-right so it doesn't fight the auto-swap hint or the
+    // top kill-cam strip. Player can ignore and let auto-swap handle the
+    // death; if they tap it, ad fires + buff activates for 30 min.
+    if (typeof isRespawnBuffed === 'function' && !isRespawnBuffed()) {
+      const btnW = 280, btnH = 50;
+      const btnX = W_ - btnW - 24;
+      const btnY = H_ - hintH - btnH - 14;
+      _deathRecap.adBuffBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+      const pulse3 = 0.80 + 0.20 * Math.sin(game.time * 0.18);
+      ctx.fillStyle = `rgba(255, 210, 74, ${pulse3})`;   // gold = buff
+      ctx.fillRect(btnX, btnY, btnW, btnH);
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(btnX, btnY, btnW, btnH);
+      ctx.fillStyle = COLORS.black;
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(_r('▶ 看廣告 · 30 分鐘 5 秒復活',
+                      '▶ WATCH AD · 5s RESPAWN · 30 MIN'),
+                   btnX + btnW / 2, btnY + btnH / 2 - 1);
+      ctx.font = 'bold 9px monospace';
+      ctx.fillText(_r('(平常 15 秒)', '(default 15s)'),
+                   btnX + btnW / 2, btnY + btnH - 8);
+    } else {
+      _deathRecap.adBuffBtnRect = null;
+    }
+  }
+
+  // Phase 60: buff status badge in the top strip (between killer line and
+  // callsign), shown when buff is currently active. Reminds the player the
+  // bonus is running and how much time is left.
+  if (typeof isRespawnBuffed === 'function' && isRespawnBuffed()
+      && typeof getRespawnBuffMsLeft === 'function') {
+    const msLeft = getRespawnBuffMsLeft();
+    const mins = Math.floor(msLeft / 60000);
+    const secs = Math.floor((msLeft % 60000) / 1000);
+    const mmss = `${mins}:${String(secs).padStart(2, '0')}`;
+    ctx.fillStyle = '#FFD24A';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(_r(`⚡ 加成 · 5s 復活 · ${mmss}`,
+                    `⚡ BUFF · 5s RESPAWN · ${mmss}`),
+                 W_ - 24, stripH - 8);
   }
 
   ctx.textAlign = 'left';
