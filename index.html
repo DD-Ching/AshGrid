@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#C8261C">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <title>AshGrid · Tactical Sim</title>
 <meta name="description" content="Top-down tactical NN combat — pawn-swap a squad of 4 trained AI styles through 4 modes (Deathmatch / Survival / Duel / Sniper) on 16+ maps. Mobile + desktop, instant play.">
 <meta name="keywords" content="tactical, top-down, neural network, AI combat, deathmatch, survival, sniper, browser game, mobile game, indie">
@@ -47,7 +50,7 @@
 <script src="js/key_bindings.js?v=46"></script>
 <script src="js/grenades.js?v=43"></script>
 <script src="js/squad_commands.js"></script>
-<script src="js/multiplayer.js?v=48"></script>
+<script src="js/multiplayer.js?v=51"></script>
 <script src="js/leaderboard.js"></script>
 <script src="js/structures.js?v=43"></script>
 <script src="js/tod.js"></script>
@@ -6079,28 +6082,35 @@ function fire() {
   const spreadMul = (player._aimAssistLockedAt && (w.pellets || 1) === 1) ? 0.3 : 1.0;
   // Shotgun and similar: emit `pellets` bullets per shot with shared spread cone
   const pellets = w.pellets || 1;
-  // Phase 36: in MP, the SERVER owns all bullets. Client just gets muzzle
-  // flash + sound + recoil + ammo decrement for feel; the actual projectile
-  // fires server-side via the `fire` flag in input messages, gated by the
-  // server's FIRE_COOLDOWN. Server broadcasts the bullet in its snapshot,
-  // and the client renders it via _mpRenderRemoteBullets.
-  const _mpFireSkip = typeof _mpIsActive === 'function' && _mpIsActive();
-  if (!_mpFireSkip) {
-    for (let i = 0; i < pellets; i++) {
-      const barrel = baseAngle + (Math.random()-0.5) * w.spread * spreadMul;
-      bullets.push({
-        x: player.x + Math.cos(barrel)*18,
-        y: player.y + Math.sin(barrel)*18,
-        vx: Math.cos(barrel)*w.bulletSpeed, vy: Math.sin(barrel)*w.bulletSpeed,
-        life: w.bulletLife, damage: w.damage,
-        fromAlly: false,
-        fromUnit: player,
-        weaponName: w.name,
-        // Rocket flag — turn the bullet into an AOE projectile on impact
-        isRocket: !!w.isRocket,
-        blastR: w.blastR, blastDmg: w.blastDmg, structDmgMul: w.structDmgMul,
-      });
-    }
+  // Phase 51: in MP, the SERVER owns the AUTHORITATIVE bullets that hit
+  // remote players (server tracks player positions, runs lag comp). But
+  // the SERVER doesn't know about local NN bots — those exist only on
+  // each client. Without a local bullet, NN bots in MP+NN mode are
+  // unkillable AND the player perceives '自動射擊 結果子彈直接穿過
+  // 敵人' (Phase 36 was over-aggressive in skipping local bullets).
+  // Fix: in MP, still spawn the local bullet but flag it `_mpGhost` so
+  // the renderer skips it (server's snapshot bullet is the canonical
+  // visual via _mpRenderRemoteBullets). The local bullet's update +
+  // collision still runs and can hit local NN enemies normally.
+  const _mpActive = typeof _mpIsActive === 'function' && _mpIsActive();
+  for (let i = 0; i < pellets; i++) {
+    const barrel = baseAngle + (Math.random()-0.5) * w.spread * spreadMul;
+    bullets.push({
+      x: player.x + Math.cos(barrel)*18,
+      y: player.y + Math.sin(barrel)*18,
+      vx: Math.cos(barrel)*w.bulletSpeed, vy: Math.sin(barrel)*w.bulletSpeed,
+      life: w.bulletLife, damage: w.damage,
+      fromAlly: false,
+      fromUnit: player,
+      weaponName: w.name,
+      // Rocket flag — turn the bullet into an AOE projectile on impact
+      isRocket: !!w.isRocket,
+      blastR: w.blastR, blastDmg: w.blastDmg, structDmgMul: w.structDmgMul,
+      // Phase 51: in MP this bullet is "ghost" — its update + collision
+      // still runs (so NN bots take damage) but the renderer skips it
+      // (the server's bullet provides the visual tracer for MP players).
+      _mpGhost: _mpActive,
+    });
   }
   // One muzzle flash per shot (not per pellet) — spread looks like a cloud
   muzzleFlashes.push({ x: player.x + Math.cos(baseAngle)*22, y: player.y + Math.sin(baseAngle)*22, angle: baseAngle, life: 5 });
@@ -6269,9 +6279,23 @@ function updateBullets() {
     let hit = false;
     // Mission-specific damage hook (e.g. hive HP) — fires before enemy-soldier check
     if (mission && mission.onPlayerBulletHit && mission.onPlayerBulletHit(b)) hit = true;
+    // Phase 51: swept-segment vs circle. Bullet step is bulletSpeed (~14)
+    // and enemy radius is ~10 — point-in-circle tunneled glancing shots.
+    // Project enemy pos onto the bullet's prev→cur segment and use the
+    // closest distance instead of the per-tick sample. Same fix applied
+    // server-side for MP players.
+    const _prevX = b.x - b.vx, _prevY = b.y - b.vy;
+    const _segVx = b.x - _prevX, _segVy = b.y - _prevY;
+    const _segL2 = _segVx * _segVx + _segVy * _segVy;
     if (!hit) for (const e of enemies) {
       if (!e.alive) continue;
-      if (Math.hypot(b.x-e.x, b.y-e.y) < e.radius) {
+      let _t = 0;
+      if (_segL2 > 0) {
+        _t = ((e.x - _prevX) * _segVx + (e.y - _prevY) * _segVy) / _segL2;
+        if (_t < 0) _t = 0; else if (_t > 1) _t = 1;
+      }
+      const _cx = _prevX + _segVx * _t, _cy = _prevY + _segVy * _t;
+      if (Math.hypot(_cx - e.x, _cy - e.y) < e.radius) {
         // Spawn invuln: still consume the bullet so it doesn't pass through,
         // but don't apply damage. Visually the bullet vanishes on impact.
         if (e._invulnUntil != null && game.time < e._invulnUntil) { hit = true; break; }
@@ -6478,6 +6502,19 @@ function updateBullets() {
       hit = true;
       if (player._invulnUntil != null && game.time < player._invulnUntil) {
         // (consume bullet silently)
+      } else if (typeof _mpIsActive === 'function' && _mpIsActive()) {
+        // Phase 51: in MP, the SERVER is the authority on player.hp. Local
+        // NN-bot bullets (which exist only on this client) used to call
+        // _applyDamageToUnit(player) and shave hp locally — but the very
+        // next snapshot reset hp back to the server value, producing the
+        // '血量卡在80, 被攻擊馬上恢復' jitter the user reported, AND
+        // making NN bots effectively unable to kill the player. Cleanest
+        // fix: NN bullets in MP are visual-only — flash + shake + sfx,
+        // but no local hp mutation. The bullet still gets consumed (hit=
+        // true so the splice runs below).
+        game.hitFlash = 8;
+        playSfx('hit');
+        triggerShake(Math.min(4, b.damage * 0.15), 6);
       } else {
         _applyDamageToUnit(player, b.damage);
         game.hitFlash = 12;
@@ -7946,6 +7983,10 @@ function renderWorld() {
   ctx.lineCap = 'round';
   // --- Player bullets ---
   for (const b of bullets) {
+    // Phase 51: skip rendering MP "ghost" bullets — the server's snapshot
+    // bullet (rendered by _mpRenderRemoteBullets) is the canonical visual,
+    // and double-rendering caused twin tracers separated by ~RTT/2.
+    if (b._mpGhost) continue;
     if (b.isRocket) { _drawRocket(b, false); continue; }
     const tx = b.x - b.vx * 2.2;
     const ty = b.y - b.vy * 2.2;
@@ -10421,6 +10462,60 @@ function renderDroneOverlay() {
   ctx.fillStyle = COLORS.black;
   ctx.font = 'bold 11px monospace';
   ctx.fillText('REC', fx + 26, fy + 20);
+
+  // Phase 51: "YOU" tracker — when the player avatar is off-screen while
+  // the camera is on the drone, draw an edge arrow + distance toward
+  // them so the user always knows where their body is. User report:
+  // '我用無人機按Q的時候 我就看不到自己在哪裡'.
+  if (player && player.alive && drone.deployed) {
+    const sw = W(), sh = H();
+    // World → screen via camera transform (camera.x/y is world center).
+    const dxW = player.x - camera.x;
+    const dyW = player.y - camera.y;
+    const sX = sw / 2 + dxW * camera.scale;
+    const sY = sh / 2 + dyW * camera.scale;
+    const margin = 36;
+    const offscreen = (sX < margin || sX > sw - margin
+                    || sY < margin || sY > sh - margin);
+    if (offscreen) {
+      // Clamp arrow position to screen edge along the player direction
+      const ang = Math.atan2(dyW, dxW);
+      const ex = sw / 2, ey = sh / 2;
+      // Find intersection of ray from screen center to player with the
+      // inset rectangle. Use parametric line until x or y hits margin.
+      const halfW = sw / 2 - margin;
+      const halfH = sh / 2 - margin;
+      const cosA = Math.cos(ang), sinA = Math.sin(ang);
+      const tX = (cosA !== 0) ? halfW / Math.abs(cosA) : Infinity;
+      const tY = (sinA !== 0) ? halfH / Math.abs(sinA) : Infinity;
+      const t = Math.min(tX, tY);
+      const ax = ex + cosA * t;
+      const ay = ey + sinA * t;
+      // Distance pip in world units
+      const distU = Math.round(Math.hypot(dxW, dyW));
+      // Arrow — cream filled triangle pointing toward the player
+      ctx.save();
+      ctx.translate(ax, ay);
+      ctx.rotate(ang);
+      ctx.fillStyle = COLORS.cream;
+      ctx.strokeStyle = COLORS.black;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(12, 0); ctx.lineTo(-8, -8); ctx.lineTo(-8, 8); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+      // "YOU · 320u" badge just inside the arrow
+      const lx = ax - cosA * 30;
+      const ly = ay - sinA * 30;
+      ctx.fillStyle = 'rgba(20,18,24,0.85)';
+      ctx.fillRect(lx - 36, ly - 9, 72, 18);
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`YOU · ${distU}u`, lx, ly + 4);
+      ctx.textAlign = 'left';
+    }
+  }
 }
 
 function renderCommandOverlay() {

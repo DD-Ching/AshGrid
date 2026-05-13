@@ -600,13 +600,32 @@ export default class AshGridRoom {
         this.bullets.splice(i, 1);
         continue;
       }
-      // Players are circles of PLAYER_RADIUS
+      // Players are circles of PLAYER_RADIUS. Phase 51: use SWEPT
+      // collision (segment from previous-tick position to current
+      // position vs. circle) instead of point-in-circle. Bullet step
+      // is BULLET_SPEED=14 and player radius is also 14 — point-in-
+      // circle let glancing shots tunnel past players in a single tick
+      // (the previous sample sits >14 away, the current sample also
+      // sits >14 away, but the segment between them grazes through the
+      // player). User: '子彈直接穿過敵人 也沒有有效的傷害'.
       let consumed = false;
+      const prevX = b.x - b.vx, prevY = b.y - b.vy;
+      const sx = b.x - prevX, sy = b.y - prevY;        // segment vector
+      const segLen2 = sx * sx + sy * sy;                // |seg|²
+      const r2 = PLAYER_RADIUS * PLAYER_RADIUS;
       for (const p of this.players.values()) {
         if (!p.alive || p.id === b.shooterId) continue;
         if (this.tickCount < p.invulnUntil) continue;
-        const dx = p.x - b.x, dy = p.y - b.y;
-        if (dx * dx + dy * dy < PLAYER_RADIUS * PLAYER_RADIUS) {
+        // Project player position onto the bullet segment, clamp to [0,1].
+        let t = 0;
+        if (segLen2 > 0) {
+          t = ((p.x - prevX) * sx + (p.y - prevY) * sy) / segLen2;
+          if (t < 0) t = 0;
+          else if (t > 1) t = 1;
+        }
+        const cx = prevX + sx * t, cy = prevY + sy * t;
+        const dx = p.x - cx, dy = p.y - cy;
+        if (dx * dx + dy * dy < r2) {
           p.hp -= b.damage;
           consumed = true;
           this.party.broadcast(JSON.stringify({
@@ -717,20 +736,32 @@ export default class AshGridRoom {
       if (!hist) continue;
 
       // Sweep the bullet forward `lagTicks` steps and see if any of those
-      // samples lands inside the historic target circle. We bias toward
-      // hitting the target the shooter aimed AT — the closest match by
-      // step index wins (= the bullet would have hit them first).
-      for (let step = 0; step <= lagTicks; step++) {
-        const bx = bx0 + ax * BULLET_SPEED * step;
-        const by = by0 + ay * BULLET_SPEED * step;
-        const dx = hist.x - bx, dy = hist.y - by;
-        if (dx * dx + dy * dy < r2) {
-          if (step < bestStep) {
-            bestStep   = step;
-            bestVictim = target;
-          }
-          break;
+      // SEGMENTS (not just sample points) intersects the historic target
+      // circle. Phase 51: discrete sampling let glancing shots tunnel
+      // past — the bullet jumps 14px per step and PLAYER_RADIUS is also
+      // 14, so a path skimming the circle could land >14px away on both
+      // ends of a step but cross the circle in between. Switch to the
+      // standard "closest point on segment to point" test, same as the
+      // per-tick collision check below.
+      let stepHit = -1;
+      for (let step = 0; step < lagTicks; step++) {
+        const ax0 = bx0 + ax * BULLET_SPEED * step;
+        const ay0 = by0 + ay * BULLET_SPEED * step;
+        const sxv = ax * BULLET_SPEED, syv = ay * BULLET_SPEED;
+        const segLen2 = sxv * sxv + syv * syv;
+        let t = 0;
+        if (segLen2 > 0) {
+          t = ((hist.x - ax0) * sxv + (hist.y - ay0) * syv) / segLen2;
+          if (t < 0) t = 0;
+          else if (t > 1) t = 1;
         }
+        const cx = ax0 + sxv * t, cy = ay0 + syv * t;
+        const dx = hist.x - cx, dy = hist.y - cy;
+        if (dx * dx + dy * dy < r2) { stepHit = step; break; }
+      }
+      if (stepHit >= 0 && stepHit < bestStep) {
+        bestStep   = stepHit;
+        bestVictim = target;
       }
     }
 

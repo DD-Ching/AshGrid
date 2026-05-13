@@ -559,13 +559,19 @@ function _mpSendInput() {
   //       sets autoFireFromLock=true and fires automatically (index.html
   //       line 5799). MP needs the same trigger or aim-assist feels broken
   //       — user just sees the reticle snap but no shots come out.
-  //   (3) NOT firing in drone/FPV: while piloting the avatar should be
-  //       passive (drone has its own weapon).
+  //   (3) Phase 51: drone mode now ALLOWS fire (Phase 41 was wrong —
+  //       drone is recon-only with no weapon, so blocking fire while the
+  //       player is using the drone for sight made the avatar uselessly
+  //       passive: aim-assist locked but nothing came out, exactly the
+  //       bug the user reported '無人機看到敵人 我也看到敵人 自動射擊
+  //       結果子彈直接穿過敵人'). FPV stays blocked because the FPV is
+  //       a one-shot kamikaze with its own SPACE-detonate input — adding
+  //       avatar fire on top would just waste ammo.
   const aimAssistLock = !!(player._aimAssistLockedAt);
   const fire = !!(typeof mouse !== 'undefined'
                   && (mouse.down || aimAssistLock)
                   && player.alive
-                  && !droneOrFpv);
+                  && game.mode !== 'fpv');
 
   const seq = ++_mpState.localInputSeq;
   const input = {
