@@ -21,20 +21,38 @@ function swapPlayerToAlly(idx) {
   if (idx < 0 || idx >= allies.length) return;
   const a = allies[idx];
   if (!a || !a.alive) return;
-  // Phase 63: pawn-swap is fundamentally incompatible with MP. The local
-  // swap teleports player.x/y by hundreds of units; server has no concept
-  // of this, sends back a snapshot at the old server position, and
-  // multiplayer.js's reconciliation snap-back (dist > 80) yanks the player
-  // back to where they were. Visually it looks like the OTHER ally
-  // teleported onto the player ('其他載具的位置順移到我這邊'). Proper fix
-  // is a 'swap' message + server-side body switch, but that's a Phase
-  // 70+ task. For now: refuse + tell the user why.
+  // Phase 83 — pawn-swap in MP now allowed WHEN ALONE in the room. User
+  // '在正常模式下沒有辦法正常切換隊友 ... 工廠生產出來的新隊友無法操控'.
+  // Since Phase 74 made MP the default, every solo session was actually
+  // hitting the Phase 63 block. The reason Phase 63 blocked: in a real
+  // multi-peer match, a local teleport diverges from server position +
+  // server's reconciliation snaps you back. But if there are NO other
+  // peers in the room, divergence is harmless — no one else needs to
+  // see consistent state. We DO still need to ride out the next ~60
+  // ticks until the server catches up to inputs that drove the player
+  // toward the new position; player._mpIgnoreReconcileUntil suppresses
+  // the dist > 150u snap during that window so the swap actually sticks.
   if (typeof _mpIsActive === 'function' && _mpIsActive()) {
-    if (typeof showSwapToast === 'function') {
-      showSwapToast(T('▶ 聯機模式不支援角色切換',
-                      '▶ Pawn-swap disabled in MP'));
+    const peers = (typeof _mpState !== 'undefined' && _mpState.remotePlayers)
+      ? Math.max(0, _mpState.remotePlayers.size - 1)
+      : 0;
+    if (peers > 0) {
+      // Real multi-peer match — block. Server-authoritative state would
+      // snap us back anyway, and the brief client-side teleport visually
+      // looks like 'the other ally just zoomed onto your screen'.
+      if (typeof showSwapToast === 'function') {
+        showSwapToast(T('▶ 聯機模式有其他玩家時不支援角色切換',
+                        '▶ Pawn-swap disabled while peers present'));
+      }
+      return;
     }
-    return;
+    // Alone — suppress MP position reconcile for the next 90 ticks
+    // (1.5s) so server's next 'you're at old pos' snapshot doesn't
+    // immediately yank us back. By that time client inputs will have
+    // driven server position closer to the new spot anyway.
+    if (typeof game !== 'undefined' && typeof player !== 'undefined') {
+      player._mpIgnoreReconcileUntil = game.time + 90;
+    }
   }
   // Pawn-swap auto-dismisses the death recap — player wants to see the
   // new body, not stare at the killer card.

@@ -414,19 +414,21 @@ function _mpHandleSnapshot(snap) {
       if (typeof player !== 'undefined') {
         const dx = predX - player.x, dy = predY - player.y;
         const dist = Math.hypot(dx, dy);
-        if (dist > 150) {
+        // Phase 83 — honour _mpIgnoreReconcileUntil. Pawn-swap sets it
+        // to game.time + 90 ticks; during that window we skip ALL
+        // position reconciliation so the swap actually sticks visually
+        // until client inputs catch the server up.
+        const _ignoreReconcile = (game?.time || 0) < (player._mpIgnoreReconcileUntil || 0);
+        if (_ignoreReconcile) {
+          player._reconcileErr = null;
+        } else if (dist > 150) {
           // Big snap — teleport / respawn / lag spike.
           player.x = predX; player.y = predY;
           player._reconcileErr = null;
         } else if (dist < 3) {
           // Inside dead zone — server agrees with us, nothing to do.
-          // Don't even touch _reconcileErr so any outstanding dribble
-          // keeps converging on its own.
         } else {
-          // Stash the error vector. Per-frame ticker in _mpTickReconcile
-          // (called from index.html update loop) bleeds this out over
-          // ~10-15 frames. New snapshots OVERWRITE the outstanding error
-          // (don't accumulate) — the new server truth is fresher.
+          // Spread-error reconcile (Phase 80).
           player._reconcileErr = { dx, dy };
         }
         // HP has TWO writers because NN bots live client-only (see fire()
