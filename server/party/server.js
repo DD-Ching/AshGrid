@@ -77,6 +77,35 @@ import { simStepPerTick as simStepPerTickV2 } from './sim/movement.js';
 // Phase 2 — shared weapon table + bullet sim.
 import { getWeaponSim } from './sim/weapons.js';
 import { spawnBulletsFromUnit } from './sim/bullet.js';
+// Phase 3c — server-side NN inference. Pure-JS forward pass + obs
+// builder, no onnxruntime dependency. createNet() runs once at module
+// load with the elite policy's weights (one of 11 trained checkpoints;
+// the others can be hot-swapped via _NN_NET if we expose a difficulty
+// dial later).
+import { createNet } from './sim/nn_runtime.js';
+import { buildObs } from './sim/nn_obs.js';
+import _NN_WEIGHTS_ELITE from './sim/nn_weights_elite.js';
+const _NN_NET = createNet(_NN_WEIGHTS_ELITE);
+// 9 move directions matching the PPO model's action layout.
+// action = moveDir * 2 + fireBit  →  moveDir = action >> 1, fire = action & 1
+//   0 = idle, 1..8 = N, NE, E, SE, S, SW, W, NW.
+const _NN_MOVE_DIRS = [
+  [ 0,  0],   // 0 idle
+  [ 0, -1],   // 1 N
+  [ 1, -1],   // 2 NE
+  [ 1,  0],   // 3 E
+  [ 1,  1],   // 4 SE
+  [ 0,  1],   // 5 S
+  [-1,  1],   // 6 SW
+  [-1,  0],   // 7 W
+  [-1, -1],   // 8 NW
+];
+// When the bot's team is 1 (red, spawning right side), we feed the
+// policy a horizontally-mirrored obs so it sees "blue on the left"
+// like training, then mirror the resulting MOVE direction back. Maps
+// E↔W (3↔7), NE↔NW (2↔8), SE↔SW (4↔6). Fire bit and N/S/idle stay.
+const _NN_MIRROR_MOVE = [0, 1, 8, 7, 6, 5, 4, 3, 2];
+const _NN_OBS_BUF = new Float32Array(65);
 
 const TICK_HZ           = 30;
 const TICK_MS           = 1000 / TICK_HZ;
@@ -94,6 +123,10 @@ const ARENA_PAD         = 50;         // wall margin
 // connects. Bumped to 6 once ONNX inference replaces the random-walk
 // MVP; for now 4 keeps the visual + bandwidth load easy to eyeball.
 const NN_BOTS_INITIAL   = 4;
+// Phase 3c — bot movement speed at 30 Hz. Same per-second as the
+// human PLAYER_SPEED (5.6 × 30 = 168 px/sec); bots and humans move
+// at the same pace so engagements feel even.
+const BOT_SPEED_PER_TICK = 4.5;
 const HP_MAX            = 100;
 const INVULN_TICKS      = 90;         // 3s spawn protection
 // Phase 60: respawn time is ad-buffable. Default 15s (450 ticks @ 30Hz),
@@ -403,8 +436,12 @@ export default class AshGridRoom {
         hp: HP_MAX,
         maxHp: HP_MAX,
         alive: true,
-        // Random-walk patrol: pick a heading + duration; when expired,
-        // pick again. Phase 3c will replace this with NN inference.
+        // Phase 3c — NN inference state (mirrors what nn_obs reads):
+        //   _fireCd:     ticks left on weapon cooldown (set on fire)
+        //   _recentDmg:  ticks since last bullet hit (used in obs)
+        _fireCd: 0,
+        _recentDmg: 0,
+        // (patrol fields kept for back-compat but unused in 3c+)
         _patrolDir: angle,
         _patrolUntilTick: 0,
       });
@@ -412,29 +449,98 @@ export default class AshGridRoom {
     console.log(`[phase3] spawned ${N} server-side bots`);
   }
 
-  // Phase 3 — bot tick (random walk for MVP). Pure-physics movement,
-  // no collision with walls/structures yet (Phase 4b will share the
-  // map data and apply it server-side). Bots wrap around arena bounds.
+  // Phase 3c — bot tick using real ONNX-equivalent inference. For each
+  // alive bot, build a 65-dim observation, run it through the pure-JS
+  // PPO policy, decode the 18-class action into (moveDir, fire), and
+  // apply it. No more random walk — bots actually engage targets they
+  // see + retreat from low HP per the trained policy.
   _tickBots() {
     if (!this.simBotsEnabled) return;
+    // Build the two team rosters once per tick. Players are all team 0
+    // for now (no factions on the human side yet); team-0 bots count
+    // as friendlies for the player + each other, team-1 bots are reds.
+    const team0 = [];
+    const team1 = [];
     for (const b of this.bots.values()) {
       if (!b.alive) continue;
-      // Re-roll heading every ~1s so movement isn't monotonous.
-      if (this.tickCount >= b._patrolUntilTick) {
-        b._patrolDir = Math.random() * Math.PI * 2;
-        b._patrolUntilTick = this.tickCount + 30 + (Math.random() * 60) | 0;
-      }
-      const speed = 3.0;               // gentle 90 px/sec
-      const nx = b.x + Math.cos(b._patrolDir) * speed;
-      const ny = b.y + Math.sin(b._patrolDir) * speed;
-      // Bounce off arena edges by flipping the heading.
-      if (nx < ARENA_PAD || nx > ARENA_W - ARENA_PAD) {
-        b._patrolDir = Math.PI - b._patrolDir;
-      } else if (ny < ARENA_PAD || ny > ARENA_H - ARENA_PAD) {
-        b._patrolDir = -b._patrolDir;
+      if (b.team === 0) team0.push(b); else team1.push(b);
+    }
+    for (const p of this.players.values()) {
+      if (p.alive) team0.push(p);
+    }
+
+    for (const b of this.bots.values()) {
+      if (!b.alive) continue;
+      const friendlies = (b.team === 0) ? team0 : team1;
+      const enemies    = (b.team === 0) ? team1 : team0;
+      const flipX = (b.team === 1);   // team-1 mirrored to match training
+
+      buildObs(b, friendlies, enemies, _NN_OBS_BUF, flipX);
+      const action = _NN_NET.argmax(_NN_OBS_BUF);
+      let moveDir = action >> 1;       // 0..8
+      const fire  = action & 1;        // 0|1
+      if (flipX) moveDir = _NN_MIRROR_MOVE[moveDir];
+
+      const [dx, dy] = _NN_MOVE_DIRS[moveDir] || [0, 0];
+      if (dx !== 0 || dy !== 0) {
+        // Normalize diagonal (1,1) → magnitude 1
+        const mag = Math.hypot(dx, dy);
+        const nx = b.x + (dx / mag) * BOT_SPEED_PER_TICK;
+        const ny = b.y + (dy / mag) * BOT_SPEED_PER_TICK;
+        // Bounce off arena edges to keep bots inside the playable area.
+        if (nx < ARENA_PAD || nx > ARENA_W - ARENA_PAD) {
+          b.x = clamp(nx, ARENA_PAD, ARENA_W - ARENA_PAD);
+        } else {
+          b.x = nx;
+        }
+        if (ny < ARENA_PAD || ny > ARENA_H - ARENA_PAD) {
+          b.y = clamp(ny, ARENA_PAD, ARENA_H - ARENA_PAD);
+        } else {
+          b.y = ny;
+        }
+        b.angle = Math.atan2(dy, dx);
       } else {
-        b.x = nx; b.y = ny;
-        b.angle = b._patrolDir;
+        // Idle: aim at nearest visible enemy (slow lerp) so the gun
+        // tracks targets while not moving.
+        let bestE = null, bestD2 = Infinity;
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          const ddx = e.x - b.x, ddy = e.y - b.y;
+          const d2 = ddx * ddx + ddy * ddy;
+          if (d2 < bestD2) { bestD2 = d2; bestE = e; }
+        }
+        if (bestE) {
+          const desired = Math.atan2(bestE.y - b.y, bestE.x - b.x);
+          let d = desired - b.angle;
+          while (d > Math.PI)  d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          b.angle += d * 0.18;
+        }
+      }
+
+      // Decrement bot's fire cooldown (used as the gate below + obs feature).
+      if (b._fireCd > 0) b._fireCd--;
+      if (b._recentDmg > 0) b._recentDmg--;
+
+      // Fire — bot spawns a server bullet at its muzzle, weapon-aware
+      // via the shared bullet sim. Default RIFLE for all bots in Phase
+      // 3c; weapon variety will come from the recruit / chassis path.
+      if (fire && b._fireCd <= 0) {
+        const wsim = getWeaponSim('RIFLE');
+        const newBullets = spawnBulletsFromUnit(
+          { x: b.x, y: b.y, id: b.id, team: b.team },
+          { ...wsim, weaponId: 'RIFLE' },
+          b.angle,
+        );
+        for (const bb of newBullets) {
+          bb.id = this.nextBulletId++;
+          bb.shooterId = b.id;
+          bb.shooterIsBot = true;
+          bb.weapon = 'RIFLE';
+          bb.fromTeam = b.team;
+          this.bullets.push(bb);
+        }
+        b._fireCd = wsim.fireCdTicks | 0;
       }
     }
   }
@@ -863,10 +969,53 @@ export default class AshGridRoom {
           break;
         }
       }
+      // Phase 3d — bullet vs server-side bots. Same swept-segment logic
+      // as player collision. Friendly-fire avoided by skipping bots on
+      // the shooter's team (bot-vs-bot would still trigger for opposite
+      // teams; bullets from team-0 humans hit team-1 bots, etc.).
+      if (!consumed) {
+        const botR2 = 14 * 14;          // bot body radius same as player
+        for (const bot of this.bots.values()) {
+          if (!bot.alive) continue;
+          if (bot.id === b.shooterId) continue;
+          // Friendly-fire skip: bot bullets carry fromTeam; player
+          // bullets do not (player team = 0 implicitly).
+          const shooterTeam = (b.fromTeam != null) ? b.fromTeam : 0;
+          if (shooterTeam === bot.team) continue;
+          let t = 0;
+          if (segLen2 > 0) {
+            t = ((bot.x - prevX) * sx + (bot.y - prevY) * sy) / segLen2;
+            if (t < 0) t = 0; else if (t > 1) t = 1;
+          }
+          const cx = prevX + sx * t, cy = prevY + sy * t;
+          const dx = bot.x - cx, dy = bot.y - cy;
+          if (dx * dx + dy * dy < botR2) {
+            bot.hp -= b.damage;
+            bot._recentDmg = 90;       // 1.5s 'under fire' for the obs feature
+            consumed = true;
+            this.party.broadcast(JSON.stringify({
+              type: 'hit', victim: bot.id, shooter: b.shooterId,
+              hp: Math.max(0, bot.hp), weapon: b.weapon || 'RIFLE',
+              x: round1(b.x), y: round1(b.y),
+              isBot: 1,                // marker so client kill-feed can label
+            }));
+            if (bot.hp <= 0) {
+              bot.alive = false;
+              this.party.broadcast(JSON.stringify({
+                type: 'kill', shooter: b.shooterId, victim: bot.id,
+                weapon: b.weapon || 'RIFLE',
+                x: round1(bot.x), y: round1(bot.y),
+                isBot: 1,
+              }));
+            }
+            break;
+          }
+        }
+      }
       if (consumed) this.bullets.splice(i, 1);
     }
 
-    // Phase 3 — bots step (random walk MVP; will be ONNX in 3c).
+    // Phase 3c — bots step using real PPO inference.
     this._tickBots();
 
     // 3. Snapshot every SNAPSHOT_EVERY ticks (≈ 15Hz)
