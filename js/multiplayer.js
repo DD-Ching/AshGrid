@@ -146,6 +146,21 @@ let _mpLastPingAt = 0;
 const _mpPings = [];
 
 function _mpIsActive() { return !!_mpState.enabled; }
+
+// Phase 1: v2 architecture opt-in flag. URL ?v2=1 routes through the
+// new server-authoritative path (shared sim/movement.js on both sides
+// of the wire; server applies same sprint multiplier; replay loop in
+// _mpHandleSnapshot uses SIM.simStepPerTick instead of hand-coded
+// `predX += dx * 5.6`).
+//
+// Default (no v2): legacy hybrid pathway, unchanged from Phase 100.
+// This means existing ashgrid.io traffic + crazygames embeds keep
+// working exactly as before; only ?v2=1 sessions get the new code.
+// Server reads `inp.v2` flag for the same gate.
+function _mpIsV2() {
+  try { return new URLSearchParams(location.search).get('v2') === '1'; }
+  catch (e) { return false; }
+}
 function _mpPeerCount() {
   if (!_mpState.enabled) return 0;
   // remotePlayers includes self; count is just its size.
@@ -384,14 +399,35 @@ function _mpHandleSnapshot(snap) {
       }
       // Drop inputs the server has already processed
       _mpState.pendingInputs = _mpState.pendingInputs.filter(i => i.seq > sp.lastInputSeq);
-      // Replay remaining inputs from the server's confirmed position
+      // Replay remaining inputs from the server's confirmed position.
+      //
+      // Phase 1: v2 uses the SHARED simStepPerTick so server and client
+      // agree byte-for-byte on what each input did. Legacy path keeps
+      // the hand-coded predX += dx * 5.6 (no sprint multiplier, no
+      // weapon/chassis mul — which is why pre-v2 rubber-banded on
+      // sprint). The shared sim picks up sprint from inp.sprint.
       let predX = sp.x, predY = sp.y;
-      for (const inp of _mpState.pendingInputs) {
-        let dx = inp.dx, dy = inp.dy;
-        const mag = Math.hypot(dx, dy);
-        if (mag > 1) { dx /= mag; dy /= mag; }
-        predX += dx * MP_PLAYER_SPEED;
-        predY += dy * MP_PLAYER_SPEED;
+      const isV2 = _mpIsV2();
+      if (isV2 && typeof window !== 'undefined' && window.SIM && window.SIM.simStepPerTick) {
+        // Pull weapon/chassis mul from current player state — these
+        // change rarely so it's safe to read 'now' (Phase 4 will move
+        // them server-side too).
+        const wpnMul = (typeof playerWeapon !== 'undefined' && playerWeapon && playerWeapon.speedMul) || 1.0;
+        const chsMul = (typeof player !== 'undefined' && player._chassisSpeedMul) || 1.0;
+        const repState = { x: predX, y: predY, weaponSpeedMul: wpnMul, chassisSpeedMul: chsMul };
+        for (const inp of _mpState.pendingInputs) {
+          const out = window.SIM.simStepPerTick(repState, inp);
+          repState.x = out.x; repState.y = out.y;
+        }
+        predX = repState.x; predY = repState.y;
+      } else {
+        for (const inp of _mpState.pendingInputs) {
+          let dx = inp.dx, dy = inp.dy;
+          const mag = Math.hypot(dx, dy);
+          if (mag > 1) { dx /= mag; dy /= mag; }
+          predX += dx * MP_PLAYER_SPEED;
+          predY += dy * MP_PLAYER_SPEED;
+        }
       }
       // Push to local player object — Phase 80 spread-error reconcile.
       // User '權威必須存在! 聯機不能本地! 想辦法在遊玩時不跳針'. Phase 78's
@@ -725,6 +761,14 @@ function _mpSendInput() {
                   && game.mode !== 'fpv');
 
   const seq = ++_mpState.localInputSeq;
+  // Phase 1: sprint flag for shared movement sim. v2 gate keeps the
+  // payload unchanged for legacy server tick logic (which doesn't read
+  // sprint and would just ignore the field anyway — but better to be
+  // explicit about the protocol version).
+  const isV2 = _mpIsV2();
+  const sprint = isV2
+    ? !!(typeof player !== 'undefined' && player.sprinting)
+    : 0;
   const input = {
     type: 'input',
     seq, dx, dy, angle, fire,
@@ -742,6 +786,10 @@ function _mpSendInput() {
     // decide RESPAWN_TICKS (default 15s vs buffed 5s). Cheap to send every
     // input (1 boolean); avoids needing a dedicated 'buff-state' message.
     buffActive: (typeof isRespawnBuffed === 'function') ? isRespawnBuffed() : false,
+    // Phase 1: sprint multiplier signal. Server reads only when input.v2 is
+    // truthy so legacy servers ignore it.
+    v2: isV2 ? 1 : 0,
+    sprint: sprint ? 1 : 0,
   };
   _mpSendRaw(input);
 
@@ -754,7 +802,8 @@ function _mpSendInput() {
   // Phase 38 prediction — index.html's per-frame WASD code IS our
   // prediction. We just record the input here so reconciliation can
   // replay any unacked inputs from the server's confirmed position.
-  _mpState.pendingInputs.push({ seq, dx, dy, angle, fire });
+  // Phase 1: also stash sprint so v2 replay uses the same multiplier.
+  _mpState.pendingInputs.push({ seq, dx, dy, angle, fire, sprint });
 
   // Cap the pendingInputs queue so it doesn't grow forever during net loss
   if (_mpState.pendingInputs.length > 120) {

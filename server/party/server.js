@@ -69,6 +69,12 @@
 // All deterministic constants live up here so the client can match
 // movement feel exactly under prediction.
 
+// Phase 1 — shared movement sim. The same logic lives in
+// js/sim/movement.js (classic-script copy for the browser). Logic must
+// stay byte-identical between the two; ai_arena/scripts/check_sim_parity.sh
+// diffs them in pre-commit.
+import { simStepPerTick as simStepPerTickV2 } from './sim/movement.js';
+
 const TICK_HZ           = 30;
 const TICK_MS           = 1000 / TICK_HZ;
 const SNAPSHOT_EVERY    = 2;          // every 2 ticks → ~15Hz broadcast
@@ -535,12 +541,35 @@ export default class AshGridRoom {
         continue;
       }
       const inp = p.input;
-      // Normalize diagonal
-      let dx = inp.dx, dy = inp.dy;
-      const mag = Math.hypot(dx, dy);
-      if (mag > 1) { dx /= mag; dy /= mag; }
-      p.x = clamp(p.x + dx * PLAYER_SPEED, ARENA_PAD, ARENA_W - ARENA_PAD);
-      p.y = clamp(p.y + dy * PLAYER_SPEED, ARENA_PAD, ARENA_H - ARENA_PAD);
+      // Phase 1: if client opted into v2 (URL ?v2=1 → input.v2=1), use
+      // the shared simStepPerTick which honours sprint (and later phases
+      // weapon/chassis mul). Default path stays exactly as before so
+      // legacy clients are byte-identical to pre-Phase-1 behaviour.
+      let nx, ny;
+      if (inp.v2) {
+        const out = simStepPerTickV2(
+          {
+            x: p.x, y: p.y,
+            // Server doesn't yet track weapon/chassis mul; Phase 4 will
+            // own them server-side. For now default to 1 — divergence
+            // from client local prediction is bounded by the existing
+            // reconcile dead zone (3 px) for non-sprint cases.
+            weaponSpeedMul: 1.0,
+            chassisSpeedMul: 1.0,
+          },
+          inp
+        );
+        nx = out.x; ny = out.y;
+      } else {
+        // Legacy path: normalize + apply PLAYER_SPEED with no multipliers.
+        let dx = inp.dx, dy = inp.dy;
+        const mag = Math.hypot(dx, dy);
+        if (mag > 1) { dx /= mag; dy /= mag; }
+        nx = p.x + dx * PLAYER_SPEED;
+        ny = p.y + dy * PLAYER_SPEED;
+      }
+      p.x = clamp(nx, ARENA_PAD, ARENA_W - ARENA_PAD);
+      p.y = clamp(ny, ARENA_PAD, ARENA_H - ARENA_PAD);
       // Phase 41: server-side wall collision. Reject any movement that would
       // put the player inside a building. Without this, MP players phase
       // through walls because the server doesn't know the map exists.
