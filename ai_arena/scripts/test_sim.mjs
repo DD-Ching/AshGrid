@@ -133,6 +133,31 @@ const m5 = movement.simStepPerTick({ x: 0, y: 0, weaponSpeedMul: 1, chassisSpeed
 const speed = Math.hypot(m5.x, m5.y);
 assert(near(speed, 5.6, 1e-6),                           'diagonal step magnitude == per-tick speed');
 
+console.log('\n--- weapon damage profile (server damage parity) -----------');
+// Spawned bullets must carry the weapon's actual damage so server
+// damage application (lag-comp OR projectile-vs-circle) matches the
+// client's idea of what the weapon does.
+const dmgChecks = [
+  ['SMG',     14],
+  ['RIFLE',   22],
+  ['LMG',     20],
+  ['SNIPER',  100],   // one-shot rule
+  ['SHOTGUN', 18],    // per-pellet (× 11 pellets on direct hit)
+  ['ROCKET',  80],    // primary; +60 AOE in r=110 handled separately by server
+];
+for (const [id, dmg] of dmgChecks) {
+  const w = { ...weapons.getWeaponSim(id), weaponId: id };
+  const b = bullet.spawnBulletsFromUnit({ x: 0, y: 0, id: 1, team: 0 }, w, 0)[0];
+  assert(b.damage === dmg, `${id} bullet damage = ${dmg}`);
+}
+
+// ROCKET profile carries the AOE fields the server's rocket-blast
+// branch reads. Without this, server can't apply blast.
+const rocketWsim = weapons.getWeaponSim('ROCKET');
+assert(rocketWsim.blastDmg === 60,        'ROCKET blastDmg = 60 (AOE damage)');
+assert(rocketWsim.blastR === 110,         'ROCKET blastR = 110 (AOE radius)');
+assert(rocketWsim.structDmgMul === 4,     'ROCKET structDmgMul = 4 (walls)');
+
 console.log('\n=============================================================');
 if (failed === 0) {
   console.log('✓ All sim tests passed.');

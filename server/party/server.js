@@ -667,7 +667,17 @@ export default class AshGridRoom {
       // bullets); built structures take damage and can be removed.
       const struct = _bulletInStructure(b, this.structures);
       if (struct) {
-        struct.hp -= BULLET_DAMAGE;
+        // Phase 2 — structure damage uses the bullet's own damage value
+        // (weapon-aware after Phase 2 spawn), with a multiplier when
+        // the weapon profile flags one (ROCKET deals 4× to structures).
+        // Pre-Phase-2 all bullets dealt flat 25 to walls regardless of
+        // weapon; RPG couldn't 2-shot a 220-hp wall.
+        let structDmg = (typeof b.damage === 'number') ? b.damage : BULLET_DAMAGE;
+        if (b.weapon) {
+          const wsim = getWeaponSim(b.weapon);
+          if (wsim.structDmgMul) structDmg *= wsim.structDmgMul;
+        }
+        struct.hp -= structDmg;
         if (struct.hp <= 0) {
           this.structures.delete(struct.sid);
           this.party.broadcast(JSON.stringify({
@@ -710,6 +720,45 @@ export default class AshGridRoom {
         if (dx * dx + dy * dy < r2) {
           p.hp -= b.damage;
           consumed = true;
+          // Phase 2 — rocket AOE on direct hit. The wsim profile sets
+          // isRocket + blastR + blastDmg; every player within blastR of
+          // the impact (excluding the just-hit primary victim, who
+          // already took b.damage) takes blastDmg. Mirrors the legacy
+          // client-side detonateRocket() radial scan but runs on server
+          // so MP rockets actually deal AOE — pre-Phase-2 server treated
+          // them as flat 25-damage rifle rounds.
+          if (b.isRocket && b.weapon) {
+            const wsim = getWeaponSim(b.weapon);
+            const blastR = wsim.blastR || 0;
+            const blastDmg = wsim.blastDmg || 0;
+            if (blastR > 0 && blastDmg > 0) {
+              const blastR2 = blastR * blastR;
+              for (const q of this.players.values()) {
+                if (q === p) continue;
+                if (!q.alive) continue;
+                if (this.tickCount < q.invulnUntil) continue;
+                const qdx = q.x - b.x, qdy = q.y - b.y;
+                if (qdx * qdx + qdy * qdy <= blastR2) {
+                  q.hp -= blastDmg;
+                  this.party.broadcast(JSON.stringify({
+                    type: 'hit', victim: q.id, shooter: b.shooterId,
+                    hp: Math.max(0, q.hp), weapon: b.weapon,
+                    x: round1(b.x), y: round1(b.y),
+                  }));
+                  if (q.hp <= 0) {
+                    q.alive = false;
+                    q.respawnAt = this.tickCount + (q.respawnBuffActive
+                      ? RESPAWN_TICKS_BUFFED
+                      : RESPAWN_TICKS_DEFAULT);
+                    this.party.broadcast(JSON.stringify({
+                      type: 'kill', shooter: b.shooterId, victim: q.id, weapon: b.weapon,
+                      x: round1(b.x), y: round1(b.y),
+                    }));
+                  }
+                }
+              }
+            }
+          }
           this.party.broadcast(JSON.stringify({
             type: 'hit', victim: p.id, shooter: b.shooterId,
             hp: Math.max(0, p.hp), weapon: b.weapon,
@@ -879,7 +928,17 @@ export default class AshGridRoom {
     // Resolve the hit. Apply damage, broadcast events, remove the bullet
     // we just spawned (it's the last entry in this.bullets) so the
     // physics-based hit check downstream doesn't re-trigger.
-    bestVictim.hp -= BULLET_DAMAGE;
+    //
+    // Phase 2 — damage + weapon now come from the just-spawned bullet
+    // (which carries the weapon-aware profile from spawnBulletsFromUnit)
+    // instead of the legacy flat BULLET_DAMAGE + 'RIFLE'. Pre-Phase-2,
+    // SNIPER's 100-damage one-shot rule didn't apply on lag-comp hits —
+    // server stamped 25 damage regardless and the kill resolved as
+    // RIFLE in the kill feed. User '我打中他他沒死' for sniper kills.
+    const lastBullet = this.bullets[this.bullets.length - 1];
+    const lcDmg    = (lastBullet && typeof lastBullet.damage === 'number') ? lastBullet.damage : BULLET_DAMAGE;
+    const lcWeapon = (lastBullet && lastBullet.weapon) ? lastBullet.weapon : 'RIFLE';
+    bestVictim.hp -= lcDmg;
     if (this.bullets.length > 0) this.bullets.pop();
     // Phase 41: include impact coords for client-side blood/popup placement.
     // Use the historic position (where the shooter SAW them) so the spark
@@ -889,7 +948,7 @@ export default class AshGridRoom {
     const impactY = histVictim ? histVictim.y : bestVictim.y;
     this.party.broadcast(JSON.stringify({
       type: 'hit', victim: bestVictim.id, shooter: shooter.id,
-      hp: Math.max(0, bestVictim.hp), weapon: 'RIFLE',
+      hp: Math.max(0, bestVictim.hp), weapon: lcWeapon,
       x: round1(impactX), y: round1(impactY),
       lc: 1,    // marker: this hit was lag-compensated (clients can stat it)
     }));
