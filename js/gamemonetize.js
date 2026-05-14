@@ -114,6 +114,50 @@
     document.head.appendChild(s);
   }
 
+  // ─── Ad-mode overlay (Phase 95) ───────────────────────────────────
+  // Shows the #adPlayOverlay element for 15 seconds with a 15→0 countdown
+  // and pauses gameplay. Used when the player clicks 'Watch Ad' so they
+  // get an honest ad-watching window even if GameMonetize hasn't approved
+  // the publisher site yet (no real ad fill → SDK_GAME_START fires
+  // instantly = 'click → instant revive' which the user flagged as broken
+  // UX: '按了之後馬上復活...我沒有看到廣告'). When GM does start serving
+  // real inventory, the GM iframe sits above this overlay (its z-index is
+  // 10000+; ours is 9000) so the placeholder is hidden by the real ad.
+  let _adOverlayTimer = null;
+  function _showAdPlayOverlay() {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById('adPlayOverlay');
+    if (!el) return;
+    el.style.display = 'flex';
+    if (typeof game !== 'undefined') game._paused = true;
+    let remaining = 15;
+    const cdEl    = document.getElementById('adPlayCountdown');
+    const trailEl = document.getElementById('adPlayCountdownTrail');
+    if (cdEl)    cdEl.textContent    = String(remaining);
+    if (trailEl) trailEl.textContent = String(remaining);
+    if (_adOverlayTimer) clearInterval(_adOverlayTimer);
+    _adOverlayTimer = setInterval(() => {
+      remaining -= 1;
+      if (remaining < 0) remaining = 0;
+      if (cdEl)    cdEl.textContent    = String(remaining);
+      if (trailEl) trailEl.textContent = String(remaining);
+      if (remaining <= 0) {
+        clearInterval(_adOverlayTimer);
+        _adOverlayTimer = null;
+      }
+    }, 1000);
+  }
+  function _hideAdPlayOverlay() {
+    if (typeof document !== 'undefined') {
+      const el = document.getElementById('adPlayOverlay');
+      if (el) el.style.display = 'none';
+    }
+    if (_adOverlayTimer) {
+      clearInterval(_adOverlayTimer);
+      _adOverlayTimer = null;
+    }
+  }
+
   // ─── Show ad ──────────────────────────────────────────────────────
   // The SDK exposes either sdk_showBanner() (global) or sdk.showBanner()
   // depending on version. Try both. cb fires success after a short delay
@@ -134,46 +178,49 @@
     }
 
     try {
-      // Phase 91 — simplified to match GM SDK v3 docs (verified via their
-      // GitHub README). GM exposes ONLY sdk.showBanner() (misnamed — it's
-      // actually the video interstitial / rewarded slot). No sdk.showAd
-      // method, no callback parameter. Completion comes via the
-      // SDK_GAME_START event in onEvent.
+      // Phase 95 — rewarded paths show our OWN 15-second 'ad-playing'
+      // overlay so the player gets a consistent ad-mode experience
+      // regardless of whether GameMonetize actually serves a real ad
+      // (publisher site approval pending → no fill → SDK_GAME_START
+      // would fire instantly = 'click button → revive immediately'
+      // which the user reported as broken UX).
+      // User: '應該就要有一種模式 進入幾秒鐘的廣告模式 那個時候你不會
+      // 在場上'.
       //
-      // Pattern: stash cb in _pendingAdCb, call showBanner(), and let
-      // SDK_GAME_START fire the cb. SDK_GAME_START fires on ANY ad
-      // outcome (watched / skipped / errored / blocked) — that's GM's
-      // design. Reward is granted as long as the ad request was served.
-      // Failsafe: 30-second timer in case GM events never fire (e.g.
-      // ad blocker, network failure) so the player isn't stuck.
+      // Flow:
+      //   1. show #adPlayOverlay (fullscreen, pauses gameplay)
+      //   2. start 15s countdown
+      //   3. ALSO call GM showBanner() — if a real ad loads, it overlays
+      //      on top of our placeholder (z-index 10000+ vs our 9000)
+      //   4. After 15s elapses, hide overlay, resume game, fire cb
       _pendingAdCb = cb || null;
+      if (isRewarded) {
+        _showAdPlayOverlay();
+        try {
+          if (window.sdk && typeof window.sdk.showBanner === 'function') {
+            window.sdk.showBanner();
+          } else if (typeof window.sdk_showBanner === 'function') {
+            window.sdk_showBanner();
+          }
+        } catch (e2) { /* GM not ready — our overlay still runs */ }
+        // 15-second minimum ad-mode window. Fires reward + resume here.
+        setTimeout(() => {
+          _hideAdPlayOverlay();
+          if (_pendingAdCb) {
+            try { _pendingAdCb(true); } catch (e3) {}
+            _pendingAdCb = null;
+          }
+          if (typeof game !== 'undefined') game._paused = false;
+        }, 15000);
+        return;
+      }
+      // Non-rewarded (midgame, etc) — currently a no-op surface but
+      // keep the showBanner attempt for future use.
       if (window.sdk && typeof window.sdk.showBanner === 'function') {
         window.sdk.showBanner();
       } else if (typeof window.sdk_showBanner === 'function') {
         window.sdk_showBanner();
-      } else {
-        console.warn('[gamemonetize] SDK not exposing showBanner — dev fallback');
-        if (_pendingAdCb) {
-          setTimeout(() => {
-            if (_pendingAdCb) { _pendingAdCb(true); _pendingAdCb = null; }
-          }, 500);
-        }
-        return;
       }
-      // Phase 91 failsafe — if no SDK_GAME_START event arrives within
-      // 30 seconds, assume the ad didn't load (blocker, no fill, etc.)
-      // and grant the reward anyway so the player isn't trapped on the
-      // death screen forever. 30s is longer than any real ad to avoid
-      // double-firing.
-      setTimeout(() => {
-        if (_pendingAdCb) {
-          console.warn('[gamemonetize] SDK_GAME_START did not arrive within 30s — failsafe firing reward');
-          _pendingAdCb(true);
-          _pendingAdCb = null;
-          // Resume game in case SDK_GAME_PAUSE fired but no resume.
-          if (typeof game !== 'undefined') game._paused = false;
-        }
-      }, 30000);
     } catch (e) {
       console.warn('[gamemonetize] showBanner threw:', e);
       if (cb) cb(false);

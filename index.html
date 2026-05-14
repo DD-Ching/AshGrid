@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=94"></script>
-<script src="js/arena_recruitment.js?v=94"></script>
-<script src="js/dynamic_radio.js?v=94"></script>
-<script src="js/i18n.js?v=94"></script>
-<script src="js/touch_input.js?v=94"></script>
-<script src="js/key_bindings.js?v=94"></script>
-<script src="js/grenades.js?v=94"></script>
-<script src="js/squad_commands.js?v=94"></script>
-<script src="js/multiplayer.js?v=94"></script>
-<script src="js/leaderboard.js?v=94"></script>
-<script src="js/structures.js?v=94"></script>
-<script src="js/tod.js?v=94"></script>
-<script src="js/weapons.js?v=94"></script>
-<script src="js/chassis.js?v=94"></script>
-<script src="js/respawn_buff.js?v=94"></script>
-<script src="js/death_recap.js?v=94"></script>
-<script src="js/mote_affinity.js?v=94"></script>
-<script src="js/stage_hints.js?v=94"></script>
-<script src="js/pawn_swap.js?v=94"></script>
-<script src="js/global_stats.js?v=94"></script>
-<script src="js/progressive_unlock.js?v=94"></script>
-<script src="js/ad_stubs.js?v=94"></script>
+<script src="js/audio/sfx.js?v=95"></script>
+<script src="js/arena_recruitment.js?v=95"></script>
+<script src="js/dynamic_radio.js?v=95"></script>
+<script src="js/i18n.js?v=95"></script>
+<script src="js/touch_input.js?v=95"></script>
+<script src="js/key_bindings.js?v=95"></script>
+<script src="js/grenades.js?v=95"></script>
+<script src="js/squad_commands.js?v=95"></script>
+<script src="js/multiplayer.js?v=95"></script>
+<script src="js/leaderboard.js?v=95"></script>
+<script src="js/structures.js?v=95"></script>
+<script src="js/tod.js?v=95"></script>
+<script src="js/weapons.js?v=95"></script>
+<script src="js/chassis.js?v=95"></script>
+<script src="js/respawn_buff.js?v=95"></script>
+<script src="js/death_recap.js?v=95"></script>
+<script src="js/mote_affinity.js?v=95"></script>
+<script src="js/stage_hints.js?v=95"></script>
+<script src="js/pawn_swap.js?v=95"></script>
+<script src="js/global_stats.js?v=95"></script>
+<script src="js/progressive_unlock.js?v=95"></script>
+<script src="js/ad_stubs.js?v=95"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=94"></script>
+<script src="js/crazygames.js?v=95"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=94"></script>
+<script src="js/gamemonetize.js?v=95"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=94"></script>
-<script src="js/world_gen.js?v=94"></script>
-<script src="js/squad.js?v=94"></script>
-<script src="js/drone_fpv.js?v=94"></script>
-<script src="js/vision_raycast.js?v=94"></script>
-<script src="js/camera.js?v=94"></script>
-<script src="js/defense_build_ui.js?v=94"></script>
-<script src="js/pause.js?v=94"></script>
+<script src="js/missions/nn_deathmatch.js?v=95"></script>
+<script src="js/world_gen.js?v=95"></script>
+<script src="js/squad.js?v=95"></script>
+<script src="js/drone_fpv.js?v=95"></script>
+<script src="js/vision_raycast.js?v=95"></script>
+<script src="js/camera.js?v=95"></script>
+<script src="js/defense_build_ui.js?v=95"></script>
+<script src="js/pause.js?v=95"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -1196,6 +1196,28 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     <span style="color:#666;">Requires keyboard and mouse · WASD + click to play.<br>
     Mobile support coming in a later update.</span>
   </div>
+</div>
+
+<!-- ============ Phase 95 — REWARDED AD PLAY OVERLAY ============ -->
+<!-- Fullscreen 'ad-playing' UX shown for a fixed 15-second minimum when
+     the player clicks Watch Ad. Pauses gameplay so the player is OFF
+     THE FIELD while the ad runs. User: '進入幾秒鐘的廣告模式 那個時候
+     你不會在場上'. If GameMonetize actually serves a real ad during the
+     window, it overlays on top (their iframe sits above this z-index).
+     If GM serves nothing (e.g. publisher site not yet approved), this
+     overlay carries the entire ad experience so the reward UX still
+     feels honest. -->
+<div id="adPlayOverlay" style="
+     display:none;
+     position:fixed; inset:0; z-index:9000;
+     background:#000; color:#E8E4D8;
+     align-items:center; justify-content:center; flex-direction:column;
+     font-family: 'Helvetica Neue', sans-serif;
+     pointer-events:auto;">
+  <div style="font-size:11px; letter-spacing:5px; color:#888; margin-bottom:32px;">ADVERTISEMENT</div>
+  <div id="adPlayCountdown" style="font-size:120px; font-weight:900; color:#FFD24A; line-height:1;">15</div>
+  <div style="font-size:11px; letter-spacing:2px; color:#666; margin-top:24px;">GAME RESUMES IN <span id="adPlayCountdownTrail">15</span>s</div>
+  <div style="font-size:9px; color:#444; margin-top:48px;">AshGrid · ⚡ 5s respawn buff incoming</div>
 </div>
 
 <!-- ============ Phase 82 — STATIC RESPAWN AD SLOT ============ -->
