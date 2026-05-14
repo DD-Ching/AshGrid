@@ -136,16 +136,22 @@
   }
 
   // ─── Override the CrazyGames wrapper surface ──────────────────────
-  // Same function names so every existing call site (crazyNoteDeath in
-  // index.html's player-death block, crazyAd_rewarded in death_recap.js,
-  // etc.) routes through GM transparently on non-CG hosts.
-  window.crazyAd_midgame   = ()  => showAd();
+  // Same function names so every existing call site routes through GM
+  // transparently. Phase 84: midgame is a NO-OP (was fullscreen video,
+  // now removed per user request — passive impressions handled by the
+  // respawn banner). Rewarded is the ONLY fullscreen path; only fires
+  // when player clicks 'Watch Ad' → 30-min respawn buff in return.
+  window.crazyAd_midgame   = ()  => { /* no-op: no fullscreen passive */ };
   window.crazyAd_rewarded  = (cb) => showAd(cb, { rewarded: true });
 
-  // Every 5th death → fire a midgame interstitial (matches CG cadence).
-  window.crazyNoteDeath = () => {
-    if (++_deathCount % 5 === 0) showAd();
-  };
+  // Phase 84 — death counter kept for analytics, but does NOT trigger
+  // fullscreen video ads. User '不是全螢幕的, 視窗那種靜態的, 全螢幕是
+  // 主動要看的話'. Passive impressions come from the 300x250 respawn
+  // banner (Phase 82) which already shows on every death. Fullscreen
+  // video is gated entirely on the player clicking 'Watch Ad' (rewarded
+  // path via crazyAd_rewarded), which gives them the 30-min respawn
+  // buff in return.
+  window.crazyNoteDeath = () => { _deathCount++; };
 
   // Event functions become no-ops outside the CG portal. They're called
   // from index.html for gameplay-state telemetry; GM doesn't need them.
