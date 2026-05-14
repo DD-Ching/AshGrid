@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=86"></script>
-<script src="js/arena_recruitment.js?v=86"></script>
-<script src="js/dynamic_radio.js?v=86"></script>
-<script src="js/i18n.js?v=86"></script>
-<script src="js/touch_input.js?v=86"></script>
-<script src="js/key_bindings.js?v=86"></script>
-<script src="js/grenades.js?v=86"></script>
-<script src="js/squad_commands.js?v=86"></script>
-<script src="js/multiplayer.js?v=86"></script>
-<script src="js/leaderboard.js?v=86"></script>
-<script src="js/structures.js?v=86"></script>
-<script src="js/tod.js?v=86"></script>
-<script src="js/weapons.js?v=86"></script>
-<script src="js/chassis.js?v=86"></script>
-<script src="js/respawn_buff.js?v=86"></script>
-<script src="js/death_recap.js?v=86"></script>
-<script src="js/mote_affinity.js?v=86"></script>
-<script src="js/stage_hints.js?v=86"></script>
-<script src="js/pawn_swap.js?v=86"></script>
-<script src="js/global_stats.js?v=86"></script>
-<script src="js/progressive_unlock.js?v=86"></script>
-<script src="js/ad_stubs.js?v=86"></script>
+<script src="js/audio/sfx.js?v=87"></script>
+<script src="js/arena_recruitment.js?v=87"></script>
+<script src="js/dynamic_radio.js?v=87"></script>
+<script src="js/i18n.js?v=87"></script>
+<script src="js/touch_input.js?v=87"></script>
+<script src="js/key_bindings.js?v=87"></script>
+<script src="js/grenades.js?v=87"></script>
+<script src="js/squad_commands.js?v=87"></script>
+<script src="js/multiplayer.js?v=87"></script>
+<script src="js/leaderboard.js?v=87"></script>
+<script src="js/structures.js?v=87"></script>
+<script src="js/tod.js?v=87"></script>
+<script src="js/weapons.js?v=87"></script>
+<script src="js/chassis.js?v=87"></script>
+<script src="js/respawn_buff.js?v=87"></script>
+<script src="js/death_recap.js?v=87"></script>
+<script src="js/mote_affinity.js?v=87"></script>
+<script src="js/stage_hints.js?v=87"></script>
+<script src="js/pawn_swap.js?v=87"></script>
+<script src="js/global_stats.js?v=87"></script>
+<script src="js/progressive_unlock.js?v=87"></script>
+<script src="js/ad_stubs.js?v=87"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=86"></script>
+<script src="js/crazygames.js?v=87"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=86"></script>
+<script src="js/gamemonetize.js?v=87"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=86"></script>
-<script src="js/world_gen.js?v=86"></script>
-<script src="js/squad.js?v=86"></script>
-<script src="js/drone_fpv.js?v=86"></script>
-<script src="js/vision_raycast.js?v=86"></script>
-<script src="js/camera.js?v=86"></script>
-<script src="js/defense_build_ui.js?v=86"></script>
-<script src="js/pause.js?v=86"></script>
+<script src="js/missions/nn_deathmatch.js?v=87"></script>
+<script src="js/world_gen.js?v=87"></script>
+<script src="js/squad.js?v=87"></script>
+<script src="js/drone_fpv.js?v=87"></script>
+<script src="js/vision_raycast.js?v=87"></script>
+<script src="js/camera.js?v=87"></script>
+<script src="js/defense_build_ui.js?v=87"></script>
+<script src="js/pause.js?v=87"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -2473,16 +2473,17 @@ try {
 function _updateRespawnAdSlot() {
   const slot = document.getElementById('respawnAdSlot');
   if (!slot) return;
-  const inRespawnWait = typeof game !== 'undefined'
+  // Phase 87 — gated on TEAM WIPE only (not individual death).
+  // User '每一次死都會有廣告 應該是每一次全軍覆沒'. Single deaths now
+  // get NO ad; the banner only appears when the whole blue squad goes
+  // down — a real 'all hands' moment that justifies the interruption.
+  const teamWiped = typeof game !== 'undefined'
     && game._nnMode
-    && typeof player !== 'undefined'
-    && !player.alive
-    && player._respawnAt != null;
-  // Only show on desktop — the mobile gate hides everything else anyway,
-  // but keep the slot off too so it doesn't leak through to the @media
-  // override in case the mobileBlock styles change later.
+    && game._teamWipe
+    && game._teamWipe.blue
+    && game._teamWipe.blue.wipedSince != null;
   const isMobile = (typeof touchInput !== 'undefined') && touchInput.enabled;
-  slot.style.display = (inRespawnWait && !isMobile) ? 'block' : 'none';
+  slot.style.display = (teamWiped && !isMobile) ? 'block' : 'none';
 }
 
 // Sprint tuning
@@ -11471,12 +11472,26 @@ function renderCommandOverlay() {
 // runs ~0.55 simulated frames per real frame. Render runs every frame so
 // the camera + UI stay smooth.
 let _stepAccumulator = 0;
+let _lastFrameTime = 0;
 function loop() {
+  // Phase 87 — lock simulation to 60 ticks per second regardless of
+  // monitor refresh rate. User '倒數計時感覺是兩倍三倍的快速'. The old
+  // accumulator added 1 per requestAnimationFrame call; on a 120 Hz
+  // display that meant update() ran 120 times per real second and the
+  // respawn countdown raced through 15 → 0 in ~7.5s instead of 15s.
+  // Fix: compute delta-frame in 60Hz-equivalents from performance.now
+  // and accumulate that. Render still runs at display rate for smooth
+  // visuals; simulation is locked.
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  if (_lastFrameTime === 0) _lastFrameTime = now;
+  // Capped at 5 so tab-backgrounded drift doesn't spawn a 100-tick burst.
+  const dt60 = Math.min(5, (now - _lastFrameTime) / (1000 / 60));
+  _lastFrameTime = now;
   // Ambient music plays only during a live match; pauses are silent.
   if (game.state === 'playing' && !game._paused && AUDIO.unlocked && !MUSIC.active) startMusic();
   else if ((game.state !== 'playing' || game._paused) && MUSIC.active) stopMusic();
   if (!game._paused) {
-    _stepAccumulator += game._timeScale != null ? game._timeScale : 1;
+    _stepAccumulator += dt60 * (game._timeScale != null ? game._timeScale : 1);
     while (_stepAccumulator >= 1) { update(); _stepAccumulator -= 1; }
   }
   updateCamera();

@@ -293,33 +293,12 @@ function renderDeathRecap() {
       W_ / 2, H_ - hintH / 2 + 6,
     );
     _deathRecap.adReviveBtnRect = null;
-    // Phase 60: buff-only button. Visible when buff isn't already active.
-    // Compact, mid-right so it doesn't fight the auto-swap hint or the
-    // top kill-cam strip. Player can ignore and let auto-swap handle the
-    // death; if they tap it, ad fires + buff activates for 30 min.
-    if (typeof isRespawnBuffed === 'function' && !isRespawnBuffed()) {
-      const btnW = 280, btnH = 50;
-      const btnX = W_ - btnW - 24;
-      const btnY = H_ - hintH - btnH - 14;
-      _deathRecap.adBuffBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
-      const pulse3 = 0.80 + 0.20 * Math.sin(game.time * 0.18);
-      ctx.fillStyle = `rgba(255, 210, 74, ${pulse3})`;   // gold = buff
-      ctx.fillRect(btnX, btnY, btnW, btnH);
-      ctx.strokeStyle = COLORS.black;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(btnX, btnY, btnW, btnH);
-      ctx.fillStyle = COLORS.black;
-      ctx.font = 'bold 13px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(_r('▶ 看廣告 · 30 分鐘 5 秒復活',
-                      '▶ WATCH AD · 5s RESPAWN · 30 MIN'),
-                   btnX + btnW / 2, btnY + btnH / 2 - 1);
-      ctx.font = 'bold 9px monospace';
-      ctx.fillText(_r('(平常 15 秒)', '(default 15s)'),
-                   btnX + btnW / 2, btnY + btnH - 8);
-    } else {
-      _deathRecap.adBuffBtnRect = null;
-    }
+    // Phase 87 — buff-only button hidden on individual death. User
+    // '應該是每一次全軍覆沒, 而不是每一次死'. Buff CTA only appears in
+    // the team-wipe branch above (bundled with REVIVE + 30 MIN BUFF).
+    // Removed the gold pulsing 'WATCH AD · 5s RESPAWN' button that
+    // previously drew here on every individual death.
+    _deathRecap.adBuffBtnRect = null;
   }
 
   // Phase 60: buff status badge in the top strip (between killer line and
