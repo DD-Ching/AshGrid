@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=76"></script>
-<script src="js/arena_recruitment.js?v=76"></script>
-<script src="js/dynamic_radio.js?v=76"></script>
-<script src="js/i18n.js?v=76"></script>
-<script src="js/touch_input.js?v=76"></script>
-<script src="js/key_bindings.js?v=76"></script>
-<script src="js/grenades.js?v=76"></script>
-<script src="js/squad_commands.js?v=76"></script>
-<script src="js/multiplayer.js?v=76"></script>
-<script src="js/leaderboard.js?v=76"></script>
-<script src="js/structures.js?v=76"></script>
-<script src="js/tod.js?v=76"></script>
-<script src="js/weapons.js?v=76"></script>
-<script src="js/chassis.js?v=76"></script>
-<script src="js/respawn_buff.js?v=76"></script>
-<script src="js/death_recap.js?v=76"></script>
-<script src="js/mote_affinity.js?v=76"></script>
-<script src="js/stage_hints.js?v=76"></script>
-<script src="js/pawn_swap.js?v=76"></script>
-<script src="js/global_stats.js?v=76"></script>
-<script src="js/progressive_unlock.js?v=76"></script>
-<script src="js/ad_stubs.js?v=76"></script>
+<script src="js/audio/sfx.js?v=77"></script>
+<script src="js/arena_recruitment.js?v=77"></script>
+<script src="js/dynamic_radio.js?v=77"></script>
+<script src="js/i18n.js?v=77"></script>
+<script src="js/touch_input.js?v=77"></script>
+<script src="js/key_bindings.js?v=77"></script>
+<script src="js/grenades.js?v=77"></script>
+<script src="js/squad_commands.js?v=77"></script>
+<script src="js/multiplayer.js?v=77"></script>
+<script src="js/leaderboard.js?v=77"></script>
+<script src="js/structures.js?v=77"></script>
+<script src="js/tod.js?v=77"></script>
+<script src="js/weapons.js?v=77"></script>
+<script src="js/chassis.js?v=77"></script>
+<script src="js/respawn_buff.js?v=77"></script>
+<script src="js/death_recap.js?v=77"></script>
+<script src="js/mote_affinity.js?v=77"></script>
+<script src="js/stage_hints.js?v=77"></script>
+<script src="js/pawn_swap.js?v=77"></script>
+<script src="js/global_stats.js?v=77"></script>
+<script src="js/progressive_unlock.js?v=77"></script>
+<script src="js/ad_stubs.js?v=77"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=76"></script>
+<script src="js/crazygames.js?v=77"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=76"></script>
+<script src="js/gamemonetize.js?v=77"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=76"></script>
-<script src="js/world_gen.js?v=76"></script>
-<script src="js/squad.js?v=76"></script>
-<script src="js/drone_fpv.js?v=76"></script>
-<script src="js/vision_raycast.js?v=76"></script>
-<script src="js/camera.js?v=76"></script>
-<script src="js/defense_build_ui.js?v=76"></script>
-<script src="js/pause.js?v=76"></script>
+<script src="js/missions/nn_deathmatch.js?v=77"></script>
+<script src="js/world_gen.js?v=77"></script>
+<script src="js/squad.js?v=77"></script>
+<script src="js/drone_fpv.js?v=77"></script>
+<script src="js/vision_raycast.js?v=77"></script>
+<script src="js/camera.js?v=77"></script>
+<script src="js/defense_build_ui.js?v=77"></script>
+<script src="js/pause.js?v=77"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -9962,12 +9962,18 @@ function drawObjectiveCompass() {}
 function collectMissionWaypoints() { return []; }
 
 // Shared HUD helper for the objective panel (used by mission.renderHUD).
-// Phase 75 — mobile-aware. On narrow (<500px) the panel was hard-coded to
-// 300px wide + y=54 which overlapped the top-left status panel (ends at
-// x≈176 on 375vp). Now: narrow shrinks to 200px wide AND drops below the
-// status panel so they stack vertically. Title font also scales down.
+// Phase 77 — fully hidden on narrow viewports (<500px). User '介面極度
+// 臃腫'. Every line this panel shows (KILLS / DEATHS / TIME / SQUAD /
+// B BUILD · G RECRUIT) is already available elsewhere on the HUD:
+//   • kills → top-right score row 'SCORE · KILLS N'
+//   • time  → not meaningful in endless arena, was just noise
+//   • squad → top-left status panel has squad chips (tappable swap)
+//   • B/G hints → right-side touch action column shows the buttons
+// So duplicating it inside a fat 200px panel was pure clutter on phones.
+// Phase 75 had moved + shrunk it; Phase 77 drops it entirely.
 function drawObjectivePanel(lines) {
-  const _narrow = W() < 500;
+  if (W() < 500) return;
+  const _narrow = false;     // never hit since we early-return on narrow
   const w = _narrow ? 200 : 300;
   const h = (_narrow ? 32 : 36) + lines.length * (_narrow ? 14 : 17);
   // On narrow we move BELOW the status panel (status height ~80, top 16 → 96).

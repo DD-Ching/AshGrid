@@ -55,11 +55,30 @@ function _touchTriggerAction(id) {
 }
 
 if (touchInput.enabled) {
-  // Touch users default to aim-assist ON (they have less precise aim than
-  // mouse) and to a sane minimap state.
-  if (localStorage.getItem('ag.aimAssist') == null) {
-    player._aimAssist = true;
-    try { localStorage.setItem('ag.aimAssist', '1'); } catch (e) {}
+  // Phase 77 — CRITICAL BUG FIX. This file loads from <head> at line ~52,
+  // but `player` is defined inside the inline script at line 2343 (much
+  // later in load order). The ORIGINAL `player._aimAssist = true` here
+  // threw ReferenceError on mobile → IIFE aborted BEFORE
+  // addEventListener attached → touch listeners never wired → no movement,
+  // no aim, nothing on phones. Desktop never saw this because
+  // touchInput.enabled === false skipped the whole block.
+  //
+  // Fix: defer the player-state default into DOMContentLoaded (when the
+  // inline script has finished running). Touch listeners still attach
+  // immediately so we never miss an early gesture.
+  if (typeof document !== 'undefined') {
+    const _initAimAssist = () => {
+      if (typeof player === 'undefined') return;
+      if (localStorage.getItem('ag.aimAssist') == null) {
+        player._aimAssist = true;
+        try { localStorage.setItem('ag.aimAssist', '1'); } catch (e) {}
+      }
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', _initAimAssist, { once: true });
+    } else {
+      _initAimAssist();
+    }
   }
   // Prevent the page from scrolling / pinch-zooming under our gestures.
   document.body.style.touchAction = 'none';
