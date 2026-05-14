@@ -45,41 +45,41 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=66"></script>
-<script src="js/arena_recruitment.js?v=66"></script>
-<script src="js/dynamic_radio.js?v=66"></script>
-<script src="js/i18n.js?v=66"></script>
-<script src="js/touch_input.js?v=66"></script>
-<script src="js/key_bindings.js?v=66"></script>
-<script src="js/grenades.js?v=66"></script>
-<script src="js/squad_commands.js?v=66"></script>
-<script src="js/multiplayer.js?v=66"></script>
-<script src="js/leaderboard.js?v=66"></script>
-<script src="js/structures.js?v=66"></script>
-<script src="js/tod.js?v=66"></script>
-<script src="js/weapons.js?v=66"></script>
-<script src="js/chassis.js?v=66"></script>
-<script src="js/respawn_buff.js?v=66"></script>
-<script src="js/death_recap.js?v=66"></script>
-<script src="js/mote_affinity.js?v=66"></script>
-<script src="js/stage_hints.js?v=66"></script>
-<script src="js/pawn_swap.js?v=66"></script>
-<script src="js/global_stats.js?v=66"></script>
-<script src="js/progressive_unlock.js?v=66"></script>
-<script src="js/ad_stubs.js?v=66"></script>
+<script src="js/audio/sfx.js?v=67"></script>
+<script src="js/arena_recruitment.js?v=67"></script>
+<script src="js/dynamic_radio.js?v=67"></script>
+<script src="js/i18n.js?v=67"></script>
+<script src="js/touch_input.js?v=67"></script>
+<script src="js/key_bindings.js?v=67"></script>
+<script src="js/grenades.js?v=67"></script>
+<script src="js/squad_commands.js?v=67"></script>
+<script src="js/multiplayer.js?v=67"></script>
+<script src="js/leaderboard.js?v=67"></script>
+<script src="js/structures.js?v=67"></script>
+<script src="js/tod.js?v=67"></script>
+<script src="js/weapons.js?v=67"></script>
+<script src="js/chassis.js?v=67"></script>
+<script src="js/respawn_buff.js?v=67"></script>
+<script src="js/death_recap.js?v=67"></script>
+<script src="js/mote_affinity.js?v=67"></script>
+<script src="js/stage_hints.js?v=67"></script>
+<script src="js/pawn_swap.js?v=67"></script>
+<script src="js/global_stats.js?v=67"></script>
+<script src="js/progressive_unlock.js?v=67"></script>
+<script src="js/ad_stubs.js?v=67"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=66"></script>
+<script src="js/crazygames.js?v=67"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=66"></script>
-<script src="js/world_gen.js?v=66"></script>
-<script src="js/squad.js?v=66"></script>
-<script src="js/drone_fpv.js?v=66"></script>
-<script src="js/vision_raycast.js?v=66"></script>
-<script src="js/camera.js?v=66"></script>
-<script src="js/defense_build_ui.js?v=66"></script>
-<script src="js/pause.js?v=66"></script>
+<script src="js/missions/nn_deathmatch.js?v=67"></script>
+<script src="js/world_gen.js?v=67"></script>
+<script src="js/squad.js?v=67"></script>
+<script src="js/drone_fpv.js?v=67"></script>
+<script src="js/vision_raycast.js?v=67"></script>
+<script src="js/camera.js?v=67"></script>
+<script src="js/defense_build_ui.js?v=67"></script>
+<script src="js/pause.js?v=67"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -2607,13 +2607,19 @@ const mouse = { x: 0, y: 0, worldX: 0, worldY: 0, down: false };
 
 // Helper for the pause overlay's "exit" button.
 function exitMatchToMenu() {
+  // Phase 67 — scene fade to black before flipping state. Sets the target
+  // to 1.0, scheduled state flip after the fade ramps in (~0.3s).
   game._paused = false;
-  game.state = 'menu';
-  game._skirmish = false;
-  // Phase 52 — Crazy Games SDK lifecycle. Tell the portal we're no longer
-  // in active gameplay so it can place an inter-round ad if appropriate.
-  if (typeof crazyEvent_gameplayStop === 'function') crazyEvent_gameplayStop();
-  document.getElementById('start').classList.remove('hidden');
+  if (game._sceneFade == null) game._sceneFade = 0;
+  game._sceneFadeTarget = 1;
+  setTimeout(() => {
+    game.state = 'menu';
+    game._skirmish = false;
+    if (typeof crazyEvent_gameplayStop === 'function') crazyEvent_gameplayStop();
+    document.getElementById('start').classList.remove('hidden');
+    // Ramp scene fade BACK to 0 once the menu is up so the lobby fades in.
+    game._sceneFadeTarget = 0;
+  }, 320);
 }
 
 // arena-mp: map editor cut — stub kept so `editor.*` branches degrade safely.
@@ -5921,6 +5927,19 @@ function update() {
   const _sDiff = game.score - game._scoreDisplay;
   if (Math.abs(_sDiff) > 0.5) game._scoreDisplay += _sDiff * 0.08;
   else                        game._scoreDisplay = game.score;
+  // (c) Phase 67 — death black-screen fade. Ramps up the moment alive=false,
+  //     fades back down on respawn. Decoupled from the death-recap UI so a
+  //     fail-to-recap (e.g. MP without NN) still gets the scene cue.
+  if (game._deathFade == null) game._deathFade = 0;
+  const _dfTarget = (player.alive === false) ? 0.55 : 0;
+  game._deathFade += (_dfTarget - game._deathFade) * 0.06;   // ~0.4s ramp
+  if (Math.abs(_dfTarget - game._deathFade) < 0.005) game._deathFade = _dfTarget;
+  // (d) Scene-fade — used by exitMatchToMenu() to ease back to lobby. Ramp
+  //     direction set by caller; tick lerps toward target each frame.
+  if (game._sceneFade == null) game._sceneFade = 0;
+  if (game._sceneFadeTarget == null) game._sceneFadeTarget = 0;
+  game._sceneFade += (game._sceneFadeTarget - game._sceneFade) * 0.10;
+  if (Math.abs(game._sceneFadeTarget - game._sceneFade) < 0.005) game._sceneFade = game._sceneFadeTarget;
   // ────────────────────────────────────────────────────────────────────
 
   // Phase 4: SEED rises +1/sec on human-piloted units (in solo NN that's
@@ -7234,7 +7253,11 @@ function renderMineDefuseRing() {
   if (!target) return;
   const def = STRUCTURE_DEFS[target.kind] || {};
   const need = def.defuseTicks || (5 * 60);
-  const t = Math.max(0, Math.min(1, (game.time - d.startedAt) / need));
+  const _tRaw = Math.max(0, Math.min(1, (game.time - d.startedAt) / need));
+  // Phase 67 — ease-out cubic so the ring fills fast at the start then
+  // slows into the final wedge (feels like 'almost there...' instead of
+  // a metronomic linear sweep).
+  const t = 1 - Math.pow(1 - _tRaw, 3);
   const r = (def.size || 24) / 2 + 8;
   ctx.save();
   // Backdrop ring (full circle, dim) — shows the player WHERE to look.
@@ -9896,9 +9919,23 @@ function drawObjectivePanel(lines) {
 function renderHUD() {
   // Full HUD: HP / ammo / minimap / mission / energy all visible.
   const showMin = true, showMsn = true;
-  // Hit flash
+  // Hit flash — Phase 67: ease-out curve (t²) so the flash punches IN
+  // then bleeds OFF gently, instead of a linear ramp that pops sharply.
   if (game.hitFlash > 0) {
-    ctx.fillStyle = `rgba(200, 38, 28, ${game.hitFlash / 12 * 0.35})`;
+    const _hfT = game.hitFlash / 12;
+    const _hfA = _hfT * _hfT * 0.35;   // squared decay
+    ctx.fillStyle = `rgba(200, 38, 28, ${_hfA})`;
+    ctx.fillRect(0, 0, W(), H());
+  }
+  // Phase 67 — death fade overlay (slow black wash on KIA, eases back on
+  // respawn). Drawn FIRST so subsequent HUD still reads on top.
+  if (game._deathFade > 0.01) {
+    ctx.fillStyle = `rgba(0, 0, 0, ${game._deathFade})`;
+    ctx.fillRect(0, 0, W(), H());
+  }
+  // Phase 67 — scene fade (lobby transition). Full black opacity at 1.0.
+  if (game._sceneFade > 0.01) {
+    ctx.fillStyle = `rgba(0, 0, 0, ${game._sceneFade})`;
     ctx.fillRect(0, 0, W(), H());
   }
   // Phase 20a/28: MP indicator — top-right corner. Shows TWO counts:
@@ -10188,16 +10225,34 @@ function renderHUD() {
   ctx.fillRect(barX + 12, barY + 42, hpw, 5);
   ctx.fillStyle = stamLocked ? '#7A4030' : (player.sprinting ? '#E67A2C' : '#B25F2A');
   ctx.fillRect(barX + 12, barY + 42, hpw * stamFrac, 5);
-  // Ammo (middle)
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 22px sans-serif';
-  ctx.fillText(`${player.ammo}`, barX + 210, barY + 38);
+  // Ammo (middle). Phase 67: yellow flash + slight scale-up during the
+  // 0.15s weapon-swap window so the switch reads as 'something just
+  // happened here' instead of an instant value change.
+  const _wsLeft = Math.max(0, (player._weaponSwapUntil || 0) - game.time);
+  const _wsT = _wsLeft / 9;                 // 1.0 at swap moment, 0 at end
+  if (_wsT > 0) {
+    ctx.save();
+    ctx.fillStyle = '#FFD24A';              // bright yellow during swap
+    ctx.font = `bold ${22 + Math.round(_wsT * 4)}px sans-serif`;
+    ctx.globalAlpha = 0.85 + 0.15 * _wsT;
+    ctx.fillText(`${player.ammo}`, barX + 210, barY + 38);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText(`${player.ammo}`, barX + 210, barY + 38);
+  }
   ctx.font = 'bold 11px sans-serif';
   ctx.fillStyle = COLORS.gray;
   ctx.fillText(`/${player.reserve}`, barX + 250, barY + 38);
   if (player.reloading) {
+    // Phase 67: ease-out the reload bar (1 - (t)²). Starts fast (you're
+    // about to be ready!), slows gently at the end — that 'almost there'
+    // beat is satisfying compared to a linear ramp.
+    const _rt = player.reloadTime / 80;
+    const _rtEase = 1 - _rt * _rt;
     ctx.fillStyle = COLORS.red;
-    ctx.fillRect(barX + 210, barY + 44, 80 * (1 - player.reloadTime / 80), 4);
+    ctx.fillRect(barX + 210, barY + 44, 80 * _rtEase, 4);
     ctx.fillStyle = COLORS.black;
     ctx.font = 'bold 9px sans-serif';
     ctx.fillText(T('R 装填中', 'R RELOADING'), barX + 210, barY + 18);
@@ -10506,24 +10561,28 @@ function renderHUDOverlays() {
     ctx.restore();
   }
 
-  // Directional hurt indicator — red glow on the edge facing the damage source.
-  // Decays each render frame; intensity = 0 → no draw.
-  if (player._hurtIntensity > 0) {
+  // Directional hurt indicator — red glow on the edge facing the damage
+  // source. Phase 67: exponential decay (×0.94/frame) so the indicator
+  // lingers longer at lower intensities — feels like the damage echoes
+  // away instead of a linear cut-off. Alpha curve also eased (t²) so the
+  // glow ramps in soft, not slamming on at full strength.
+  if (player._hurtIntensity > 0.01) {
     const intensity = player._hurtIntensity;
+    const eased    = intensity * intensity;     // ease-out alpha
     const ang = player._hurtAngle || 0;
-    // Edge midpoint: project ang to nearest edge (top/bot/left/right)
     const cx = W()/2, cy = H()/2;
     const edge = 80;
     const dx = Math.cos(ang), dy = Math.sin(ang);
-    // Offset for gradient origin = center + dir × max
     const ox = cx + dx * Math.max(W(), H());
     const oy = cy + dy * Math.max(W(), H());
     const grad = ctx.createRadialGradient(ox, oy, edge, ox, oy, Math.max(W(), H()));
-    grad.addColorStop(0, `rgba(200, 38, 28, ${intensity * 0.55})`);
+    grad.addColorStop(0, `rgba(200, 38, 28, ${eased * 0.55})`);
     grad.addColorStop(1, 'rgba(200, 38, 28, 0)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W(), H());
-    player._hurtIntensity = Math.max(0, intensity - 0.05);
+    player._hurtIntensity = intensity * 0.94;
+  } else {
+    player._hurtIntensity = 0;
   }
 
   // Pawn-swap toast — small top-center chip, fades the last 30% of its life.

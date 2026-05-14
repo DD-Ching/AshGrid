@@ -150,6 +150,13 @@ function swapPlayerWeapon() {
   applyWeaponToPlayer(next.weapon);
   player.ammo = next.ammo;
   player.reserve = next.reserve;
+  // Phase 67 — 0.15s swap animation. Sets _weaponSwapUntil so renderHUD
+  // can pulse the ammo block + temporarily fade the crosshair. Also acts
+  // as a brief fire lockout (read by the fire() function so the new
+  // weapon doesn't shoot mid-handle-pull).
+  if (typeof game !== 'undefined' && game.time != null) {
+    player._weaponSwapUntil = game.time + 9;   // 9 ticks = 0.15s @ 60fps
+  }
   if (typeof showSwapToast === 'function') {
     const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
     const wname = next.weapon.name || (lang === 'zh' ? '副武器' : 'SECONDARY');

@@ -68,8 +68,22 @@ function updateCamera() {
   while (rotDiff < -Math.PI) rotDiff += Math.PI*2;
   camera.rotation += rotDiff * 0.15;
 
-  camera.x = target.x;
-  camera.y = target.y;
+  // Phase 67 — position lerp. Mode-aware:
+  //   • normal tactical: snap (responsive, no input lag)
+  //   • big delta (mode switch, respawn teleport): lerp to absorb the jump
+  // Threshold 60u — well past any normal movement step (player moves
+  // ~3u/frame). Anything over that is a teleport-class change so easing
+  // it in is preferable to a hard cut.
+  const dx = target.x - camera.x;
+  const dy = target.y - camera.y;
+  const dd = Math.hypot(dx, dy);
+  if (dd > 60) {
+    camera.x += dx * 0.18;
+    camera.y += dy * 0.18;
+  } else {
+    camera.x = target.x;
+    camera.y = target.y;
+  }
 }
 
 function screenToWorld(sx, sy) {
