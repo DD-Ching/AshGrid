@@ -56,6 +56,8 @@
   let _ready = false;
   let _lastAdAt = 0;
   let _deathCount = 0;
+  let _pendingAdCb = null;       // fired when ad ACTUALLY finishes
+  let _adPlayStartedAt = 0;      // wall-clock ms when ad started playing
   const _devMode = !GM_GAME_ID;
 
   // ─── Load GM SDK (only when configured) ───────────────────────────
@@ -84,11 +86,20 @@
           case 'SDK_GAME_START':
             // Ad finished — resume gameplay.
             if (typeof game !== 'undefined') game._paused = false;
+            // Phase 89 — fire the pending reward callback NOW (when
+            // the ad actually finished), not 1.5s after it started.
+            // User '不應該選在看長時間視頻的時候直接復活, 應該要等
+            // 到視頻結束才復活'.
+            if (_pendingAdCb) {
+              try { _pendingAdCb(true); } catch (e) {}
+              _pendingAdCb = null;
+            }
             break;
           case 'SDK_GAME_PAUSE':
             // Ad about to play — pause gameplay so the player doesn't
             // get shot while watching a 15s mid-roll.
             if (typeof game !== 'undefined') game._paused = true;
+            _adPlayStartedAt = Date.now();
             break;
         }
       },
@@ -123,32 +134,42 @@
     }
 
     try {
-      // Phase 88 — for rewarded paths, prefer the explicit rewarded API
-      // (forces UNSKIPPABLE per GM convention). User '廣告不應該可以
-      // 跳過 ... 看 30 秒的廣告時不應該可以跳過'.
+      // Phase 89 — stash cb on _pendingAdCb. It fires on the
+      // SDK_GAME_START event when the ad ACTUALLY finishes (handled in
+      // SDK_OPTIONS.onEvent above). Old code fired cb on a 1.5s
+      // setTimeout which granted the reward halfway into the ad. Now
+      // the player must watch the ad to completion before the buff /
+      // revive lands.
+      _pendingAdCb = cb || null;
+      // Phase 88 — rewarded path forces UNSKIPPABLE per GM convention.
       if (isRewarded && window.sdk && typeof window.sdk.showAd === 'function') {
         window.sdk.showAd('rewarded', () => {
-          if (cb) cb(true);
-          // Re-prime the next ad after one plays
+          // GM's showAd callback fires on ad-end. Fire pending cb here
+          // too (belt + suspenders with the SDK_GAME_START path).
+          if (_pendingAdCb) {
+            try { _pendingAdCb(true); } catch (e) {}
+            _pendingAdCb = null;
+          }
           try { if (window.sdk.preloadAd) window.sdk.preloadAd('rewarded'); } catch(e) {}
         });
         return;
       }
       if (typeof window.sdk_showBanner === 'function') {
-        // Pass adType hint so GM serves a rewarded (unskippable) ad on
-        // the rewarded path. Falls back to interstitial otherwise.
         window.sdk_showBanner(isRewarded ? { adType: 'rewarded' } : undefined);
       } else if (window.sdk && typeof window.sdk.showBanner === 'function') {
         window.sdk.showBanner(isRewarded ? { adType: 'rewarded' } : undefined);
       } else {
         console.warn('[gamemonetize] SDK not exposing showBanner — dev fallback');
-        if (cb) setTimeout(() => cb(true), 500);
+        // Dev mode: simulate ad completion after 500ms
+        if (_pendingAdCb) {
+          setTimeout(() => {
+            if (_pendingAdCb) { _pendingAdCb(true); _pendingAdCb = null; }
+          }, 500);
+        }
         return;
       }
-      // Fire success after ad-length window. GM rewarded ads typically
-      // run 15-30s; fire at 1.5s lets the buff-grant UI settle into
-      // place behind the ad. Actual reward gating is server-side.
-      if (cb) setTimeout(() => cb(true), 1500);
+      // Real SDK path — cb fires on SDK_GAME_START event when ad ends.
+      // Don't setTimeout cb here; that was the Phase 88 bug.
     } catch (e) {
       console.warn('[gamemonetize] showBanner threw:', e);
       if (cb) cb(false);

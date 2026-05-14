@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=88"></script>
-<script src="js/arena_recruitment.js?v=88"></script>
-<script src="js/dynamic_radio.js?v=88"></script>
-<script src="js/i18n.js?v=88"></script>
-<script src="js/touch_input.js?v=88"></script>
-<script src="js/key_bindings.js?v=88"></script>
-<script src="js/grenades.js?v=88"></script>
-<script src="js/squad_commands.js?v=88"></script>
-<script src="js/multiplayer.js?v=88"></script>
-<script src="js/leaderboard.js?v=88"></script>
-<script src="js/structures.js?v=88"></script>
-<script src="js/tod.js?v=88"></script>
-<script src="js/weapons.js?v=88"></script>
-<script src="js/chassis.js?v=88"></script>
-<script src="js/respawn_buff.js?v=88"></script>
-<script src="js/death_recap.js?v=88"></script>
-<script src="js/mote_affinity.js?v=88"></script>
-<script src="js/stage_hints.js?v=88"></script>
-<script src="js/pawn_swap.js?v=88"></script>
-<script src="js/global_stats.js?v=88"></script>
-<script src="js/progressive_unlock.js?v=88"></script>
-<script src="js/ad_stubs.js?v=88"></script>
+<script src="js/audio/sfx.js?v=89"></script>
+<script src="js/arena_recruitment.js?v=89"></script>
+<script src="js/dynamic_radio.js?v=89"></script>
+<script src="js/i18n.js?v=89"></script>
+<script src="js/touch_input.js?v=89"></script>
+<script src="js/key_bindings.js?v=89"></script>
+<script src="js/grenades.js?v=89"></script>
+<script src="js/squad_commands.js?v=89"></script>
+<script src="js/multiplayer.js?v=89"></script>
+<script src="js/leaderboard.js?v=89"></script>
+<script src="js/structures.js?v=89"></script>
+<script src="js/tod.js?v=89"></script>
+<script src="js/weapons.js?v=89"></script>
+<script src="js/chassis.js?v=89"></script>
+<script src="js/respawn_buff.js?v=89"></script>
+<script src="js/death_recap.js?v=89"></script>
+<script src="js/mote_affinity.js?v=89"></script>
+<script src="js/stage_hints.js?v=89"></script>
+<script src="js/pawn_swap.js?v=89"></script>
+<script src="js/global_stats.js?v=89"></script>
+<script src="js/progressive_unlock.js?v=89"></script>
+<script src="js/ad_stubs.js?v=89"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=88"></script>
+<script src="js/crazygames.js?v=89"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=88"></script>
+<script src="js/gamemonetize.js?v=89"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=88"></script>
-<script src="js/world_gen.js?v=88"></script>
-<script src="js/squad.js?v=88"></script>
-<script src="js/drone_fpv.js?v=88"></script>
-<script src="js/vision_raycast.js?v=88"></script>
-<script src="js/camera.js?v=88"></script>
-<script src="js/defense_build_ui.js?v=88"></script>
-<script src="js/pause.js?v=88"></script>
+<script src="js/missions/nn_deathmatch.js?v=89"></script>
+<script src="js/world_gen.js?v=89"></script>
+<script src="js/squad.js?v=89"></script>
+<script src="js/drone_fpv.js?v=89"></script>
+<script src="js/vision_raycast.js?v=89"></script>
+<script src="js/camera.js?v=89"></script>
+<script src="js/defense_build_ui.js?v=89"></script>
+<script src="js/pause.js?v=89"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -1207,7 +1207,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
      timing are testable. -->
 <div id="respawnAdSlot" style="
      display:none;
-     position:fixed; left:50%; top:50%;
+     position:fixed; left:50%; top:32%;
      transform: translate(-50%, -50%);
      z-index:50;
      pointer-events:none;
