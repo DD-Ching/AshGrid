@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=74"></script>
-<script src="js/arena_recruitment.js?v=74"></script>
-<script src="js/dynamic_radio.js?v=74"></script>
-<script src="js/i18n.js?v=74"></script>
-<script src="js/touch_input.js?v=74"></script>
-<script src="js/key_bindings.js?v=74"></script>
-<script src="js/grenades.js?v=74"></script>
-<script src="js/squad_commands.js?v=74"></script>
-<script src="js/multiplayer.js?v=74"></script>
-<script src="js/leaderboard.js?v=74"></script>
-<script src="js/structures.js?v=74"></script>
-<script src="js/tod.js?v=74"></script>
-<script src="js/weapons.js?v=74"></script>
-<script src="js/chassis.js?v=74"></script>
-<script src="js/respawn_buff.js?v=74"></script>
-<script src="js/death_recap.js?v=74"></script>
-<script src="js/mote_affinity.js?v=74"></script>
-<script src="js/stage_hints.js?v=74"></script>
-<script src="js/pawn_swap.js?v=74"></script>
-<script src="js/global_stats.js?v=74"></script>
-<script src="js/progressive_unlock.js?v=74"></script>
-<script src="js/ad_stubs.js?v=74"></script>
+<script src="js/audio/sfx.js?v=75"></script>
+<script src="js/arena_recruitment.js?v=75"></script>
+<script src="js/dynamic_radio.js?v=75"></script>
+<script src="js/i18n.js?v=75"></script>
+<script src="js/touch_input.js?v=75"></script>
+<script src="js/key_bindings.js?v=75"></script>
+<script src="js/grenades.js?v=75"></script>
+<script src="js/squad_commands.js?v=75"></script>
+<script src="js/multiplayer.js?v=75"></script>
+<script src="js/leaderboard.js?v=75"></script>
+<script src="js/structures.js?v=75"></script>
+<script src="js/tod.js?v=75"></script>
+<script src="js/weapons.js?v=75"></script>
+<script src="js/chassis.js?v=75"></script>
+<script src="js/respawn_buff.js?v=75"></script>
+<script src="js/death_recap.js?v=75"></script>
+<script src="js/mote_affinity.js?v=75"></script>
+<script src="js/stage_hints.js?v=75"></script>
+<script src="js/pawn_swap.js?v=75"></script>
+<script src="js/global_stats.js?v=75"></script>
+<script src="js/progressive_unlock.js?v=75"></script>
+<script src="js/ad_stubs.js?v=75"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=74"></script>
+<script src="js/crazygames.js?v=75"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=74"></script>
+<script src="js/gamemonetize.js?v=75"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=74"></script>
-<script src="js/world_gen.js?v=74"></script>
-<script src="js/squad.js?v=74"></script>
-<script src="js/drone_fpv.js?v=74"></script>
-<script src="js/vision_raycast.js?v=74"></script>
-<script src="js/camera.js?v=74"></script>
-<script src="js/defense_build_ui.js?v=74"></script>
-<script src="js/pause.js?v=74"></script>
+<script src="js/missions/nn_deathmatch.js?v=75"></script>
+<script src="js/world_gen.js?v=75"></script>
+<script src="js/squad.js?v=75"></script>
+<script src="js/drone_fpv.js?v=75"></script>
+<script src="js/vision_raycast.js?v=75"></script>
+<script src="js/camera.js?v=75"></script>
+<script src="js/defense_build_ui.js?v=75"></script>
+<script src="js/pause.js?v=75"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -9961,10 +9961,19 @@ function drawDrone(x, y, color, phase) {
 function drawObjectiveCompass() {}
 function collectMissionWaypoints() { return []; }
 
-// Shared HUD helper for the objective panel (used by mission.renderHUD)
+// Shared HUD helper for the objective panel (used by mission.renderHUD).
+// Phase 75 — mobile-aware. On narrow (<500px) the panel was hard-coded to
+// 300px wide + y=54 which overlapped the top-left status panel (ends at
+// x≈176 on 375vp). Now: narrow shrinks to 200px wide AND drops below the
+// status panel so they stack vertically. Title font also scales down.
 function drawObjectivePanel(lines) {
-  const w = 300, h = 36 + lines.length * 17;
-  const x = W()/2 - w/2, y = 54;
+  const _narrow = W() < 500;
+  const w = _narrow ? 200 : 300;
+  const h = (_narrow ? 32 : 36) + lines.length * (_narrow ? 14 : 17);
+  // On narrow we move BELOW the status panel (status height ~80, top 16 → 96).
+  // Position at y=104 leaves an 8px gap. On wide, stay at y=54 (centered top).
+  const x = _narrow ? (W() - w) - 16 : (W() / 2 - w / 2);
+  const y = _narrow ? 104 : 54;
   drawHUDPanel(x, y, w, h, null);
   ctx.fillStyle = COLORS.red;
   ctx.fillRect(x + 10, y + 8, 28, 12);
@@ -9974,15 +9983,15 @@ function drawObjectivePanel(lines) {
   ctx.fillText('MSN', x + 24, y + 17);
   ctx.textAlign = 'left';
   ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 11px sans-serif';
+  ctx.font = _narrow ? 'bold 9px sans-serif' : 'bold 11px sans-serif';
   const title = (missionTitle(mission) || '').toUpperCase();
   ctx.fillText(title, x + 46, y + 17);
   ctx.fillStyle = 'rgba(26, 26, 26, 0.18)';
   ctx.fillRect(x + 10, y + 26, w - 20, 1);
   ctx.fillStyle = COLORS.black;
-  ctx.font = '10px monospace';
+  ctx.font = _narrow ? '9px monospace' : '10px monospace';
   for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], x + 10, y + 40 + i * 16);
+    ctx.fillText(lines[i], x + 10, y + (_narrow ? 36 : 40) + i * (_narrow ? 14 : 16));
   }
 }
 
@@ -10253,13 +10262,17 @@ function renderHUD() {
   if (mission && (game.mode === 'tactical' || game.mode === 'command') && showMsn) drawObjectiveCompass();
 
   // ----- Compact bottom command bar: HP + Ammo + UAV in one slim row -----
+  // Phase 75 — mobile-aware widths. On narrow viewports the old 560px-wide
+  // bar overflowed a 375px portrait phone by ~200px. Now it scales to
+  // (viewport - 40) so the right edge always fits with a small margin.
+  const _hudNarrow = W() < 500;
   const barH = 54;
   const barY = H() - barH - 12;
-  const barW = 560;
-  const barX = 20;
+  const barW = _hudNarrow ? Math.max(280, W() - 40) : 560;
+  const barX = _hudNarrow ? 20 : 20;
   drawHUDPanel(barX, barY, barW, barH, null);
-  // HP bar (left third)
-  const hpw = 180;
+  // HP bar (left third) — width scaled so total HP+gap+ammo+gap+UAV fits.
+  const hpw = _hudNarrow ? 120 : 180;
   // Heavy chassis armor bar — drawn FIRST/above HP so player can read both
   // at a glance. Same width as HP, but 10px tall + cyan + 'ARMOR N/M' label.
   // User: '當我在操作重型裝甲的時候,那我也應該要看得到我的護甲的這個值數,
@@ -10304,8 +10317,11 @@ function renderHUD() {
   ctx.fillStyle = stamLocked ? '#7A4030' : (player.sprinting ? '#E67A2C' : '#B25F2A');
   ctx.fillRect(barX + 12, barY + 42, hpw * stamFrac, 5);
   // Ammo (middle). Phase 67: yellow flash + slight scale-up during the
-  // 0.15s weapon-swap window so the switch reads as 'something just
-  // happened here' instead of an instant value change.
+  // 0.15s weapon-swap window. Phase 75: position scales with hpw so the
+  // ammo block sits ~30px to the right of the HP bar regardless of
+  // narrow/wide width.
+  const _ammoX    = barX + hpw + 30;
+  const _reserveX = _ammoX + 40;
   const _wsLeft = Math.max(0, (player._weaponSwapUntil || 0) - game.time);
   const _wsT = _wsLeft / 9;                 // 1.0 at swap moment, 0 at end
   if (_wsT > 0) {
@@ -10313,54 +10329,60 @@ function renderHUD() {
     ctx.fillStyle = '#FFD24A';              // bright yellow during swap
     ctx.font = `bold ${22 + Math.round(_wsT * 4)}px sans-serif`;
     ctx.globalAlpha = 0.85 + 0.15 * _wsT;
-    ctx.fillText(`${player.ammo}`, barX + 210, barY + 38);
+    ctx.fillText(`${player.ammo}`, _ammoX, barY + 38);
     ctx.restore();
   } else {
     ctx.fillStyle = COLORS.black;
     ctx.font = 'bold 22px sans-serif';
-    ctx.fillText(`${player.ammo}`, barX + 210, barY + 38);
+    ctx.fillText(`${player.ammo}`, _ammoX, barY + 38);
   }
   ctx.font = 'bold 11px sans-serif';
   ctx.fillStyle = COLORS.gray;
-  ctx.fillText(`/${player.reserve}`, barX + 250, barY + 38);
+  ctx.fillText(`/${player.reserve}`, _reserveX, barY + 38);
   if (player.reloading) {
-    // Phase 67: ease-out the reload bar (1 - (t)²). Starts fast (you're
-    // about to be ready!), slows gently at the end — that 'almost there'
-    // beat is satisfying compared to a linear ramp.
     const _rt = player.reloadTime / 80;
     const _rtEase = 1 - _rt * _rt;
     ctx.fillStyle = COLORS.red;
-    ctx.fillRect(barX + 210, barY + 44, 80 * _rtEase, 4);
+    ctx.fillRect(_ammoX, barY + 44, 80 * _rtEase, 4);
     ctx.fillStyle = COLORS.black;
     ctx.font = 'bold 9px sans-serif';
-    ctx.fillText(T('R 装填中', 'R RELOADING'), barX + 210, barY + 18);
+    ctx.fillText(T('R 装填中', 'R RELOADING'), _ammoX, barY + 18);
   } else {
     ctx.fillStyle = COLORS.gray;
     ctx.font = '9px sans-serif';
-    ctx.fillText(T('R · 装填', 'R · RELOAD'), barX + 210, barY + 18);
+    ctx.fillText(T('R · 装填', 'R · RELOAD'), _ammoX, barY + 18);
   }
-  // UAV/FPV cluster (right of bar)
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 10px monospace';
-  ctx.fillText(`Q UAV ${drone.battery.toFixed(0)}%`, barX + 320, barY + 20);
-  ctx.fillText('E FPV', barX + 320, barY + 38);
-  // Grenade count (G key) — small dots for visual indicator
-  ctx.font = 'bold 10px monospace';
-  ctx.fillStyle = COLORS.black;
-  ctx.fillText(`G ${player.grenades}/${player.maxGrenades}`, barX + 280, barY + 20);
-  for (let i = 0; i < player.maxGrenades; i++) {
-    ctx.fillStyle = i < player.grenades ? COLORS.black : COLORS.lightGray;
-    ctx.beginPath();
-    ctx.arc(barX + 285 + i*9, barY + 32, 3, 0, Math.PI*2);
-    ctx.fill();
+  // UAV/FPV cluster (right of bar). Phase 75: hidden on narrow viewports —
+  // the right-side touch action column (Q UAV / E FPV / V / R / B) already
+  // shows these so duplicating in the bottom bar wastes width.
+  if (!_hudNarrow) {
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText(`Q UAV ${drone.battery.toFixed(0)}%`, barX + 320, barY + 20);
+    ctx.fillText('E FPV', barX + 320, barY + 38);
   }
-  ctx.fillStyle = COLORS.creamDark;
-  ctx.fillRect(barX + 396, barY + 12, 152, 6);
-  ctx.fillStyle = drone.battery > 30 ? COLORS.black : COLORS.red;
-  ctx.fillRect(barX + 396, barY + 12, 152 * (drone.battery/drone.maxBattery), 6);
-  for (let i = 0; i < fpv.max; i++) {
-    ctx.fillStyle = i < fpv.available ? COLORS.red : COLORS.lightGray;
-    ctx.fillRect(barX + 396 + i*18, barY + 30, 14, 10);
+  // Grenade count + UAV battery bar + FPV pip strip. Phase 75: all
+  // hidden on narrow viewports — same reason as UAV/FPV cluster above
+  // (the right-side touch action column carries Q E G B; players see
+  // current counts in the radial preview or the build pill).
+  if (!_hudNarrow) {
+    ctx.font = 'bold 10px monospace';
+    ctx.fillStyle = COLORS.black;
+    ctx.fillText(`G ${player.grenades}/${player.maxGrenades}`, barX + 280, barY + 20);
+    for (let i = 0; i < player.maxGrenades; i++) {
+      ctx.fillStyle = i < player.grenades ? COLORS.black : COLORS.lightGray;
+      ctx.beginPath();
+      ctx.arc(barX + 285 + i*9, barY + 32, 3, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.fillStyle = COLORS.creamDark;
+    ctx.fillRect(barX + 396, barY + 12, 152, 6);
+    ctx.fillStyle = drone.battery > 30 ? COLORS.black : COLORS.red;
+    ctx.fillRect(barX + 396, barY + 12, 152 * (drone.battery/drone.maxBattery), 6);
+    for (let i = 0; i < fpv.max; i++) {
+      ctx.fillStyle = i < fpv.available ? COLORS.red : COLORS.lightGray;
+      ctx.fillRect(barX + 396 + i*18, barY + 30, 14, 10);
+    }
   }
 
   // FTUE: minimap reveal is driven by reveal.minimap on the current step
@@ -10379,8 +10401,13 @@ function renderHUD() {
   }
   // Mini-map (bottom-right) — collapsible. Click the small toggle in the
   // top-right corner of its panel to fold it down to a 70×26 "MAP ▲" tab.
+  // Phase 75 — three-tier minimap size so a 375px portrait phone gets a
+  // 100×100 minimap (was 130×130 = 35% of viewport width = too dominant).
+  // Wide stays at 180×180.
   const _narrowMM = W() < 500;
-  const mw = _narrowMM ? 130 : 180, mh = _narrowMM ? 130 : 180;
+  const _tinyMM = W() < 400;
+  const mw = _tinyMM ? 100 : (_narrowMM ? 130 : 180);
+  const mh = mw;
   const mx = W() - mw - 16, my = H() - mh - 16;
   if (game._minimapCollapsed) {
     const tw = 70, th = 26;
