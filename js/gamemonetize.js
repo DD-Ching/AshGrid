@@ -29,8 +29,11 @@
   'use strict';
 
   // ─── Configuration ────────────────────────────────────────────────
-  // PASTE YOUR GAMEMONETIZE GAME ID HERE.
-  const GM_GAME_ID = '';
+  // Phase 81 — AshGrid's GameMonetize gameId.
+  // Registered at https://gamemonetize.com/dashboard
+  // Revenue routes to ddchingm513kj@gmail.com PayPal once payable balance
+  // reaches the $100/month threshold.
+  const GM_GAME_ID = 'pvjqfc42w9qdarpjdi0r21a0wpe3s77w';
 
   // Throttle: floor on time between consecutive midgame interstitials.
   // Rewarded ads bypass this throttle since the player explicitly chose
