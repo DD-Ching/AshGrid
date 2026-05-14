@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=78"></script>
-<script src="js/arena_recruitment.js?v=78"></script>
-<script src="js/dynamic_radio.js?v=78"></script>
-<script src="js/i18n.js?v=78"></script>
-<script src="js/touch_input.js?v=78"></script>
-<script src="js/key_bindings.js?v=78"></script>
-<script src="js/grenades.js?v=78"></script>
-<script src="js/squad_commands.js?v=78"></script>
-<script src="js/multiplayer.js?v=78"></script>
-<script src="js/leaderboard.js?v=78"></script>
-<script src="js/structures.js?v=78"></script>
-<script src="js/tod.js?v=78"></script>
-<script src="js/weapons.js?v=78"></script>
-<script src="js/chassis.js?v=78"></script>
-<script src="js/respawn_buff.js?v=78"></script>
-<script src="js/death_recap.js?v=78"></script>
-<script src="js/mote_affinity.js?v=78"></script>
-<script src="js/stage_hints.js?v=78"></script>
-<script src="js/pawn_swap.js?v=78"></script>
-<script src="js/global_stats.js?v=78"></script>
-<script src="js/progressive_unlock.js?v=78"></script>
-<script src="js/ad_stubs.js?v=78"></script>
+<script src="js/audio/sfx.js?v=79"></script>
+<script src="js/arena_recruitment.js?v=79"></script>
+<script src="js/dynamic_radio.js?v=79"></script>
+<script src="js/i18n.js?v=79"></script>
+<script src="js/touch_input.js?v=79"></script>
+<script src="js/key_bindings.js?v=79"></script>
+<script src="js/grenades.js?v=79"></script>
+<script src="js/squad_commands.js?v=79"></script>
+<script src="js/multiplayer.js?v=79"></script>
+<script src="js/leaderboard.js?v=79"></script>
+<script src="js/structures.js?v=79"></script>
+<script src="js/tod.js?v=79"></script>
+<script src="js/weapons.js?v=79"></script>
+<script src="js/chassis.js?v=79"></script>
+<script src="js/respawn_buff.js?v=79"></script>
+<script src="js/death_recap.js?v=79"></script>
+<script src="js/mote_affinity.js?v=79"></script>
+<script src="js/stage_hints.js?v=79"></script>
+<script src="js/pawn_swap.js?v=79"></script>
+<script src="js/global_stats.js?v=79"></script>
+<script src="js/progressive_unlock.js?v=79"></script>
+<script src="js/ad_stubs.js?v=79"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=78"></script>
+<script src="js/crazygames.js?v=79"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=78"></script>
+<script src="js/gamemonetize.js?v=79"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=78"></script>
-<script src="js/world_gen.js?v=78"></script>
-<script src="js/squad.js?v=78"></script>
-<script src="js/drone_fpv.js?v=78"></script>
-<script src="js/vision_raycast.js?v=78"></script>
-<script src="js/camera.js?v=78"></script>
-<script src="js/defense_build_ui.js?v=78"></script>
-<script src="js/pause.js?v=78"></script>
+<script src="js/missions/nn_deathmatch.js?v=79"></script>
+<script src="js/world_gen.js?v=79"></script>
+<script src="js/squad.js?v=79"></script>
+<script src="js/drone_fpv.js?v=79"></script>
+<script src="js/vision_raycast.js?v=79"></script>
+<script src="js/camera.js?v=79"></script>
+<script src="js/defense_build_ui.js?v=79"></script>
+<script src="js/pause.js?v=79"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -4662,43 +4662,75 @@ function _nnUpdateAiMode(unit, hostile) {
   }
 }
 
-// Pick a new patrol waypoint. Three sources, weighted to avoid the
-// 'every bot crowds the same cover' clump the user reported ('卡在牆角').
-//   50% — wander offset from current position (organic exploration)
-//   25% — random cover point (still favored but no longer dominant)
-//   25% — center-biased random (pulls units away from arena edges,
-//         which is the actual root cause of corner clumping — Phase 61
-//         picked uniformly across the arena, so units already near the
-//         edge tended to stay there)
-// When the picked waypoint lands inside a wall or off-arena we still
-// have nnApplyAction's stuck-breaker + clamp to catch it next tick.
-// Phase 72 — anti-herd patrol picker. User '不要全部同方向'. Old version
-// generated ONE waypoint per call → when 4 bots transitioned to patrol on
-// the same tick, their independent rolls sometimes happened to point at
-// similar quadrants → all walking the same direction. Fix: generate K
-// candidates, score each by anti-herd distance from same-team teammates'
-// current targets AND from the unit's PREVIOUS target (anti-pattern),
-// pick the best. Same three source mixes as before (wander / cover /
-// center) but with isolation pressure applied.
+// Phase 79 — arena occupancy heatmap. Each cell of a 6×6 grid tracks how
+// long units have been there (decays exponentially). Patrol picker SUBTRACTS
+// the heat score so frequently-visited cells become unappealing waypoints.
+// Creates a negative-feedback loop: wherever bots cluster → heat rises →
+// next picks avoid it → distribution spreads back out toward even cover.
+// 'Long-term recovery from disturbance' = exactly this kind of relaxation
+// toward uniform after a combat-driven local concentration.
+const NN_HEAT = {
+  GRID:    6,                        // 6×6 cells over the arena
+  DECAY:   0.992,                    // per frame → ~half-life ~85 frames (1.4s)
+                                     // → cells cool over ~5-10 seconds visibly
+  DEPOSIT: 1.0,                      // heat added per bot per frame in its cell
+  SCALE:   0.06,                     // candidate scoring weight (heat * this)
+};
+const _nnHeatmap = new Float32Array(NN_HEAT.GRID * NN_HEAT.GRID);
+
+function _nnHeatIdx(x, y) {
+  if (typeof NN_ARENA === 'undefined') return 0;
+  const fx = (x - NN_ARENA.x0) / NN_ARENA.w;
+  const fy = (y - NN_ARENA.y0) / NN_ARENA.h;
+  const gx = Math.max(0, Math.min(NN_HEAT.GRID - 1, Math.floor(fx * NN_HEAT.GRID)));
+  const gy = Math.max(0, Math.min(NN_HEAT.GRID - 1, Math.floor(fy * NN_HEAT.GRID)));
+  return gy * NN_HEAT.GRID + gx;
+}
+// Per-frame: decay everything, then deposit at each NN unit's cell.
+// Tick rate is fine at the inference cadence (every-other-frame in nnTick)
+// so we call this inside nnTick rather than the main update loop.
+function _nnHeatTick() {
+  for (let i = 0; i < _nnHeatmap.length; i++) _nnHeatmap[i] *= NN_HEAT.DECAY;
+  if (typeof allies !== 'undefined') {
+    for (const a of allies) {
+      if (a && a.alive && a._useNN) _nnHeatmap[_nnHeatIdx(a.x, a.y)] += NN_HEAT.DEPOSIT;
+    }
+  }
+  if (typeof enemies !== 'undefined') {
+    for (const e of enemies) {
+      if (e && e.alive && e._useNN) _nnHeatmap[_nnHeatIdx(e.x, e.y)] += NN_HEAT.DEPOSIT;
+    }
+  }
+}
+
+// Pick a new patrol waypoint. Phase 79 — TWO meaningful changes from
+// Phase 72:
+//   1. WANDER is now arena-wide (random anywhere in arena) instead of
+//      offset-from-current-position. A bot stuck in BL no longer has
+//      all its candidates locked to BL — it can pick TR / TL / BR freely.
+//      Anti-herd alone couldn't break the BL cluster because no candidate
+//      was even GENERATED far from BL.
+//   2. HEATMAP SCORING — candidates lose score proportional to how hot
+//      their cell is. Combat naturally heats the firefight area, but as
+//      bots disperse afterward, the heat decays and the area becomes
+//      pickable again. Long-term equilibrium ≈ uniform distribution.
 function _nnPickPatrolTarget(unit) {
+  const pad = 120;
   const pickOne = () => {
     const r = Math.random();
     if (r < NN_AI.PATROL_WANDER_BIAS) {
-      const ang  = Math.random() * Math.PI * 2;
-      const dist = NN_AI.PATROL_WANDER_MIN
-                 + Math.random() * (NN_AI.PATROL_WANDER_MAX - NN_AI.PATROL_WANDER_MIN);
-      const pad = 120;
+      // Phase 79 — arena-wide random (was 'offset from current position').
+      // Breaks the cluster-lock where a BL bot only ever wandered in BL.
       return {
-        x: Math.max(NN_ARENA.x0 + pad,
-              Math.min(NN_ARENA.x0 + NN_ARENA.w - pad, unit.x + Math.cos(ang) * dist)),
-        y: Math.max(NN_ARENA.y0 + pad,
-              Math.min(NN_ARENA.y0 + NN_ARENA.h - pad, unit.y + Math.sin(ang) * dist)),
+        x: NN_ARENA.x0 + pad + Math.random() * (NN_ARENA.w - 2 * pad),
+        y: NN_ARENA.y0 + pad + Math.random() * (NN_ARENA.h - 2 * pad),
       };
     }
     if (coverPoints.length > 0 && r < NN_AI.PATROL_WANDER_BIAS + NN_AI.PATROL_COVER_BIAS) {
       const cp = coverPoints[Math.floor(Math.random() * coverPoints.length)];
       return { x: cp.x, y: cp.y };
     }
+    // Center-biased random (anti-edge bias).
     const cx = NN_ARENA.x0 + NN_ARENA.w / 2;
     const cy = NN_ARENA.y0 + NN_ARENA.h / 2;
     const ang  = Math.random() * Math.PI * 2;
@@ -4706,36 +4738,34 @@ function _nnPickPatrolTarget(unit) {
     return { x: cx + Math.cos(ang) * rad, y: cy + Math.sin(ang) * rad };
   };
 
-  // Roster of same-team teammates currently in patrol mode with a target.
-  // Includes the player slot for blue team — we don't want bots herding
-  // toward whatever the player is doing either.
   const teamRoster = (unit.team === 0)
     ? [...allies, ...(player.alive ? [player] : [])]
     : enemies;
 
-  // Generate 4 candidates and score each — best (highest score) wins.
-  // Score combines:
-  //   (a) base random nudge (small)         — avoids deterministic ties
-  //   (b) +distance from each teammate's current _patrolTarget (anti-herd)
-  //   (c) +distance from unit's previous _patrolTarget (anti-pattern)
-  // The capped-at-300u distance prevents far-flung candidates from
-  // dominating; we just want 'not on top of others', not 'as far as
-  // possible'.
+  // Generate 6 candidates (was 4) — wider search now that wander is arena-
+  // wide; more variety amortizes to better spread.
   let best = null, bestScore = -Infinity;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     const c = pickOne();
-    let score = Math.random() * 0.5;     // small jitter base
+    let score = Math.random() * 0.5;
+    // (a) anti-herd from teammates' targets
     for (const t of teamRoster) {
       if (t === unit || !t.alive) continue;
       const tgt = t._patrolTarget;
       if (!tgt) continue;
       const dd = Math.hypot(c.x - tgt.x, c.y - tgt.y);
-      score += Math.min(dd, 300) / 100;  // up to +3.0 per teammate
+      score += Math.min(dd, 300) / 100;
     }
+    // (b) anti-pattern from own last target
     if (unit._patrolTarget) {
       const dd = Math.hypot(c.x - unit._patrolTarget.x, c.y - unit._patrolTarget.y);
-      score += Math.min(dd, 250) / 100;  // up to +2.5 for moving on
+      score += Math.min(dd, 250) / 100;
     }
+    // (c) Phase 79 — heatmap penalty. Hot cells (recently inhabited) get
+    // a strong negative. A fully saturated cell (~333) yields -20 score,
+    // dominating the +up-to-15 anti-herd reward — guarantees a hot BL
+    // can't keep winning every roll.
+    score -= _nnHeatmap[_nnHeatIdx(c.x, c.y)] * NN_HEAT.SCALE;
     if (score > bestScore) { best = c; bestScore = score; }
   }
   return best;
@@ -4857,6 +4887,9 @@ async function nnTick() {
 
   // Refresh team-shared spotting before any nnIsVisible call this tick
   updateTeamVision();
+  // Phase 79 — tick the arena occupancy heatmap. Cheap (decay = ~36 mults,
+  // deposit = ~6-10 unit lookups). Drives patrol picker's anti-cluster bias.
+  _nnHeatTick();
 
   // Phase 61: patrol/combat state machine. Run the patrol mover for any
   // unit that has no detection; only combat units enter the NN inference
