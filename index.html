@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=73"></script>
-<script src="js/arena_recruitment.js?v=73"></script>
-<script src="js/dynamic_radio.js?v=73"></script>
-<script src="js/i18n.js?v=73"></script>
-<script src="js/touch_input.js?v=73"></script>
-<script src="js/key_bindings.js?v=73"></script>
-<script src="js/grenades.js?v=73"></script>
-<script src="js/squad_commands.js?v=73"></script>
-<script src="js/multiplayer.js?v=73"></script>
-<script src="js/leaderboard.js?v=73"></script>
-<script src="js/structures.js?v=73"></script>
-<script src="js/tod.js?v=73"></script>
-<script src="js/weapons.js?v=73"></script>
-<script src="js/chassis.js?v=73"></script>
-<script src="js/respawn_buff.js?v=73"></script>
-<script src="js/death_recap.js?v=73"></script>
-<script src="js/mote_affinity.js?v=73"></script>
-<script src="js/stage_hints.js?v=73"></script>
-<script src="js/pawn_swap.js?v=73"></script>
-<script src="js/global_stats.js?v=73"></script>
-<script src="js/progressive_unlock.js?v=73"></script>
-<script src="js/ad_stubs.js?v=73"></script>
+<script src="js/audio/sfx.js?v=74"></script>
+<script src="js/arena_recruitment.js?v=74"></script>
+<script src="js/dynamic_radio.js?v=74"></script>
+<script src="js/i18n.js?v=74"></script>
+<script src="js/touch_input.js?v=74"></script>
+<script src="js/key_bindings.js?v=74"></script>
+<script src="js/grenades.js?v=74"></script>
+<script src="js/squad_commands.js?v=74"></script>
+<script src="js/multiplayer.js?v=74"></script>
+<script src="js/leaderboard.js?v=74"></script>
+<script src="js/structures.js?v=74"></script>
+<script src="js/tod.js?v=74"></script>
+<script src="js/weapons.js?v=74"></script>
+<script src="js/chassis.js?v=74"></script>
+<script src="js/respawn_buff.js?v=74"></script>
+<script src="js/death_recap.js?v=74"></script>
+<script src="js/mote_affinity.js?v=74"></script>
+<script src="js/stage_hints.js?v=74"></script>
+<script src="js/pawn_swap.js?v=74"></script>
+<script src="js/global_stats.js?v=74"></script>
+<script src="js/progressive_unlock.js?v=74"></script>
+<script src="js/ad_stubs.js?v=74"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=73"></script>
+<script src="js/crazygames.js?v=74"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=73"></script>
+<script src="js/gamemonetize.js?v=74"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=73"></script>
-<script src="js/world_gen.js?v=73"></script>
-<script src="js/squad.js?v=73"></script>
-<script src="js/drone_fpv.js?v=73"></script>
-<script src="js/vision_raycast.js?v=73"></script>
-<script src="js/camera.js?v=73"></script>
-<script src="js/defense_build_ui.js?v=73"></script>
-<script src="js/pause.js?v=73"></script>
+<script src="js/missions/nn_deathmatch.js?v=74"></script>
+<script src="js/world_gen.js?v=74"></script>
+<script src="js/squad.js?v=74"></script>
+<script src="js/drone_fpv.js?v=74"></script>
+<script src="js/vision_raycast.js?v=74"></script>
+<script src="js/camera.js?v=74"></script>
+<script src="js/defense_build_ui.js?v=74"></script>
+<script src="js/pause.js?v=74"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -3136,7 +3136,11 @@ function _startEntryCountdown() {
 // load wires up Trystero + PvP. If the URL already has mp=1 on first
 // visit, MULTI starts pre-selected so a friend's invite link keeps its
 // mode through the lobby gate.
-let _entryMode = 'solo';
+// Phase 74 — MP is the default mode (was 'solo'). PartyKit server is live
+// at ashgrid-mp.dd-ching.partykit.dev so fresh visitors auto-match into a
+// room on landing. SOLO is still one click away via the toggle, or via
+// the URL flag ?mp=0 / ?solo=1 for direct entry into single-player.
+let _entryMode = 'mp';
 let _entryRoom = '';
 function _refreshModeButtons() {
   const soloBtn = document.getElementById('modeSoloBtn');
@@ -3164,6 +3168,9 @@ function _refreshModeButtons() {
 }
 (function _initModeFromUrl() {
   const p = new URLSearchParams(location.search);
+  // Phase 74: explicit overrides — mp=0 or solo=1 bring back the
+  // single-player default for shared / showcase / training URLs.
+  if (p.get('mp') === '0' || p.get('solo') === '1') _entryMode = 'solo';
   if (p.get('mp') === '1') _entryMode = 'mp';
   if (p.get('room')) _entryRoom = p.get('room');
   _refreshModeButtons();

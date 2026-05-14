@@ -1,7 +1,9 @@
 # Cloudflare Pages — URL routing
 # https://developers.cloudflare.com/pages/configuration/redirects/
 
-# Pretty URLs — let players bookmark /play instead of /?nn=1&mp=1
+# Pretty URLs — let players bookmark /play, /solo, /mp.
+# Phase 74: /solo now uses explicit ?solo=1 because mp is the default
+# now (was: bare ?nn=1 was solo, now ?nn=1 lands in MP).
 /play   /?nn=1&mp=1   302
-/solo   /?nn=1        302
+/solo   /?nn=1&solo=1 302
 /mp     /?nn=1&mp=1   302
