@@ -62,9 +62,19 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   //     just sees a quick countdown rather than a chore.
   //   • Once the ad has been used in this match, button disappears and the
   //     subsequent wipe falls back to the 15 s default.
-  const TEAM_WIPE_TICKS         = 15 * 60;  // no-ad / ad-already-used wait
-  const TEAM_WIPE_TICKS_AD_OPEN =  5 * 60;  // shorter wait while ad CTA visible
+  // Phase 94 — team-wipe wait time now mirrors getRespawnSeconds() so
+  // it matches the user's ad-buff mental model:
+  //   default (no ad watched)   → 15s wait
+  //   30-min buff active        → 5s wait
+  // Old code used a separate 'ad CTA visible' flag which made FRESH
+  // sessions revive in 5s simply because the green Watch Ad button
+  // happened to be on screen — opposite of what the user expected.
+  const TEAM_WIPE_TICKS         = 15 * 60;  // legacy default kept as fallback
+  const TEAM_WIPE_TICKS_AD_OPEN =  5 * 60;  // legacy buffed kept as fallback
   function _wipeWaitTicks() {
+    if (typeof getRespawnSeconds === 'function') {
+      return Math.round(getRespawnSeconds() * 60);
+    }
     const adOpen = (typeof _deathRecap !== 'undefined') && !_deathRecap.adReviveUsed;
     return adOpen ? TEAM_WIPE_TICKS_AD_OPEN : TEAM_WIPE_TICKS;
   }
