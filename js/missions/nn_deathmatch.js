@@ -390,9 +390,17 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           applyWeaponToPlayer(a._weapon || WEAPONS.RIFLE);
           // The slot we took over becomes the player's OLD (dead) body — it
           // will respawn normally under NN control after the standard timer.
+          // Phase 96 — extends the Phase 85 fix from pawn_swap.js to this
+          // AUTO-swap path. User '死亡後隊友還是又瞬移到我位置了': the
+          // ex-op corpse used to be planted at player._lastDeathX/Y and 15s
+          // later 'came back to life' at the exact spot where the player
+          // died — reads as 'BRAVO teleported to my death spot'. Route it
+          // through the team spawn anchor (game._nnSpawnBlue) instead so
+          // the respawn happens far from where the player is now playing.
+          const _spawn = (typeof game !== 'undefined' && game._nnSpawnBlue) || null;
           a.alive = false;
-          a.x = player._lastDeathX != null ? player._lastDeathX : a.x;
-          a.y = player._lastDeathY != null ? player._lastDeathY : a.y;
+          a.x = _spawn ? _spawn.x : (player._lastDeathX != null ? player._lastDeathX : a.x);
+          a.y = _spawn ? _spawn.y : (player._lastDeathY != null ? player._lastDeathY : a.y);
           a.callsign = T('前操作员', 'EX-OPERATOR');
           a._respawnAt = game.time + playerTicks;
           a._useNN = true;
