@@ -48,6 +48,8 @@ function _touchTriggerAction(id) {
       try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (err) {}
       break;
     case 'b':     toggleBuildMode(); break;
+    // Phase 76 — X swap weapon, added for mobile parity with desktop.
+    case 'x':     if (typeof swapPlayerWeapon === 'function') swapPlayerWeapon(); break;
     case 'pause': togglePause(); break;
   }
 }
@@ -89,17 +91,28 @@ if (touchInput.enabled) {
         }
         if (hit) continue;
       }
-      // 4a) Defense radial picker — tap a wedge to select; tap dead-zone
-      // or outside to soft-cancel. Must come BEFORE the stick logic so
-      // the tap doesn't get consumed as a movement input.
+      // 4a) Defense radial picker — Phase 76: two-tier aware. Uses the
+      // new _radialPickAt so a tap on an inner category EXPANDS its
+      // outer fan (pins radialCat), and a tap on the outer wedge
+      // selects + closes. Old version called the kind-only shim, so
+      // touching inner returned null → radial slammed shut and the
+      // player could never reach the sub-items.
       if (_canBuildPlace() && buildMode.radialOpen) {
-        const picked = _radialKindUnderCursor(t.clientX, t.clientY);
-        if (picked) {
-          buildMode.kind = picked;
+        const pick = (typeof _radialPickAt === 'function')
+          ? _radialPickAt(t.clientX, t.clientY)
+          : null;
+        if (pick && pick.type === 'kind') {
+          buildMode.kind = pick.id;
           buildMode.radialOpen = false;
-          showSwapToast(`${T('已选', 'Selected')}: ${STRUCTURE_DEFS[picked].label()}`);
+          buildMode.radialCat = null;
+          showSwapToast(`${T('已选', 'Selected')}: ${STRUCTURE_DEFS[pick.id].label()}`);
+        } else if (pick && pick.type === 'cat') {
+          buildMode.radialCat = pick.id;
+          // Don't close — fan stays open, wait for outer tap.
         } else {
+          // Tap on backdrop / dead zone — soft-cancel.
           buildMode.radialOpen = false;
+          buildMode.radialCat = null;
         }
         hit = true;
         continue;
