@@ -259,7 +259,11 @@ function renderDeathRecap() {
     if (!_deathRecap.adReviveUsed) {
       const btnW = 360, btnH = 70;
       const btnX = W_ / 2 - btnW / 2;
-      const btnY = H_ / 2 - btnH / 2 + 24;
+      // Phase 90 — button pushed down to ~72% screen height so it sits
+      // BELOW the centered 300×250 ad banner (centered at 50%, extends
+      // to ~62%). User '綠按鈕往下' — banner stays centered, button
+      // moves clear underneath.
+      const btnY = Math.round(H_ * 0.72) - btnH / 2;
       _deathRecap.adReviveBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
       const pulse2 = 0.85 + 0.15 * Math.sin(game.time * 0.22);
       ctx.fillStyle = `rgba(63, 230, 63, ${pulse2})`;
