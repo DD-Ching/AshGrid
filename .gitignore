@@ -5,3 +5,7 @@ server/node_modules/
 server/.partykit-cache/
 # Old packaged artifacts no longer needed
 ashgrid.zip
+# Phase 0 NN verification fixtures — regeneratable from .onnx via
+# ai_arena/scripts/gen_verify_fixtures.py. Used only for offline parity
+# tests against the pure-JS runtime; don't commit (5.5MB of test data).
+ai_arena/onnx/*.verify.json
