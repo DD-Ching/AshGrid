@@ -328,6 +328,17 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       const blueTicks = _spawnRelayAlive('blue') ? RESPAWN_TICKS : RESPAWN_TICKS_NO_SP;
       const redTicks  = _spawnRelayAlive('red')  ? RESPAWN_TICKS : RESPAWN_TICKS_NO_SP;
 
+      // Phase 86 — player respawn time NOW honors the ad-buff system.
+      // User '若沒有廣告獎勵 應該是15sec, 若看全屏廣告(不可跳過)才有5sec'.
+      // Old code used the hard-coded RESPAWN_TICKS (5s) for the player,
+      // bypassing getRespawnSeconds() — so default + buffed both timed
+      // out at 5s and the ad reward was meaningless. Fix: derive the
+      // player slot's ticks from getRespawnSeconds(). NN bots still use
+      // blueTicks (no ad mechanic applies to them).
+      const playerTicks = (typeof getRespawnSeconds === 'function')
+        ? Math.round(getRespawnSeconds() * 60)
+        : blueTicks;
+
       // Set respawn timers for newly-dead units. In NN mode, instead of
       // sending the operator to spawn for 5 seconds, auto-jump into the
       // CLOSEST alive ally (the operator never sits out — that's the whole
@@ -360,14 +371,14 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           a.x = player._lastDeathX != null ? player._lastDeathX : a.x;
           a.y = player._lastDeathY != null ? player._lastDeathY : a.y;
           a.callsign = T('前操作员', 'EX-OPERATOR');
-          a._respawnAt = game.time + blueTicks;
+          a._respawnAt = game.time + playerTicks;
           a._useNN = true;
           a._nnDifficulty = a._nnDifficulty || NN.difficulty || 'evolved';
           const killerInfo = player._killer ? ` · ${T('死於', 'killed by')} ${player._killer.callsign || T('敌方', 'enemy')}` : '';
           showSwapToast(`${T('接管', 'SWAP')} ${(a.callsign === '前操作员' || a.callsign === 'EX-OPERATOR') ? T('隊友', 'ALLY') : a.callsign}${killerInfo}`);
           playSfx('countdown', { freq: 1320, vol: 0.45 });
         } else {
-          player._respawnAt = game.time + blueTicks;
+          player._respawnAt = game.time + playerTicks;
         }
       }
       for (const a of allies) {
