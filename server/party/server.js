@@ -568,18 +568,41 @@ export default class AshGridRoom {
         nx = p.x + dx * PLAYER_SPEED;
         ny = p.y + dy * PLAYER_SPEED;
       }
-      p.x = clamp(nx, ARENA_PAD, ARENA_W - ARENA_PAD);
-      p.y = clamp(ny, ARENA_PAD, ARENA_H - ARENA_PAD);
-      // Phase 41: server-side wall collision. Reject any movement that would
-      // put the player inside a building. Without this, MP players phase
-      // through walls because the server doesn't know the map exists.
-      _pushOutOfWalls(p, PLAYER_RADIUS);
-      // Phase 43: also push out of player-built structures (cover, wall,
-      // bunker — anything with `blocks: true`). Same AABB push-out as the
-      // map walls. Without this, players walk straight through their own
-      // built cover (user report: '自己蓋的牆會直接穿過去').
-      for (const s of this.structures.values()) {
-        _pushOutOfStructure(p, PLAYER_RADIUS, s);
+      // Phase 1 — v2 hotfix for "still rubber-banding". Root cause: client
+      // and server have COMPLETELY DIFFERENT collision geometry.
+      //   Client: NN_ARENA bounds (0→1800, clamp at player.radius=14),
+      //           uses generateWorld(map) for buildings/walls/lowCovers,
+      //           pushOutOfBuildings handles 3 collision kinds.
+      //   Server: ARENA_PAD-based bounds (50→1750),
+      //           hardcoded _buildIndustrialMap (single map, doesn't match
+      //           whatever the client actually loaded),
+      //           _pushOutOfWalls only handles 'building' kind.
+      // Net effect: every wall edge + every arena boundary is a ~36 px
+      // server/client desync, the reconcile loop fights it forever →
+      // rubber-band.
+      //
+      // v2 fix: SKIP server-side clamp/pushout/structure-collide entirely.
+      // simStepPerTick is byte-identical to the client's per-tick math, so
+      // p.x/p.y derived purely from p.x_prev + simStep IS the same number
+      // the client computes — no divergence to reconcile. Client owns map
+      // collision until Phase 4 promotes geometry to the server.
+      //
+      // Trade-off: a cheating v2 client could phase through walls (server
+      // accepts any position they walk to). Phase 4 closes this hole by
+      // sharing the map JSON with the server. For v2 testing on dev this
+      // is acceptable — the goal is to verify input + sim parity first.
+      if (!inp.v2) {
+        p.x = clamp(nx, ARENA_PAD, ARENA_W - ARENA_PAD);
+        p.y = clamp(ny, ARENA_PAD, ARENA_H - ARENA_PAD);
+        _pushOutOfWalls(p, PLAYER_RADIUS);
+        for (const s of this.structures.values()) {
+          _pushOutOfStructure(p, PLAYER_RADIUS, s);
+        }
+      } else {
+        // v2: trust the client's stepped position. Clamp to a generous
+        // outer bound so a NaN/exploit can't send us to infinity.
+        p.x = clamp(nx, -10000, 10000);
+        p.y = clamp(ny, -10000, 10000);
       }
       p.angle = inp.angle;
       // Phase 40: record this tick's position into the per-player history

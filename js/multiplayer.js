@@ -455,16 +455,35 @@ function _mpHandleSnapshot(snap) {
         // position reconciliation so the swap actually sticks visually
         // until client inputs catch the server up.
         const _ignoreReconcile = (game?.time || 0) < (player._mpIgnoreReconcileUntil || 0);
+        // Phase 1 hotfix — v2 skips spread-error reconcile. User report
+        // '還會被拉回 非常嚴重' after Phase 1's first cut: turns out
+        // server's pushOutOfWalls / NN_ARENA clamp / built-structure
+        // collision are ALL fighting the client's per-frame versions of
+        // the same logic with different geometry — every wall edge
+        // generates a 5-40 px sustained desync that the spread-error
+        // path bleeds into a continuous backward tug.
+        //
+        // The proper fix is sharing geometry server-side (Phase 4-5).
+        // Until then v2 fully trusts the client's local prediction and
+        // only snaps on TELEPORT-scale errors (>150 px = respawn /
+        // pawn-swap / lag spike). Server still owns HP, kills, hits,
+        // and broadcasts our position to OTHER clients so they see us
+        // move smoothly.
         if (_ignoreReconcile) {
           player._reconcileErr = null;
+        } else if (isV2) {
+          if (dist > 150) {
+            player.x = predX; player.y = predY;
+          }
+          player._reconcileErr = null;
         } else if (dist > 150) {
-          // Big snap — teleport / respawn / lag spike.
+          // Legacy: big snap — teleport / respawn / lag spike.
           player.x = predX; player.y = predY;
           player._reconcileErr = null;
         } else if (dist < 3) {
-          // Inside dead zone — server agrees with us, nothing to do.
+          // Legacy: inside dead zone — server agrees with us, nothing to do.
         } else {
-          // Spread-error reconcile (Phase 80).
+          // Legacy: Spread-error reconcile (Phase 80).
           player._reconcileErr = { dx, dy };
         }
         // HP has TWO writers because NN bots live client-only (see fire()

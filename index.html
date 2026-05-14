@@ -45,48 +45,48 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=101"></script>
-<script src="js/arena_recruitment.js?v=101"></script>
-<script src="js/dynamic_radio.js?v=101"></script>
-<script src="js/i18n.js?v=101"></script>
-<script src="js/touch_input.js?v=101"></script>
-<script src="js/key_bindings.js?v=101"></script>
-<script src="js/grenades.js?v=101"></script>
-<script src="js/squad_commands.js?v=101"></script>
+<script src="js/audio/sfx.js?v=102"></script>
+<script src="js/arena_recruitment.js?v=102"></script>
+<script src="js/dynamic_radio.js?v=102"></script>
+<script src="js/i18n.js?v=102"></script>
+<script src="js/touch_input.js?v=102"></script>
+<script src="js/key_bindings.js?v=102"></script>
+<script src="js/grenades.js?v=102"></script>
+<script src="js/squad_commands.js?v=102"></script>
 <!-- Phase 1: shared movement sim (server uses byte-identical ESM mirror
      at server/party/sim/movement.js). Must load BEFORE multiplayer.js. -->
-<script src="js/sim/movement.js?v=101"></script>
-<script src="js/multiplayer.js?v=101"></script>
-<script src="js/leaderboard.js?v=101"></script>
-<script src="js/structures.js?v=101"></script>
-<script src="js/tod.js?v=101"></script>
-<script src="js/weapons.js?v=101"></script>
-<script src="js/chassis.js?v=101"></script>
-<script src="js/respawn_buff.js?v=101"></script>
-<script src="js/death_recap.js?v=101"></script>
-<script src="js/mote_affinity.js?v=101"></script>
-<script src="js/stage_hints.js?v=101"></script>
-<script src="js/pawn_swap.js?v=101"></script>
-<script src="js/global_stats.js?v=101"></script>
-<script src="js/progressive_unlock.js?v=101"></script>
-<script src="js/ad_stubs.js?v=101"></script>
+<script src="js/sim/movement.js?v=102"></script>
+<script src="js/multiplayer.js?v=102"></script>
+<script src="js/leaderboard.js?v=102"></script>
+<script src="js/structures.js?v=102"></script>
+<script src="js/tod.js?v=102"></script>
+<script src="js/weapons.js?v=102"></script>
+<script src="js/chassis.js?v=102"></script>
+<script src="js/respawn_buff.js?v=102"></script>
+<script src="js/death_recap.js?v=102"></script>
+<script src="js/mote_affinity.js?v=102"></script>
+<script src="js/stage_hints.js?v=102"></script>
+<script src="js/pawn_swap.js?v=102"></script>
+<script src="js/global_stats.js?v=102"></script>
+<script src="js/progressive_unlock.js?v=102"></script>
+<script src="js/ad_stubs.js?v=102"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=101"></script>
+<script src="js/crazygames.js?v=102"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=101"></script>
+<script src="js/gamemonetize.js?v=102"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=101"></script>
-<script src="js/world_gen.js?v=101"></script>
-<script src="js/squad.js?v=101"></script>
-<script src="js/drone_fpv.js?v=101"></script>
-<script src="js/vision_raycast.js?v=101"></script>
-<script src="js/camera.js?v=101"></script>
-<script src="js/defense_build_ui.js?v=101"></script>
-<script src="js/pause.js?v=101"></script>
+<script src="js/missions/nn_deathmatch.js?v=102"></script>
+<script src="js/world_gen.js?v=102"></script>
+<script src="js/squad.js?v=102"></script>
+<script src="js/drone_fpv.js?v=102"></script>
+<script src="js/vision_raycast.js?v=102"></script>
+<script src="js/camera.js?v=102"></script>
+<script src="js/defense_build_ui.js?v=102"></script>
+<script src="js/pause.js?v=102"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -11031,6 +11031,45 @@ function drawMinimapPanel(mx, my, mw, mh) {
 // overlay. Pulled out so the minimap-collapse path can short-circuit cleanly
 // without bailing on these.
 function renderHUDOverlays() {
+  // Phase 1 — v2 debug strip. Visible whenever ?v2=1 is in the URL, so
+  // you can confirm at a glance that the new code path is actually live
+  // and observe the per-frame predX/player.x error magnitude. Disappears
+  // automatically on default (non-v2) URLs so live ashgrid.io is clean.
+  try {
+    if (typeof _mpIsV2 === 'function' && _mpIsV2()) {
+      const fontPx = 11;
+      ctx.save();
+      ctx.font = `bold ${fontPx}px monospace`;
+      ctx.textAlign = 'left';
+      const lines = [];
+      const sx = (typeof _mpState !== 'undefined') ? Math.round(_mpState.serverSelfX) : 0;
+      const sy = (typeof _mpState !== 'undefined') ? Math.round(_mpState.serverSelfY) : 0;
+      const px = Math.round(player.x), py = Math.round(player.y);
+      const dErr = Math.hypot(px - sx, py - sy);
+      lines.push('V2 ARCHITECTURE · ?v2=1');
+      lines.push(`player local  ${px},${py}`);
+      lines.push(`server known  ${sx},${sy}`);
+      lines.push(`err           ${dErr.toFixed(1)} px  ${dErr < 3 ? 'OK' : dErr < 150 ? 'drift' : 'snap'}`);
+      lines.push(`rtt           ${Math.round(_mpState?.rttSmoothed || 0)} ms`);
+      lines.push(`pending in    ${_mpState?.pendingInputs?.length || 0}`);
+      const w = 220, lh = fontPx + 4;
+      const h = lines.length * lh + 12;
+      const x0 = 12, y0 = 12;
+      ctx.fillStyle = 'rgba(20,20,28,0.78)';
+      ctx.fillRect(x0, y0, w, h);
+      ctx.strokeStyle = '#FFD24A';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x0 + 0.5, y0 + 0.5, w, h);
+      ctx.fillStyle = '#FFD24A';
+      ctx.fillText(lines[0], x0 + 8, y0 + lh);
+      ctx.fillStyle = '#E8E4D8';
+      for (let i = 1; i < lines.length; i++) {
+        ctx.fillText(lines[i], x0 + 8, y0 + lh * (i + 1));
+      }
+      ctx.restore();
+    }
+  } catch (e) { /* swallow — debug overlay can never break the frame */ }
+
   // Low-HP vignette — pulsing red edges that close in as HP drops, paired
   // with the heartbeat audio. Only renders once HP drops below 45%.
   if (player.alive && player.maxHp > 0) {
