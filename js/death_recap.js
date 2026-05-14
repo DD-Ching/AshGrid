@@ -266,7 +266,12 @@ function renderDeathRecap() {
     );
     // Watch-ad-to-skip button — Phase 60 copy bundles 30-min respawn buff
     // with the squad revive (single ad watch = both benefits).
-    if (!_deathRecap.adReviveUsed) {
+    // Phase 93 — also hide the button if the buff is already active.
+    // User: '如果是已經看的話(在獎勵時間內), 它就不會有綠色的按鈕'.
+    // Once you've already watched + buff is running, no reason to
+    // pitch the same ad again.
+    const _alreadyBuffed = typeof isRespawnBuffed === 'function' && isRespawnBuffed();
+    if (!_deathRecap.adReviveUsed && !_alreadyBuffed) {
       const btnW = 360, btnH = 70;
       const btnX = W_ / 2 - btnW / 2;
       // Phase 90 — button pushed down to ~72% screen height so it sits

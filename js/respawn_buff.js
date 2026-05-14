@@ -30,17 +30,16 @@
   const DEFAULT_SEC = 15;
   const BUFFED_SEC  = 5;
   const DURATION_MS = 30 * 60 * 1000;   // 30 minutes
-  const KEY = 'ag.respawnBuffUntil';
 
-  function getBuffUntilMs() {
-    try {
-      const v = parseInt(localStorage.getItem(KEY) || '0', 10);
-      return isNaN(v) ? 0 : v;
-    } catch (e) { return 0; }
-  }
-  function setBuffUntilMs(ts) {
-    try { localStorage.setItem(KEY, String(ts)); } catch (e) {}
-  }
+  // Phase 93 — in-memory buff state, NOT localStorage. User: 'Cmd+R 刷新
+  // 一次之後,那就等於說我重新進入遊戲,是不一樣的人, 我的獎勵不應該繼
+  // 續'. Each fresh page load = fresh player = no carried-over buff.
+  // Was localStorage previously which survived refresh and incognito
+  // reloads. Now it survives only within ONE active page load.
+  let _buffUntilMs = 0;
+
+  function getBuffUntilMs() { return _buffUntilMs; }
+  function setBuffUntilMs(ts) { _buffUntilMs = ts; }
 
   window.isRespawnBuffed = function() {
     return Date.now() < getBuffUntilMs();
