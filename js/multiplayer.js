@@ -89,6 +89,10 @@ const _mpState = {
   // Server-owned bullets (id keyed). We forward-extrapolate between
   // snapshots so they don't visually jitter.
   remoteBullets:  new Map(),       // bulletId → {x, y, vx, vy, s, lastSnapshotAt}
+  // Phase 3 — server-side NN bots. Mirror of snapshot.bots, keyed by
+  // bot id. Same shape as remotePlayers (interpolated target x/y so
+  // rendering doesn't strobe on the 15 Hz snapshot cadence).
+  remoteBots:     new Map(),       // botId → {id, team, x, y, targetX, targetY, angle, hp, alive}
   // Client prediction queue. Each entry is {seq, dx, dy, angle, fire}.
   // We replay these (in order, > server's lastInputSeq) every snapshot
   // so the local player position stays "ahead" of the server.
@@ -167,6 +171,20 @@ const _MP_IS_V2 = (() => {
   catch (e) { return false; }
 })();
 function _mpIsV2() { return _MP_IS_V2; }
+
+// Phase 3 — opt-in flag for server-side NN bots. URL ?phase3=1 makes
+// the client (a) send phase3=1 in every input so the server flips
+// simBotsEnabled, (b) renders snap.bots from the snapshot, and (c)
+// skips local NN spawn (same effect as ?nonn=1 for that piece).
+//
+// While ONNX inference still lives on the client by default, phase3
+// is the migration switch that lets us A/B test the server-NN
+// architecture against the legacy one on the same dev preview URL.
+const _MP_IS_PHASE3 = (() => {
+  try { return new URLSearchParams(location.search).get('phase3') === '1'; }
+  catch (e) { return false; }
+})();
+function _mpIsPhase3() { return _MP_IS_PHASE3; }
 function _mpPeerCount() {
   if (!_mpState.enabled) return 0;
   // remotePlayers includes self; count is just its size.
@@ -586,6 +604,39 @@ function _mpHandleSnapshot(snap) {
     _mpState.remoteBullets.set(b.id, bl);
     _mpRemoteBullets.push(bl);
   }
+  // Phase 3 — server-side bots. Snapshot lists them in snap.bots;
+  // mirror into _mpState.remoteBots with interpolation targets so
+  // render can lerp them between the 15Hz snapshot beats.
+  if (Array.isArray(snap.bots)) {
+    const seenBotIds = new Set();
+    for (const sb of snap.bots) {
+      seenBotIds.add(sb.id);
+      let rb = _mpState.remoteBots.get(sb.id);
+      if (!rb) {
+        rb = {
+          id: sb.id, team: sb.team,
+          x: sb.x, y: sb.y,
+          targetX: sb.x, targetY: sb.y,
+          angle: sb.angle,
+          hp: sb.hp,
+          alive: sb.alive,
+        };
+        _mpState.remoteBots.set(sb.id, rb);
+      } else {
+        rb.targetX = sb.x;
+        rb.targetY = sb.y;
+        rb.angle   = sb.angle;
+        rb.hp      = sb.hp;
+        rb.alive   = sb.alive;
+        rb.team    = sb.team;
+      }
+    }
+    // Drop bots that vanished from the snapshot (server destroyed them
+    // or the room reset).
+    for (const id of _mpState.remoteBots.keys()) {
+      if (!seenBotIds.has(id)) _mpState.remoteBots.delete(id);
+    }
+  }
 }
 
 // Phase 39: shooter-side hit feedback. When the server reports a hit and the
@@ -859,6 +910,11 @@ function _mpSendInput() {
     cMul,
     // Phase 2: weapon id for server-side bullet profile lookup.
     wId,
+    // Phase 3 — opt into server-side NN bots. Server reads the FIRST
+    // truthy value across all connected clients and flips
+    // simBotsEnabled on; bots persist in the room state until the
+    // last player leaves.
+    phase3: _mpIsPhase3() ? 1 : 0,
   };
   _mpSendRaw(input);
 

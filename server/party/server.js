@@ -90,6 +90,10 @@ const PLAYER_SPEED      = 5.6;        // px per tick at 30Hz = ~168 px/sec.
 const ARENA_W           = 1800;
 const ARENA_H           = 1800;
 const ARENA_PAD         = 50;         // wall margin
+// Phase 3 — initial squad of server-side bots when a phase3 client
+// connects. Bumped to 6 once ONNX inference replaces the random-walk
+// MVP; for now 4 keeps the visual + bandwidth load easy to eyeball.
+const NN_BOTS_INITIAL   = 4;
 const HP_MAX            = 100;
 const INVULN_TICKS      = 90;         // 3s spawn protection
 // Phase 60: respawn time is ad-buffable. Default 15s (450 ticks @ 30Hz),
@@ -363,6 +367,76 @@ export default class AshGridRoom {
     // the full structure list in their welcome message so they see
     // everything that's already on the field.
     this.structures = new Map();       // sid → {sid, kind, x, y, hp, maxHp, owner}
+    // Phase 3 — server-side NN bots. Opt-in via `?phase3=1` flag in the
+    // client hello. When at least one phase3 client connects, the room
+    // spawns NN_BOTS_INITIAL bots in this map and starts ticking them
+    // on every server tick. Snapshot includes their state for any
+    // phase3-rendering client.
+    //
+    // For Phase 3a (this commit) bots run a SIMPLE random-walk so we
+    // can test the entire pipeline (spawn → tick → broadcast →
+    // render) without ONNX. Phase 3c will swap the random walk for
+    // real PPO inference using server/party/sim/nn_runtime.js (the
+    // pure-JS forward pass committed in Phase 0).
+    this.bots = new Map();             // botId → {id, team, x, y, angle, hp, alive, _patrolUntilTick}
+    this.nextBotId = 10001;            // offset so bot ids don't collide with peer ids
+    this.simBotsEnabled = false;       // flipped true on first phase3 hello
+  }
+
+  // Phase 3 — spawn the initial server-side bot squad. Random positions
+  // inside the arena, alternating teams. Idempotent (no-op if already
+  // populated).
+  _ensureServerBots() {
+    if (this.bots.size > 0) return;
+    const N = NN_BOTS_INITIAL;
+    for (let i = 0; i < N; i++) {
+      const team = i % 2;              // alternate teams
+      const angle = Math.random() * Math.PI * 2;
+      const x = ARENA_PAD + 80 + Math.random() * (ARENA_W - 2 * ARENA_PAD - 160);
+      const y = ARENA_PAD + 80 + Math.random() * (ARENA_H - 2 * ARENA_PAD - 160);
+      const id = this.nextBotId++;
+      this.bots.set(id, {
+        id,
+        team,
+        x, y,
+        angle,
+        hp: HP_MAX,
+        maxHp: HP_MAX,
+        alive: true,
+        // Random-walk patrol: pick a heading + duration; when expired,
+        // pick again. Phase 3c will replace this with NN inference.
+        _patrolDir: angle,
+        _patrolUntilTick: 0,
+      });
+    }
+    console.log(`[phase3] spawned ${N} server-side bots`);
+  }
+
+  // Phase 3 — bot tick (random walk for MVP). Pure-physics movement,
+  // no collision with walls/structures yet (Phase 4b will share the
+  // map data and apply it server-side). Bots wrap around arena bounds.
+  _tickBots() {
+    if (!this.simBotsEnabled) return;
+    for (const b of this.bots.values()) {
+      if (!b.alive) continue;
+      // Re-roll heading every ~1s so movement isn't monotonous.
+      if (this.tickCount >= b._patrolUntilTick) {
+        b._patrolDir = Math.random() * Math.PI * 2;
+        b._patrolUntilTick = this.tickCount + 30 + (Math.random() * 60) | 0;
+      }
+      const speed = 3.0;               // gentle 90 px/sec
+      const nx = b.x + Math.cos(b._patrolDir) * speed;
+      const ny = b.y + Math.sin(b._patrolDir) * speed;
+      // Bounce off arena edges by flipping the heading.
+      if (nx < ARENA_PAD || nx > ARENA_W - ARENA_PAD) {
+        b._patrolDir = Math.PI - b._patrolDir;
+      } else if (ny < ARENA_PAD || ny > ARENA_H - ARENA_PAD) {
+        b._patrolDir = -b._patrolDir;
+      } else {
+        b.x = nx; b.y = ny;
+        b.angle = b._patrolDir;
+      }
+    }
   }
 
   // Lazy-start the tick. We don't burn CPU when nobody's connected.
@@ -437,6 +511,16 @@ export default class AshGridRoom {
       p.input.angle = num(data.angle);
       p.input.fire  = !!data.fire;
       p.input.seq   = num(data.seq) | 0;
+      // Phase 3 — opt into server-side NN bots when ANY connected
+      // client signals phase3=1. We don't track per-player — once
+      // simBotsEnabled flips true the room hosts bots for everyone
+      // (matches single-room shared-arena semantics). Bots are spawned
+      // lazily on the FIRST phase3 input to save CPU for v1/v2-only
+      // rooms.
+      if (data.phase3 === 1 && !this.simBotsEnabled) {
+        this.simBotsEnabled = true;
+        this._ensureServerBots();
+      }
       // Phase 40: client tells us which snapshot tick it was rendering when
       // it pressed fire. We use this to rewind targets to that tick for the
       // lag-comp hit check. Default to current tick if absent (no rewind).
@@ -782,6 +866,9 @@ export default class AshGridRoom {
       if (consumed) this.bullets.splice(i, 1);
     }
 
+    // Phase 3 — bots step (random walk MVP; will be ONNX in 3c).
+    this._tickBots();
+
     // 3. Snapshot every SNAPSHOT_EVERY ticks (≈ 15Hz)
     if (this.tickCount - this.lastSnapshotTick >= SNAPSHOT_EVERY) {
       this.lastSnapshotTick = this.tickCount;
@@ -1045,6 +1132,18 @@ export default class AshGridRoom {
         vy: round1(b.vy),
         s: b.shooterId,
       })),
+      // Phase 3 — server-side bots. Empty array when no phase3 client
+      // is connected (saves bandwidth + the legacy snapshot reader on
+      // the client just ignores an empty `bots` field).
+      bots: this.simBotsEnabled ? [...this.bots.values()].map(b => ({
+        id: b.id,
+        team: b.team,
+        x: round1(b.x),
+        y: round1(b.y),
+        angle: round3(b.angle),
+        hp: b.hp,
+        alive: b.alive,
+      })) : [],
     };
     this.party.broadcast(JSON.stringify(snap));
   }
