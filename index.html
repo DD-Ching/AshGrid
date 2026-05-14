@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=97"></script>
-<script src="js/arena_recruitment.js?v=97"></script>
-<script src="js/dynamic_radio.js?v=97"></script>
-<script src="js/i18n.js?v=97"></script>
-<script src="js/touch_input.js?v=97"></script>
-<script src="js/key_bindings.js?v=97"></script>
-<script src="js/grenades.js?v=97"></script>
-<script src="js/squad_commands.js?v=97"></script>
-<script src="js/multiplayer.js?v=97"></script>
-<script src="js/leaderboard.js?v=97"></script>
-<script src="js/structures.js?v=97"></script>
-<script src="js/tod.js?v=97"></script>
-<script src="js/weapons.js?v=97"></script>
-<script src="js/chassis.js?v=97"></script>
-<script src="js/respawn_buff.js?v=97"></script>
-<script src="js/death_recap.js?v=97"></script>
-<script src="js/mote_affinity.js?v=97"></script>
-<script src="js/stage_hints.js?v=97"></script>
-<script src="js/pawn_swap.js?v=97"></script>
-<script src="js/global_stats.js?v=97"></script>
-<script src="js/progressive_unlock.js?v=97"></script>
-<script src="js/ad_stubs.js?v=97"></script>
+<script src="js/audio/sfx.js?v=98"></script>
+<script src="js/arena_recruitment.js?v=98"></script>
+<script src="js/dynamic_radio.js?v=98"></script>
+<script src="js/i18n.js?v=98"></script>
+<script src="js/touch_input.js?v=98"></script>
+<script src="js/key_bindings.js?v=98"></script>
+<script src="js/grenades.js?v=98"></script>
+<script src="js/squad_commands.js?v=98"></script>
+<script src="js/multiplayer.js?v=98"></script>
+<script src="js/leaderboard.js?v=98"></script>
+<script src="js/structures.js?v=98"></script>
+<script src="js/tod.js?v=98"></script>
+<script src="js/weapons.js?v=98"></script>
+<script src="js/chassis.js?v=98"></script>
+<script src="js/respawn_buff.js?v=98"></script>
+<script src="js/death_recap.js?v=98"></script>
+<script src="js/mote_affinity.js?v=98"></script>
+<script src="js/stage_hints.js?v=98"></script>
+<script src="js/pawn_swap.js?v=98"></script>
+<script src="js/global_stats.js?v=98"></script>
+<script src="js/progressive_unlock.js?v=98"></script>
+<script src="js/ad_stubs.js?v=98"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=97"></script>
+<script src="js/crazygames.js?v=98"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=97"></script>
+<script src="js/gamemonetize.js?v=98"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=97"></script>
-<script src="js/world_gen.js?v=97"></script>
-<script src="js/squad.js?v=97"></script>
-<script src="js/drone_fpv.js?v=97"></script>
-<script src="js/vision_raycast.js?v=97"></script>
-<script src="js/camera.js?v=97"></script>
-<script src="js/defense_build_ui.js?v=97"></script>
-<script src="js/pause.js?v=97"></script>
+<script src="js/missions/nn_deathmatch.js?v=98"></script>
+<script src="js/world_gen.js?v=98"></script>
+<script src="js/squad.js?v=98"></script>
+<script src="js/drone_fpv.js?v=98"></script>
+<script src="js/vision_raycast.js?v=98"></script>
+<script src="js/camera.js?v=98"></script>
+<script src="js/defense_build_ui.js?v=98"></script>
+<script src="js/pause.js?v=98"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -4818,13 +4818,27 @@ function _nnHasRecentDetection(unit, hostile) {
   return false;
 }
 
-// Phase 97 — wake an NN unit when it takes a bullet. Back-traces the bullet
-// velocity to recover the shooter direction, stamps it into last-seen
-// memory, and force-flips the unit to combat mode. The existing pursue-
-// last-seen branch in nnApplyAction then drives the unit to face/move
-// toward the threat even if the shooter is behind cover and NEVER enters
-// the unit's vision cone. User '我希望nn會因為事件（受傷 聲音）而察覺
-// 一些動靜而切換模式 能推測敵人的方向並戰鬥'.
+// Phase 97/98 — wake an NN unit when it takes a bullet, then propagate
+// the alert to its squad. The point of this whole helper is to FORCE
+// the unit into the ONNX inference batch on the next nnTick:
+//
+//   _nnNoteHit  →  _aiMode='combat'  +  _nnLastSeenTick=now
+//        ↓                                       ↓
+//   next nnTick → _nnUpdateAiMode → _nnHasRecentDetection returns true
+//                                       (LAST_SEEN_WINDOW is 240 ticks)
+//        ↓
+//   _aiMode stays 'combat'  →  unit pushed into nnUnits[]  →  ONNX runs
+//
+// nnBuildObs encodes _nnLastSeenX/Y into the obs (4-dim "last seen
+// enemy intel" block, dims 53-56), so the trained policy reacts to
+// the back-traced shooter direction even when the unit can't actually
+// see them yet — that's what 'infer direction and fight' looks like
+// when the shooter is behind cover. User '重點是要進入戰鬥狀態(onnx)'.
+//
+// Squad awareness: teammates within 200u of the hit unit inherit the
+// same intel + combat state so a single bullet wakes the whole fire
+// team, not just the one bot that got hit. Matches a real squad
+// reacting to a buddy taking fire ('我希望nn會因為事件...察覺動靜').
 function _nnNoteHit(unit, bullet) {
   if (!unit || !unit._useNN || !unit.alive || !bullet) return;
   // Back-trace ~6 frames so we point AT the shooter, not next to them.
@@ -4835,15 +4849,33 @@ function _nnNoteHit(unit, bullet) {
   unit._nnLastSeenTick = game.time;
   unit._aiMode = 'combat';
   unit._combatLastActiveAt = game.time;
-  unit._nnRecentDmg = 90;           // 1.5s 'under fire' flag
-  // Cancel any patrol-pause so the unit reacts INSTANTLY rather than
-  // waiting out its 'look around' beat while bullets land on it.
+  unit._nnRecentDmg = 90;           // 1.5s 'under fire' flag (ONNX obs dim 5)
   unit._patrolPauseUntil = 0;
-  // Snap aim toward the source for the next inference tick — the NN's
-  // cone is angle-locked, so a fast turn lets it ACTUALLY see the
-  // shooter on the very next visibility check instead of needing the
-  // slow AIM_LERP to catch up.
   unit.angle = Math.atan2(srcY - unit.y, srcX - unit.x);
+
+  // Phase 98 — squad-awareness ripple. Same-team NN units within 200u
+  // (within shouting distance) flip into combat with the same shooter
+  // intel. Only overwrites their last-seen memory if it's staler than
+  // a second old — keeps fresher self-spotted intel from being clobbered.
+  const SQUAD_ALERT_R2 = 200 * 200;
+  const mates = (unit.team === 0)
+    ? (typeof allies !== 'undefined' ? allies : [])
+    : (typeof enemies !== 'undefined' ? enemies : []);
+  for (const m of mates) {
+    if (m === unit || !m || !m._useNN || !m.alive) continue;
+    const ddx = m.x - unit.x, ddy = m.y - unit.y;
+    if (ddx * ddx + ddy * ddy > SQUAD_ALERT_R2) continue;
+    m._aiMode = 'combat';
+    m._combatLastActiveAt = game.time;
+    m._patrolPauseUntil = 0;
+    const stale = m._nnLastSeenTick == null
+               || m._nnLastSeenTick < game.time - 60;
+    if (stale) {
+      m._nnLastSeenX = srcX;
+      m._nnLastSeenY = srcY;
+      m._nnLastSeenTick = game.time;
+    }
+  }
 }
 
 // State transition. Sets unit._aiMode ∈ {'patrol', 'combat'}. Detection
@@ -9026,6 +9058,18 @@ function renderWorld() {
     if (e._koStunned) ctx.globalAlpha = alpha * _stunPulse;
     const _bodyColor = e._koStunned ? COLORS.cream : COLORS.red;
     drawHumanoid(e.x, e.y, e.angle, e.walkPhase, _bodyColor, true, e);
+    // Phase 98 — "!" alert indicator. Visible above any NN unit currently
+    // in ONNX combat state from a recent damage trigger (1.5s window).
+    // Lets the player SEE that hits + sound events are actually waking
+    // up the right brain (the ONNX policy), not just the patrol code.
+    // User '重點是要進入戰鬥狀態(onnx)'.
+    if (e._useNN && e._aiMode === 'combat' && (e._nnRecentDmg || 0) > 0) {
+      const _pulse = 0.7 + 0.3 * Math.sin(game.time * 0.4);
+      ctx.fillStyle = `rgba(255, 140, 60, ${_pulse})`;
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('!', e.x, e.y - 32);
+    }
     if (e.hp < e.maxHp) {
       ctx.fillStyle = COLORS.black;
       ctx.fillRect(e.x-15, e.y-26, 30, 3);
@@ -9125,6 +9169,17 @@ function renderWorld() {
     if (aInvuln) ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
     drawHumanoid(a.x, a.y, a.angle, a.walkPhase, COLORS.creamDark, false, a);
     if (aInvuln) ctx.globalAlpha = 1;
+    // Phase 98 — same "!" alert for friendly NN units. Same combat trigger,
+    // same visual rule. Confirms ONNX-state on the team you actually
+    // control, useful for verifying squad-awareness ripple from the bot
+    // standing nearest the shooter.
+    if (a._useNN && a._aiMode === 'combat' && (a._nnRecentDmg || 0) > 0) {
+      const _pulse = 0.7 + 0.3 * Math.sin(game.time * 0.4);
+      ctx.fillStyle = `rgba(255, 140, 60, ${_pulse})`;
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('!', a.x, a.y - 32);
+    }
     // Cream outline highlight to distinguish from enemies
     ctx.save();
     ctx.strokeStyle = COLORS.cream;
