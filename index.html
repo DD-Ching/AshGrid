@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=81"></script>
-<script src="js/arena_recruitment.js?v=81"></script>
-<script src="js/dynamic_radio.js?v=81"></script>
-<script src="js/i18n.js?v=81"></script>
-<script src="js/touch_input.js?v=81"></script>
-<script src="js/key_bindings.js?v=81"></script>
-<script src="js/grenades.js?v=81"></script>
-<script src="js/squad_commands.js?v=81"></script>
-<script src="js/multiplayer.js?v=81"></script>
-<script src="js/leaderboard.js?v=81"></script>
-<script src="js/structures.js?v=81"></script>
-<script src="js/tod.js?v=81"></script>
-<script src="js/weapons.js?v=81"></script>
-<script src="js/chassis.js?v=81"></script>
-<script src="js/respawn_buff.js?v=81"></script>
-<script src="js/death_recap.js?v=81"></script>
-<script src="js/mote_affinity.js?v=81"></script>
-<script src="js/stage_hints.js?v=81"></script>
-<script src="js/pawn_swap.js?v=81"></script>
-<script src="js/global_stats.js?v=81"></script>
-<script src="js/progressive_unlock.js?v=81"></script>
-<script src="js/ad_stubs.js?v=81"></script>
+<script src="js/audio/sfx.js?v=82"></script>
+<script src="js/arena_recruitment.js?v=82"></script>
+<script src="js/dynamic_radio.js?v=82"></script>
+<script src="js/i18n.js?v=82"></script>
+<script src="js/touch_input.js?v=82"></script>
+<script src="js/key_bindings.js?v=82"></script>
+<script src="js/grenades.js?v=82"></script>
+<script src="js/squad_commands.js?v=82"></script>
+<script src="js/multiplayer.js?v=82"></script>
+<script src="js/leaderboard.js?v=82"></script>
+<script src="js/structures.js?v=82"></script>
+<script src="js/tod.js?v=82"></script>
+<script src="js/weapons.js?v=82"></script>
+<script src="js/chassis.js?v=82"></script>
+<script src="js/respawn_buff.js?v=82"></script>
+<script src="js/death_recap.js?v=82"></script>
+<script src="js/mote_affinity.js?v=82"></script>
+<script src="js/stage_hints.js?v=82"></script>
+<script src="js/pawn_swap.js?v=82"></script>
+<script src="js/global_stats.js?v=82"></script>
+<script src="js/progressive_unlock.js?v=82"></script>
+<script src="js/ad_stubs.js?v=82"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=81"></script>
+<script src="js/crazygames.js?v=82"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=81"></script>
+<script src="js/gamemonetize.js?v=82"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=81"></script>
-<script src="js/world_gen.js?v=81"></script>
-<script src="js/squad.js?v=81"></script>
-<script src="js/drone_fpv.js?v=81"></script>
-<script src="js/vision_raycast.js?v=81"></script>
-<script src="js/camera.js?v=81"></script>
-<script src="js/defense_build_ui.js?v=81"></script>
-<script src="js/pause.js?v=81"></script>
+<script src="js/missions/nn_deathmatch.js?v=82"></script>
+<script src="js/world_gen.js?v=82"></script>
+<script src="js/squad.js?v=82"></script>
+<script src="js/drone_fpv.js?v=82"></script>
+<script src="js/vision_raycast.js?v=82"></script>
+<script src="js/camera.js?v=82"></script>
+<script src="js/defense_build_ui.js?v=82"></script>
+<script src="js/pause.js?v=82"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -104,6 +104,13 @@
   }
 </script>
 <style>
+/* Phase 82 — mobile gate. Coarse-pointer devices (phones, tablets) see
+   the #mobileBlock overlay instead of the game UI. Desktop / laptop
+   browsers ignore this rule entirely. */
+@media (pointer: coarse) {
+  #mobileBlock { display: flex !important; }
+  #start, #nnLobby, #nnEndCard, #entryCountdown, canvas { display: none !important; }
+}
 :root {
   --red: #C8261C;
   --red-bright: #E63329;
@@ -1158,6 +1165,67 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 </head>
 <body>
 <canvas id="game"></canvas>
+
+<!-- ============ Phase 82 — MOBILE GATE ============ -->
+<!-- Coarse-pointer devices (phones, tablets) see this fullscreen overlay
+     instead of the game. Desktop sees the canvas. The @media query in
+     <style> swaps display:none/flex automatically. Mobile parity is on
+     the roadmap but the touch controls aren't polished yet, so we'd
+     rather show a clear 'come back on desktop' than ship a broken UX. -->
+<div id="mobileBlock" style="
+     display:none;
+     position:fixed; inset:0; z-index:9999;
+     background:#1A1A1A; color:#E8E4D8;
+     align-items:center; justify-content:center; flex-direction:column;
+     padding:40px; text-align:center;
+     font-family: 'Helvetica Neue', sans-serif;">
+  <div style="font-size:56px; font-weight:900; color:#C8261C; letter-spacing:2px;">AshGrid</div>
+  <div style="font-size:11px; color:#888; letter-spacing:4px; margin-top:4px;">TACTICAL .IO ARENA</div>
+  <div style="height:32px;"></div>
+  <div style="font-size:22px; font-weight:bold; padding:14px 24px; border:2px solid #C8261C; border-radius:4px;">
+    桌面版限定 · DESKTOP ONLY
+  </div>
+  <div style="height:24px;"></div>
+  <div style="font-size:13px; color:#aaa; max-width:380px; line-height:1.8;">
+    AshGrid 目前需要鍵盤滑鼠操作 · WASD 移動,滑鼠瞄準射擊。<br>
+    請使用筆電 / 桌機瀏覽器開啟 <strong style="color:#E8E4D8;">ashgrid.io</strong>
+    <br><br>
+    <span style="color:#666;">Requires keyboard and mouse · WASD + click to play.<br>
+    Mobile support coming in a later update.</span>
+  </div>
+</div>
+
+<!-- ============ Phase 82 — STATIC RESPAWN AD SLOT ============ -->
+<!-- Shown automatically during the respawn countdown window (the 5s
+     buffed / 15s default wait after dying). Stays HTML so it can later
+     host a real GameMonetize Banner_300x250 ad tag — that needs an
+     ad-key from the GM dashboard, separate from the gameId. Until then
+     the slot renders as a clearly-labeled placeholder so the layout +
+     timing are testable. -->
+<div id="respawnAdSlot" style="
+     display:none;
+     position:fixed; left:50%; top:60%;
+     transform: translate(-50%, 0);
+     z-index:50;
+     pointer-events:none;
+     font-family: 'Helvetica Neue', sans-serif;">
+  <div style="font-size:9px; color:#888; letter-spacing:3px; text-align:center; margin-bottom:4px; text-transform:uppercase;">
+    Advertisement
+  </div>
+  <div id="respawnAdContent" style="
+       width:300px; height:250px;
+       background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+       border:1px solid #444;
+       display:flex; align-items:center; justify-content:center;
+       flex-direction:column;
+       color:#888;">
+    <!-- Replace this block with a GameMonetize banner ad-tag once you
+         create one in their dashboard:
+         <ins data-ad-key="YOUR_BANNER_KEY"></ins> -->
+    <div style="font-size:32px; font-weight:900; color:#C8261C; opacity:0.6;">AshGrid</div>
+    <div style="font-size:10px; color:#666; margin-top:8px; letter-spacing:2px;">300 × 250 BANNER SLOT</div>
+  </div>
+</div>
 
 <!-- (arena-mp: #ftueDialogue bar removed — tied to the cut FTUE prologue.) -->
 
@@ -2392,6 +2460,27 @@ try {
 //     grenades (array) · GRENADE_FUSE / RADIUS / DAMAGE_MAX /
 //     THROW_MAX / THROW_MIN / FRICTION (constants)
 //     throwGrenade() · updateGrenades() · explodeGrenade(g)
+
+// Phase 82 — static respawn ad slot visibility. Shows the #respawnAdSlot
+// HTML element during the respawn countdown (5s buffed / 15s default).
+// Idempotent + runs every render frame; the only state mutation is
+// element.style.display, so the cost is one DOM lookup + one assignment
+// at most. The 300×250 slot inside the element is currently a placeholder;
+// can be swapped for a real GameMonetize Banner ad-tag later.
+function _updateRespawnAdSlot() {
+  const slot = document.getElementById('respawnAdSlot');
+  if (!slot) return;
+  const inRespawnWait = typeof game !== 'undefined'
+    && game._nnMode
+    && typeof player !== 'undefined'
+    && !player.alive
+    && player._respawnAt != null;
+  // Only show on desktop — the mobile gate hides everything else anyway,
+  // but keep the slot off too so it doesn't leak through to the @media
+  // override in case the mobileBlock styles change later.
+  const isMobile = (typeof touchInput !== 'undefined') && touchInput.enabled;
+  slot.style.display = (inRespawnWait && !isMobile) ? 'block' : 'none';
+}
 
 // Sprint tuning
 const SPRINT_SPEED_MUL    = 1.65;   // ×base speed while sprinting
@@ -10290,6 +10379,12 @@ function renderHUD() {
     ctx.globalAlpha = 1;
     ctx.textAlign = 'left';
   }
+  // Phase 82 — static respawn ad slot. Shown during the respawn countdown
+  // wait (both 5s buffed and 15s default). User '無論如何, 活的五秒鐘
+  // 一定會有靜態的廣告. 十五秒鐘也是靜態的廣告'. The 30s VIDEO ad (Phase
+  // 60 ad-revive) is still gated on the Watch Ad button click; this slot
+  // is the PASSIVE static display that always runs during the wait.
+  if (typeof _updateRespawnAdSlot === 'function') _updateRespawnAdSlot();
 
   // Mission objective panel + off-screen compass. Suppress when the HTML
   // end-card is up — the canvas-drawn MATCH RESULT block would otherwise
