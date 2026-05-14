@@ -163,13 +163,18 @@ function drawBuildRadial() {
   const catStep = (Math.PI * 2) / NCAT;
   const hovered = _radialPickAt(mouse.x, mouse.y);
 
-  // Resolve which category's outer fan to show: hover takes priority over
-  // the committed click so a user moving cursor across inner wedges sees
-  // each fan in turn (smooth preview), while clicking pins the choice in
-  // case they sweep the cursor outward through the gap.
-  const previewCatId = (hovered && hovered.type === 'cat')
-    ? hovered.id
-    : buildMode.radialCat;
+  // Phase 70b — auto-pin radialCat on inner-ring hover. User bug:
+  // '從A的游標滑到H2的中間,經過那個空格,游標立刻消失,選項立刻消失'.
+  // The 20u gap between inner and outer rings was a dead zone — cursor
+  // crossing it killed `hovered`, the fan resolved to `buildMode.radialCat`
+  // (null because no click had happened), and the outer items vanished
+  // mid-swipe. Fix: hovering an inner wedge AUTO-COMMITS radialCat. Once
+  // committed it stays through the gap; only hovering a DIFFERENT inner
+  // cat swaps it. Clicking inner is now a no-op (cat is already pinned).
+  if (hovered && hovered.type === 'cat' && buildMode.radialCat !== hovered.id) {
+    buildMode.radialCat = hovered.id;
+  }
+  const previewCatId = buildMode.radialCat;
 
   ctx.save();
   // Dim backdrop — gameplay underneath stays readable but recedes.
