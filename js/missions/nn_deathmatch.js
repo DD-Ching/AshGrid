@@ -101,6 +101,12 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   function _spawnRedWave() {
     if (typeof _arenaSpawnFactoryBot !== 'function') return;
     if (typeof game._nnSpawnRed === 'undefined' || !game._nnSpawnRed) return;
+    // Phase 1 ?nonn=1 — wave spawner short-circuits when bots are disabled
+    // for the MP diagnostic mode. Without this gate, even with redSize=0
+    // at spawn, the first wave tick (~15s in) refills the arena with
+    // factory bots — user reported '機器人不會動 並非消失' because the
+    // wave spawner had no nonn check, only nnTick did.
+    if (game._nnNoBots) return;
     // Phase 18: KO-stunned enemies don't count toward the cap — they're
     // frozen / neutralized and waiting to be recruited, so we shouldn't
     // let the wave system see them as 'active threats' or it'd stall.

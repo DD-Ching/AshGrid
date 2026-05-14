@@ -45,48 +45,48 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=104"></script>
-<script src="js/arena_recruitment.js?v=104"></script>
-<script src="js/dynamic_radio.js?v=104"></script>
-<script src="js/i18n.js?v=104"></script>
-<script src="js/touch_input.js?v=104"></script>
-<script src="js/key_bindings.js?v=104"></script>
-<script src="js/grenades.js?v=104"></script>
-<script src="js/squad_commands.js?v=104"></script>
+<script src="js/audio/sfx.js?v=105"></script>
+<script src="js/arena_recruitment.js?v=105"></script>
+<script src="js/dynamic_radio.js?v=105"></script>
+<script src="js/i18n.js?v=105"></script>
+<script src="js/touch_input.js?v=105"></script>
+<script src="js/key_bindings.js?v=105"></script>
+<script src="js/grenades.js?v=105"></script>
+<script src="js/squad_commands.js?v=105"></script>
 <!-- Phase 1: shared movement sim (server uses byte-identical ESM mirror
      at server/party/sim/movement.js). Must load BEFORE multiplayer.js. -->
-<script src="js/sim/movement.js?v=104"></script>
-<script src="js/multiplayer.js?v=104"></script>
-<script src="js/leaderboard.js?v=104"></script>
-<script src="js/structures.js?v=104"></script>
-<script src="js/tod.js?v=104"></script>
-<script src="js/weapons.js?v=104"></script>
-<script src="js/chassis.js?v=104"></script>
-<script src="js/respawn_buff.js?v=104"></script>
-<script src="js/death_recap.js?v=104"></script>
-<script src="js/mote_affinity.js?v=104"></script>
-<script src="js/stage_hints.js?v=104"></script>
-<script src="js/pawn_swap.js?v=104"></script>
-<script src="js/global_stats.js?v=104"></script>
-<script src="js/progressive_unlock.js?v=104"></script>
-<script src="js/ad_stubs.js?v=104"></script>
+<script src="js/sim/movement.js?v=105"></script>
+<script src="js/multiplayer.js?v=105"></script>
+<script src="js/leaderboard.js?v=105"></script>
+<script src="js/structures.js?v=105"></script>
+<script src="js/tod.js?v=105"></script>
+<script src="js/weapons.js?v=105"></script>
+<script src="js/chassis.js?v=105"></script>
+<script src="js/respawn_buff.js?v=105"></script>
+<script src="js/death_recap.js?v=105"></script>
+<script src="js/mote_affinity.js?v=105"></script>
+<script src="js/stage_hints.js?v=105"></script>
+<script src="js/pawn_swap.js?v=105"></script>
+<script src="js/global_stats.js?v=105"></script>
+<script src="js/progressive_unlock.js?v=105"></script>
+<script src="js/ad_stubs.js?v=105"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=104"></script>
+<script src="js/crazygames.js?v=105"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=104"></script>
+<script src="js/gamemonetize.js?v=105"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=104"></script>
-<script src="js/world_gen.js?v=104"></script>
-<script src="js/squad.js?v=104"></script>
-<script src="js/drone_fpv.js?v=104"></script>
-<script src="js/vision_raycast.js?v=104"></script>
-<script src="js/camera.js?v=104"></script>
-<script src="js/defense_build_ui.js?v=104"></script>
-<script src="js/pause.js?v=104"></script>
+<script src="js/missions/nn_deathmatch.js?v=105"></script>
+<script src="js/world_gen.js?v=105"></script>
+<script src="js/squad.js?v=105"></script>
+<script src="js/drone_fpv.js?v=105"></script>
+<script src="js/vision_raycast.js?v=105"></script>
+<script src="js/camera.js?v=105"></script>
+<script src="js/defense_build_ui.js?v=105"></script>
+<script src="js/pause.js?v=105"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -3751,18 +3751,18 @@ function startSkirmish() {
 
 async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', weaponId = 'RIFLE', lineup = null, gameMode = 'dm') {
   // Phase 1 diagnostic — ?nonn=1 strips ALL NN-driven units from the
-  // skirmish (allies + enemies = 0). Lets the user A/B test whether MP
-  // still rubber-bands when the client isn't blocked on 60Hz ONNX
-  // inference. If MP becomes smooth with ?nonn=1, that confirms NN
-  // load is the stutter source (and Phase 3 — server-side NN — is the
-  // real fix). User '我也想看看若無nn其他玩家 是否真的就不卡'.
-  try {
-    if (new URLSearchParams(location.search).get('nonn') === '1') {
-      blueSize = 0;
-      redSize  = 0;
-      console.log('[nonn] ?nonn=1 → spawning pure player-only skirmish (0 NN allies, 0 NN enemies)');
-    }
-  } catch (e) {}
+  // skirmish: 0 allies + 0 enemies at spawn AND no wave respawn AND
+  // nnTick short-circuits. Lets the user A/B test whether MP rubber-
+  // band is the network code or the 60 Hz ONNX load on main thread.
+  // User '我也想看看若無nn其他玩家 是否真的就不卡' (first cut just
+  // froze the bots in place — they were spawned but nnTick was the
+  // ONLY thing being skipped; the wave spawner kept refilling them
+  // because the gate is below the size-clamp + the mission factory's
+  // _spawnRedWave wasn't gated at all).
+  const _nonn = (() => {
+    try { return new URLSearchParams(location.search).get('nonn') === '1'; }
+    catch (e) { return false; }
+  })();
   document.getElementById('start').classList.add('hidden');
   document.getElementById('nnLobby')?.classList.add('hidden');
   document.getElementById('end').classList.add('hidden');
@@ -3797,6 +3797,16 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
 
   blueSize = Math.max(1, Math.min(8, blueSize));
   redSize  = Math.max(1, Math.min(8, redSize));
+  // Phase 1 ?nonn=1 — apply AFTER the Math.max(1) clamp so we can
+  // actually reach redSize=0 (clamp would have bumped it back to 1).
+  // blueSize stays 1 because the spawn loop is `for (i = 1; i < blueSize)`
+  // — that's the player's own slot; below 1 the player wouldn't render.
+  if (_nonn) {
+    blueSize = 1;   // player only, no NN allies
+    redSize  = 0;   // no NN enemies
+    game._nnNoBots = true;   // sticky flag for the mission factory's wave spawner
+    console.log('[nonn] ?nonn=1 → pure-player skirmish: 0 allies, 0 enemies, no waves');
+  }
 
   // Resolve which difficulties + weapons each NN unit will use.
   // If `lineup` is provided (advanced editor), respect per-slot config.
@@ -5220,13 +5230,10 @@ async function nnTick() {
   if (game.state !== 'playing') return;
   // Phase 1 diagnostic — ?nonn=1 short-circuits the entire NN dispatcher
   // so the 60Hz ONNX inference + cone-LoS scan + heatmap tick + obs
-  // batch + 18-action distribution all stay off the main thread. Lets
-  // the user verify whether MP stutter is the network code or the NN
-  // load. If MP feels butter-smooth with ?nonn=1 → NN is the culprit
-  // and Phase 3 (server-side NN) is the right fix.
-  try {
-    if (new URLSearchParams(location.search).get('nonn') === '1') return;
-  } catch (e) {}
+  // batch + 18-action distribution all stay off the main thread. The
+  // flag is set by startNNSkirmish; reading game._nnNoBots is one cmp
+  // vs. re-parsing the URL string every frame.
+  if (game._nnNoBots) return;
   // Run NN dispatcher in campaign too if any unit has _useNN flagged. The
   // skirmish path sets game._nnMode and pre-flags every unit; the campaign
   // path now opts individual enemies in (spawnSoldier + spawnDroneEnemy
