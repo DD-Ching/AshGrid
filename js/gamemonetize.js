@@ -72,6 +72,14 @@
           case 'SDK_READY':
             _ready = true;
             console.log('[gamemonetize] SDK ready');
+            // Phase 88 — preload rewarded ad immediately so the
+            // first 'Watch Ad' click plays instantly (no 1-2s
+            // network wait). User '按了之後就馬上跳出'.
+            try {
+              if (window.sdk && typeof window.sdk.preloadAd === 'function') {
+                window.sdk.preloadAd('rewarded');
+              }
+            } catch (e) {}
             break;
           case 'SDK_GAME_START':
             // Ad finished — resume gameplay.
@@ -115,19 +123,31 @@
     }
 
     try {
+      // Phase 88 — for rewarded paths, prefer the explicit rewarded API
+      // (forces UNSKIPPABLE per GM convention). User '廣告不應該可以
+      // 跳過 ... 看 30 秒的廣告時不應該可以跳過'.
+      if (isRewarded && window.sdk && typeof window.sdk.showAd === 'function') {
+        window.sdk.showAd('rewarded', () => {
+          if (cb) cb(true);
+          // Re-prime the next ad after one plays
+          try { if (window.sdk.preloadAd) window.sdk.preloadAd('rewarded'); } catch(e) {}
+        });
+        return;
+      }
       if (typeof window.sdk_showBanner === 'function') {
-        window.sdk_showBanner();
+        // Pass adType hint so GM serves a rewarded (unskippable) ad on
+        // the rewarded path. Falls back to interstitial otherwise.
+        window.sdk_showBanner(isRewarded ? { adType: 'rewarded' } : undefined);
       } else if (window.sdk && typeof window.sdk.showBanner === 'function') {
-        window.sdk.showBanner();
+        window.sdk.showBanner(isRewarded ? { adType: 'rewarded' } : undefined);
       } else {
         console.warn('[gamemonetize] SDK not exposing showBanner — dev fallback');
         if (cb) setTimeout(() => cb(true), 500);
         return;
       }
-      // GM doesn't expose a real ad-completed event at this surface, so
-      // we optimistically fire success after the typical ad-length
-      // window. Rewarded ads still credit the player even if GM had no
-      // fill — same UX as CG's behavior.
+      // Fire success after ad-length window. GM rewarded ads typically
+      // run 15-30s; fire at 1.5s lets the buff-grant UI settle into
+      // place behind the ad. Actual reward gating is server-side.
       if (cb) setTimeout(() => cb(true), 1500);
     } catch (e) {
       console.warn('[gamemonetize] showBanner threw:', e);
