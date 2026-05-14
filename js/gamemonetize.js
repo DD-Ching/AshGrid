@@ -134,33 +134,25 @@
     }
 
     try {
-      // Phase 89 — stash cb on _pendingAdCb. It fires on the
-      // SDK_GAME_START event when the ad ACTUALLY finishes (handled in
-      // SDK_OPTIONS.onEvent above). Old code fired cb on a 1.5s
-      // setTimeout which granted the reward halfway into the ad. Now
-      // the player must watch the ad to completion before the buff /
-      // revive lands.
+      // Phase 91 — simplified to match GM SDK v3 docs (verified via their
+      // GitHub README). GM exposes ONLY sdk.showBanner() (misnamed — it's
+      // actually the video interstitial / rewarded slot). No sdk.showAd
+      // method, no callback parameter. Completion comes via the
+      // SDK_GAME_START event in onEvent.
+      //
+      // Pattern: stash cb in _pendingAdCb, call showBanner(), and let
+      // SDK_GAME_START fire the cb. SDK_GAME_START fires on ANY ad
+      // outcome (watched / skipped / errored / blocked) — that's GM's
+      // design. Reward is granted as long as the ad request was served.
+      // Failsafe: 30-second timer in case GM events never fire (e.g.
+      // ad blocker, network failure) so the player isn't stuck.
       _pendingAdCb = cb || null;
-      // Phase 88 — rewarded path forces UNSKIPPABLE per GM convention.
-      if (isRewarded && window.sdk && typeof window.sdk.showAd === 'function') {
-        window.sdk.showAd('rewarded', () => {
-          // GM's showAd callback fires on ad-end. Fire pending cb here
-          // too (belt + suspenders with the SDK_GAME_START path).
-          if (_pendingAdCb) {
-            try { _pendingAdCb(true); } catch (e) {}
-            _pendingAdCb = null;
-          }
-          try { if (window.sdk.preloadAd) window.sdk.preloadAd('rewarded'); } catch(e) {}
-        });
-        return;
-      }
-      if (typeof window.sdk_showBanner === 'function') {
-        window.sdk_showBanner(isRewarded ? { adType: 'rewarded' } : undefined);
-      } else if (window.sdk && typeof window.sdk.showBanner === 'function') {
-        window.sdk.showBanner(isRewarded ? { adType: 'rewarded' } : undefined);
+      if (window.sdk && typeof window.sdk.showBanner === 'function') {
+        window.sdk.showBanner();
+      } else if (typeof window.sdk_showBanner === 'function') {
+        window.sdk_showBanner();
       } else {
         console.warn('[gamemonetize] SDK not exposing showBanner — dev fallback');
-        // Dev mode: simulate ad completion after 500ms
         if (_pendingAdCb) {
           setTimeout(() => {
             if (_pendingAdCb) { _pendingAdCb(true); _pendingAdCb = null; }
@@ -168,8 +160,20 @@
         }
         return;
       }
-      // Real SDK path — cb fires on SDK_GAME_START event when ad ends.
-      // Don't setTimeout cb here; that was the Phase 88 bug.
+      // Phase 91 failsafe — if no SDK_GAME_START event arrives within
+      // 30 seconds, assume the ad didn't load (blocker, no fill, etc.)
+      // and grant the reward anyway so the player isn't trapped on the
+      // death screen forever. 30s is longer than any real ad to avoid
+      // double-firing.
+      setTimeout(() => {
+        if (_pendingAdCb) {
+          console.warn('[gamemonetize] SDK_GAME_START did not arrive within 30s — failsafe firing reward');
+          _pendingAdCb(true);
+          _pendingAdCb = null;
+          // Resume game in case SDK_GAME_PAUSE fired but no resume.
+          if (typeof game !== 'undefined') game._paused = false;
+        }
+      }, 30000);
     } catch (e) {
       console.warn('[gamemonetize] showBanner threw:', e);
       if (cb) cb(false);
