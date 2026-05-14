@@ -88,6 +88,14 @@ function applyChassisToUnit(u, chassisId, baseSpeed, baseHp, baseRadius) {
   const c = CHASSIS[chassisId] || CHASSIS.humanoid;
   u._chassis = chassisId || 'humanoid';
   u.speed   = baseSpeed  * c.speedMul;
+  // Phase 1 (refactor) — also store the RAW chassis multiplier so the
+  // shared sim (SIM.simStepPerTick/PerFrame) can apply it without us
+  // needing to back-derive baseSpeed at call sites. Used by the v2 MP
+  // input packet (cMul field) so the server applies the same multiplier
+  // — previously server defaulted to 1.0, which made wolf (1.50) and
+  // heavy (0.72) chassis rubber-band hard while sprinting (sprint +
+  // wolf = 4.62 px/tick client/server divergence → snap within 1 s).
+  u._chassisSpeedMul = c.speedMul;
   u.maxHp   = Math.round(baseHp * c.hpMul);
   u.hp      = u.maxHp;
   u.radius  = Math.round(baseRadius * c.radiusMul);

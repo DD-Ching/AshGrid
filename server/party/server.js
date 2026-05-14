@@ -550,12 +550,13 @@ export default class AshGridRoom {
         const out = simStepPerTickV2(
           {
             x: p.x, y: p.y,
-            // Server doesn't yet track weapon/chassis mul; Phase 4 will
-            // own them server-side. For now default to 1 — divergence
-            // from client local prediction is bounded by the existing
-            // reconcile dead zone (3 px) for non-sprint cases.
-            weaponSpeedMul: 1.0,
-            chassisSpeedMul: 1.0,
+            // Phase 1 refactor: client now sends per-input weapon +
+            // chassis multipliers (wMul, cMul). Server applies them
+            // so wolf/heavy chassis + LMG/SMG no longer rubber-band
+            // while sprinting (4.62 px/tick divergence in the worst
+            // case — wolf+sprint hit the 150 snap threshold in ~1s).
+            weaponSpeedMul:  (typeof inp.wMul === 'number') ? inp.wMul : 1.0,
+            chassisSpeedMul: (typeof inp.cMul === 'number') ? inp.cMul : 1.0,
           },
           inp
         );

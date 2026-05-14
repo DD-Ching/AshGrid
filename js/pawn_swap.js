@@ -157,6 +157,9 @@ function swapPlayerToAlly(idx) {
   player._chassis = targetChassis || player._chassis || 'humanoid';
   const _cdef = CHASSIS[player._chassis] || CHASSIS.humanoid;
   player.speed  = 2.8 * _cdef.speedMul;
+  // Phase 1 refactor — mirror the raw chassis mul so v2 MP input picks
+  // it up. See chassis.js applyChassisToUnit for rationale.
+  player._chassisSpeedMul = _cdef.speedMul;
   player.radius = Math.round(14 * _cdef.radiusMul);
   player._invulnUntil = game.time + 60;
   player._lastX = targetX; player._lastY = targetY;

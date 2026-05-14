@@ -45,48 +45,48 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=103"></script>
-<script src="js/arena_recruitment.js?v=103"></script>
-<script src="js/dynamic_radio.js?v=103"></script>
-<script src="js/i18n.js?v=103"></script>
-<script src="js/touch_input.js?v=103"></script>
-<script src="js/key_bindings.js?v=103"></script>
-<script src="js/grenades.js?v=103"></script>
-<script src="js/squad_commands.js?v=103"></script>
+<script src="js/audio/sfx.js?v=104"></script>
+<script src="js/arena_recruitment.js?v=104"></script>
+<script src="js/dynamic_radio.js?v=104"></script>
+<script src="js/i18n.js?v=104"></script>
+<script src="js/touch_input.js?v=104"></script>
+<script src="js/key_bindings.js?v=104"></script>
+<script src="js/grenades.js?v=104"></script>
+<script src="js/squad_commands.js?v=104"></script>
 <!-- Phase 1: shared movement sim (server uses byte-identical ESM mirror
      at server/party/sim/movement.js). Must load BEFORE multiplayer.js. -->
-<script src="js/sim/movement.js?v=103"></script>
-<script src="js/multiplayer.js?v=103"></script>
-<script src="js/leaderboard.js?v=103"></script>
-<script src="js/structures.js?v=103"></script>
-<script src="js/tod.js?v=103"></script>
-<script src="js/weapons.js?v=103"></script>
-<script src="js/chassis.js?v=103"></script>
-<script src="js/respawn_buff.js?v=103"></script>
-<script src="js/death_recap.js?v=103"></script>
-<script src="js/mote_affinity.js?v=103"></script>
-<script src="js/stage_hints.js?v=103"></script>
-<script src="js/pawn_swap.js?v=103"></script>
-<script src="js/global_stats.js?v=103"></script>
-<script src="js/progressive_unlock.js?v=103"></script>
-<script src="js/ad_stubs.js?v=103"></script>
+<script src="js/sim/movement.js?v=104"></script>
+<script src="js/multiplayer.js?v=104"></script>
+<script src="js/leaderboard.js?v=104"></script>
+<script src="js/structures.js?v=104"></script>
+<script src="js/tod.js?v=104"></script>
+<script src="js/weapons.js?v=104"></script>
+<script src="js/chassis.js?v=104"></script>
+<script src="js/respawn_buff.js?v=104"></script>
+<script src="js/death_recap.js?v=104"></script>
+<script src="js/mote_affinity.js?v=104"></script>
+<script src="js/stage_hints.js?v=104"></script>
+<script src="js/pawn_swap.js?v=104"></script>
+<script src="js/global_stats.js?v=104"></script>
+<script src="js/progressive_unlock.js?v=104"></script>
+<script src="js/ad_stubs.js?v=104"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=103"></script>
+<script src="js/crazygames.js?v=104"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=103"></script>
+<script src="js/gamemonetize.js?v=104"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=103"></script>
-<script src="js/world_gen.js?v=103"></script>
-<script src="js/squad.js?v=103"></script>
-<script src="js/drone_fpv.js?v=103"></script>
-<script src="js/vision_raycast.js?v=103"></script>
-<script src="js/camera.js?v=103"></script>
-<script src="js/defense_build_ui.js?v=103"></script>
-<script src="js/pause.js?v=103"></script>
+<script src="js/missions/nn_deathmatch.js?v=104"></script>
+<script src="js/world_gen.js?v=104"></script>
+<script src="js/squad.js?v=104"></script>
+<script src="js/drone_fpv.js?v=104"></script>
+<script src="js/vision_raycast.js?v=104"></script>
+<script src="js/camera.js?v=104"></script>
+<script src="js/defense_build_ui.js?v=104"></script>
+<script src="js/pause.js?v=104"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -3750,6 +3750,19 @@ function startSkirmish() {
 }
 
 async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', weaponId = 'RIFLE', lineup = null, gameMode = 'dm') {
+  // Phase 1 diagnostic — ?nonn=1 strips ALL NN-driven units from the
+  // skirmish (allies + enemies = 0). Lets the user A/B test whether MP
+  // still rubber-bands when the client isn't blocked on 60Hz ONNX
+  // inference. If MP becomes smooth with ?nonn=1, that confirms NN
+  // load is the stutter source (and Phase 3 — server-side NN — is the
+  // real fix). User '我也想看看若無nn其他玩家 是否真的就不卡'.
+  try {
+    if (new URLSearchParams(location.search).get('nonn') === '1') {
+      blueSize = 0;
+      redSize  = 0;
+      console.log('[nonn] ?nonn=1 → spawning pure player-only skirmish (0 NN allies, 0 NN enemies)');
+    }
+  } catch (e) {}
   document.getElementById('start').classList.add('hidden');
   document.getElementById('nnLobby')?.classList.add('hidden');
   document.getElementById('end').classList.add('hidden');
@@ -5205,6 +5218,15 @@ let _nnInferring = false;
 async function nnTick() {
   if (!NN.loaded || _nnInferring) return;
   if (game.state !== 'playing') return;
+  // Phase 1 diagnostic — ?nonn=1 short-circuits the entire NN dispatcher
+  // so the 60Hz ONNX inference + cone-LoS scan + heatmap tick + obs
+  // batch + 18-action distribution all stay off the main thread. Lets
+  // the user verify whether MP stutter is the network code or the NN
+  // load. If MP feels butter-smooth with ?nonn=1 → NN is the culprit
+  // and Phase 3 (server-side NN) is the right fix.
+  try {
+    if (new URLSearchParams(location.search).get('nonn') === '1') return;
+  } catch (e) {}
   // Run NN dispatcher in campaign too if any unit has _useNN flagged. The
   // skirmish path sets game._nnMode and pre-flags every unit; the campaign
   // path now opts individual enemies in (spawnSoldier + spawnDroneEnemy

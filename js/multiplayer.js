@@ -409,13 +409,15 @@ function _mpHandleSnapshot(snap) {
       let predX = sp.x, predY = sp.y;
       const isV2 = _mpIsV2();
       if (isV2 && typeof window !== 'undefined' && window.SIM && window.SIM.simStepPerTick) {
-        // Pull weapon/chassis mul from current player state — these
-        // change rarely so it's safe to read 'now' (Phase 4 will move
-        // them server-side too).
-        const wpnMul = (typeof playerWeapon !== 'undefined' && playerWeapon && playerWeapon.speedMul) || 1.0;
-        const chsMul = (typeof player !== 'undefined' && player._chassisSpeedMul) || 1.0;
-        const repState = { x: predX, y: predY, weaponSpeedMul: wpnMul, chassisSpeedMul: chsMul };
+        // Phase 1 refactor: every pending input carries its own wMul +
+        // cMul snapshot, so a mid-stride weapon swap or chassis change
+        // replays with the multiplier that was ACTIVE for that input.
+        // Server applies the same per-input values from inp.wMul/cMul,
+        // so client replay and server tick produce byte-identical x/y.
+        const repState = { x: predX, y: predY };
         for (const inp of _mpState.pendingInputs) {
+          repState.weaponSpeedMul  = (typeof inp.wMul === 'number') ? inp.wMul : 1.0;
+          repState.chassisSpeedMul = (typeof inp.cMul === 'number') ? inp.cMul : 1.0;
           const out = window.SIM.simStepPerTick(repState, inp);
           repState.x = out.x; repState.y = out.y;
         }
@@ -784,10 +786,22 @@ function _mpSendInput() {
   // payload unchanged for legacy server tick logic (which doesn't read
   // sprint and would just ignore the field anyway — but better to be
   // explicit about the protocol version).
+  // Phase 1 refactor: also send weapon + chassis multipliers. Without
+  // them, server defaulted to 1.0 for both and the math diverged for
+  // ANY non-default loadout (LMG ×0.85 / SMG ×1.10 / wolf chassis ×1.50
+  // / heavy chassis ×0.72). With sprint stacked on top, divergence per
+  // tick reached up to 4.62 px → snap-threshold hit in ~1s of holding
+  // shift. User '請用力重構優化' — this is the actual fix.
   const isV2 = _mpIsV2();
   const sprint = isV2
     ? !!(typeof player !== 'undefined' && player.sprinting)
     : 0;
+  const wMul = isV2
+    ? ((typeof playerWeapon !== 'undefined' && playerWeapon && typeof playerWeapon.speedMul === 'number') ? playerWeapon.speedMul : 1.0)
+    : 1.0;
+  const cMul = isV2
+    ? ((typeof player !== 'undefined' && typeof player._chassisSpeedMul === 'number') ? player._chassisSpeedMul : 1.0)
+    : 1.0;
   const input = {
     type: 'input',
     seq, dx, dy, angle, fire,
@@ -809,6 +823,9 @@ function _mpSendInput() {
     // truthy so legacy servers ignore it.
     v2: isV2 ? 1 : 0,
     sprint: sprint ? 1 : 0,
+    // Phase 1 refactor: weapon + chassis muls. See big comment above.
+    wMul,
+    cMul,
   };
   _mpSendRaw(input);
 
@@ -821,8 +838,9 @@ function _mpSendInput() {
   // Phase 38 prediction — index.html's per-frame WASD code IS our
   // prediction. We just record the input here so reconciliation can
   // replay any unacked inputs from the server's confirmed position.
-  // Phase 1: also stash sprint so v2 replay uses the same multiplier.
-  _mpState.pendingInputs.push({ seq, dx, dy, angle, fire, sprint });
+  // Phase 1: also stash sprint + wMul + cMul so v2 replay matches
+  // both per-frame client integration and server tick byte-for-byte.
+  _mpState.pendingInputs.push({ seq, dx, dy, angle, fire, sprint, wMul, cMul });
 
   // Cap the pendingInputs queue so it doesn't grow forever during net loss
   if (_mpState.pendingInputs.length > 120) {
