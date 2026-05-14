@@ -107,10 +107,17 @@ function swapPlayerToAlly(idx) {
       _humanPiloted: false,
     };
   } else {
-    // Dead body — already an "explosion" was drawn. Slot becomes corpse +
-    // pending respawn so the slot doesn't permanently disappear.
-    const corpseX = player._lastDeathX != null ? player._lastDeathX : player.x;
-    const corpseY = player._lastDeathY != null ? player._lastDeathY : player.y;
+    // Phase 85 — dead pawn-swap. User '別人會瞬間移動到我原本死掉的位置
+    // 這樣很怪'. The ex-op slot now respawns at the TEAM SPAWN point
+    // instead of at the player's death position. Old behaviour placed
+    // the corpse at corpseX/corpseY (= player death spot) and 5s later
+    // it visibly 'came back to life' at the player's death position,
+    // reading as 'BRAVO teleported to my death spot'. The fix routes
+    // it through the standard blue spawn so the respawn is far from
+    // the action + nowhere near the player's new position.
+    const _spawn = (typeof game !== 'undefined' && game._nnSpawnBlue) || null;
+    const corpseX = _spawn ? _spawn.x : (player._lastDeathX != null ? player._lastDeathX : player.x);
+    const corpseY = _spawn ? _spawn.y : (player._lastDeathY != null ? player._lastDeathY : player.y);
     allies[idx] = {
       callsign: T('前操作员', 'EX-OPERATOR'),
       offsetX: a.offsetX, offsetY: a.offsetY,
