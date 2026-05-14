@@ -1,0 +1,7 @@
+# Cloudflare Pages — URL routing
+# https://developers.cloudflare.com/pages/configuration/redirects/
+
+# Pretty URLs — let players bookmark /play instead of /?nn=1&mp=1
+/play   /?nn=1&mp=1   302
+/solo   /?nn=1        302
+/mp     /?nn=1&mp=1   302

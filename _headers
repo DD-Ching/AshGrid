@@ -1,0 +1,43 @@
+# Cloudflare Pages — per-path cache + security headers
+# https://developers.cloudflare.com/pages/configuration/headers/
+
+# HTML — never cache at edge, force browser to revalidate.
+# (Service-worker handles offline. Edge-cache HTML breaks instant updates.)
+/
+  Cache-Control: no-cache, must-revalidate
+  X-Frame-Options: ALLOWALL
+  X-Content-Type-Options: nosniff
+
+/index.html
+  Cache-Control: no-cache, must-revalidate
+
+# Service worker — never cache (so a v-bump deploys instantly).
+/sw.js
+  Cache-Control: no-cache, must-revalidate
+  Content-Type: application/javascript
+
+# Manifest
+/manifest.webmanifest
+  Cache-Control: public, max-age=3600
+  Content-Type: application/manifest+json
+
+# JS modules — long cache because every script tag is versioned (?v=68)
+# so a deploy with a new version invalidates by URL, not by ETag.
+/js/*
+  Cache-Control: public, max-age=604800, immutable
+
+# ONNX models — long cache, large-ish files, rarely change.
+/ai_arena/onnx/*
+  Cache-Control: public, max-age=2592000, immutable
+  Content-Type: application/octet-stream
+
+# Icons + favicon
+/icons/*
+  Cache-Control: public, max-age=2592000, immutable
+
+/favicon.ico
+  Cache-Control: public, max-age=604800
+
+# Audio assets (if any served from /audio/*)
+/audio/*
+  Cache-Control: public, max-age=2592000, immutable

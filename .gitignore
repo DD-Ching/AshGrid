@@ -1,2 +1,7 @@
 .claude/
 .DS_Store
+# PartyKit / Workers builds (deployed separately, not bundled with Pages)
+server/node_modules/
+server/.partykit-cache/
+# Old packaged artifacts no longer needed
+ashgrid.zip
