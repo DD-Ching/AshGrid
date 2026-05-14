@@ -393,32 +393,41 @@ function _mpHandleSnapshot(snap) {
         predX += dx * MP_PLAYER_SPEED;
         predY += dy * MP_PLAYER_SPEED;
       }
-      // Push to local player object (smoothed if delta is small, snap if large).
-      // Phase 78 — rubber-band fix per user '我推進時自己會往後彈一下'.
-      // When alone in the room (no remote peers), the server-authoritative
-      // reconciliation lerp was visibly pulling the client back ~30%
-      // toward server position every snapshot. Network jitter +50ms is
-      // enough to make the client diverge a few px, lerp snaps it back,
-      // input moves it forward, lerp snaps it back — classic rubber-band.
-      // The fix: when alone, trust client prediction 100% (no one to
-      // de-sync from, so anti-cheat reconciliation has zero value here).
-      // Big snaps (respawn teleport, dist > 150u) still take server truth
-      // so respawn etc. work correctly. With peers present we keep the
-      // reconciliation but soften to 18%/frame (was 30%) and bump the
-      // snap threshold 80→120u.
+      // Push to local player object — Phase 80 spread-error reconcile.
+      // User '權威必須存在! 聯機不能本地! 想辦法在遊玩時不跳針'. Phase 78's
+      // "skip reconcile if alone" was wrong: server authority must stay.
+      //
+      // Real fix: instead of applying the position correction as a 30%-per-
+      // snapshot lerp (visibly snaps the player ~10 times per second), we
+      // accumulate the error into player._reconcileErr and DRIBBLE it out
+      // over many frames in the main update loop. 8%/frame at 60 fps =
+      // error halves every 8 frames (~130 ms) — well below the human
+      // perception threshold for position drift.
+      //
+      // Server still wins authority:
+      //   • all corrections move us TOWARD server position
+      //   • big errors (>150u: teleport, respawn, lag spike) snap instantly
+      //   • cheating impossible since server owns hit detection + damage
+      //
+      // Dead zone (<3px) silenced entirely so 1-2px snapshot noise never
+      // triggers any visible jitter.
       if (typeof player !== 'undefined') {
         const dx = predX - player.x, dy = predY - player.y;
         const dist = Math.hypot(dx, dy);
-        // Peer count excluding myself.
-        const peers = Math.max(0, _mpState.remotePlayers.size - 1);
         if (dist > 150) {
+          // Big snap — teleport / respawn / lag spike.
           player.x = predX; player.y = predY;
-        } else if (peers === 0) {
-          // Alone — let client prediction drive. Big snap above still
-          // catches teleport / respawn.
+          player._reconcileErr = null;
+        } else if (dist < 3) {
+          // Inside dead zone — server agrees with us, nothing to do.
+          // Don't even touch _reconcileErr so any outstanding dribble
+          // keeps converging on its own.
         } else {
-          player.x += dx * 0.18;
-          player.y += dy * 0.18;
+          // Stash the error vector. Per-frame ticker in _mpTickReconcile
+          // (called from index.html update loop) bleeds this out over
+          // ~10-15 frames. New snapshots OVERWRITE the outstanding error
+          // (don't accumulate) — the new server truth is fresher.
+          player._reconcileErr = { dx, dy };
         }
         // HP has TWO writers because NN bots live client-only (see fire()
         // ghost-bullet note in index.html). min(local, server) picks the
@@ -748,6 +757,28 @@ function _mpSendInput() {
   // Cap the pendingInputs queue so it doesn't grow forever during net loss
   if (_mpState.pendingInputs.length > 120) {
     _mpState.pendingInputs.splice(0, _mpState.pendingInputs.length - 120);
+  }
+}
+
+// Phase 80 — per-frame error-spread reconcile. Bleeds player._reconcileErr
+// out at 8%/frame so the position drift from snapshot reconciliation is
+// invisible (~130ms half-life) but server-truth is still authoritative.
+// Called from the main update loop in index.html.
+function _mpTickReconcile() {
+  if (!_mpState.enabled || typeof player === 'undefined') return;
+  const err = player._reconcileErr;
+  if (!err) return;
+  const RATE = 0.08;
+  const stepX = err.dx * RATE;
+  const stepY = err.dy * RATE;
+  player.x += stepX;
+  player.y += stepY;
+  err.dx -= stepX;
+  err.dy -= stepY;
+  // Snap to clean when error is well under 1px so we don't sit on the
+  // ledger forever doing arithmetic on dust.
+  if (Math.abs(err.dx) < 0.15 && Math.abs(err.dy) < 0.15) {
+    player._reconcileErr = null;
   }
 }
 
