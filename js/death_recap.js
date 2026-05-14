@@ -274,11 +274,21 @@ function renderDeathRecap() {
     if (!_deathRecap.adReviveUsed && !_alreadyBuffed) {
       const btnW = 360, btnH = 70;
       const btnX = W_ / 2 - btnW / 2;
-      // Phase 90 — button pushed down to ~72% screen height so it sits
-      // BELOW the centered 300×250 ad banner (centered at 50%, extends
-      // to ~62%). User '綠按鈕往下' — banner stays centered, button
-      // moves clear underneath.
-      const btnY = Math.round(H_ * 0.72) - btnH / 2;
+      // Phase 99 — anchor button BELOW the actual banner bottom instead
+      // of a fixed % of viewport. Banner is 300×250 centered at H/2
+      // (transform: translate(-50%,-50%)) with a ~10px 'Advertisement'
+      // label above + 5px padding → banner bottom ≈ H/2 + 140. Hard 35px
+      // gap below that.
+      //
+      // Why the change: H_ * 0.72 was fine on a 900px laptop but on
+      // shorter screens (notebooks/external monitors at 720-800 tall)
+      // the % math collapsed and the button started clipping into the
+      // banner bottom. User '綠按鈕要再往下'. Anchoring to banner_bottom
+      // guarantees the same visual gap at ANY viewport height. Floor
+      // at 0.78H so taller viewports don't leave the button stuck
+      // halfway up the screen.
+      const bannerBottom = H_ / 2 + 140;
+      const btnY = Math.max(bannerBottom + 35, Math.round(H_ * 0.78) - btnH / 2);
       _deathRecap.adReviveBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
       const pulse2 = 0.85 + 0.15 * Math.sin(game.time * 0.22);
       ctx.fillStyle = `rgba(63, 230, 63, ${pulse2})`;
