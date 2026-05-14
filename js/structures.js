@@ -785,7 +785,7 @@ function updateAirstrikes() {
 // Build mode toggle state. Picks one of STRUCTURE_ORDER and shows a
 // preview at cursor. While in build mode, mouse-click places; build
 // mode auto-disables on Esc / right-click.
-const buildMode = { active: false, radialOpen: false, kind: 'wall' };
+const buildMode = { active: false, radialOpen: false, kind: 'wall', radialCat: null };
 // Three-state build flow: OFF → RADIAL_OPEN → PLACING. B walks the cycle
 // forward; Esc bails out anywhere. Activating from OFF opens the radial
 // straight away so the user can pick a module without an extra click.
