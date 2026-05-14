@@ -802,6 +802,26 @@ function _mpSendInput() {
   const cMul = isV2
     ? ((typeof player !== 'undefined' && typeof player._chassisSpeedMul === 'number') ? player._chassisSpeedMul : 1.0)
     : 1.0;
+  // Phase 2 — weapon id for server-side weapon-aware bullet spawn.
+  // Recovered by walking the WEAPONS map (declared in js/weapons.js)
+  // and picking the key whose value === playerWeapon. Caches across
+  // calls because re-looking up every input would be wasteful.
+  let wId = 'RIFLE';
+  if (isV2 && typeof WEAPONS !== 'undefined' && typeof playerWeapon !== 'undefined' && playerWeapon) {
+    // Common-case fast path: weapon name carries the id verbatim.
+    if (playerWeapon === WEAPONS.RIFLE)        wId = 'RIFLE';
+    else if (playerWeapon === WEAPONS.SMG)     wId = 'SMG';
+    else if (playerWeapon === WEAPONS.LMG)     wId = 'LMG';
+    else if (playerWeapon === WEAPONS.SNIPER)  wId = 'SNIPER';
+    else if (playerWeapon === WEAPONS.SHOTGUN) wId = 'SHOTGUN';
+    else if (playerWeapon === WEAPONS.ROCKET)  wId = 'ROCKET';
+    // Fallback: linear scan for unusual loadouts (NN ally guns M4/AK).
+    else {
+      for (const k of Object.keys(WEAPONS)) {
+        if (WEAPONS[k] === playerWeapon) { wId = k; break; }
+      }
+    }
+  }
   const input = {
     type: 'input',
     seq, dx, dy, angle, fire,
@@ -826,6 +846,8 @@ function _mpSendInput() {
     // Phase 1 refactor: weapon + chassis muls. See big comment above.
     wMul,
     cMul,
+    // Phase 2: weapon id for server-side bullet profile lookup.
+    wId,
   };
   _mpSendRaw(input);
 

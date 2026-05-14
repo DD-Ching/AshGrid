@@ -10,7 +10,9 @@
 #
 # Exit 0 on parity OK, 1 on drift.
 
-set -e
+# NB: we DO NOT `set -e` because the per-module grep/sed pipeline can
+# legitimately return non-zero (e.g. grep -v finding nothing matching),
+# and we handle errors explicitly via $OVERALL.
 cd "$(dirname "$0")/../.."
 
 ROOT="$(pwd)"
@@ -68,18 +70,27 @@ for client_file in "$CLIENT_DIR"/*.js; do
   awk '/^const /{found=1} found' "$client_stripped" > "$client_logic"
   awk '/^const /{found=1} found' "$server_stripped" > "$server_logic"
 
+  # Strip single-line `//` comments (with leading whitespace) AND drop
+  # comment-only lines (so client-side section dividers like
+  # `// ─ FIRE / RELOAD ─...` don't trip the diff when the server copy
+  # omits them). Leaves real code intact.
+  client_nocom=$(mktemp)
+  server_nocom=$(mktemp)
+  sed -E 's@[[:space:]]*//.*$@@' "$client_logic" | grep -v '^[[:space:]]*$' > "$client_nocom"
+  sed -E 's@[[:space:]]*//.*$@@' "$server_logic" | grep -v '^[[:space:]]*$' > "$server_nocom"
+
   # Ignore whitespace + blank lines — boilerplate stripping can leave
   # subtle differences (trailing newline, indent prefix) that don't
   # affect logic.
-  if diff -bBq "$client_logic" "$server_logic" > /dev/null; then
+  if diff -bBq "$client_nocom" "$server_nocom" > /dev/null; then
     echo "  ✓ $name: parity OK"
   else
     echo "  ✗ $name: DRIFT (client vs server differ):"
-    diff -bB "$client_logic" "$server_logic" | head -20 | sed 's/^/      /'
+    diff -bB "$client_nocom" "$server_nocom" | head -20 | sed 's/^/      /'
     OVERALL=1
   fi
 
-  rm -f "$client_stripped" "$server_stripped" "$client_logic" "$server_logic"
+  rm -f "$client_stripped" "$server_stripped" "$client_logic" "$server_logic" "$client_nocom" "$server_nocom"
 done
 
 if [ $OVERALL -ne 0 ]; then

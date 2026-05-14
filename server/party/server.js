@@ -74,6 +74,9 @@
 // stay byte-identical between the two; ai_arena/scripts/check_sim_parity.sh
 // diffs them in pre-commit.
 import { simStepPerTick as simStepPerTickV2 } from './sim/movement.js';
+// Phase 2 — shared weapon table + bullet sim.
+import { getWeaponSim } from './sim/weapons.js';
+import { spawnBulletsFromUnit } from './sim/bullet.js';
 
 const TICK_HZ           = 30;
 const TICK_MS           = 1000 / TICK_HZ;
@@ -615,7 +618,16 @@ export default class AshGridRoom {
       // Fire (if cooldown done)
       if (inp.fire && this.tickCount >= p.fireCdUntil) {
         this._spawnBullet(p);
-        p.fireCdUntil = this.tickCount + FIRE_COOLDOWN;
+        // Phase 2 — weapon-specific fire cooldown when v2. Without this,
+        // SNIPER (25-tick CD) fires as fast as SMG (2-tick CD) because
+        // the server used the flat FIRE_COOLDOWN=6 for everyone.
+        let cd = FIRE_COOLDOWN;
+        if (inp.v2) {
+          const wsim = getWeaponSim(inp.wId || 'RIFLE');
+          cd = wsim.fireCdTicks | 0;
+          if (cd < 1) cd = 1;
+        }
+        p.fireCdUntil = this.tickCount + cd;
         // Phase 40: lag compensation. If the shooter's view tick says they
         // were aiming at where a target USED to be, register an instant hit.
         // Falls back to the normal physics-based hit check if no lag-comp
@@ -729,6 +741,31 @@ export default class AshGridRoom {
   }
 
   _spawnBullet(p) {
+    // Phase 2 — when v2, spawn weapon-aware bullets via the shared sim.
+    // Pre-Phase-2 every gun fired the same flat profile (BULLET_SPEED
+    // = 14, BULLET_DAMAGE = 25, single pellet) → snipers didn't one-
+    // shot, shotguns didn't spread, LMG didn't rapid-fire. User
+    // '我打中他他沒死' for human-vs-human kills traces here.
+    //
+    // The weapon id arrives via input.wId (Phase 2 protocol bump);
+    // legacy clients without it default to RIFLE.
+    if (p.input && p.input.v2) {
+      const wid = (p.input.wId && typeof p.input.wId === 'string') ? p.input.wId : 'RIFLE';
+      const wsim = getWeaponSim(wid);
+      const newBullets = spawnBulletsFromUnit(
+        { x: p.x, y: p.y, id: p.id, team: 0 },
+        { ...wsim, weaponId: wid },
+        p.angle,
+      );
+      for (const b of newBullets) {
+        b.id = this.nextBulletId++;
+        b.shooterId = p.id;
+        b.weapon = wid;
+        this.bullets.push(b);
+      }
+      return;
+    }
+    // Legacy path — unchanged so non-v2 clients keep working.
     const ax = Math.cos(p.angle);
     const ay = Math.sin(p.angle);
     this.bullets.push({
