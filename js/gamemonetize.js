@@ -40,6 +40,14 @@
   // to watch one (Phase 60 ad-revive button).
   const MIN_AD_INTERVAL_MS = 90 * 1000;
 
+  // Phase 101 — reward gate. If a rewarded ad closes (SDK_GAME_START)
+  // before MIN_REWARD_PLAY_MS elapsed, the player did not "earn" the
+  // buff. Set to 12s — most GM interstitials run 15-30s with the SKIP
+  // button enabled at ~3s, so watching ≥12s == genuinely consumed the
+  // ad even if they hit SKIP near the end. User '讓玩家挼提前跳開就
+  // 沒有獎勵'.
+  const MIN_REWARD_PLAY_MS = 12 * 1000;
+
   // ─── Hostname gate ────────────────────────────────────────────────
   // Skip this module entirely if we're inside the CrazyGames portal —
   // crazygames.js owns ads in that environment (higher RPM, native
@@ -57,6 +65,13 @@
   let _lastAdAt = 0;
   let _deathCount = 0;
   let _pendingAdCb = null;       // fired when ad ACTUALLY finishes
+  // Phase 101 — tracks whether a REAL ad is currently on screen (true
+  // between SDK_GAME_PAUSE and SDK_GAME_START). The 15-s placeholder
+  // timeout uses this to decide whether to take over: if a real ad is
+  // playing when our timer fires, defer to SDK_GAME_START. If no real
+  // ad ever served (publisher pending / no fill), our timer grants
+  // the reward.
+  let _adReallyPlaying = false;
   let _adPlayStartedAt = 0;      // wall-clock ms when ad started playing
   const _devMode = !GM_GAME_ID;
 
@@ -86,12 +101,31 @@
           case 'SDK_GAME_START':
             // Ad finished — resume gameplay.
             if (typeof game !== 'undefined') game._paused = false;
-            // Phase 89 — fire the pending reward callback NOW (when
-            // the ad actually finished), not 1.5s after it started.
-            // User '不應該選在看長時間視頻的時候直接復活, 應該要等
-            // 到視頻結束才復活'.
+            // Phase 101 — early-skip detection. GM fires SDK_GAME_START on
+            // ALL three close paths: full-play, user-skip, and ad-error.
+            // Previously we always granted the reward (cb(true)), which
+            // meant a player could hit "SKIP" at second 3 and still get
+            // the 30-min buff. User '讓玩家挼提前跳開就沒有獎勵'.
+            //
+            // New rule: must have watched ≥ MIN_REWARD_PLAY_MS of the
+            // ad (12 s default) to earn the buff. Below threshold →
+            // cb(false), which death_recap's caller treats as "no
+            // revive, retry allowed" (resets adReviveUsed flag).
+            // Also hides our 15-s placeholder overlay early so the
+            // player gets back to the death-recap screen instead of
+            // staring at our countdown after they already skipped.
+            _adReallyPlaying = false;
+            if (typeof _hideAdPlayOverlay === 'function') _hideAdPlayOverlay();
             if (_pendingAdCb) {
-              try { _pendingAdCb(true); } catch (e) {}
+              const elapsedMs = Date.now() - (_adPlayStartedAt || 0);
+              const earned = elapsedMs >= MIN_REWARD_PLAY_MS;
+              if (!earned) {
+                console.log(`[gamemonetize] ad skipped at ${(elapsedMs / 1000).toFixed(1)}s (<${MIN_REWARD_PLAY_MS / 1000}s) — no reward`);
+                if (typeof showSwapToast === 'function') {
+                  try { showSwapToast('▶ 提前跳過 — 沒有獎勵'); } catch (e) {}
+                }
+              }
+              try { _pendingAdCb(earned); } catch (e) {}
               _pendingAdCb = null;
             }
             break;
@@ -100,6 +134,7 @@
             // get shot while watching a 15s mid-roll.
             if (typeof game !== 'undefined') game._paused = true;
             _adPlayStartedAt = Date.now();
+            _adReallyPlaying = true;
             break;
         }
       },
@@ -203,8 +238,17 @@
             window.sdk_showBanner();
           }
         } catch (e2) { /* GM not ready — our overlay still runs */ }
-        // 15-second minimum ad-mode window. Fires reward + resume here.
+        // 15-second placeholder timeout. Fires reward + resume ONLY if
+        // no real ad is currently on screen — otherwise defer to
+        // SDK_GAME_START which has the precise elapsed-time signal for
+        // the early-skip gate. Without this guard, a slow-loading real
+        // ad would get cb(true) granted at t=15s while still playing
+        // at t=20s, defeating the no-skip rule.
         setTimeout(() => {
+          if (_adReallyPlaying) {
+            // Real ad onscreen; let SDK_GAME_START decide.
+            return;
+          }
           _hideAdPlayOverlay();
           if (_pendingAdCb) {
             try { _pendingAdCb(true); } catch (e3) {}
