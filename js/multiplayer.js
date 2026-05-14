@@ -393,17 +393,32 @@ function _mpHandleSnapshot(snap) {
         predX += dx * MP_PLAYER_SPEED;
         predY += dy * MP_PLAYER_SPEED;
       }
-      // Push to local player object (smoothed if delta is small, snap if large)
+      // Push to local player object (smoothed if delta is small, snap if large).
+      // Phase 78 — rubber-band fix per user '我推進時自己會往後彈一下'.
+      // When alone in the room (no remote peers), the server-authoritative
+      // reconciliation lerp was visibly pulling the client back ~30%
+      // toward server position every snapshot. Network jitter +50ms is
+      // enough to make the client diverge a few px, lerp snaps it back,
+      // input moves it forward, lerp snaps it back — classic rubber-band.
+      // The fix: when alone, trust client prediction 100% (no one to
+      // de-sync from, so anti-cheat reconciliation has zero value here).
+      // Big snaps (respawn teleport, dist > 150u) still take server truth
+      // so respawn etc. work correctly. With peers present we keep the
+      // reconciliation but soften to 18%/frame (was 30%) and bump the
+      // snap threshold 80→120u.
       if (typeof player !== 'undefined') {
         const dx = predX - player.x, dy = predY - player.y;
         const dist = Math.hypot(dx, dy);
-        if (dist > 80) {
-          // Big snap (teleport, respawn, lag spike) → take server truth
+        // Peer count excluding myself.
+        const peers = Math.max(0, _mpState.remotePlayers.size - 1);
+        if (dist > 150) {
           player.x = predX; player.y = predY;
+        } else if (peers === 0) {
+          // Alone — let client prediction drive. Big snap above still
+          // catches teleport / respawn.
         } else {
-          // Smooth toward predicted server-corrected position
-          player.x += dx * 0.3;
-          player.y += dy * 0.3;
+          player.x += dx * 0.18;
+          player.y += dy * 0.18;
         }
         // HP has TWO writers because NN bots live client-only (see fire()
         // ghost-bullet note in index.html). min(local, server) picks the
