@@ -157,10 +157,16 @@ function _mpIsActive() { return !!_mpState.enabled; }
 // This means existing ashgrid.io traffic + crazygames embeds keep
 // working exactly as before; only ?v2=1 sessions get the new code.
 // Server reads `inp.v2` flag for the same gate.
-function _mpIsV2() {
+//
+// Perf: cached at module load. _mpIsV2 was getting called from the
+// per-snapshot reconcile path (~15-30 Hz) AND _mpSendInput (~30 Hz),
+// each invocation parsing the entire URL with URLSearchParams. With
+// the cache, it's a property read.
+const _MP_IS_V2 = (() => {
   try { return new URLSearchParams(location.search).get('v2') === '1'; }
   catch (e) { return false; }
-}
+})();
+function _mpIsV2() { return _MP_IS_V2; }
 function _mpPeerCount() {
   if (!_mpState.enabled) return 0;
   // remotePlayers includes self; count is just its size.
@@ -541,8 +547,13 @@ function _mpHandleSnapshot(snap) {
           buffer: [],   // [{t, x, y, angle}]  t = server clock at broadcast
         };
         _mpState.remotePlayers.set(sp.id, rp);
-        console.log('[mp/data] first snapshot of peer', sp.id.slice(0, 6),
-          '@', Math.round(sp.x), Math.round(sp.y), '· name:', sp.name);
+        // Perf: skip the verbose first-snapshot log unless the F3 debug
+        // overlay is requested. On a 4-player room with reconnect storms
+        // this can fire ~once per second + string concat overhead.
+        if (typeof game !== 'undefined' && game._mpDebug) {
+          console.log('[mp/data] first snapshot of peer', sp.id.slice(0, 6),
+            '@', Math.round(sp.x), Math.round(sp.y), '· name:', sp.name);
+        }
       }
       rp.targetX = sp.x;
       rp.targetY = sp.y;

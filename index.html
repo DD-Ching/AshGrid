@@ -45,53 +45,53 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=107"></script>
-<script src="js/arena_recruitment.js?v=107"></script>
-<script src="js/dynamic_radio.js?v=107"></script>
-<script src="js/i18n.js?v=107"></script>
-<script src="js/touch_input.js?v=107"></script>
-<script src="js/key_bindings.js?v=107"></script>
-<script src="js/grenades.js?v=107"></script>
-<script src="js/squad_commands.js?v=107"></script>
+<script src="js/audio/sfx.js?v=108"></script>
+<script src="js/arena_recruitment.js?v=108"></script>
+<script src="js/dynamic_radio.js?v=108"></script>
+<script src="js/i18n.js?v=108"></script>
+<script src="js/touch_input.js?v=108"></script>
+<script src="js/key_bindings.js?v=108"></script>
+<script src="js/grenades.js?v=108"></script>
+<script src="js/squad_commands.js?v=108"></script>
 <!-- Phase 1 / 2: shared sim modules (server uses byte-identical ESM
      mirrors at server/party/sim/*.js). Must load BEFORE multiplayer.js.
      Parity guard in ai_arena/scripts/check_sim_parity.sh; logic test
      harness in ai_arena/scripts/test_sim.mjs. -->
-<script src="js/sim/constants.js?v=107"></script>
-<script src="js/sim/movement.js?v=107"></script>
-<script src="js/sim/weapons.js?v=107"></script>
-<script src="js/sim/bullet.js?v=107"></script>
-<script src="js/multiplayer.js?v=107"></script>
-<script src="js/leaderboard.js?v=107"></script>
-<script src="js/structures.js?v=107"></script>
-<script src="js/tod.js?v=107"></script>
-<script src="js/weapons.js?v=107"></script>
-<script src="js/chassis.js?v=107"></script>
-<script src="js/respawn_buff.js?v=107"></script>
-<script src="js/death_recap.js?v=107"></script>
-<script src="js/mote_affinity.js?v=107"></script>
-<script src="js/stage_hints.js?v=107"></script>
-<script src="js/pawn_swap.js?v=107"></script>
-<script src="js/global_stats.js?v=107"></script>
-<script src="js/progressive_unlock.js?v=107"></script>
-<script src="js/ad_stubs.js?v=107"></script>
+<script src="js/sim/constants.js?v=108"></script>
+<script src="js/sim/movement.js?v=108"></script>
+<script src="js/sim/weapons.js?v=108"></script>
+<script src="js/sim/bullet.js?v=108"></script>
+<script src="js/multiplayer.js?v=108"></script>
+<script src="js/leaderboard.js?v=108"></script>
+<script src="js/structures.js?v=108"></script>
+<script src="js/tod.js?v=108"></script>
+<script src="js/weapons.js?v=108"></script>
+<script src="js/chassis.js?v=108"></script>
+<script src="js/respawn_buff.js?v=108"></script>
+<script src="js/death_recap.js?v=108"></script>
+<script src="js/mote_affinity.js?v=108"></script>
+<script src="js/stage_hints.js?v=108"></script>
+<script src="js/pawn_swap.js?v=108"></script>
+<script src="js/global_stats.js?v=108"></script>
+<script src="js/progressive_unlock.js?v=108"></script>
+<script src="js/ad_stubs.js?v=108"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=107"></script>
+<script src="js/crazygames.js?v=108"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=107"></script>
+<script src="js/gamemonetize.js?v=108"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=107"></script>
-<script src="js/world_gen.js?v=107"></script>
-<script src="js/squad.js?v=107"></script>
-<script src="js/drone_fpv.js?v=107"></script>
-<script src="js/vision_raycast.js?v=107"></script>
-<script src="js/camera.js?v=107"></script>
-<script src="js/defense_build_ui.js?v=107"></script>
-<script src="js/pause.js?v=107"></script>
+<script src="js/missions/nn_deathmatch.js?v=108"></script>
+<script src="js/world_gen.js?v=108"></script>
+<script src="js/squad.js?v=108"></script>
+<script src="js/drone_fpv.js?v=108"></script>
+<script src="js/vision_raycast.js?v=108"></script>
+<script src="js/camera.js?v=108"></script>
+<script src="js/defense_build_ui.js?v=108"></script>
+<script src="js/pause.js?v=108"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -5212,15 +5212,30 @@ function updateTeamVision() {
     if (!e.alive) continue;
     e._spottedByBlue = isVisibleToFriendly(e.x, e.y);
   }
-  const blueUnits = (player.alive ? [player] : []).concat(allies.filter(a => a.alive));
-  for (const t of blueUnits) t._spottedByRed = false;
-  for (const r of enemies) {
-    if (!r.alive) continue;
-    for (const t of blueUnits) {
+  // Perf: reuse a module-level scratch array instead of allocating
+  // (player.alive ? [player] : []).concat(allies.filter(a => a.alive))
+  // every nnTick. That expression generated 2-3 throwaway arrays per
+  // call (the [player] literal, the filter result, the concat result).
+  _blueUnitsBuf.length = 0;
+  if (player.alive) _blueUnitsBuf.push(player);
+  for (let i = 0; i < allies.length; i++) {
+    const a = allies[i];
+    if (a && a.alive) _blueUnitsBuf.push(a);
+  }
+  const blueUnits = _blueUnitsBuf;
+  for (let i = 0; i < blueUnits.length; i++) blueUnits[i]._spottedByRed = false;
+  // Perf: hoist VIEW_RANGE² out of inner loop; index iteration avoids
+  // generator/iterator allocation per outer/inner pass.
+  const viewR2 = NN.VIEW_RANGE * NN.VIEW_RANGE;
+  for (let ei = 0; ei < enemies.length; ei++) {
+    const r = enemies[ei];
+    if (!r || !r.alive) continue;
+    for (let bi = 0; bi < blueUnits.length; bi++) {
+      const t = blueUnits[bi];
       if (t._spottedByRed) continue;
       const dx = t.x - r.x, dy = t.y - r.y;
       const d2 = dx * dx + dy * dy;
-      if (d2 >= NN.VIEW_RANGE * NN.VIEW_RANGE) continue;
+      if (d2 >= viewR2) continue;
       const dist = Math.sqrt(d2);
       if (!angleInCone(r.angle, effectiveArc(dist), r.x, r.y, t.x, t.y)) continue;
       if (!lineOfSight(r.x, r.y, t.x, t.y)) continue;
@@ -5230,6 +5245,12 @@ function updateTeamVision() {
 }
 
 let _nnInferring = false;
+// Phase 2-perf: reusable scratch arrays for nnTick + updateTeamVision.
+// Cleared and re-populated each tick to avoid the allocation pressure
+// of building `[...allies, ...]` / `.concat(allies.filter(...))` from
+// scratch every dispatcher run.
+const _hostileForEnemyBuf = [];
+const _blueUnitsBuf       = [];
 async function nnTick() {
   if (!NN.loaded || _nnInferring) return;
   if (game.state !== 'playing') return;
@@ -5246,9 +5267,20 @@ async function nnTick() {
   // legacy state machine). User asked for the merge: '把這個做融合,就是
   // 我們現在的NN跟現在的戰役的這個他們原本的程式做融合'.
   if (!game._nnMode) {
-    const anyNN =
-      enemies.some(e => e.alive && e._useNN)
-      || allies.some(a => a.alive && a._useNN);
+    // Perf: manual loops with early break, no callback alloc per scan.
+    // (Skirmish mode short-circuits this whole block because
+    // game._nnMode is true; campaign mode hits here every nnTick.)
+    let anyNN = false;
+    for (let i = 0; i < enemies.length; i++) {
+      const e = enemies[i];
+      if (e && e.alive && e._useNN) { anyNN = true; break; }
+    }
+    if (!anyNN) {
+      for (let i = 0; i < allies.length; i++) {
+        const a = allies[i];
+        if (a && a.alive && a._useNN) { anyNN = true; break; }
+      }
+    }
     if (!anyNN) return;
   }
 
@@ -5268,7 +5300,16 @@ async function nnTick() {
   //   • enemies' hostile = allies + player      (player is on the allies'
   //                                              team but stored separately)
   // Built once per tick so the inner loops don't re-spread the array.
-  const _hostileForEnemy = [...allies, ...(player.alive ? [player] : [])];
+  //
+  // Perf: re-use a module-level array (length = allies + 1) instead of
+  // allocating a fresh one each tick. nnTick fires at the inference
+  // cadence — even at every-other-frame that's 30 allocations/sec
+  // worth of "allies + player" array garbage, all dropped on the next
+  // tick.
+  _hostileForEnemyBuf.length = 0;
+  for (let i = 0; i < allies.length; i++) _hostileForEnemyBuf.push(allies[i]);
+  if (player.alive) _hostileForEnemyBuf.push(player);
+  const _hostileForEnemy = _hostileForEnemyBuf;
 
   const nnUnits = [];
   for (const a of allies) {
@@ -7035,7 +7076,12 @@ function updateBullets() {
         if (_t < 0) _t = 0; else if (_t > 1) _t = 1;
       }
       const _cx = _prevX + _segVx * _t, _cy = _prevY + _segVy * _t;
-      if (Math.hypot(_cx - e.x, _cy - e.y) < e.radius) {
+      // Perf: squared-distance comparison avoids one sqrt per enemy per
+      // bullet per frame. With ~20 bullets × ~16 enemies in flight that's
+      // ~320 sqrt calls/frame saved.
+      const _ddx = _cx - e.x, _ddy = _cy - e.y;
+      const _r = e.radius;
+      if (_ddx * _ddx + _ddy * _ddy < _r * _r) {
         // Spawn invuln: still consume the bullet so it doesn't pass through,
         // but don't apply damage. Visually the bullet vanishes on impact.
         if (e._invulnUntil != null && game.time < e._invulnUntil) { hit = true; break; }
