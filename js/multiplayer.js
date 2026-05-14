@@ -510,11 +510,20 @@ function _mpHandleHit(data) {
   // Victim-side: flash red, screen shake, play hit sound, blood spray.
   if (data.victim === _mpState.myId) {
     if (typeof game !== 'undefined') game.hitFlash = Math.max(game.hitFlash || 0, 12);
-    if (typeof playSfx === 'function') playSfx('hit', { vol: 0.4 });
+    if (typeof playSfx === 'function') playSfx('hit', { vol: 0.55 });
     // Phase 41: screen shake scales with damage. Single-player parity
     // (index.html: triggerShake(min(6, b.damage * 0.25), 8) on player hit).
     if (typeof triggerShake === 'function') {
       triggerShake(Math.min(6, 25 * 0.25), 8);
+    }
+    // Phase 68 — MP parity for the Phase 67 directional hurt indicator.
+    // SP sets _hurtAngle + _hurtIntensity at the bullet-vs-player site
+    // (index.html line ~6785). MP damage is server-authoritative so the
+    // local bullet collision never runs — we have to set the indicator
+    // here from the impact coords the server already broadcast.
+    if (typeof player !== 'undefined' && typeof ix === 'number' && typeof iy === 'number') {
+      player._hurtAngle = Math.atan2(iy - player.y, ix - player.x);
+      player._hurtIntensity = Math.min(1, (player._hurtIntensity || 0) + 0.6);
     }
     // Floating damage popup at the impact point so we know which side took it.
     if (typeof spawnDamagePopup === 'function' && ix != null && iy != null) {
@@ -618,8 +627,16 @@ function _mpHandleKill(data) {
   // KILL popup at victim.
   if (data.shooter === _mpState.myId) {
     if (typeof _lbBumpKill === 'function') _lbBumpKill();
+    // Phase 68 — MP parity for the Phase 66 score count-up animation.
+    // SP kill handler at index.html:6418/6540 increments game.score+100
+    // and game.killCount+1 on every kill. MP was only bumping the
+    // leaderboard, so the smoothing tick (`_scoreDisplay` lerps toward
+    // `game.score`) had nothing to chase — number never moved in PvP.
+    if (typeof game !== 'undefined') {
+      game.score = (game.score || 0) + 100;
+      game.killCount = (game.killCount || 0) + 1;
+    }
     _mpHitMarker = { until: Date.now() + 350, kind: 'kill' };
-    if (typeof playSfx === 'function') playSfx('beep', { vol: 0.4, freq: 1760 });
     if (typeof spawnDamagePopup === 'function' && typeof dx === 'number') {
       spawnDamagePopup(dx, dy, 0, true);  // `true` = kill flag → "KILL" label
     }
