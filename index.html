@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=96"></script>
-<script src="js/arena_recruitment.js?v=96"></script>
-<script src="js/dynamic_radio.js?v=96"></script>
-<script src="js/i18n.js?v=96"></script>
-<script src="js/touch_input.js?v=96"></script>
-<script src="js/key_bindings.js?v=96"></script>
-<script src="js/grenades.js?v=96"></script>
-<script src="js/squad_commands.js?v=96"></script>
-<script src="js/multiplayer.js?v=96"></script>
-<script src="js/leaderboard.js?v=96"></script>
-<script src="js/structures.js?v=96"></script>
-<script src="js/tod.js?v=96"></script>
-<script src="js/weapons.js?v=96"></script>
-<script src="js/chassis.js?v=96"></script>
-<script src="js/respawn_buff.js?v=96"></script>
-<script src="js/death_recap.js?v=96"></script>
-<script src="js/mote_affinity.js?v=96"></script>
-<script src="js/stage_hints.js?v=96"></script>
-<script src="js/pawn_swap.js?v=96"></script>
-<script src="js/global_stats.js?v=96"></script>
-<script src="js/progressive_unlock.js?v=96"></script>
-<script src="js/ad_stubs.js?v=96"></script>
+<script src="js/audio/sfx.js?v=97"></script>
+<script src="js/arena_recruitment.js?v=97"></script>
+<script src="js/dynamic_radio.js?v=97"></script>
+<script src="js/i18n.js?v=97"></script>
+<script src="js/touch_input.js?v=97"></script>
+<script src="js/key_bindings.js?v=97"></script>
+<script src="js/grenades.js?v=97"></script>
+<script src="js/squad_commands.js?v=97"></script>
+<script src="js/multiplayer.js?v=97"></script>
+<script src="js/leaderboard.js?v=97"></script>
+<script src="js/structures.js?v=97"></script>
+<script src="js/tod.js?v=97"></script>
+<script src="js/weapons.js?v=97"></script>
+<script src="js/chassis.js?v=97"></script>
+<script src="js/respawn_buff.js?v=97"></script>
+<script src="js/death_recap.js?v=97"></script>
+<script src="js/mote_affinity.js?v=97"></script>
+<script src="js/stage_hints.js?v=97"></script>
+<script src="js/pawn_swap.js?v=97"></script>
+<script src="js/global_stats.js?v=97"></script>
+<script src="js/progressive_unlock.js?v=97"></script>
+<script src="js/ad_stubs.js?v=97"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=96"></script>
+<script src="js/crazygames.js?v=97"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=96"></script>
+<script src="js/gamemonetize.js?v=97"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=96"></script>
-<script src="js/world_gen.js?v=96"></script>
-<script src="js/squad.js?v=96"></script>
-<script src="js/drone_fpv.js?v=96"></script>
-<script src="js/vision_raycast.js?v=96"></script>
-<script src="js/camera.js?v=96"></script>
-<script src="js/defense_build_ui.js?v=96"></script>
-<script src="js/pause.js?v=96"></script>
+<script src="js/missions/nn_deathmatch.js?v=97"></script>
+<script src="js/world_gen.js?v=97"></script>
+<script src="js/squad.js?v=97"></script>
+<script src="js/drone_fpv.js?v=97"></script>
+<script src="js/vision_raycast.js?v=97"></script>
+<script src="js/camera.js?v=97"></script>
+<script src="js/defense_build_ui.js?v=97"></script>
+<script src="js/pause.js?v=97"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -4568,10 +4568,42 @@ function nnApplyAction(unit, action, friendlies, enemies) {
     }
   }
 
-  // Stuck breaker: if this unit has been stuck (<2u progress) for >=20 ticks
-  // while NN keeps trying to move, override with a random non-blocked dir.
+  // Phase 97 — anti-clump for NN combat. The PPO model never learned spacing
+  // (training spawned bots far apart), so in combat 3-4 bots converge on the
+  // same enemy and pile up on the same tile. If we'd move TOWARD a teammate
+  // within 45u, rotate the moveDir 45° AWAY from them so the squad spreads.
+  // Skipped during squad orders so RALLY / formations aren't broken.
+  // User '不擠成一團'.
+  if (moveDir !== 0 && !_squadOrderActive()) {
+    let nearestMate = null, nearestD2 = 45 * 45;
+    for (const m of friendlies) {
+      if (m === unit || !m.alive) continue;
+      const ddx = m.x - unit.x, ddy = m.y - unit.y;
+      const d2 = ddx * ddx + ddy * ddy;
+      if (d2 < nearestD2) { nearestD2 = d2; nearestMate = m; }
+    }
+    if (nearestMate) {
+      const [mdx, mdy] = NN.MOVE_DIRS[moveDir] || [0, 0];
+      const mateDx = nearestMate.x - unit.x, mateDy = nearestMate.y - unit.y;
+      // dot > 0 → moveDir points toward mate. Rotate ±45° away.
+      if (mdx * mateDx + mdy * mateDy > 0) {
+        // cross product sign tells us which side the mate is on; rotate
+        // the opposite way so we curve around them.
+        const crossSign = (mdx * mateDy - mdy * mateDx) >= 0 ? -1 : 1;
+        moveDir = ((moveDir - 1 + crossSign + 8) % 8) + 1;
+      }
+    }
+  }
+
+  // Stuck breaker: if this unit has been stuck (<2u progress) for >=12 ticks
+  // (Phase 97 — was 20, faster reaction) while NN keeps trying to move,
+  // override with a random non-blocked dir. Persistent wedging (3+ triggers
+  // without recovery) clears the patrol target so the next picker rolls a
+  // fresh waypoint far from the wedge spot — breaks the 'bot rams the same
+  // wall corner for 8s straight' loop the user reported as '卡住'.
   unit._nnStuckCt = unit._nnStuckCt || 0;
-  if (moveDir !== 0 && unit._nnStuckCt > 20) {
+  unit._nnStuckTriggers = unit._nnStuckTriggers || 0;
+  if (moveDir !== 0 && unit._nnStuckCt > 12) {
     // Try perpendicular dirs (rotate 90° each way) until one would clear a wall
     const rotations = [2, -2, 4, -4, 1, -1];   // ±90°, ±180°, ±45° (in 45° steps)
     for (const off of rotations) {
@@ -4586,7 +4618,21 @@ function nnApplyAction(unit, action, friendlies, enemies) {
       if (!blocked) { moveDir = trialDir; break; }
     }
     unit._nnStuckCt = 0;
+    unit._nnStuckTriggers++;
+    if (unit._nnStuckTriggers >= 3) {
+      // Persistent wedge — repick a fresh patrol target and force a
+      // small angular jitter so the next move vector differs from the
+      // wedge direction. Without this, the NN keeps choosing the same
+      // direction every tick and we stuck-trigger forever.
+      unit._patrolTarget = null;
+      unit._patrolPauseUntil = 0;
+      unit._patrolRetargetAt = 0;
+      unit._nnStuckTriggers = 0;
+      unit.angle = (unit.angle || 0) + (Math.random() - 0.5) * Math.PI;
+    }
   }
+  // Decay the trigger counter slowly so an isolated stuck doesn't compound.
+  if ((game.time & 63) === 0 && unit._nnStuckTriggers > 0) unit._nnStuckTriggers--;
 
   const [dx, dy] = NN.MOVE_DIRS[moveDir] || [0, 0];
   const oldX = unit.x, oldY = unit.y;
@@ -4749,14 +4795,55 @@ const NN_AI = {
 };
 
 // Detection: visible enemy NOW, recent last-seen, or recent enemy gunshot.
+// Phase 97 — when sound is the only signal, ALSO seed last-seen X/Y from
+// the gunshot source so the pursue-last-seen branch inside nnApplyAction
+// actually drives the unit toward the noise (was: detection flag flipped
+// but unit had no coordinates to push toward → still stood around).
 function _nnHasRecentDetection(unit, hostile) {
   if (nnNearestVisibleEnemy(unit, hostile)) return true;
   if (unit._nnLastSeenTick != null
       && unit._nnLastSeenTick > game.time - NN_AI.LAST_SEEN_WINDOW) return true;
   if (NN.lastSound
       && NN.lastSound.team !== unit.team
-      && (game.time - NN.lastSound.tick) < NN_AI.SOUND_DETECTION_TICKS) return true;
+      && (game.time - NN.lastSound.tick) < NN_AI.SOUND_DETECTION_TICKS) {
+    const haveFresher = unit._nnLastSeenTick != null
+                     && unit._nnLastSeenTick > NN.lastSound.tick;
+    if (!haveFresher && NN.lastSound.x != null && NN.lastSound.y != null) {
+      unit._nnLastSeenX = NN.lastSound.x;
+      unit._nnLastSeenY = NN.lastSound.y;
+      unit._nnLastSeenTick = NN.lastSound.tick;
+    }
+    return true;
+  }
   return false;
+}
+
+// Phase 97 — wake an NN unit when it takes a bullet. Back-traces the bullet
+// velocity to recover the shooter direction, stamps it into last-seen
+// memory, and force-flips the unit to combat mode. The existing pursue-
+// last-seen branch in nnApplyAction then drives the unit to face/move
+// toward the threat even if the shooter is behind cover and NEVER enters
+// the unit's vision cone. User '我希望nn會因為事件（受傷 聲音）而察覺
+// 一些動靜而切換模式 能推測敵人的方向並戰鬥'.
+function _nnNoteHit(unit, bullet) {
+  if (!unit || !unit._useNN || !unit.alive || !bullet) return;
+  // Back-trace ~6 frames so we point AT the shooter, not next to them.
+  const srcX = bullet.x - (bullet.vx || 0) * 6;
+  const srcY = bullet.y - (bullet.vy || 0) * 6;
+  unit._nnLastSeenX = srcX;
+  unit._nnLastSeenY = srcY;
+  unit._nnLastSeenTick = game.time;
+  unit._aiMode = 'combat';
+  unit._combatLastActiveAt = game.time;
+  unit._nnRecentDmg = 90;           // 1.5s 'under fire' flag
+  // Cancel any patrol-pause so the unit reacts INSTANTLY rather than
+  // waiting out its 'look around' beat while bullets land on it.
+  unit._patrolPauseUntil = 0;
+  // Snap aim toward the source for the next inference tick — the NN's
+  // cone is angle-locked, so a fast turn lets it ACTUALLY see the
+  // shooter on the very next visibility check instead of needing the
+  // slow AIM_LERP to catch up.
+  unit.angle = Math.atan2(srcY - unit.y, srcX - unit.x);
 }
 
 // State transition. Sets unit._aiMode ∈ {'patrol', 'combat'}. Detection
@@ -6797,6 +6884,11 @@ function updateBullets() {
         e.alerted = Math.max(e.alerted || 0, 240);
         e.alertX = b.x - b.vx*4; // alert toward where the shot came from
         e.alertY = b.y - b.vy*4;
+        // Phase 97 — NN-driven enemies use a different state machine
+        // (_aiMode / _nnLastSeenX/Y / _nnRecentDmg). Mirror the alert
+        // into those fields too so NN units actually react to bullets
+        // from outside their vision cone.
+        if (e._useNN) _nnNoteHit(e, b);
         const isKill = e.hp <= 0;
         spawnDamagePopup(e.x, e.y - 14, b.damage, isKill);
         if (isKill) {
@@ -7068,6 +7160,11 @@ function updateBullets() {
         const wasAlive = true;
         const wasFullish = a.hp / a.maxHp > 0.5;
         _applyDamageToUnit(a, b.damage);
+        // Phase 97 — NN ally taking damage gets the same alert treatment
+        // as enemy NN units (back-trace bullet → force combat mode).
+        // Without this, allies stood like dummies while reds shot them
+        // through cover (their cone never saw the shooter).
+        if (a._useNN) _nnNoteHit(a, b);
         if (a.hp <= 0) {
           a.alive = false;
           createExplosion(a.x, a.y, 'small');
