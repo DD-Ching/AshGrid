@@ -243,8 +243,18 @@ function renderDeathRecap() {
   // really is gone — show countdown + ad button. Otherwise the recap is
   // just the kill-cam header for ~2.5 sec.
   if (_isBlueTeamWiped()) {
-    const ticksLeft = Math.max(0, (game._teamWipe.blue.respawnAt || 0) - game.time);
-    const sLeft = Math.ceil(ticksLeft / 60);
+    // Phase 92 — prefer wall-clock countdown so it matches real seconds
+    // regardless of any game.time tick-rate drift. Falls back to the
+    // game.time math for older saves / mission factories that don't
+    // populate respawnAtMs.
+    let sLeft;
+    const _wipeMs = game._teamWipe.blue.respawnAtMs;
+    if (_wipeMs) {
+      sLeft = Math.max(0, Math.ceil((_wipeMs - Date.now()) / 1000));
+    } else {
+      const ticksLeft = Math.max(0, (game._teamWipe.blue.respawnAt || 0) - game.time);
+      sLeft = Math.ceil(ticksLeft / 60);
+    }
     // Hint text — overwrite the 1-4 prompt since there's no live teammate
     ctx.fillStyle = COLORS.cream;
     ctx.font = 'bold 18px sans-serif';

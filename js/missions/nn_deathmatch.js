@@ -274,6 +274,15 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         if (aliveCount === 0 && !state.wipedSince) {
           state.wipedSince = game.time;
           state.respawnAt  = game.time + _wipeWaitTicks();
+          // Phase 92 — also record WALL-CLOCK timestamps for the countdown
+          // display + revive trigger. User reports the in-game countdown
+          // still runs at ~2× speed despite Phase 87 60-Hz lock, which
+          // means *something* is still advancing game.time faster than 60
+          // per real second on their machine. Using Date.now() for the
+          // visible timer + revive condition sidesteps the issue entirely
+          // — the wait is always exactly real-seconds-as-shown.
+          state.wipedAtMs    = Date.now();
+          state.respawnAtMs  = state.wipedAtMs + _wipeWaitTicks() * (1000 / 60);
           // Clear pending individual respawns — wipe gates them all
           for (const u of units) { if (u) u._respawnAt = null; }
         }
@@ -284,8 +293,12 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       // arrive via the wave clock. _checkTeamWipe('red', ...) intentionally
       // skipped so we never trigger an in-place revival of last-position
       // corpses (which would land on top of the player after a clean sweep).
-      // End-of-wipe team revive
-      if (game._teamWipe.blue.wipedSince && game.time >= game._teamWipe.blue.respawnAt) {
+      // End-of-wipe team revive — Phase 92 uses wall-clock to match the
+      // displayed countdown exactly.
+      const _blueWipe = game._teamWipe.blue;
+      if (_blueWipe.wipedSince
+          && (_blueWipe.respawnAtMs ? Date.now() >= _blueWipe.respawnAtMs
+                                    : game.time >= _blueWipe.respawnAt)) {
         _reviveTeam('blue');
       }
       // Phase 3C: factory capture / production tick (independent of wipe)
