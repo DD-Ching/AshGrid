@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=99"></script>
-<script src="js/arena_recruitment.js?v=99"></script>
-<script src="js/dynamic_radio.js?v=99"></script>
-<script src="js/i18n.js?v=99"></script>
-<script src="js/touch_input.js?v=99"></script>
-<script src="js/key_bindings.js?v=99"></script>
-<script src="js/grenades.js?v=99"></script>
-<script src="js/squad_commands.js?v=99"></script>
-<script src="js/multiplayer.js?v=99"></script>
-<script src="js/leaderboard.js?v=99"></script>
-<script src="js/structures.js?v=99"></script>
-<script src="js/tod.js?v=99"></script>
-<script src="js/weapons.js?v=99"></script>
-<script src="js/chassis.js?v=99"></script>
-<script src="js/respawn_buff.js?v=99"></script>
-<script src="js/death_recap.js?v=99"></script>
-<script src="js/mote_affinity.js?v=99"></script>
-<script src="js/stage_hints.js?v=99"></script>
-<script src="js/pawn_swap.js?v=99"></script>
-<script src="js/global_stats.js?v=99"></script>
-<script src="js/progressive_unlock.js?v=99"></script>
-<script src="js/ad_stubs.js?v=99"></script>
+<script src="js/audio/sfx.js?v=100"></script>
+<script src="js/arena_recruitment.js?v=100"></script>
+<script src="js/dynamic_radio.js?v=100"></script>
+<script src="js/i18n.js?v=100"></script>
+<script src="js/touch_input.js?v=100"></script>
+<script src="js/key_bindings.js?v=100"></script>
+<script src="js/grenades.js?v=100"></script>
+<script src="js/squad_commands.js?v=100"></script>
+<script src="js/multiplayer.js?v=100"></script>
+<script src="js/leaderboard.js?v=100"></script>
+<script src="js/structures.js?v=100"></script>
+<script src="js/tod.js?v=100"></script>
+<script src="js/weapons.js?v=100"></script>
+<script src="js/chassis.js?v=100"></script>
+<script src="js/respawn_buff.js?v=100"></script>
+<script src="js/death_recap.js?v=100"></script>
+<script src="js/mote_affinity.js?v=100"></script>
+<script src="js/stage_hints.js?v=100"></script>
+<script src="js/pawn_swap.js?v=100"></script>
+<script src="js/global_stats.js?v=100"></script>
+<script src="js/progressive_unlock.js?v=100"></script>
+<script src="js/ad_stubs.js?v=100"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=99"></script>
+<script src="js/crazygames.js?v=100"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=99"></script>
+<script src="js/gamemonetize.js?v=100"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=99"></script>
-<script src="js/world_gen.js?v=99"></script>
-<script src="js/squad.js?v=99"></script>
-<script src="js/drone_fpv.js?v=99"></script>
-<script src="js/vision_raycast.js?v=99"></script>
-<script src="js/camera.js?v=99"></script>
-<script src="js/defense_build_ui.js?v=99"></script>
-<script src="js/pause.js?v=99"></script>
+<script src="js/missions/nn_deathmatch.js?v=100"></script>
+<script src="js/world_gen.js?v=100"></script>
+<script src="js/squad.js?v=100"></script>
+<script src="js/drone_fpv.js?v=100"></script>
+<script src="js/vision_raycast.js?v=100"></script>
+<script src="js/camera.js?v=100"></script>
+<script src="js/defense_build_ui.js?v=100"></script>
+<script src="js/pause.js?v=100"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -1198,6 +1198,36 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   </div>
 </div>
 
+<!-- ============ Phase 100 — PAUSE OVERLAY AD SLOT ============ -->
+<!-- 300×250 banner that sits to the RIGHT of the canvas-drawn pause card
+     (520×480 centered). Card right-edge sits at W/2 + 260, so the ad sits
+     at W/2 + 260 + 20 = W/2 + 280 (left edge). Shown only while game is
+     paused — pause.js drawPauseOverlay toggles display via setting
+     this slot's style.display every frame the pause overlay renders. -->
+<div id="pauseAdSlot" style="
+     display:none;
+     position:fixed; left:50%; top:50%;
+     transform: translate(280px, -50%);
+     z-index:1000;
+     pointer-events:none;
+     font-family: 'Helvetica Neue', sans-serif;">
+  <div style="font-size:9px; color:#888; letter-spacing:3px; text-align:center; margin-bottom:4px; text-transform:uppercase;">
+    Advertisement
+  </div>
+  <div style="
+       width:300px; height:250px;
+       background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+       border:1px solid #444;
+       display:flex; align-items:center; justify-content:center;
+       flex-direction:column;
+       color:#888;">
+    <!-- Replace with GameMonetize banner ad-tag:
+         <ins data-ad-key="YOUR_PAUSE_300x250_KEY"></ins> -->
+    <div style="font-size:28px; font-weight:900; color:#C8261C; opacity:0.55;">AshGrid</div>
+    <div style="font-size:10px; color:#666; margin-top:8px; letter-spacing:2px;">300 × 250 PAUSE</div>
+  </div>
+</div>
+
 <!-- ============ Phase 95 — REWARDED AD PLAY OVERLAY ============ -->
 <!-- Fullscreen 'ad-playing' UX shown for a fixed 15-second minimum when
      the player clicks Watch Ad. Pauses gameplay so the player is OFF
@@ -1220,25 +1250,34 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   <div style="font-size:9px; color:#444; margin-top:48px;">AshGrid · ⚡ 5s respawn buff incoming</div>
 </div>
 
-<!-- ============ Phase 82 — STATIC RESPAWN AD SLOT ============ -->
+<!-- ============ Phase 82/100 — STATIC RESPAWN AD SLOT ============ -->
 <!-- Shown automatically during the respawn countdown window (the 5s
      buffed / 15s default wait after dying). Stays HTML so it can later
-     host a real GameMonetize Banner_300x250 ad tag — that needs an
-     ad-key from the GM dashboard, separate from the gameId. Until then
-     the slot renders as a clearly-labeled placeholder so the layout +
-     timing are testable. -->
+     host real GameMonetize banner ad tags — each needs an ad-key from
+     the GM dashboard, separate from the gameId. Until then the slots
+     render as clearly-labeled placeholders so the layout + timing are
+     testable.
+     Phase 100 — main banner upgraded 300×250 → 336×280 (25% more
+     inventory, standard 'Large Rectangle' format) and a 728×90
+     Leaderboard added below it. Two slots per death = double passive
+     impressions for the same player attention window. User: '能放滿or
+     多一點'. -->
 <div id="respawnAdSlot" style="
      display:none;
      position:fixed; left:50%; top:50%;
      transform: translate(-50%, -50%);
      z-index:50;
      pointer-events:none;
-     font-family: 'Helvetica Neue', sans-serif;">
-  <div style="font-size:9px; color:#888; letter-spacing:3px; text-align:center; margin-bottom:4px; text-transform:uppercase;">
+     font-family: 'Helvetica Neue', sans-serif;
+     width: 728px; max-width: 96vw;
+     text-align: center;">
+  <div style="font-size:9px; color:#888; letter-spacing:3px; margin-bottom:4px; text-transform:uppercase;">
     Advertisement
   </div>
+  <!-- Primary Large Rectangle (336×280) — the headline ad slot. -->
   <div id="respawnAdContent" style="
-       width:300px; height:250px;
+       width:336px; height:280px;
+       margin: 0 auto;
        background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
        border:1px solid #444;
        display:flex; align-items:center; justify-content:center;
@@ -1246,9 +1285,25 @@ body.lang-en .lang-toggle .on { color: var(--black); }
        color:#888;">
     <!-- Replace this block with a GameMonetize banner ad-tag once you
          create one in their dashboard:
-         <ins data-ad-key="YOUR_BANNER_KEY"></ins> -->
+         <ins data-ad-key="YOUR_336x280_KEY"></ins> -->
     <div style="font-size:32px; font-weight:900; color:#C8261C; opacity:0.6;">AshGrid</div>
-    <div style="font-size:10px; color:#666; margin-top:8px; letter-spacing:2px;">300 × 250 BANNER SLOT</div>
+    <div style="font-size:10px; color:#666; margin-top:8px; letter-spacing:2px;">336 × 280 LARGE RECT</div>
+  </div>
+  <!-- Phase 100 — secondary Leaderboard (728×90) directly below.
+       Same lifecycle as the primary so both fill on a single death event. -->
+  <div style="font-size:9px; color:#888; letter-spacing:3px; margin-top:12px; margin-bottom:4px; text-transform:uppercase;">
+    Advertisement
+  </div>
+  <div id="respawnAdLeader" style="
+       width:728px; height:90px; max-width:96vw;
+       margin: 0 auto;
+       background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+       border:1px solid #444;
+       display:flex; align-items:center; justify-content:center;
+       color:#888;">
+    <!-- Replace with a GameMonetize 728×90 banner ad-tag:
+         <ins data-ad-key="YOUR_728x90_KEY"></ins> -->
+    <div style="font-size:11px; color:#666; letter-spacing:3px;">728 × 90 LEADERBOARD</div>
   </div>
 </div>
 
@@ -1336,6 +1391,27 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       </div>
       <div id="lbList" style="background:rgba(20,18,24,0.85); padding:8px 12px; max-height:140px; overflow:auto; font:bold 11px monospace; color:var(--cream); line-height:1.5; min-height:44px;">
         <span style="opacity:0.5;">loading…</span>
+      </div>
+    </div>
+
+    <!-- ============ Phase 100 — LOBBY AD SLOT (728×90 Leaderboard) ============ -->
+    <!-- The highest-ROI slot in the game: every player sees this on every
+         fresh page load while picking SOLO/MULTI + entering callsign +
+         hitting ENTER ARENA. Hidden once gameplay starts (the lobby
+         overlay itself is dismissed). -->
+    <div id="lobbyAdSlot" style="margin-top:18px; max-width:96vw; width:728px; display:flex; flex-direction:column; align-items:center;">
+      <div style="font-size:9px; color:rgba(232,228,216,0.5); letter-spacing:3px; margin-bottom:4px; text-transform:uppercase;">
+        Advertisement
+      </div>
+      <div style="
+           width:728px; height:90px; max-width:96vw;
+           background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+           border:1px solid rgba(232,228,216,0.25);
+           display:flex; align-items:center; justify-content:center;
+           color:#888;">
+        <!-- Replace with GameMonetize banner ad-tag:
+             <ins data-ad-key="YOUR_LOBBY_728x90_KEY"></ins> -->
+        <div style="font-size:11px; color:#777; letter-spacing:3px;">728 × 90 LOBBY</div>
       </div>
     </div>
 
@@ -1723,6 +1799,26 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     <div style="position:absolute; left:0; top:0; height:100%; width:35%; background:var(--red); animation: nn-slide 1.4s ease-in-out infinite;"></div>
   </div>
   <div style="color:var(--gray); font:10px monospace; letter-spacing:2px;">PPO INFERENCE · ONNX RUNTIME WEB</div>
+  <!-- Phase 100 — 320×50 mobile banner at the bottom of the loading
+       overlay. Loading takes 0.5-2s on cold-load + ~0.2s on cached
+       brain, so this gets short impressions but it's a guaranteed
+       slot fire on EVERY match entry. Subtle to avoid pulling
+       attention from the spinner. -->
+  <div style="position:absolute; bottom:24px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;">
+    <div style="font-size:8px; color:#666; letter-spacing:3px; margin-bottom:4px; text-transform:uppercase;">
+      Advertisement
+    </div>
+    <div id="loadingAdSlot" style="
+         width:320px; height:50px;
+         background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+         border:1px solid #444;
+         display:flex; align-items:center; justify-content:center;
+         color:#888; font-size:10px; letter-spacing:3px;">
+      <!-- Replace with GameMonetize banner ad-tag:
+           <ins data-ad-key="YOUR_LOADING_320x50_KEY"></ins> -->
+      320 × 50 LOADING
+    </div>
+  </div>
 </div>
 <style>
   @keyframes nn-pulse { 0%,100%{opacity:0.3;} 50%{opacity:1;} }

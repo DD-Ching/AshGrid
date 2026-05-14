@@ -274,21 +274,20 @@ function renderDeathRecap() {
     if (!_deathRecap.adReviveUsed && !_alreadyBuffed) {
       const btnW = 360, btnH = 70;
       const btnX = W_ / 2 - btnW / 2;
-      // Phase 99 — anchor button BELOW the actual banner bottom instead
-      // of a fixed % of viewport. Banner is 300×250 centered at H/2
-      // (transform: translate(-50%,-50%)) with a ~10px 'Advertisement'
-      // label above + 5px padding → banner bottom ≈ H/2 + 140. Hard 35px
-      // gap below that.
-      //
-      // Why the change: H_ * 0.72 was fine on a 900px laptop but on
-      // shorter screens (notebooks/external monitors at 720-800 tall)
-      // the % math collapsed and the button started clipping into the
-      // banner bottom. User '綠按鈕要再往下'. Anchoring to banner_bottom
-      // guarantees the same visual gap at ANY viewport height. Floor
-      // at 0.78H so taller viewports don't leave the button stuck
-      // halfway up the screen.
-      const bannerBottom = H_ / 2 + 140;
-      const btnY = Math.max(bannerBottom + 35, Math.round(H_ * 0.78) - btnH / 2);
+      // Phase 99/100 — anchor button BELOW the actual banner stack.
+      // Phase 100 added a 728×90 Leaderboard below the 336×280 primary
+      // (was just 300×250), so the stack's bottom moved further down.
+      // The full vertical extent of the centered #respawnAdSlot:
+      //   label  ~12       ← "ADVERTISEMENT"
+      //   336×280          ← primary
+      //   gap    ~12
+      //   label  ~12
+      //   728×90           ← leaderboard
+      //   ≈ 406 total, centered at H/2 → bottom ≈ H/2 + 203
+      // Hard 30px gap below that. Floor at 0.86H so taller viewports
+      // don't leave the button stranded halfway up.
+      const bannerBottom = H_ / 2 + 203;
+      const btnY = Math.max(bannerBottom + 30, Math.round(H_ * 0.86) - btnH / 2);
       _deathRecap.adReviveBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
       const pulse2 = 0.85 + 0.15 * Math.sin(game.time * 0.22);
       ctx.fillStyle = `rgba(63, 230, 63, ${pulse2})`;

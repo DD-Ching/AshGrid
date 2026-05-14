@@ -35,6 +35,13 @@ function togglePause() {
   game._paused = !game._paused;
   // Drop any held mouse so we don't keep firing on resume
   if (game._paused) mouse.down = false;
+  // Phase 100 — show/hide the right-side pause ad banner.
+  // Display-toggle keeps the iframe alive (GM doesn't have to re-fetch
+  // a fresh ad every pause); we just visually hide/show it.
+  try {
+    const _padSlot = document.getElementById('pauseAdSlot');
+    if (_padSlot) _padSlot.style.display = game._paused ? 'block' : 'none';
+  } catch (e) {}
 }
 // Auto-pause when the tab loses focus or becomes hidden — single-player
 // only. In MP you stay alive (and shootable) while the tab is hidden.
