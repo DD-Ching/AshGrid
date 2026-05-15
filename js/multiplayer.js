@@ -1409,7 +1409,10 @@ function _mpRenderNetDebug() {
   ];
   const H = lines.length * lh + pad * 2;
   const X = (typeof canvas !== 'undefined' ? canvas.width : 1200) - W - 10 * DPR;
-  const Y = 10 * DPR;
+  // Y offset clears the top strip used by the operator-info HUD (NEURAL
+  // LINK SEVERED / BY R-F-x bar) AND the death-recap 64-px strip — those
+  // draw at Y < 70 CSS-px and would cover the overlay otherwise.
+  const Y = 80 * DPR;
   ctx.save();
   ctx.fillStyle = 'rgba(20,20,28,0.82)';
   ctx.fillRect(X, Y, W, H);
