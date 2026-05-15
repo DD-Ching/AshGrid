@@ -663,6 +663,13 @@ export default class AshGridRoom {
     };
     this.players.set(conn.id, p);
     this._ensureTicking();
+    // Phase 2 net-audit — reset _lastNameSentTick for ALL existing players
+    // so the next broadcast snapshot includes every name. The new joiner
+    // sees identifiable peers on tick 1 instead of waiting up to 30 ticks
+    // (1 s) for the next periodic name refresh.
+    for (const other of this.players.values()) {
+      other._lastNameSentTick = 0;
+    }
 
     conn.send(JSON.stringify({
       type: 'welcome',
@@ -1278,20 +1285,38 @@ export default class AshGridRoom {
       // instead of easing-toward-target (the "slug crawl" you'd see with
       // pure lerp).
       sT: Date.now(),
-      players: [...this.players.values()].map(p => ({
-        id: p.id,
-        x: round1(p.x),
-        y: round1(p.y),
-        angle: round3(p.angle),
-        hp: p.hp,
-        alive: p.alive,
-        name: p.name,
-        lastInputSeq: p.lastInputSeq,
-        invuln: this.tickCount < p.invulnUntil,
-        // Latest client timestamp echoed back. Per-player so each client's
-        // own entry has its own t for an accurate self-RTT measurement.
-        t: p.lastInputT || 0,
-      })),
+      // Phase 2 net-audit trim:
+      //  - `name`: send only when changed or every NAME_REFRESH_TICKS so
+      //    we don't ship the same string every 33 ms. Client keeps last-
+      //    seen name on remotePlayers[id].name; missing on a snapshot ⇒
+      //    no overwrite (see `if (sp.name) rp.name = sp.name` in handler).
+      //  - `invuln`: only set when true. JSON drops undefined keys, and
+      //    the client reads `!!sp.invuln` so missing == false. The flag
+      //    is only true during 3 s spawn protection, so most snapshots
+      //    save ~12-14 bytes/player.
+      players: [...this.players.values()].map(p => {
+        const entry = {
+          id: p.id,
+          x: round1(p.x),
+          y: round1(p.y),
+          angle: round3(p.angle),
+          hp: p.hp,
+          alive: p.alive,
+          lastInputSeq: p.lastInputSeq,
+          // Latest client timestamp echoed back. Per-player so each client's
+          // own entry has its own t for an accurate self-RTT measurement.
+          t: p.lastInputT || 0,
+        };
+        if (this.tickCount < p.invulnUntil) entry.invuln = true;
+        const nameStale = (this.tickCount - (p._lastNameSentTick || 0)) >= 30;
+        const nameChanged = p.name !== p._lastSentName;
+        if (nameStale || nameChanged) {
+          entry.name = p.name;
+          p._lastNameSentTick = this.tickCount;
+          p._lastSentName = p.name;
+        }
+        return entry;
+      }),
       bullets: this.bullets.map(b => ({
         id: b.id,
         x: round1(b.x),
