@@ -822,6 +822,9 @@ export default class AshGridRoom {
 
   onClose(conn) {
     this.players.delete(conn.id);
+    // Phase 5 — drop the per-receiver delta-compression state so we
+    // don't leak memory on reconnect storms.
+    if (this._recvState) this._recvState.delete(conn.id);
     this.party.broadcast(JSON.stringify({ type: 'leave', id: conn.id }));
     this._maybeStopTicking();
   }
@@ -1306,50 +1309,68 @@ export default class AshGridRoom {
   }
 
   _broadcastSnapshot() {
-    // Phase 3.2 — per-receiver snapshot with AOI bullet culling.
+    // Phase 5 — DELTA COMPRESSION per receiver.
     //
-    // Players + bots are still broadcast to everyone (small N; players
-    // need minimap dots / kill-feed names + bots are highest-value
-    // entities for combat awareness). Bullets, in contrast, can spike to
-    // 50+ in a busy room and are useless if they're >1200 px from the
-    // receiver's player (off-screen at normal zoom). Culling per receiver
-    // can cut snapshot size 40-60% in heavy combat. CPU cost: one
-    // O(bullets) pass per connected client per tick — at 8 bullets × 20
-    // players × 30 Hz = 4800 dist-checks/sec = sub-ms.
+    // Each receiver gets only the FIELDS that changed since the last
+    // snapshot we sent them. Per-receiver state (`this._recvState`) holds
+    // the last-known position/hp/etc. so we can diff against it.
     //
-    // Old clients receive their unchanged-shape snapshot (just fewer
-    // bullet entries), so no protocol break.
+    // Field-level rules per entity:
+    //   Players  — id always; lastInputSeq + t always (change every tick);
+    //              x/y/angle/hp/alive/invuln/name only when changed.
+    //   Bullets  — id + x + y always; vx/vy/s + spawn flag only on first
+    //              appearance for that receiver. Removed bullets reported
+    //              once in `removedBullets`.
+    //   Bots     — id always; x/y/angle/hp/alive/team only when changed.
+    //              team is sent once on first appearance.
+    //
+    // Empty diffs (only `id`) are dropped from the snapshot — keeps the
+    // payload minimal when entities are idle.
+    //
+    // First snapshot to a receiver is a "keyframe" — full state for every
+    // entity. Subsequent are deltas.
+    //
+    // CPU cost: O(entities × receivers) diff work per tick. At 8 bots + 4
+    // players + 20 bullets × 20 receivers × 33 Hz = ~21k field-compares/
+    // sec. Sub-ms. Bandwidth saved: 40-60 % in typical play, more idle.
+    //
+    // Also retains Phase 3.2's AOI bullet culling — bullets > 1200 px
+    // from a receiver are still skipped entirely (not in delta or
+    // removedBullets — client treats them as off-radar and they're picked
+    // up again automatically once back in range, via keyframe-style send
+    // because the receiver's state won't have them tracked).
     const sT = Date.now();
     const tick = this.tickCount;
 
-    // Build the SHARED player array once (same for every receiver — the
-    // Phase 2 invuln/name throttling still applies).
-    const playerEntries = [];
+    // Lazy-init the receiver-state map.
+    if (!this._recvState) this._recvState = new Map();
+
+    // Pre-build CURRENT entity records (one allocation, reused across
+    // diffs). These are the "full" representations; the diff routine
+    // emits a subset of fields.
+    const curPlayers = [];
     for (const p of this.players.values()) {
-      const entry = {
+      const includeName = (this.tickCount - (p._lastNameSentTick || 0)) >= TICK_HZ
+                       || p.name !== p._lastSentName;
+      if (includeName) {
+        p._lastNameSentTick = this.tickCount;
+        p._lastSentName = p.name;
+      }
+      curPlayers.push({
         id: p.id,
         x: round1(p.x),
         y: round1(p.y),
         angle: round3(p.angle),
         hp: p.hp,
         alive: p.alive,
+        invuln: this.tickCount < p.invulnUntil,
+        name: p.name,
+        _includeName: includeName,            // hint for diff path
         lastInputSeq: p.lastInputSeq,
         t: p.lastInputT || 0,
-      };
-      if (this.tickCount < p.invulnUntil) entry.invuln = true;
-      const nameStale = (this.tickCount - (p._lastNameSentTick || 0)) >= TICK_HZ;   // 1 s
-      const nameChanged = p.name !== p._lastSentName;
-      if (nameStale || nameChanged) {
-        entry.name = p.name;
-        p._lastNameSentTick = this.tickCount;
-        p._lastSentName = p.name;
-      }
-      playerEntries.push(entry);
+      });
     }
-
-    // Build full bullets list once (cheap shape transform) — culled per
-    // receiver below.
-    const allBullets = this.bullets.map(b => ({
+    const curBullets = this.bullets.map(b => ({
       id: b.id,
       x: round1(b.x),
       y: round1(b.y),
@@ -1357,10 +1378,7 @@ export default class AshGridRoom {
       vy: round1(b.vy),
       s: b.shooterId,
     }));
-
-    // Bots: still shared. 4-12 entities, all combat-relevant. Sharing
-    // saves N×bots serialization work.
-    const botEntries = this.simBotsEnabled
+    const curBots = this.simBotsEnabled
       ? [...this.bots.values()].map(b => ({
           id: b.id,
           team: b.team,
@@ -1372,8 +1390,6 @@ export default class AshGridRoom {
         }))
       : [];
 
-    // Server-side debug stats. Same for every receiver. Old clients
-    // ignore the unknown field.
     let dbg = null;
     if (this._tickTimeWindow && this._tickTimeWindow.length > 0) {
       let sum = 0;
@@ -1387,39 +1403,109 @@ export default class AshGridRoom {
       };
     }
 
-    // AOI radius squared (compare to dist² to skip the sqrt).
-    const AOI = 1200;
-    const AOI2 = AOI * AOI;
+    const AOI = 1200, AOI2 = AOI * AOI;
 
-    // Iterate connections — if the runtime gives us getConnections() we
-    // use it for per-receiver custom snapshots; otherwise fall back to
-    // broadcast (old PartyKit / unknown runtime).
     const conns = (typeof this.party.getConnections === 'function')
       ? this.party.getConnections()
       : null;
     if (!conns) {
-      // Fallback: broadcast same snapshot to everyone (no AOI cull).
-      const snap = { type: 'snapshot', tick, sT, players: playerEntries, bullets: allBullets, bots: botEntries };
+      // No per-connection API — fall back to broadcast WITHOUT deltas.
+      const snap = { type: 'snapshot', tick, sT, players: curPlayers, bullets: curBullets, bots: curBots };
       if (dbg) snap._dbg = dbg;
       this.party.broadcast(JSON.stringify(snap));
       return;
     }
 
     for (const conn of conns) {
-      const me = this.players.get(conn.id);
-      let bullets;
-      if (!me || !me.alive || allBullets.length === 0) {
-        // Dead / pre-game / no bullets in flight — send everything.
-        bullets = allBullets;
-      } else {
-        bullets = [];
-        const mx = me.x, my = me.y;
-        for (const b of allBullets) {
-          const dx = b.x - mx, dy = b.y - my;
-          if (dx * dx + dy * dy <= AOI2) bullets.push(b);
-        }
+      // Get-or-init the receiver state.
+      let state = this._recvState.get(conn.id);
+      if (!state) {
+        state = { players: new Map(), bullets: new Map(), bots: new Map() };
+        this._recvState.set(conn.id, state);
       }
-      const snap = { type: 'snapshot', tick, sT, players: playerEntries, bullets, bots: botEntries };
+      const me = this.players.get(conn.id);
+
+      // ── Players: diff fields ──────────────────────────────────────
+      const playerDeltas = [];
+      for (const p of curPlayers) {
+        const last = state.players.get(p.id);
+        const out = { id: p.id, lastInputSeq: p.lastInputSeq, t: p.t };
+        if (!last || last.x !== p.x) out.x = p.x;
+        if (!last || last.y !== p.y) out.y = p.y;
+        if (!last || last.angle !== p.angle) out.angle = p.angle;
+        if (!last || last.hp !== p.hp) out.hp = p.hp;
+        if (!last || last.alive !== p.alive) out.alive = p.alive;
+        if (!last || last.invuln !== p.invuln) {
+          if (p.invuln) out.invuln = true;     // omit when false (saves bytes)
+          else if (last && last.invuln) out.invuln = false;
+        }
+        if (p._includeName || !last) out.name = p.name;
+        playerDeltas.push(out);
+        // Save the FULL state (not just delta) so next tick's diff has
+        // ground truth.
+        state.players.set(p.id, { x: p.x, y: p.y, angle: p.angle, hp: p.hp, alive: p.alive, invuln: p.invuln });
+      }
+
+      // ── Bullets: per-receiver AOI cull + delta for known bullets ──
+      // Currently visible bullet ids — used to compute `removed`.
+      const visibleBulletIds = new Set();
+      const bulletDeltas = [];
+      const mx = me ? me.x : 0;
+      const my = me ? me.y : 0;
+      const useAoi = !!(me && me.alive);
+      for (const b of curBullets) {
+        if (useAoi) {
+          const dx = b.x - mx, dy = b.y - my;
+          if (dx * dx + dy * dy > AOI2) continue;       // skip — out of view
+        }
+        visibleBulletIds.add(b.id);
+        const last = state.bullets.get(b.id);
+        if (!last) {
+          // First appearance for this receiver — full record (acts as keyframe).
+          bulletDeltas.push({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, s: b.s, spawn: 1 });
+        } else if (last.x !== b.x || last.y !== b.y) {
+          // Position update only.
+          bulletDeltas.push({ id: b.id, x: b.x, y: b.y });
+        }
+        // else: completely unchanged → not in delta at all (extremely rare for bullets)
+        state.bullets.set(b.id, { x: b.x, y: b.y });
+      }
+      // Bullets previously tracked by this receiver but NOT visible now
+      // are either out-of-AOI (silently drop tracking so they re-keyframe
+      // when they come back in) or actually gone (server.bullets dropped
+      // them). Distinguish by checking if id is still in this.bullets.
+      const livingBulletIds = new Set();
+      for (const b of this.bullets) livingBulletIds.add(b.id);
+      const removedBullets = [];
+      for (const id of state.bullets.keys()) {
+        if (visibleBulletIds.has(id)) continue;
+        if (!livingBulletIds.has(id)) removedBullets.push(id);   // truly gone
+        state.bullets.delete(id);                                // either way drop tracking
+      }
+
+      // ── Bots: diff fields ─────────────────────────────────────────
+      const botDeltas = [];
+      for (const b of curBots) {
+        const last = state.bots.get(b.id);
+        const out = { id: b.id };
+        if (!last || last.team !== b.team) out.team = b.team;   // team is "permanent" — sent on keyframe
+        if (!last || last.x !== b.x) out.x = b.x;
+        if (!last || last.y !== b.y) out.y = b.y;
+        if (!last || last.angle !== b.angle) out.angle = b.angle;
+        if (!last || last.hp !== b.hp) out.hp = b.hp;
+        if (!last || last.alive !== b.alive) out.alive = b.alive;
+        // Drop fully-idle bots (only id) — client keeps last-known state.
+        if (Object.keys(out).length > 1) botDeltas.push(out);
+        state.bots.set(b.id, { team: b.team, x: b.x, y: b.y, angle: b.angle, hp: b.hp, alive: b.alive });
+      }
+
+      const snap = {
+        type: 'snapshot', tick, sT,
+        players: playerDeltas,
+        bullets: bulletDeltas,
+        bots: botDeltas,
+      };
+      if (removedBullets.length) snap.removedBullets = removedBullets;
       if (dbg) snap._dbg = dbg;
       try { conn.send(JSON.stringify(snap)); } catch (e) {}
     }

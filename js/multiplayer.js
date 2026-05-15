@@ -381,13 +381,14 @@ function _mpHandleSnapshot(snap) {
           ? rtt
           : _mpState.rttSmoothed * 0.8 + rtt * 0.2;
       }
-      // Reconcile the local player
-      _mpState.serverSelfX     = sp.x;
-      _mpState.serverSelfY     = sp.y;
-      _mpState.serverSelfAngle = sp.angle;
-      _mpState.serverSelfHp    = sp.hp;
-      _mpState.serverSelfAlive = sp.alive;
-      _mpState.serverSelfInvuln = !!sp.invuln;
+      // Phase 5 — delta compression: only-overwrite when defined.
+      // Missing field = "server says no change, keep last value."
+      if (sp.x      !== undefined) _mpState.serverSelfX      = sp.x;
+      if (sp.y      !== undefined) _mpState.serverSelfY      = sp.y;
+      if (sp.angle  !== undefined) _mpState.serverSelfAngle  = sp.angle;
+      if (sp.hp     !== undefined) _mpState.serverSelfHp     = sp.hp;
+      if (sp.alive  !== undefined) _mpState.serverSelfAlive  = sp.alive;
+      if (sp.invuln !== undefined) _mpState.serverSelfInvuln = !!sp.invuln;
       // Phase 59: dead→alive transition. _mpRespawnLocalPlayer() was defined
       // but had NO caller — nothing connected the server's respawn snapshot
       // back to player.alive=true, which was the user's '死掉瞬間復活的bug'
@@ -399,7 +400,9 @@ function _mpHandleSnapshot(snap) {
       // the client gate to getRespawnSeconds() so the UI countdown's full
       // duration is honored before respawn fires (server also bumped to
       // match so this doesn't stall waiting for a late server snapshot).
-      if (typeof player !== 'undefined' && !player.alive && sp.alive) {
+      // Use the (potentially-just-updated) serverSelfAlive so a delta-only
+      // snapshot that omits `alive` still works.
+      if (typeof player !== 'undefined' && !player.alive && _mpState.serverSelfAlive) {
         const _t = (typeof game !== 'undefined' && game.time) ? game.time : 0;
         const _minDeadFrames = (typeof getRespawnSeconds === 'function')
           ? getRespawnSeconds() * 60
@@ -408,10 +411,16 @@ function _mpHandleSnapshot(snap) {
           _mpRespawnLocalPlayer();
         }
       }
-      // Drop inputs the server has already processed
-      _mpState.pendingInputs = _mpState.pendingInputs.filter(i => i.seq > sp.lastInputSeq);
-      // Replay remaining inputs from the server's confirmed position
-      let predX = sp.x, predY = sp.y;
+      // Drop inputs the server has already processed. lastInputSeq is
+      // ALWAYS in every snapshot (never delta-omitted) since it changes
+      // every tick — but guard anyway.
+      if (sp.lastInputSeq != null) {
+        _mpState.pendingInputs = _mpState.pendingInputs.filter(i => i.seq > sp.lastInputSeq);
+      }
+      // Replay remaining inputs from the server's confirmed position.
+      // Use the merged serverSelf coords so delta snapshots (no x/y this
+      // tick) replay against last-known authoritative position.
+      let predX = _mpState.serverSelfX, predY = _mpState.serverSelfY;
       for (const inp of _mpState.pendingInputs) {
         let dx = inp.dx, dy = inp.dy;
         const mag = Math.hypot(dx, dy);
@@ -479,26 +488,24 @@ function _mpHandleSnapshot(snap) {
         // machine drive 'alive' to keep its UI sequence intact. We just
         // sync the kill/respawn signals via 'kill' events below.
         // Invuln pin: server is authoritative for spawn protection.
-        //   • sp.invuln=true  → pin to Infinity (server says we're invuln NOW)
-        //   • sp.invuln=false AND we're currently pinned to Infinity →
-        //     release the pin (server's spawn protect ended)
-        //   • sp.invuln=false AND _invulnUntil is finite (e.g. local NN
-        //     spawn-safety from arena_recruitment) → leave it alone, it
-        //     will tick down on its own.
-        // The previous code did `_invulnUntil = sp.invuln ? Infinity : (old || 0)`
-        // which never released the Infinity pin → permanent post-respawn
-        // invulnerability in MP (user '復活之後就一直保持在無敵模式').
-        if (sp.invuln) {
+        // Phase 5: only act when sp.invuln is EXPLICITLY in the snapshot
+        // — undefined means delta has no change, leave _invulnUntil alone.
+        if (sp.invuln === true) {
           player._invulnUntil = Infinity;
-        } else if (player._invulnUntil === Infinity) {
+        } else if (sp.invuln === false && player._invulnUntil === Infinity) {
           player._invulnUntil = 0;
         }
       }
     } else {
       // Remote player — push this sample into a timestamped buffer so the
       // renderer can interpolate between past samples instead of easing
-      // toward a moving target. `targetX/targetY` are kept for back-compat
-      // (legacy lerp fallback when buffer is too sparse).
+      // toward a moving target.
+      //
+      // Phase 5 — server delta compression: this entry may carry only a
+      // subset of fields (the ones that changed since OUR last snapshot).
+      // First appearance for a new receiver IS a keyframe though, so
+      // `rp` creation reads sp.* safely. Subsequent updates: only-
+      // overwrite when defined.
       let rp = _mpState.remotePlayers.get(sp.id);
       if (!rp) {
         rp = {
@@ -513,17 +520,18 @@ function _mpHandleSnapshot(snap) {
         console.log('[mp/data] first snapshot of peer', sp.id.slice(0, 6),
           '@', Math.round(sp.x), Math.round(sp.y), '· name:', sp.name);
       }
-      rp.targetX = sp.x;
-      rp.targetY = sp.y;
-      rp.angle   = sp.angle;
-      rp.hp      = sp.hp;
-      rp.alive   = sp.alive;
-      rp.invuln  = !!sp.invuln;
+      if (sp.x !== undefined) rp.targetX = sp.x;
+      if (sp.y !== undefined) rp.targetY = sp.y;
+      if (sp.angle !== undefined) rp.angle = sp.angle;
+      if (sp.hp !== undefined) rp.hp = sp.hp;
+      if (sp.alive !== undefined) rp.alive = sp.alive;
+      if (sp.invuln !== undefined) rp.invuln = !!sp.invuln;
       if (sp.name) rp.name = sp.name;
-      // Buffer the sample. Server clock is the authoritative timeline so
-      // multiple players' interpolations stay aligned to one another.
+      // Buffer the sample. With delta compression, push the MERGED state
+      // (using rp's just-updated values), not raw sp.x — sp.x may be
+      // undefined if the player didn't move this tick.
       const sampleT = (typeof snap.sT === 'number') ? snap.sT : nowMs;
-      rp.buffer.push({ t: sampleT, x: sp.x, y: sp.y, angle: sp.angle });
+      rp.buffer.push({ t: sampleT, x: rp.targetX, y: rp.targetY, angle: rp.angle });
       // Discard samples older than the keep-window so the buffer stays
       // bounded under long sessions.
       const cutoff = sampleT - MP_BUFFER_KEEP;
@@ -537,13 +545,41 @@ function _mpHandleSnapshot(snap) {
     }
   }
   // ─ bullets ─
-  _mpState.remoteBullets.clear();
-  _mpRemoteBullets.length = 0;
-  for (const b of snap.bullets) {
-    const bl = { id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, s: b.s, lastT: performance.now() };
-    _mpState.remoteBullets.set(b.id, bl);
-    _mpRemoteBullets.push(bl);
+  // Phase 5 — bullet delta. Server sends a full record {id,x,y,vx,vy,s,spawn:1}
+  // on first appearance (or after AOI re-entry), thereafter just {id,x,y}.
+  // Bullets that ended this tick are explicitly listed in
+  // snap.removedBullets so we can drop them without the old "not in
+  // seenIds → remove" cleanup (which would now wrongly delete bullets
+  // that simply had no delta this tick).
+  const nowPerf = performance.now();
+  if (Array.isArray(snap.bullets)) {
+    for (const b of snap.bullets) {
+      if (b.spawn === 1 || !_mpState.remoteBullets.has(b.id)) {
+        // First-appearance keyframe — full record.
+        const bl = { id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, s: b.s, lastT: nowPerf };
+        _mpState.remoteBullets.set(b.id, bl);
+      } else {
+        // Position-only delta — update existing bullet, keep vx/vy/s.
+        const bl = _mpState.remoteBullets.get(b.id);
+        if (b.x !== undefined) bl.x = b.x;
+        if (b.y !== undefined) bl.y = b.y;
+        bl.lastT = nowPerf;
+      }
+    }
   }
+  if (Array.isArray(snap.removedBullets)) {
+    for (const id of snap.removedBullets) _mpState.remoteBullets.delete(id);
+  }
+  // Stale-bullet TTL safety net: if a bullet hasn't been mentioned in a
+  // snapshot for over 500 ms it's probably gone (e.g. we missed the
+  // removedBullets event due to packet loss). Defense against orphan
+  // bullets sitting forever on the client.
+  for (const [id, bl] of _mpState.remoteBullets) {
+    if (nowPerf - bl.lastT > 500) _mpState.remoteBullets.delete(id);
+  }
+  // Re-build the legacy list mirror for index.html's render loop.
+  _mpRemoteBullets.length = 0;
+  for (const bl of _mpState.remoteBullets.values()) _mpRemoteBullets.push(bl);
 }
 
 // Phase 39: shooter-side hit feedback. When the server reports a hit and the
