@@ -699,9 +699,39 @@ function _mpHandleKill(data) {
   const shooterName = (data.shooter === _mpState.myId)
     ? (typeof getOperatorName === 'function' ? getOperatorName() : 'YOU')
     : (_mpState.remotePlayers.get(data.shooter)?.name || String(data.shooter).slice(0, 6));
-  const victimName = (data.victim === _mpState.myId)
-    ? (typeof getOperatorName === 'function' ? getOperatorName() : 'YOU')
-    : (_mpState.remotePlayers.get(data.victim)?.name || String(data.victim).slice(0, 6));
+  // Phase 3e — server-bot victims get a "BOT-XX" name in the kill feed
+  // and ALSO bump the local player's killCount + score when *we* are
+  // the shooter (mirrors the SP path at index.html bullet-hit-enemy).
+  // remotePlayers lookup correctly fails for bot ids (10001+) so the
+  // existing fallback would just print the raw id — we override here.
+  let victimName;
+  if (data.isBot) {
+    victimName = `BOT-${String(data.victim).slice(-4)}`;
+    if (data.shooter === _mpState.myId && typeof game !== 'undefined') {
+      game.score = (game.score || 0) + 100;
+      game.killCount = (game.killCount || 0) + 1;
+      if (typeof _lbBumpKill === 'function') _lbBumpKill();
+      // Kill-streak telemetry — same window as SP (4s = 240 frames).
+      if (typeof player !== 'undefined') {
+        const KS_WIN = 240;
+        const t = (typeof game.time === 'number') ? game.time : 0;
+        const last = player._lastKillTick || -9999;
+        if (t - last < KS_WIN) {
+          player._killStreak = (player._killStreak || 1) + 1;
+        } else {
+          player._killStreak = 1;
+        }
+        player._lastKillTick = t;
+        player._killStreakFlashUntil = t + 90;
+        if (player._killStreak >= 2) game.score += player._killStreak * 25;
+      }
+      if (typeof triggerShake === 'function') triggerShake(2, 4);
+    }
+  } else if (data.victim === _mpState.myId) {
+    victimName = (typeof getOperatorName === 'function' ? getOperatorName() : 'YOU');
+  } else {
+    victimName = _mpState.remotePlayers.get(data.victim)?.name || String(data.victim).slice(0, 6);
+  }
   _mpKillFeed.push({ killer: shooterName, victim: victimName, weapon: data.weapon || 'RIFLE', at: Date.now() });
   if (_mpKillFeed.length > 6) _mpKillFeed.splice(0, _mpKillFeed.length - 6);
 

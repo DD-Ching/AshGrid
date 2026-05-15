@@ -127,6 +127,11 @@ const NN_BOTS_INITIAL   = 4;
 // human PLAYER_SPEED (5.6 × 30 = 168 px/sec); bots and humans move
 // at the same pace so engagements feel even.
 const BOT_SPEED_PER_TICK = 4.5;
+// Phase 3f — dead bots respawn after this many ticks at a fresh
+// random arena position with full HP. Mirrors the legacy client-side
+// wave-spawner cadence but per-individual (simpler than the team-wipe
+// state machine; that goes server-side in a later phase).
+const BOT_RESPAWN_TICKS = 5 * 30;     // 5 s @ 30 Hz
 const HP_MAX            = 100;
 const INVULN_TICKS      = 90;         // 3s spawn protection
 // Phase 60: respawn time is ad-buffable. Default 15s (450 ticks @ 30Hz),
@@ -456,6 +461,24 @@ export default class AshGridRoom {
   // see + retreat from low HP per the trained policy.
   _tickBots() {
     if (!this.simBotsEnabled) return;
+    // Phase 3f — respawn lifecycle. A dead bot's _respawnAt is set
+    // when its hp hits 0 in the bullet-vs-bot collision path. After
+    // BOT_RESPAWN_TICKS pass, we re-roll position + reset hp. This
+    // keeps the arena populated without needing the legacy mission-
+    // factory wave system (that one ports to server in a later phase).
+    for (const b of this.bots.values()) {
+      if (b.alive) continue;
+      if (b._respawnAt == null || this.tickCount < b._respawnAt) continue;
+      b.x = ARENA_PAD + 80 + Math.random() * (ARENA_W - 2 * ARENA_PAD - 160);
+      b.y = ARENA_PAD + 80 + Math.random() * (ARENA_H - 2 * ARENA_PAD - 160);
+      b.angle = Math.random() * Math.PI * 2;
+      b.hp = HP_MAX;
+      b.alive = true;
+      b._respawnAt = null;
+      b._fireCd = 0;
+      b._recentDmg = 0;
+    }
+
     // Build the two team rosters once per tick. Players are all team 0
     // for now (no factions on the human side yet); team-0 bots count
     // as friendlies for the player + each other, team-1 bots are reds.
@@ -1001,6 +1024,7 @@ export default class AshGridRoom {
             }));
             if (bot.hp <= 0) {
               bot.alive = false;
+              bot._respawnAt = this.tickCount + BOT_RESPAWN_TICKS;
               this.party.broadcast(JSON.stringify({
                 type: 'kill', shooter: b.shooterId, victim: bot.id,
                 weapon: b.weapon || 'RIFLE',
