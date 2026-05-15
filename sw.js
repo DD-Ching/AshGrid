@@ -16,7 +16,7 @@
 // network-first /js/* to avoid the cache-first staleness that bit users
 // during Phase 4–10 (player console showed `ARENA_SEED_MAX is not
 // defined` because cached arena_recruitment.js predated the SEED block).
-const CACHE = 'ashgrid-v80-phase4b-walls+los-2026-05-14';
+const CACHE = 'ashgrid-v81-bot-hp-instant-2026-05-14';
 const ASSETS = [
   './manifest.webmanifest',
   './icons/icon-192.png',

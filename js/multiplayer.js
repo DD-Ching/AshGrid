@@ -722,6 +722,19 @@ function _mpHandleHit(data) {
   // local NN enemies use, anchored to the server's impact coords.
   if (data.isBot && ix != null && iy != null) {
     if (typeof createExplosion === 'function') createExplosion(ix, iy, 'small');
+    // Phase 4b-followup — user '子彈攻擊目前也無效': bullets DO
+    // damage server-side, but the bot's HP bar only refreshed on the
+    // next 15 Hz snapshot (up to 66 ms delayed). Apply the new HP
+    // locally as soon as the hit event arrives — snapshot will
+    // confirm it ~33 ms later but the player gets immediate visual
+    // feedback that the shot connected. Same trick we use for the
+    // local player's hp via the min() reconcile.
+    if (typeof data.hp === 'number') {
+      const rb = _mpState.remoteBots && _mpState.remoteBots.get(data.victim);
+      if (rb && typeof rb.hp === 'number') {
+        rb.hp = Math.min(rb.hp, data.hp);
+      }
+    }
   }
 }
 
