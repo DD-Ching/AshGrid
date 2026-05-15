@@ -560,11 +560,33 @@ export default class AshGridRoom {
                                                   // same in seconds (~0.5 s to converge)
       }
 
-      buildObs(b, friendlies, enemies, _NN_OBS_BUF, flipX);
-      const action = _NN_NET.argmax(_NN_OBS_BUF);
-      let moveDir = action >> 1;       // 0..8
-      const fire  = action & 1;        // 0|1
-      if (flipX) moveDir = _NN_MIRROR_MOVE[moveDir];
+      // Phase 4d — subsystem rate. NN decision-making at 30 Hz (every
+      // NN_DECISION_EVERY ticks) instead of TICK_HZ. Bots cache their
+      // last action and re-use it on intermediate ticks for movement /
+      // fire. Aim-lerp + physics + collision still update at full
+      // TICK_HZ so the bot's silhouette + bullets stay smooth.
+      //
+      // Why this is correct: NN was being asked for a NEW decision
+      // every ~5 ms @ 200 Hz, but decisions only need to update ~33 ms
+      // (humans can't see decisions changing faster). 8 bots × 32 µs ×
+      // 200 Hz = 51 ms CPU/sec ⇒ 8 × 32 µs × 30 Hz = 7.7 ms CPU/sec.
+      // 84% less NN CPU with zero player-visible difference.
+      const NN_DECISION_EVERY = Math.max(1, Math.round(TICK_HZ / 30));
+      // Stagger bots across ticks so we don't compute 8 NN forwards on
+      // the same tick — spreads cost smoothly.
+      const _nnDue = ((this.tickCount + (b.id | 0)) % NN_DECISION_EVERY) === 0;
+      let action, moveDir, fire;
+      if (_nnDue || b._lastAction == null) {
+        buildObs(b, friendlies, enemies, _NN_OBS_BUF, flipX);
+        action = _NN_NET.argmax(_NN_OBS_BUF);
+        moveDir = action >> 1;
+        fire = action & 1;
+        if (flipX) moveDir = _NN_MIRROR_MOVE[moveDir];
+        b._lastAction = { moveDir, fire };
+      } else {
+        moveDir = b._lastAction.moveDir;
+        fire = b._lastAction.fire;
+      }
 
       const [dx, dy] = _NN_MOVE_DIRS[moveDir] || [0, 0];
       if (dx !== 0 || dy !== 0) {
