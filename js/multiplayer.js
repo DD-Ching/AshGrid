@@ -427,13 +427,26 @@ function _mpHandleSnapshot(snap) {
       // Replay remaining inputs from the server's confirmed position.
       // Use the merged serverSelf coords so delta snapshots (no x/y this
       // tick) replay against last-known authoritative position.
+      //
+      // Phase X — apply the SAME per-input multipliers as the server's
+      // tick math: sprint × weapon × chassis. Without this, wolf sprint
+      // (1.5 × 1.65 = 2.475×) replay was using flat 5.6 px/input while
+      // the server moved 5.6 × 2.475 ≈ 13.86 px/input → predX behind
+      // truth by ~8 px per pending input → reconcile pulled client
+      // back at every 33 Hz snapshot = the visible "走路忽快忽慢" tug.
+      // Now replay matches server step exactly; reconcile dist stays
+      // sub-pixel in steady state.
       let predX = _mpState.serverSelfX, predY = _mpState.serverSelfY;
       for (const inp of _mpState.pendingInputs) {
         let dx = inp.dx, dy = inp.dy;
         const mag = Math.hypot(dx, dy);
         if (mag > 1) { dx /= mag; dy /= mag; }
-        predX += dx * MP_PLAYER_SPEED;
-        predY += dy * MP_PLAYER_SPEED;
+        const sprintMul = inp.sprint ? 1.65 : 1.0;       // matches SPRINT_SPEED_MUL
+        const wpnMul    = (typeof inp.wMul === 'number') ? inp.wMul : 1.0;
+        const chsMul    = (typeof inp.cMul === 'number') ? inp.cMul : 1.0;
+        const mul = sprintMul * wpnMul * chsMul;
+        predX += dx * MP_PLAYER_SPEED * mul;
+        predY += dy * MP_PLAYER_SPEED * mul;
       }
       // Push to local player object — Phase 80 spread-error reconcile.
       // User '權威必須存在! 聯機不能本地! 想辦法在遊玩時不跳針'. Phase 78's
