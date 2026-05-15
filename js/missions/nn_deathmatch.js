@@ -159,7 +159,11 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       u.hp = u.maxHp;
       if (u.maxArmor > 0) u.armor = u.maxArmor;
       u._respawnAt = null;
-      u._invulnUntil = game.time + 90;
+      // Phase 102 — 3s spawn protection. User '復活要復活是要有三秒的
+      // 無敵時間, 不要一復活就被秒殺, 再重新倒數'. Standardise on 180
+      // ticks across ALL respawn / swap / revive paths to match server
+      // INVULN_TICKS and prevent the kill→countdown→kill loop.
+      u._invulnUntil = game.time + 180;
       u._nnFireCd = 0; u._nnRecentDmg = 0;
       // Phase 102 — clear chain-takeover consumed flag so ex-op slots
       // come back as live teammates after the team-wipe bulk respawn.
@@ -182,7 +186,8 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
     player.hp = player.maxHp;
     if (player.maxArmor > 0) player.armor = player.maxArmor;
     player._respawnAt = null;
-    player._invulnUntil = game.time + 120;
+    // Phase 102 — 3s spawn protection (was 120 = 2s). See _reviveTeam.
+    player._invulnUntil = game.time + 180;
     // Pop the player back to the blue spawn anchor (their last death spot
     // is probably surrounded by red — give them breathing room).
     if (game._nnSpawnBlue) {
@@ -392,7 +397,10 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           player.gunAngle = a.gunAngle || a.angle;
           player.gunRecoil = (a.gunRecoil || 0) * 0.4;
           player.hp = a.hp; player.maxHp = a.maxHp;
-          player._invulnUntil = game.time + 60;
+          // Phase 102 — 3s spawn protection on chain-takeover (was 60 = 1s).
+          // Must match server INVULN_TICKS so the player can't be insta-
+          // sniped the frame after auto-swap, restarting the death loop.
+          player._invulnUntil = game.time + 180;
           player._lastX = a.x; player._lastY = a.y;
           player._velX = 0; player._velY = 0;
           mouse.down = false;
@@ -455,9 +463,11 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         }
       } else { player._lastBeepSec = -1; }
 
-      // Spawn protection: 1.5 seconds of damage immunity after respawn so
-      // you don't get instantly killed by a sniper sitting on your spawn.
-      const SPAWN_INVULN_TICKS = 90;
+      // Phase 102 — 3 seconds of damage immunity after respawn (was 1.5).
+      // User '復活要復活是要有三秒的無敵時間, 不要一復活就被秒殺,
+      // 再重新倒數'. Standardised across every respawn / swap / revive
+      // path; matches server INVULN_TICKS so client/server stay in sync.
+      const SPAWN_INVULN_TICKS = 180;
       // Clamp respawn positions to the playable interior of the NN_ARENA box
       // so a unit never spawns OUTSIDE the red border, regardless of jitter.
       const SP_PAD = 30;

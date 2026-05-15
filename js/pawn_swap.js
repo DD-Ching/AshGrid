@@ -140,7 +140,11 @@ function swapPlayerToAlly(idx) {
   // it up. See chassis.js applyChassisToUnit for rationale.
   player._chassisSpeedMul = _cdef.speedMul;
   player.radius = Math.round(14 * _cdef.radiusMul);
-  player._invulnUntil = game.time + 60;
+  // Phase 102 — 3 s spawn protection on pawn-swap (matches server INVULN_TICKS
+  // = 3 * TICK_HZ and respawn invuln). Was 60 ticks (1 s) which let the
+  // player get insta-killed the instant after switching to a body —
+  // restarting the kill→respawn loop the user explicitly complained about.
+  player._invulnUntil = game.time + 180;
   player._lastX = targetX; player._lastY = targetY;
   player._velX = 0; player._velY = 0;
   player._lastDeathX = null; player._lastDeathY = null;
