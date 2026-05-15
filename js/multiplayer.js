@@ -1384,6 +1384,11 @@ function _mpRespawnLocalPlayer() {
   // until the next kill.
   player._respawnAt = null;
   player._killedAtTime = 0;
+  // Phase 102 — also clear any swap-time reconcile suppression so the
+  // server's authoritative position is honoured normally after respawn.
+  // pawn_swap.js sets this to Infinity to keep a solo-MP swap permanent;
+  // respawn ends that window.
+  player._mpIgnoreReconcileUntil = 0;
   if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
     game._teamWipe.blue.wipedSince = null;
     game._teamWipe.blue.respawnAt = null;

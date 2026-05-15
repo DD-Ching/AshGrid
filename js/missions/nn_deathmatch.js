@@ -161,6 +161,9 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       u._respawnAt = null;
       u._invulnUntil = game.time + 90;
       u._nnFireCd = 0; u._nnRecentDmg = 0;
+      // Phase 102 — clear chain-takeover consumed flag so ex-op slots
+      // come back as live teammates after the team-wipe bulk respawn.
+      u._consumed = false;
     }
   }
   // Exposed so death_recap.js (ad-revive button) can call.
@@ -394,23 +397,36 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           player._velX = 0; player._velY = 0;
           mouse.down = false;
           applyWeaponToPlayer(a._weapon || WEAPONS.RIFLE);
-          // The slot we took over becomes the player's OLD (dead) body — it
-          // will respawn normally under NN control after the standard timer.
-          // Phase 96 — extends the Phase 85 fix from pawn_swap.js to this
-          // AUTO-swap path. User '死亡後隊友還是又瞬移到我位置了': the
-          // ex-op corpse used to be planted at player._lastDeathX/Y and 15s
-          // later 'came back to life' at the exact spot where the player
-          // died — reads as 'BRAVO teleported to my death spot'. Route it
-          // through the team spawn anchor (game._nnSpawnBlue) instead so
-          // the respawn happens far from where the player is now playing.
-          const _spawn = (typeof game !== 'undefined' && game._nnSpawnBlue) || null;
+          // Phase 102 — chain-takeover semantics. User: 'A區被殺掉 →
+          // 接管B載具@B區 → B再被殺掉 → 接管C載具@C區 → 最後來不及
+          // 復活才是全軍覆沒進入廣告'.
+          //
+          // The slot we just took over represents the PLAYER'S old body,
+          // which lies at the death spot (A) as a corpse. Critically:
+          //   • a.x / a.y → player's _lastDeathX/Y (corpse stays at A,
+          //     never teleports to spawn — earlier Phase 96 relocation
+          //     was the 'B vehicle teleported to spawn' the user flagged)
+          //   • a._respawnAt = null + a._consumed = true → the slot
+          //     NEVER respawns. The team count permanently drops by one
+          //     per chain-takeover. When the player has chained through
+          //     every teammate and dies one more time, the team-wipe
+          //     path (no alive teammates) triggers the bulk respawn at
+          //     SPAWN + the ad.
           a.alive = false;
-          a.x = _spawn ? _spawn.x : (player._lastDeathX != null ? player._lastDeathX : a.x);
-          a.y = _spawn ? _spawn.y : (player._lastDeathY != null ? player._lastDeathY : a.y);
+          a.x = player._lastDeathX != null ? player._lastDeathX : a.x;
+          a.y = player._lastDeathY != null ? player._lastDeathY : a.y;
           a.callsign = T('前操作员', 'EX-OPERATOR');
-          a._respawnAt = game.time + playerTicks;
+          a._respawnAt = null;
+          a._consumed  = true;
           a._useNN = true;
           a._nnDifficulty = a._nnDifficulty || NN.difficulty || 'evolved';
+          // Instant camera cut so the user doesn't see the camera 'pan'
+          // from A to B — that lerp was the source of the perceptual
+          // 'something is sliding toward me' confusion.
+          if (typeof camera !== 'undefined') {
+            camera.x = player.x;
+            camera.y = player.y;
+          }
           const killerInfo = player._killer ? ` · ${T('死於', 'killed by')} ${player._killer.callsign || T('敌方', 'enemy')}` : '';
           showSwapToast(`${T('接管', 'SWAP')} ${(a.callsign === '前操作员' || a.callsign === 'EX-OPERATOR') ? T('隊友', 'ALLY') : a.callsign}${killerInfo}`);
           playSfx('countdown', { freq: 1320, vol: 0.45 });
@@ -419,7 +435,10 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         }
       }
       for (const a of allies) {
-        if (!a.alive && a._respawnAt == null && !blueWiped) a._respawnAt = game.time + blueTicks;
+        // Phase 102 — skip _consumed slots (chain-takeover ex-op corpses).
+        // They never respawn individually; only the team-wipe bulk respawn
+        // brings them back.
+        if (!a.alive && a._respawnAt == null && !blueWiped && !a._consumed) a._respawnAt = game.time + blueTicks;
       }
       // Phase 9: red side does NOT respawn per-unit anymore — fresh red
       // arrives in escalating waves above. Without this, dead reds were

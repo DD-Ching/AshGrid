@@ -46,12 +46,16 @@ function swapPlayerToAlly(idx) {
       }
       return;
     }
-    // Alone — suppress MP position reconcile for the next 90 ticks
-    // (1.5s) so server's next 'you're at old pos' snapshot doesn't
-    // immediately yank us back. By that time client inputs will have
-    // driven server position closer to the new spot anyway.
+    // Phase 102 — solo MP: suppress reconcile UNTIL NEXT DEATH/RESPAWN
+    // instead of a fixed 1.5s window. User: 'B會瞬移到A這邊 我切換過
+    // 可能0.5秒之後 這個B載具會瞬移到A載具這邊'. The 90-tick window
+    // expired and the server (which never learned about the swap) snapped
+    // us back to A. Since solo MP has no peers, the server position is
+    // moot for everyone except hit-detection from peer bullets (which
+    // don't exist solo). Holding Infinity until _mpRespawnLocalPlayer
+    // clears it on next respawn is safe and makes the swap permanent.
     if (typeof game !== 'undefined' && typeof player !== 'undefined') {
-      player._mpIgnoreReconcileUntil = game.time + 90;
+      player._mpIgnoreReconcileUntil = Infinity;
     }
   }
   // Pawn-swap auto-dismisses the death recap — player wants to see the
@@ -107,17 +111,17 @@ function swapPlayerToAlly(idx) {
       _humanPiloted: false,
     };
   } else {
-    // Phase 85 — dead pawn-swap. User '別人會瞬間移動到我原本死掉的位置
-    // 這樣很怪'. The ex-op slot now respawns at the TEAM SPAWN point
-    // instead of at the player's death position. Old behaviour placed
-    // the corpse at corpseX/corpseY (= player death spot) and 5s later
-    // it visibly 'came back to life' at the player's death position,
-    // reading as 'BRAVO teleported to my death spot'. The fix routes
-    // it through the standard blue spawn so the respawn is far from
-    // the action + nowhere near the player's new position.
-    const _spawn = (typeof game !== 'undefined' && game._nnSpawnBlue) || null;
-    const corpseX = _spawn ? _spawn.x : (player._lastDeathX != null ? player._lastDeathX : player.x);
-    const corpseY = _spawn ? _spawn.y : (player._lastDeathY != null ? player._lastDeathY : player.y);
+    // Phase 102 — dead pawn-swap. User '我要的就是在原本的位置, 只是我
+    //現在的視野換地方'. The ex-op slot is the player's OLD body, which
+    // lies at the death spot as a dead corpse. Critically: NO respawn
+    // timer is set (a._consumed=true blocks the auto-respawn loop in
+    // nn_deathmatch.js), so the corpse never 'stands up' anywhere later
+    // — that pop-back is what previously read as 'B teleported to my
+    // death spot' (pre-Phase-96) or 'B teleported to spawn' (Phase 96).
+    // Team count permanently drops by one until the FULL team-wipe path
+    // (no live teammates) triggers the bulk respawn + ad.
+    const corpseX = player._lastDeathX != null ? player._lastDeathX : player.x;
+    const corpseY = player._lastDeathY != null ? player._lastDeathY : player.y;
     allies[idx] = {
       callsign: T('前操作员', 'EX-OPERATOR'),
       offsetX: a.offsetX, offsetY: a.offsetY,
@@ -133,10 +137,9 @@ function swapPlayerToAlly(idx) {
       target: null, lookPhase: 0,
       team: 0,
       _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
-      _respawnAt: game.time + 5 * 60,   // RESPAWN_TICKS — same constant inline
+      _respawnAt: null,
+      _consumed: true,                 // never respawns — see nn_deathmatch.js respawn loop
       _invulnUntil: 0,
-      // Phase 4: dead ex-op body keeps its SEED (will respawn as AI with
-      // this value; the player chose to abandon it mid-respawn-countdown).
       _seed: operatorSeedBefore,
       _humanPiloted: false,
     };
@@ -173,6 +176,17 @@ function swapPlayerToAlly(idx) {
   // built it up and swapped back into a body they once piloted).
   player._seed = targetSeed;
   player._humanPiloted = true;
+
+  // Phase 102 — instant camera cut. Without this, updateCamera() lerps
+  // at 0.18/frame for any move > 60u, which the user perceived as 'the
+  // ally body is sliding toward me' (camera-relative motion looks like
+  // world motion when the player is screen-centered). Snapping camera
+  // to the new player position cuts that perceptual ambiguity — view
+  // simply jumps to the new vehicle's location, no slide.
+  if (typeof camera !== 'undefined') {
+    camera.x = player.x;
+    camera.y = player.y;
+  }
 
   showSwapToast(`${wasResurrected ? T('紧急接管', 'EMERGENCY SWAP') : T('接管', 'SWAP')} ${targetCallsign}`);
   playSfx('countdown', { freq: 1320, vol: 0.45 });
