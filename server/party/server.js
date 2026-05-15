@@ -536,17 +536,15 @@ export default class AshGridRoom {
         const mag = Math.hypot(dx, dy);
         const nx = b.x + (dx / mag) * BOT_SPEED_PER_TICK;
         const ny = b.y + (dy / mag) * BOT_SPEED_PER_TICK;
-        // Bounce off arena edges to keep bots inside the playable area.
-        if (nx < ARENA_PAD || nx > ARENA_W - ARENA_PAD) {
-          b.x = clamp(nx, ARENA_PAD, ARENA_W - ARENA_PAD);
-        } else {
-          b.x = nx;
-        }
-        if (ny < ARENA_PAD || ny > ARENA_H - ARENA_PAD) {
-          b.y = clamp(ny, ARENA_PAD, ARENA_H - ARENA_PAD);
-        } else {
-          b.y = ny;
-        }
+        // Phase 4b — clamp to arena + push out of buildings. User
+        // '直接看到穿牆的': server-side bots used to phase straight
+        // through walls because we only clamped to ARENA bounds, never
+        // checked _MAP_BUILDINGS. Now they bounce identically to how
+        // the client renders walls. Same _pushOutOfWalls helper used
+        // by players; bot radius is the same 14 px.
+        b.x = clamp(nx, ARENA_PAD, ARENA_W - ARENA_PAD);
+        b.y = clamp(ny, ARENA_PAD, ARENA_H - ARENA_PAD);
+        _pushOutOfWalls(b, PLAYER_RADIUS);
         // NOTE: angle stays pointed at enemy (set above), NOT at the
         // move direction. The bot is now a strafing shooter — moves
         // diagonally while head tracks the target. Looks much more
@@ -805,41 +803,27 @@ export default class AshGridRoom {
         nx = p.x + dx * PLAYER_SPEED;
         ny = p.y + dy * PLAYER_SPEED;
       }
-      // Phase 1 — v2 hotfix for "still rubber-banding". Root cause: client
-      // and server have COMPLETELY DIFFERENT collision geometry.
-      //   Client: NN_ARENA bounds (0→1800, clamp at player.radius=14),
-      //           uses generateWorld(map) for buildings/walls/lowCovers,
-      //           pushOutOfBuildings handles 3 collision kinds.
-      //   Server: ARENA_PAD-based bounds (50→1750),
-      //           hardcoded _buildIndustrialMap (single map, doesn't match
-      //           whatever the client actually loaded),
-      //           _pushOutOfWalls only handles 'building' kind.
-      // Net effect: every wall edge + every arena boundary is a ~36 px
-      // server/client desync, the reconcile loop fights it forever →
-      // rubber-band.
+      // Phase 4b — v2 path uses the SAME server-side collision as legacy.
+      // The server's _MAP_BUILDINGS / _MAP_OBSTACLES come from
+      // _buildIndustrialMap() which matches the client's industrial map
+      // anchors. With phase3 + v2 implying that the client doesn't run
+      // its own NN spawn (so no client-only chassis-mul math drifts) and
+      // the same geometry on both sides, the legacy snap-on-mismatch
+      // behaviour is no longer triggered.
       //
-      // v2 fix: SKIP server-side clamp/pushout/structure-collide entirely.
-      // simStepPerTick is byte-identical to the client's per-tick math, so
-      // p.x/p.y derived purely from p.x_prev + simStep IS the same number
-      // the client computes — no divergence to reconcile. Client owns map
-      // collision until Phase 4 promotes geometry to the server.
-      //
-      // Trade-off: a cheating v2 client could phase through walls (server
-      // accepts any position they walk to). Phase 4 closes this hole by
-      // sharing the map JSON with the server. For v2 testing on dev this
-      // is acceptable — the goal is to verify input + sim parity first.
-      if (!inp.v2) {
-        p.x = clamp(nx, ARENA_PAD, ARENA_W - ARENA_PAD);
-        p.y = clamp(ny, ARENA_PAD, ARENA_H - ARENA_PAD);
-        _pushOutOfWalls(p, PLAYER_RADIUS);
-        for (const s of this.structures.values()) {
-          _pushOutOfStructure(p, PLAYER_RADIUS, s);
-        }
-      } else {
-        // v2: trust the client's stepped position. Clamp to a generous
-        // outer bound so a NaN/exploit can't send us to infinity.
-        p.x = clamp(nx, -10000, 10000);
-        p.y = clamp(ny, -10000, 10000);
+      // Pre-Phase-4b this branch SKIPPED clamp/pushout because the
+      // hardcoded server map didn't always match what the client had
+      // loaded (different MAPS[] index). Now that ?phase3=1 (which v2
+      // auto-engages) only runs in NN_ARENA mode (industrial), both
+      // sides have the same map. Re-enabling pushout fixes the user's
+      // '穿牆' complaint: server bots now bounce off walls, server
+      // bullets stop on walls (already did at line ~886), and the
+      // player can't walk through buildings server-side either.
+      p.x = clamp(nx, ARENA_PAD, ARENA_W - ARENA_PAD);
+      p.y = clamp(ny, ARENA_PAD, ARENA_H - ARENA_PAD);
+      _pushOutOfWalls(p, PLAYER_RADIUS);
+      for (const s of this.structures.values()) {
+        _pushOutOfStructure(p, PLAYER_RADIUS, s);
       }
       p.angle = inp.angle;
       // Phase 40: record this tick's position into the per-player history
