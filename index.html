@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=108"></script>
-<script src="js/arena_recruitment.js?v=108"></script>
-<script src="js/dynamic_radio.js?v=108"></script>
-<script src="js/i18n.js?v=108"></script>
-<script src="js/touch_input.js?v=108"></script>
-<script src="js/key_bindings.js?v=108"></script>
-<script src="js/grenades.js?v=108"></script>
-<script src="js/squad_commands.js?v=108"></script>
-<script src="js/multiplayer.js?v=108"></script>
-<script src="js/leaderboard.js?v=108"></script>
-<script src="js/structures.js?v=108"></script>
-<script src="js/tod.js?v=108"></script>
-<script src="js/weapons.js?v=108"></script>
-<script src="js/chassis.js?v=108"></script>
-<script src="js/respawn_buff.js?v=108"></script>
-<script src="js/death_recap.js?v=108"></script>
-<script src="js/mote_affinity.js?v=108"></script>
-<script src="js/stage_hints.js?v=108"></script>
-<script src="js/pawn_swap.js?v=108"></script>
-<script src="js/global_stats.js?v=108"></script>
-<script src="js/progressive_unlock.js?v=108"></script>
-<script src="js/ad_stubs.js?v=108"></script>
+<script src="js/audio/sfx.js?v=109"></script>
+<script src="js/arena_recruitment.js?v=109"></script>
+<script src="js/dynamic_radio.js?v=109"></script>
+<script src="js/i18n.js?v=109"></script>
+<script src="js/touch_input.js?v=109"></script>
+<script src="js/key_bindings.js?v=109"></script>
+<script src="js/grenades.js?v=109"></script>
+<script src="js/squad_commands.js?v=109"></script>
+<script src="js/multiplayer.js?v=109"></script>
+<script src="js/leaderboard.js?v=109"></script>
+<script src="js/structures.js?v=109"></script>
+<script src="js/tod.js?v=109"></script>
+<script src="js/weapons.js?v=109"></script>
+<script src="js/chassis.js?v=109"></script>
+<script src="js/respawn_buff.js?v=109"></script>
+<script src="js/death_recap.js?v=109"></script>
+<script src="js/mote_affinity.js?v=109"></script>
+<script src="js/stage_hints.js?v=109"></script>
+<script src="js/pawn_swap.js?v=109"></script>
+<script src="js/global_stats.js?v=109"></script>
+<script src="js/progressive_unlock.js?v=109"></script>
+<script src="js/ad_stubs.js?v=109"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=108"></script>
+<script src="js/crazygames.js?v=109"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=108"></script>
+<script src="js/gamemonetize.js?v=109"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=108"></script>
-<script src="js/world_gen.js?v=108"></script>
-<script src="js/squad.js?v=108"></script>
-<script src="js/drone_fpv.js?v=108"></script>
-<script src="js/vision_raycast.js?v=108"></script>
-<script src="js/camera.js?v=108"></script>
-<script src="js/defense_build_ui.js?v=108"></script>
-<script src="js/pause.js?v=108"></script>
+<script src="js/missions/nn_deathmatch.js?v=109"></script>
+<script src="js/world_gen.js?v=109"></script>
+<script src="js/squad.js?v=109"></script>
+<script src="js/drone_fpv.js?v=109"></script>
+<script src="js/vision_raycast.js?v=109"></script>
+<script src="js/camera.js?v=109"></script>
+<script src="js/defense_build_ui.js?v=109"></script>
+<script src="js/pause.js?v=109"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -2720,7 +2720,11 @@ const drone = {
   x: 0, y: 0,
   battery: 100, maxBattery: 100,
   speed: 5,
-  visionRadius: 280,
+  // Phase X — user 'Q無人機很多東西看不到'. Old 280 was barely a single
+  // room in the 1800×1800 industrial map; player would deploy the UAV and
+  // see almost nothing. 480 covers ~2-3 rooms — useful for spotting flank
+  // movement without becoming an x-ray god-view.
+  visionRadius: 480,
   alt: 120,
 };
 
@@ -2743,7 +2747,10 @@ const fpv = {
 // avoidable. Turn rate also drops as speed rises (see updateFPV) so a
 // committed dive can't U-turn out of a wall.
 const FPV_SPEED_START = 2.0;     // slower launch — controllable
-const FPV_SPEED_MAX   = 9;       // was 14
+// Phase X — user '自殺式無人機太難操控'. Max speed dropped 9 → 7
+// (~420 px/sec) so a maxed-out drone takes ~4 s to cross the arena
+// instead of 3 s — buys an extra second of correction time.
+const FPV_SPEED_MAX   = 7;       // was 9, originally 14
 const FPV_RAMP_TICKS  = 240;     // 4 sec ramp (was 2.5 sec)
 
 const bullets = [];
@@ -7761,7 +7768,12 @@ function updateFPV() {
     let diff = target - fpv.angle;
     while (diff > Math.PI) diff -= Math.PI*2;
     while (diff < -Math.PI) diff += Math.PI*2;
-    const turnRate = 0.075 - 0.050 * _rampT;
+    // Phase X — turn-rate floor raised so the maxed-out drone can still
+    // correct course before slamming a wall. Was 0.025 at full ramp →
+    // now 0.050. Launch rate also slightly higher (0.075 → 0.085) for
+    // crisper initial steering. Trade-off: drone feels less like a
+    // "committed missile" but user '太難操控' wins over realism.
+    const turnRate = 0.085 - 0.035 * _rampT;
     fpv.angle += diff * turnRate;
   }
   // Phase 9: speed ramps from FPV_SPEED_START → FPV_SPEED_MAX over
@@ -9167,7 +9179,7 @@ function renderWorld() {
     if (alpha === 0) continue;
     // Spawn-invuln pulse: alpha oscillates between 0.4 and 1.0 while active
     const eInvuln = e._invulnUntil != null && game.time < e._invulnUntil;
-    if (eInvuln) alpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
+    if (eInvuln) alpha = 0.7 + 0.3 * Math.abs(Math.sin(game.time * 0.25));
     ctx.globalAlpha = alpha;
     // Phase 18: KO-stunned enemies render in pale-cream + slow-pulse so
     // they read as 'neutralized, waiting to be recruited' rather than
@@ -9284,7 +9296,11 @@ function renderWorld() {
     // Spawn-invuln pulse-flicker is the visual cue for "just respawned,
     // can't be killed yet".
     const aInvuln = a._invulnUntil != null && game.time < a._invulnUntil;
-    if (aInvuln) ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
+    // Phase X — user '看不到剛出生的'. Alpha used to range 0.4-0.9 which
+    // made cream-on-dark allies near-invisible at the trough. Raised to
+    // 0.7-1.0 so the spawn-protect flicker is still readable as "this
+    // unit is invulnerable" while keeping the silhouette legible.
+    if (aInvuln) ctx.globalAlpha = 0.7 + 0.3 * Math.abs(Math.sin(game.time * 0.25));
     drawHumanoid(a.x, a.y, a.angle, a.walkPhase, COLORS.creamDark, false, a);
     if (aInvuln) ctx.globalAlpha = 1;
     // Phase 98 — same "!" alert for friendly NN units. Same combat trigger,
@@ -9344,7 +9360,7 @@ function renderWorld() {
   // Player
   if (player.alive) {
     const pInvuln = player._invulnUntil != null && game.time < player._invulnUntil;
-    if (pInvuln) ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(game.time * 0.25));
+    if (pInvuln) ctx.globalAlpha = 0.7 + 0.3 * Math.abs(Math.sin(game.time * 0.25));
     drawHumanoid(player.x, player.y, player.angle, player.walkPhase, COLORS.black, false, player);
     if (pInvuln) ctx.globalAlpha = 1;
   }
