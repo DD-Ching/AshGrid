@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=116"></script>
-<script src="js/arena_recruitment.js?v=116"></script>
-<script src="js/dynamic_radio.js?v=116"></script>
-<script src="js/i18n.js?v=116"></script>
-<script src="js/touch_input.js?v=116"></script>
-<script src="js/key_bindings.js?v=116"></script>
-<script src="js/grenades.js?v=116"></script>
-<script src="js/squad_commands.js?v=116"></script>
-<script src="js/multiplayer.js?v=116"></script>
-<script src="js/leaderboard.js?v=116"></script>
-<script src="js/structures.js?v=116"></script>
-<script src="js/tod.js?v=116"></script>
-<script src="js/weapons.js?v=116"></script>
-<script src="js/chassis.js?v=116"></script>
-<script src="js/respawn_buff.js?v=116"></script>
-<script src="js/death_recap.js?v=116"></script>
-<script src="js/mote_affinity.js?v=116"></script>
-<script src="js/stage_hints.js?v=116"></script>
-<script src="js/pawn_swap.js?v=116"></script>
-<script src="js/global_stats.js?v=116"></script>
-<script src="js/progressive_unlock.js?v=116"></script>
-<script src="js/ad_stubs.js?v=116"></script>
+<script src="js/audio/sfx.js?v=117"></script>
+<script src="js/arena_recruitment.js?v=117"></script>
+<script src="js/dynamic_radio.js?v=117"></script>
+<script src="js/i18n.js?v=117"></script>
+<script src="js/touch_input.js?v=117"></script>
+<script src="js/key_bindings.js?v=117"></script>
+<script src="js/grenades.js?v=117"></script>
+<script src="js/squad_commands.js?v=117"></script>
+<script src="js/multiplayer.js?v=117"></script>
+<script src="js/leaderboard.js?v=117"></script>
+<script src="js/structures.js?v=117"></script>
+<script src="js/tod.js?v=117"></script>
+<script src="js/weapons.js?v=117"></script>
+<script src="js/chassis.js?v=117"></script>
+<script src="js/respawn_buff.js?v=117"></script>
+<script src="js/death_recap.js?v=117"></script>
+<script src="js/mote_affinity.js?v=117"></script>
+<script src="js/stage_hints.js?v=117"></script>
+<script src="js/pawn_swap.js?v=117"></script>
+<script src="js/global_stats.js?v=117"></script>
+<script src="js/progressive_unlock.js?v=117"></script>
+<script src="js/ad_stubs.js?v=117"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=116"></script>
+<script src="js/crazygames.js?v=117"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=116"></script>
+<script src="js/gamemonetize.js?v=117"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=116"></script>
-<script src="js/world_gen.js?v=116"></script>
-<script src="js/squad.js?v=116"></script>
-<script src="js/drone_fpv.js?v=116"></script>
-<script src="js/vision_raycast.js?v=116"></script>
-<script src="js/camera.js?v=116"></script>
-<script src="js/defense_build_ui.js?v=116"></script>
-<script src="js/pause.js?v=116"></script>
+<script src="js/missions/nn_deathmatch.js?v=117"></script>
+<script src="js/world_gen.js?v=117"></script>
+<script src="js/squad.js?v=117"></script>
+<script src="js/drone_fpv.js?v=117"></script>
+<script src="js/vision_raycast.js?v=117"></script>
+<script src="js/camera.js?v=117"></script>
+<script src="js/defense_build_ui.js?v=117"></script>
+<script src="js/pause.js?v=117"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -7809,6 +7809,10 @@ function updateFPV() {
     fpv.trail[i].life--;
     if (fpv.trail[i].life <= 0) fpv.trail.splice(i, 1);
   }
+  // User '自殺式無人機要像是Q無人機一樣不受牆壁限制 要靠撞到人或是空白鍵':
+  // FPV passes through walls / buildings / overheads like the UAV — only
+  // a person-hit OR manual SPACE detonate ends the run. World bounds clamp
+  // (like UAV) instead of detonating, so the drone can't fly off forever.
   let exploded = false;
   for (const e of enemies) {
     if (!e.alive) continue;
@@ -7818,13 +7822,27 @@ function updateFPV() {
     if (!d.alive) continue;
     if (Math.hypot(fpv.x-d.x, fpv.y-d.y) < d.radius+10) { exploded = true; break; }
   }
-  if (!exploded) for (const bd of buildings) {
-    if (fpv.x > bd.x && fpv.x < bd.x+bd.w && fpv.y > bd.y && fpv.y < bd.y+bd.h) { exploded = true; break; }
+  // MP hit: enemy server bots (team 1) + remote humans. Without this the
+  // FPV is useless online — would fly past MP targets and only trigger on
+  // SPACE. Damage still propagates via _mpBroadcastExplosion → server AOE.
+  if (!exploded && typeof _mpState !== 'undefined' && _mpState.enabled) {
+    if (_mpState.remoteBots) {
+      for (const rb of _mpState.remoteBots.values()) {
+        if (!rb.alive || rb.team === 0) continue;
+        if (Math.hypot(fpv.x-rb.x, fpv.y-rb.y) < (rb.radius || 14)+10) { exploded = true; break; }
+      }
+    }
+    if (!exploded && _mpState.remotePlayers) {
+      for (const [pid, rp] of _mpState.remotePlayers) {
+        if (!rp || !rp.alive || pid === _mpState.myId) continue;
+        if (Math.hypot(fpv.x-rp.x, fpv.y-rp.y) < (rp.radius || 14)+10) { exploded = true; break; }
+      }
+    }
   }
-  if (!exploded) for (const o of overheads) {
-    if (fpv.x > o.x && fpv.x < o.x+o.w && fpv.y > o.y && fpv.y < o.y+o.h) { exploded = true; break; }
-  }
-  if (fpv.x < 0 || fpv.x > WORLD.w || fpv.y < 0 || fpv.y > WORLD.h) exploded = true;
+  if (fpv.x < 20) fpv.x = 20;
+  if (fpv.x > WORLD.w-20) fpv.x = WORLD.w-20;
+  if (fpv.y < 20) fpv.y = 20;
+  if (fpv.y > WORLD.h-20) fpv.y = WORLD.h-20;
   if (exploded) _detonateFPV(false);
 }
 
