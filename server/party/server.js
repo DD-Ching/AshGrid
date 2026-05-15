@@ -107,58 +107,50 @@ const _NN_MOVE_DIRS = [
 const _NN_MIRROR_MOVE = [0, 1, 8, 7, 6, 5, 4, 3, 2];
 const _NN_OBS_BUF = new Float32Array(65);
 
-const TICK_HZ           = 30;
+// Phase 4 — server tick rate bumped 30 Hz → 60 Hz. CF/PartyKit has the
+// CPU headroom and the player benefit is real: input-to-action latency
+// drops by up to 16 ms (one extra tick within the 33 ms input cycle).
+// History granularity for lag-comp also doubles, sharpening "favor the
+// shooter" outcomes.
+//
+// To keep gameplay velocity / fire rate / range identical, EVERY per-
+// tick constant rescales:
+//   - SPEED constants (px/tick)   halve   (60 ticks × half = same px/s)
+//   - DURATION constants (ticks)  double  (double ticks × half tick = same s)
+//
+// TICK_FACTOR is the integer scale (30→60 = ×2). Grep for it in this
+// file to find every retuned literal. Same factor applies to the sim
+// modules in server/party/sim/* — see comments there.
+const TICK_HZ           = 60;
+const TICK_FACTOR       = TICK_HZ / 30;  // 2 — multiplier vs the 30-Hz baseline
 const TICK_MS           = 1000 / TICK_HZ;
-// Phase 3.1 — snapshot every tick (30 Hz broadcast, was every 2 ticks = 15
-// Hz). Doubles outbound bandwidth from server but fills the client's
-// interp buffer with twice as many samples, halving the worst-case
-// snapshot gap (was 66 ms → now 33 ms). CF Workers / PartyKit has plenty
-// of CPU + bandwidth headroom (`srv tick` was 0.00 ms on a 33 ms budget).
-// Visible benefit: remote players stop "skipping" between samples on
-// busy frames; lag-comp rewind window shrinks; hit feedback feels
-// snappier. Per-receiver AOI culling (Phase 3.2) will claw back the
-// bandwidth in crowded rooms.
-const SNAPSHOT_EVERY    = 1;          // every tick → ~30Hz broadcast
+// Snapshot every 2 ticks keeps the 30 Hz broadcast rate established in
+// Phase 3.1 (raised from 15 Hz). Doubling tick rate without doubling
+// snapshot rate gives finer SIMULATION but the same NETWORK pacing —
+// good trade-off since per-snapshot client work is dominant.
+const SNAPSHOT_EVERY    = 2;          // 2 ticks @ 60Hz = 30Hz broadcast
 const PLAYER_RADIUS     = 14;
-const PLAYER_SPEED      = 5.6;        // px per tick at 30Hz = ~168 px/sec.
-                                      // Matches index.html's NN.PLAYER_SPEED (2.8) × 60fps frame
-                                      // rate, so client-side prediction (which moves per frame at
-                                      // 2.8) and server tick (30Hz at 5.6) agree on apparent
-                                      // velocity → reconciliation is a no-op in steady state.
+const PLAYER_SPEED      = 5.6 / TICK_FACTOR;   // 2.8 — half of 30-Hz baseline
 const ARENA_W           = 1800;
 const ARENA_H           = 1800;
 const ARENA_PAD         = 50;         // wall margin
-// Phase 3 — initial squad of server-side bots when a phase3 client
-// connects. Bumped to 6 once ONNX inference replaces the random-walk
-// MVP; for now 4 keeps the visual + bandwidth load easy to eyeball.
-// Phase 3.3 — squad bumped 4 → 8. NN inference is ~32 µs per bot, so
-// 8 bots × 30 Hz = 7.7 ms CPU/sec — still well under the 33 ms tick
-// budget. Doubles combat density; user '戰鬥太稀疏'.
+// Phase 3.3 — 8 bots. NN inference is ~32 µs per bot × 60 Hz = ~15 ms
+// CPU/sec — still <50% of the 16 ms tick budget at 60 Hz.
 const NN_BOTS_INITIAL   = 8;
-// Phase 3c — bot movement speed at 30 Hz. Same per-second as the
-// human PLAYER_SPEED (5.6 × 30 = 168 px/sec); bots and humans move
-// at the same pace so engagements feel even.
-const BOT_SPEED_PER_TICK = 4.5;
-// Phase 3f — dead bots respawn after this many ticks at a fresh
-// random arena position with full HP. Mirrors the legacy client-side
-// wave-spawner cadence but per-individual (simpler than the team-wipe
-// state machine; that goes server-side in a later phase).
-const BOT_RESPAWN_TICKS = 5 * 30;     // 5 s @ 30 Hz
+// Phase 4 — half per-tick speed so 60 Hz × half = same 135 px/sec bot
+// velocity as before.
+const BOT_SPEED_PER_TICK = 4.5 / TICK_FACTOR;  // 2.25
+const BOT_RESPAWN_TICKS = 5 * TICK_HZ;     // 5 s
 const HP_MAX            = 100;
-const INVULN_TICKS      = 90;         // 3s spawn protection
-// Phase 60: respawn time is ad-buffable. Default 15s (450 ticks @ 30Hz),
-// buffed 5s (150 ticks). Client sends `buffActive: boolean` in every input
-// payload — server reads the latest value when the player dies and stamps
-// the respawn deadline using the corresponding constant. Client UI countdown
-// at multiplayer.js:579 / 588 reads window.getRespawnSeconds() which honors
-// the same localStorage flag, so client + server agree on what the player
-// sees. If you change one constant, change the matching one (DEFAULT_SEC /
-// BUFFED_SEC in js/respawn_buff.js).
-const RESPAWN_TICKS_DEFAULT = 450;    // 15s @ 30Hz (no ad watched)
-const RESPAWN_TICKS_BUFFED  = 150;    // 5s @ 30Hz (ad watched in last 30 min)
-const FIRE_COOLDOWN     = 6;          // ticks between shots (≈ 5 shots/sec)
-const BULLET_SPEED      = 14;
-const BULLET_LIFE       = 60;         // ticks
+const INVULN_TICKS      = 3 * TICK_HZ;     // 3 s spawn protection
+// Phase 60: respawn time is ad-buffable (DEFAULT_SEC / BUFFED_SEC in
+// js/respawn_buff.js). Both phrased in seconds × TICK_HZ so changing
+// TICK_HZ doesn't drift the player-visible countdown.
+const RESPAWN_TICKS_DEFAULT = 15 * TICK_HZ;  // 15 s
+const RESPAWN_TICKS_BUFFED  = 5  * TICK_HZ;  // 5 s
+const FIRE_COOLDOWN     = 6 * TICK_FACTOR;   // 12 ticks @ 60Hz = 200 ms = ~5 shots/sec
+const BULLET_SPEED      = 14 / TICK_FACTOR;  // 7 — half of 30-Hz baseline
+const BULLET_LIFE       = 60 * TICK_FACTOR;  // 120 ticks @ 60Hz = 2 s
 const BULLET_DAMAGE     = 25;
 const BULLET_OFFSET     = 18;         // spawn distance from player center
 
@@ -178,10 +170,10 @@ const BULLET_OFFSET     = 18;         // spawn distance from player center
 // cost of fairness for the shooter. The alternative — only counting hits
 // that land on the target's current position — punishes high-ping players
 // disproportionately. CS-style favor-the-shooter is the established norm.
-const HISTORY_TICKS     = 30;         // 1 second of position history per player
-const LAG_INTERP_OFFSET = 3;          // matches client's MP_INTERP_DELAY (100ms = 3 ticks)
-const LAG_COMP_MAX      = 18;         // cap rewind at 600ms — beyond this we don't trust
-                                      //   the prediction; client is too laggy to favor.
+const HISTORY_TICKS     = 1 * TICK_HZ;       // 1 s of position history per player
+const LAG_INTERP_OFFSET = 3 * TICK_FACTOR;   // 6 ticks @ 60Hz = 100 ms — matches client interp
+const LAG_COMP_MAX      = 18 * TICK_FACTOR;  // 36 ticks @ 60Hz = 600 ms cap — beyond this
+                                             //   prediction is not trustworthy.
 
 // Phase 41: server-side wall data for the "industrial" arena. Mirrors the
 // procedural map in /js/missions/nn_arena_variants.js (the 'industrial'
@@ -567,7 +559,9 @@ export default class AshGridRoom {
         let dAng = desired - b.angle;
         while (dAng > Math.PI)  dAng -= Math.PI * 2;
         while (dAng < -Math.PI) dAng += Math.PI * 2;
-        b.angle += dAng * 0.22;
+        b.angle += dAng * (0.22 / TICK_FACTOR);   // Phase 4: 0.11 @ 60Hz so the time
+                                                  // constant of the aim-lerp stays the
+                                                  // same in seconds (~0.5 s to converge)
       }
 
       buildObs(b, friendlies, enemies, _NN_OBS_BUF, flipX);
@@ -1043,7 +1037,7 @@ export default class AshGridRoom {
           const dx = bot.x - cx, dy = bot.y - cy;
           if (dx * dx + dy * dy < botR2) {
             bot.hp -= b.damage;
-            bot._recentDmg = 90;       // 1.5s 'under fire' for the obs feature
+            bot._recentDmg = 90 * TICK_FACTOR;       // 1.5s 'under fire' for the obs feature
             consumed = true;
             this.party.broadcast(JSON.stringify({
               type: 'hit', victim: bot.id, shooter: b.shooterId,
@@ -1319,7 +1313,7 @@ export default class AshGridRoom {
         t: p.lastInputT || 0,
       };
       if (this.tickCount < p.invulnUntil) entry.invuln = true;
-      const nameStale = (this.tickCount - (p._lastNameSentTick || 0)) >= 30;
+      const nameStale = (this.tickCount - (p._lastNameSentTick || 0)) >= TICK_HZ;   // 1 s
       const nameChanged = p.name !== p._lastSentName;
       if (nameStale || nameChanged) {
         entry.name = p.name;

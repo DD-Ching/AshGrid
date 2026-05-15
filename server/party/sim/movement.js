@@ -10,8 +10,11 @@
 //
 // See js/sim/movement.js for the full design comment.
 
-const PLAYER_SPEED_PER_TICK  = 5.6;
-const PLAYER_SPEED_PER_FRAME = 2.8;
+// Phase 4 — server tick rate doubled 30 Hz → 60 Hz. Per-tick speed halved
+// to keep px/sec constant. PER_TICK now equals PER_FRAME because both
+// the client's render frame and the server's tick share the 60 Hz beat.
+const PLAYER_SPEED_PER_TICK  = 2.8;   // was 5.6 at 30 Hz tick
+const PLAYER_SPEED_PER_FRAME = 2.8;   // unchanged — client per-frame stays 60 fps
 const SPRINT_SPEED_MUL       = 1.65;
 const PLAYER_RADIUS          = 14;
 
