@@ -510,19 +510,20 @@ function _mpHandleSnapshot(snap) {
         if (_ignoreReconcile) {
           player._reconcileErr = null;
         } else if (isV2) {
-          // Phase 3-followup — Chrome MCP measurement: sprinting north
-          // for 1 s at localhost RTT had err climb 22 → 111 px before
-          // catching back to 33 px (steady-state prediction lead). On
-          // production with 30-60 ms RTT, the climb is ~1.5× larger so
-          // err easily hits 150 px on the way up → snap → user feels
-          // rubber-band even though no spread-error is running.
+          // Phase 3-followup — user '按Shift在衝刺的時候往回閃 尤其嚴重'
+          // after the 280 px threshold. Sprint transient on production
+          // RTT can still touch 280-400 px before server catches up.
+          // Every brush against the snap was a visible jerk backward.
           //
-          // Raising the snap threshold to 280 absorbs the transient
-          // sprint-start lead without triggering snap, while still
-          // catching real teleports / respawn / lag-spikes. Steady-
-          // state drift naturally bleeds back to ~33 px once server
-          // catches up on its tick.
-          if (dist > 280) {
+          // Resolution: in v2 the dist-based fallback snap exists ONLY
+          // as a safety net for genuine bugs (NaN, sim divergence). All
+          // real-game position changes already have explicit handlers:
+          //   - Respawn: _mpRespawnLocalPlayer() snaps player.x = sp.x
+          //   - Pawn-swap: _mpIgnoreReconcileUntil window skips reconcile
+          //   - Teleport: none in v2 yet (Phase 4 might add it)
+          // So we raise the bar to 1500 px (most of arena width). Sprint
+          // transient never approaches that; only a sim explosion would.
+          if (dist > 1500) {
             player.x = predX; player.y = predY;
           }
           player._reconcileErr = null;
