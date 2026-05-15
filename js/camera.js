@@ -28,6 +28,19 @@ const CAMERA_MODES = [
     target:   () => ({ x: NN_ARENA.x0 + NN_ARENA.w / 2, y: NN_ARENA.y0 + NN_ARENA.h / 2 }),
     scale:    () => Math.min(W() / (NN_ARENA.w + 200), H() / (NN_ARENA.h + 200)),
     rotation: () => 0 },
+  // mpDead — player is dead in MP arena. Pull the camera to an arena-wide
+  // overview so the player feels they've LEFT the field while waiting for
+  // respawn, instead of being stuck staring at their own corpse from the
+  // kill spot. User: '我只是看著地圖而已,我就是完全離開了這個地方,
+  // 時間到的時候我才回來'. Outranks drone/fpv/command so the view doesn't
+  // stay glued to whatever vehicle was active when we died.
+  { id: 'mpDead',
+    when:     () => typeof _mpState !== 'undefined' && _mpState && _mpState.enabled
+                    && typeof player !== 'undefined' && !player.alive
+                    && game.state === 'playing',
+    target:   () => ({ x: NN_ARENA.x0 + NN_ARENA.w / 2, y: NN_ARENA.y0 + NN_ARENA.h / 2 }),
+    scale:    () => Math.min(W() / (NN_ARENA.w + 200), H() / (NN_ARENA.h + 200)),
+    rotation: () => 0 },
   { id: 'drone',
     when:     () => game.mode === 'drone' && drone.deployed,
     target:   () => drone,

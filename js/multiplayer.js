@@ -757,6 +757,14 @@ function _mpHandleKill(data) {
 
   // Local player got killed?
   if (data.victim === _mpState.myId && typeof player !== 'undefined') {
+    // Phase X — duplicate-kill guard. Once we're already dead, a second
+    // 'kill' event for us would re-stamp _killedAtTime + _respawnAt and
+    // restart the countdown from 15 s — exactly the bug the user described
+    // ('唯一復活時間一到又馬上開始重新倒數,這令人崩潰'). Server-side hit
+    // detection skips dead players so duplicates shouldn't happen, but stray
+    // broadcasts (catch-up after lag, AOE explosion echoes) can still arrive.
+    // Drop them here so the death/respawn cycle stays clean.
+    if (!player.alive) return;
     if (typeof _lbBumpDeath === 'function') _lbBumpDeath();
     player.alive = false;
     player._killer = { callsign: shooterName };
@@ -822,6 +830,12 @@ function _mpSendRaw(payload) {
 function _mpSendInput() {
   if (!_mpState.enabled) return;
   if (typeof player === 'undefined') return;
+  // Phase X — don't transmit movement / fire intent while locally dead.
+  // Server already ignores inputs for dead players (server.js:882), so this
+  // is purely about keeping the dead-state isolation clean: no possibility
+  // of the avatar twitching mid-respawn from late-arriving inputs, no wasted
+  // bandwidth. User: '死掉之後就不要再跟這個東西有關聯了'.
+  if (!player.alive) return;
   const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
   if (now - _mpState.lastSendAt < MP_INPUT_PERIOD) return;
   _mpState.lastSendAt = now;
@@ -1357,6 +1371,14 @@ function _mpRespawnLocalPlayer() {
   player.ammo = player.maxAmmo;
   player.reserve = Math.max(player.reserve || 0, 120);
   player.reloading = false;
+  // Phase X — locally enforce 3 s spawn protection. Server already grants
+  // INVULN_TICKS = 3s and stamps sp.invuln=true on the snapshot, but delta
+  // compression can omit it on subsequent ticks, and the NN-bot bullets that
+  // live client-only would otherwise be able to one-shot the freshly-spawned
+  // player before the snapshot syncs. User: '我就是完全離開了這個地方,
+  // 時間到的時候我才回來' — coming back must feel safe, not pre-killed.
+  const _gt = (typeof game !== 'undefined' && game.time) ? game.time : 0;
+  player._invulnUntil = Math.max(player._invulnUntil || 0, _gt + 180);
   // Phase 59: clear the per-player death markers so the dead-state overlay
   // (index.html:9546) hides + the snapshot dead→alive check no longer fires
   // until the next kill.
