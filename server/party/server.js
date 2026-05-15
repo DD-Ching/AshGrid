@@ -119,13 +119,12 @@ const _NN_OBS_BUF = new Float32Array(65);
 // Non-integer factor (3.333) means some derived tick counts are floats
 // (e.g. bot _fireCd = wsim.fireCdTicks | 0 already truncates; lag-comp
 // uses Math.round). Doesn't affect game balance.
-const TICK_HZ           = 100;
-const TICK_FACTOR       = TICK_HZ / 30;     // 3.333 — multiplier vs the 30-Hz baseline
+const TICK_HZ           = 200;
+const TICK_FACTOR       = TICK_HZ / 30;     // 6.667 — multiplier vs the 30-Hz baseline
 const TICK_MS           = 1000 / TICK_HZ;
-// Snapshot every 3 ticks @ 100 Hz = 33.3 Hz broadcast — close to the
-// 30 Hz set in Phase 3.1. Network pacing stays the same while sim
-// granularity bumps 1.67× (60 Hz → 100 Hz).
-const SNAPSHOT_EVERY    = 3;          // 3 ticks @ 100Hz = 33Hz broadcast
+// Snapshot every 6 ticks @ 200 Hz = 33.3 Hz broadcast — keep network
+// pacing constant while simulation runs 6.67× the original 30 Hz.
+const SNAPSHOT_EVERY    = 6;          // 6 ticks @ 200Hz = 33Hz broadcast
 const PLAYER_RADIUS     = 14;
 const PLAYER_SPEED      = 5.6 / TICK_FACTOR;   // 2.8 — half of 30-Hz baseline
 const ARENA_W           = 1800;

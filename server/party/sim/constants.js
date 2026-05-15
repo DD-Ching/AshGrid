@@ -11,12 +11,12 @@
 // from TICK_HZ so a future change is a one-liner. All gameplay values
 // stay constant in seconds / px/sec / range-in-pixels regardless of
 // tick rate.
-const TICK_HZ                = 100;        // was 60 (Phase 4), 30 (baseline)
+const TICK_HZ                = 200;        // was 100 (Phase 4b), 60 (Phase 4), 30 (baseline)
 const TICK_FACTOR            = TICK_HZ / 30;
 const TICK_MS                = 1000 / TICK_HZ;
 const FRAME_HZ               = 60;
 const FRAME_MS               = 1000 / FRAME_HZ;
-const SNAPSHOT_EVERY_TICKS   = 3;          // 100/3 ≈ 33 Hz broadcast
+const SNAPSHOT_EVERY_TICKS   = 6;          // 200/6 ≈ 33 Hz broadcast (unchanged)
 const FRAMES_PER_TICK        = FRAME_HZ / TICK_HZ;
 
 const PLAYER_SPEED_PER_TICK  = 5.6 / TICK_FACTOR;   // 1.68 @ 100 Hz (= 168 px/sec)

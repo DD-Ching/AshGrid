@@ -10,10 +10,12 @@
 //
 // See js/sim/movement.js for the full design comment.
 
-// Phase 4b — server tick 30 Hz → 100 Hz. Per-tick speed = 5.6 / (100/30)
-// ≈ 1.68 keeps the apparent px/sec velocity unchanged.
-const PLAYER_SPEED_PER_TICK  = 1.68;  // was 2.8 @ 60 Hz, 5.6 @ 30 Hz
-const PLAYER_SPEED_PER_FRAME = 2.8;   // client per-frame stays 60 fps × 2.8 = 168 px/sec
+// Phase 4c — derive PLAYER_SPEED_PER_TICK from constants.js TICK_HZ so a
+// future tick-rate change is a single edit. Baseline reference: 5.6 px/
+// tick at 30 Hz = 168 px/sec. PER_TICK = 168 / TICK_HZ.
+import { TICK_HZ } from './constants.js';
+const PLAYER_SPEED_PER_TICK  = 168 / TICK_HZ;   // 0.84 @ 200 Hz, 1.68 @ 100 Hz, 5.6 @ 30 Hz
+const PLAYER_SPEED_PER_FRAME = 2.8;             // client per-frame stays 60 fps × 2.8 = 168 px/sec
 const SPRINT_SPEED_MUL       = 1.65;
 const PLAYER_RADIUS          = 14;
 
