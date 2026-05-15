@@ -108,6 +108,16 @@ const _mpState = {
   serverSelfAngle:0,
   serverSelfHp:   100,
   serverSelfAlive:true,
+  // Spawn-calibration latch. The very first snapshot we receive AFTER
+  // the game enters 'playing' state force-snaps the local player to
+  // server.x/y, even if dist < 1500 (the persistent-divergence snap
+  // threshold). Without this, client's local spawn (arena center) and
+  // server's chosen spawn diverge by ~400-700 px and the gap NEVER
+  // closes (sustained error stays under 1500, no snap fires). User
+  // saw '走牆穿過去' because their on-screen position differed from
+  // where the server held them; bullets fired from server-pos passed
+  // through "themselves" on the client. One-shot, reset on respawn.
+  _spawnCalibrated: false,
   serverSelfInvuln:false,
   // Phase 39 — RTT (round-trip) latency in ms. Updated whenever we receive
   // a snapshot whose self-entry echoes back a `t` we sent. EMA smoothed so
@@ -450,6 +460,20 @@ function _mpHandleSnapshot(snap) {
       // Dead zone (<3px) silenced entirely so 1-2px snapshot noise never
       // triggers any visible jitter.
       if (typeof player !== 'undefined') {
+        // Spawn-calibration latch: the FIRST snapshot we get while the
+        // game is in 'playing' state force-snaps to server's coords.
+        // Welcome carries no spawn (just id/tick/arena/structures), so
+        // until this fires the local player sits at the menu's default
+        // (~arena center) while the server holds them at their actual
+        // spawn point — a sustained 400-700 px offset that the
+        // threshold-snap below never converges. Reset by
+        // _mpRespawnLocalPlayer for subsequent respawns.
+        if (!_mpState._spawnCalibrated &&
+            typeof game !== 'undefined' && game.state === 'playing') {
+          player.x = predX;
+          player.y = predY;
+          _mpState._spawnCalibrated = true;
+        }
         const dx = predX - player.x, dy = predY - player.y;
         const dist = Math.hypot(dx, dy);
         // Phase 83 — honour _mpIgnoreReconcileUntil. Pawn-swap sets it
@@ -1350,6 +1374,11 @@ function _mpRespawnLocalPlayer() {
   player.x = _mpState.serverSelfX;
   player.y = _mpState.serverSelfY;
   player.ammo = player.maxAmmo;
+  // Respawn re-runs the spawn-calibration latch. The server may place us
+  // at a different spawn point than our last position; without resetting
+  // the latch the player's local pos would drift again until the next
+  // session's first snapshot.
+  _mpState._spawnCalibrated = false;
   player.reserve = Math.max(player.reserve || 0, 120);
   player.reloading = false;
   // Phase 59: clear the per-player death markers so the dead-state overlay
