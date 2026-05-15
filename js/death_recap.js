@@ -274,19 +274,20 @@ function renderDeathRecap() {
     if (!_deathRecap.adReviveUsed && !_alreadyBuffed) {
       const btnW = 360, btnH = 70;
       const btnX = W_ / 2 - btnW / 2;
-      // Phase 99/100 — anchor button BELOW the actual banner stack.
-      // Phase 100 added a 728×90 Leaderboard below the 336×280 primary
-      // (was just 300×250), so the stack's bottom moved further down.
+      // Phase 99/100/101 — anchor button BELOW the actual banner stack.
+      // Phase 101 upgraded the secondary slot 728×90 → 970×250 Billboard,
+      // adding 160 px of height; the centered stack's bottom moves
+      // down by 80 px (160 / 2).
       // The full vertical extent of the centered #respawnAdSlot:
       //   label  ~12       ← "ADVERTISEMENT"
       //   336×280          ← primary
       //   gap    ~12
       //   label  ~12
-      //   728×90           ← leaderboard
-      //   ≈ 406 total, centered at H/2 → bottom ≈ H/2 + 203
+      //   970×250          ← billboard (was 728×90)
+      //   ≈ 566 total, centered at H/2 → bottom ≈ H/2 + 283
       // Hard 30px gap below that. Floor at 0.86H so taller viewports
       // don't leave the button stranded halfway up.
-      const bannerBottom = H_ / 2 + 203;
+      const bannerBottom = H_ / 2 + 283;
       const btnY = Math.max(bannerBottom + 30, Math.round(H_ * 0.86) - btnH / 2);
       _deathRecap.adReviveBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
       const pulse2 = 0.85 + 0.15 * Math.sin(game.time * 0.22);
