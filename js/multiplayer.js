@@ -450,32 +450,32 @@ function _mpHandleSnapshot(snap) {
       // Dead zone (<3px) silenced entirely so 1-2px snapshot noise never
       // triggers any visible jitter.
       if (typeof player !== 'undefined') {
-        // wings.io / krunker / surviv.io reconcile: every snapshot snaps the
-        // local player to predX/predY (= server's authoritative position +
-        // replay of any inputs the server hasn't yet acked). Because
-        //   1. per-frame integration runs SIM.simStepPerFrame  (60 Hz)
-        //   2. replay runs SIM.simStepPerTick                  (30 Hz)
-        //   3. server tick runs simStepPerTickV2 (same code)   (30 Hz)
-        // are all byte-identical, predX should equal player.x to within
-        // sub-pixel — the snap is invisible.
+        // Reconcile: spread the divergence over many frames instead of
+        // snapping every 15Hz snapshot. Snapping at 15Hz produced
+        // small-amplitude high-frequency judder (user '卡頓跳針感幅度變小
+        // 頻率變高') because each snapshot would shove the player by a
+        // pixel or two even when sim math is byte-identical.
         //
-        // If a divergence DOES appear here, it points at a real bug: a
-        // missing multiplier (chassis/weapon/sprint), a collision-geometry
-        // mismatch, or pendingInputs filter dropping the wrong entries.
-        // Suppressing the snap with a 1500 px threshold (the prior cut)
-        // just hid those bugs and let drift accumulate forever — exactly
-        // what surfaced as '子彈直接穿過敵人' (server fired bullets from
-        // server-pos, not the client-rendered pos, so they missed the
-        // visible target by the drift distance).
+        // Now: the per-frame loop reads player._reconcileErr and bleeds
+        // it off at 0.30/frame (≈ half-life 2 frames = 33ms @ 60fps).
+        // Sub-pixel residual just sits there harmlessly.
         //
-        // Pawn-swap still skips reconcile during its 90-frame window so
-        // the swap visually sticks before inputs catch the server up.
+        // Big-divergence safety net: if dist > 300 (teleport / respawn
+        // race / sim explosion), snap immediately — too far to lerp.
+        // Pawn-swap still skips reconcile during its 90-frame window.
         const _ignoreReconcile = (game?.time || 0) < (player._mpIgnoreReconcileUntil || 0);
-        if (!_ignoreReconcile) {
-          player.x = predX;
-          player.y = predY;
+        const _dx = predX - player.x, _dy = predY - player.y;
+        const _dist = Math.hypot(_dx, _dy);
+        if (_ignoreReconcile) {
+          player._reconcileErr = null;
+        } else if (_dist > 300) {
+          player.x = predX; player.y = predY;
+          player._reconcileErr = null;
+        } else if (_dist > 0.5) {
+          player._reconcileErr = { dx: _dx, dy: _dy };
+        } else {
+          player._reconcileErr = null;
         }
-        player._reconcileErr = null;
         // HP has TWO writers because NN bots live client-only (see fire()
         // ghost-bullet note in index.html). min(local, server) picks the
         // lower of:
