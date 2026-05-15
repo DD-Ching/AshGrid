@@ -45,53 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=124"></script>
-<script src="js/arena_recruitment.js?v=124"></script>
-<script src="js/dynamic_radio.js?v=124"></script>
-<script src="js/i18n.js?v=124"></script>
-<script src="js/touch_input.js?v=124"></script>
-<script src="js/key_bindings.js?v=124"></script>
-<script src="js/grenades.js?v=124"></script>
-<script src="js/squad_commands.js?v=124"></script>
-<!-- Phase 1 / 2: shared sim modules (server uses byte-identical ESM
-     mirrors at server/party/sim/*.js). Must load BEFORE multiplayer.js.
-     Parity guard in ai_arena/scripts/check_sim_parity.sh; logic test
-     harness in ai_arena/scripts/test_sim.mjs. -->
-<script src="js/sim/constants.js?v=124"></script>
-<script src="js/sim/movement.js?v=124"></script>
-<script src="js/sim/weapons.js?v=124"></script>
-<script src="js/sim/bullet.js?v=124"></script>
-<script src="js/multiplayer.js?v=124"></script>
-<script src="js/leaderboard.js?v=124"></script>
-<script src="js/structures.js?v=124"></script>
-<script src="js/tod.js?v=124"></script>
-<script src="js/weapons.js?v=124"></script>
-<script src="js/chassis.js?v=124"></script>
-<script src="js/respawn_buff.js?v=124"></script>
-<script src="js/death_recap.js?v=124"></script>
-<script src="js/mote_affinity.js?v=124"></script>
-<script src="js/stage_hints.js?v=124"></script>
-<script src="js/pawn_swap.js?v=124"></script>
-<script src="js/global_stats.js?v=124"></script>
-<script src="js/progressive_unlock.js?v=124"></script>
-<script src="js/ad_stubs.js?v=124"></script>
+<script src="js/audio/sfx.js?v=100"></script>
+<script src="js/arena_recruitment.js?v=100"></script>
+<script src="js/dynamic_radio.js?v=100"></script>
+<script src="js/i18n.js?v=100"></script>
+<script src="js/touch_input.js?v=100"></script>
+<script src="js/key_bindings.js?v=100"></script>
+<script src="js/grenades.js?v=100"></script>
+<script src="js/squad_commands.js?v=100"></script>
+<script src="js/multiplayer.js?v=100"></script>
+<script src="js/leaderboard.js?v=100"></script>
+<script src="js/structures.js?v=100"></script>
+<script src="js/tod.js?v=100"></script>
+<script src="js/weapons.js?v=100"></script>
+<script src="js/chassis.js?v=100"></script>
+<script src="js/respawn_buff.js?v=100"></script>
+<script src="js/death_recap.js?v=100"></script>
+<script src="js/mote_affinity.js?v=100"></script>
+<script src="js/stage_hints.js?v=100"></script>
+<script src="js/pawn_swap.js?v=100"></script>
+<script src="js/global_stats.js?v=100"></script>
+<script src="js/progressive_unlock.js?v=100"></script>
+<script src="js/ad_stubs.js?v=100"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=124"></script>
+<script src="js/crazygames.js?v=100"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=124"></script>
+<script src="js/gamemonetize.js?v=100"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=124"></script>
-<script src="js/world_gen.js?v=124"></script>
-<script src="js/squad.js?v=124"></script>
-<script src="js/drone_fpv.js?v=124"></script>
-<script src="js/vision_raycast.js?v=124"></script>
-<script src="js/camera.js?v=124"></script>
-<script src="js/defense_build_ui.js?v=124"></script>
-<script src="js/pause.js?v=124"></script>
+<script src="js/missions/nn_deathmatch.js?v=100"></script>
+<script src="js/world_gen.js?v=100"></script>
+<script src="js/squad.js?v=100"></script>
+<script src="js/drone_fpv.js?v=100"></script>
+<script src="js/vision_raycast.js?v=100"></script>
+<script src="js/camera.js?v=100"></script>
+<script src="js/defense_build_ui.js?v=100"></script>
+<script src="js/pause.js?v=100"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -3755,24 +3747,6 @@ function startSkirmish() {
 }
 
 async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', weaponId = 'RIFLE', lineup = null, gameMode = 'dm') {
-  // Suppress client-side NN spawn when the server is authoritative for
-  // bots (we'd otherwise render TWO squads — the server's via remoteBots
-  // and our own local NN-driven ones). The runtime discriminator is
-  // simply "am I connected to MP?": in MP, server provides bots; in SP
-  // (offline / local-only), we spawn the local NN squad as before.
-  //
-  // ?nonn=1 stays as an escape hatch for diagnosing whether NN inference
-  // load is causing stutter (user '我也想看看若無nn其他玩家 是否真的就
-  // 不卡'). Without bots the wave spawner short-circuits too; without
-  // that gate, every 15 s a fresh wave would respawn the squad we just
-  // skipped, undermining the diagnostic.
-  const _nonn = (() => {
-    try {
-      const q = new URLSearchParams(location.search);
-      if (q.get('nonn') === '1') return true;
-    } catch (e) { /* fall through */ }
-    return !!(typeof _mpState !== 'undefined' && _mpState && _mpState.enabled);
-  })();
   document.getElementById('start').classList.add('hidden');
   document.getElementById('nnLobby')?.classList.add('hidden');
   document.getElementById('end').classList.add('hidden');
@@ -3807,16 +3781,6 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
 
   blueSize = Math.max(1, Math.min(8, blueSize));
   redSize  = Math.max(1, Math.min(8, redSize));
-  // Phase 1 ?nonn=1 — apply AFTER the Math.max(1) clamp so we can
-  // actually reach redSize=0 (clamp would have bumped it back to 1).
-  // blueSize stays 1 because the spawn loop is `for (i = 1; i < blueSize)`
-  // — that's the player's own slot; below 1 the player wouldn't render.
-  if (_nonn) {
-    blueSize = 1;   // player only, no NN allies
-    redSize  = 0;   // no NN enemies
-    game._nnNoBots = true;   // sticky flag for the mission factory's wave spawner
-    console.log('[nonn] ?nonn=1 → pure-player skirmish: 0 allies, 0 enemies, no waves');
-  }
 
   // Resolve which difficulties + weapons each NN unit will use.
   // If `lineup` is provided (advanced editor), respect per-slot config.
@@ -5217,30 +5181,15 @@ function updateTeamVision() {
     if (!e.alive) continue;
     e._spottedByBlue = isVisibleToFriendly(e.x, e.y);
   }
-  // Perf: reuse a module-level scratch array instead of allocating
-  // (player.alive ? [player] : []).concat(allies.filter(a => a.alive))
-  // every nnTick. That expression generated 2-3 throwaway arrays per
-  // call (the [player] literal, the filter result, the concat result).
-  _blueUnitsBuf.length = 0;
-  if (player.alive) _blueUnitsBuf.push(player);
-  for (let i = 0; i < allies.length; i++) {
-    const a = allies[i];
-    if (a && a.alive) _blueUnitsBuf.push(a);
-  }
-  const blueUnits = _blueUnitsBuf;
-  for (let i = 0; i < blueUnits.length; i++) blueUnits[i]._spottedByRed = false;
-  // Perf: hoist VIEW_RANGE² out of inner loop; index iteration avoids
-  // generator/iterator allocation per outer/inner pass.
-  const viewR2 = NN.VIEW_RANGE * NN.VIEW_RANGE;
-  for (let ei = 0; ei < enemies.length; ei++) {
-    const r = enemies[ei];
-    if (!r || !r.alive) continue;
-    for (let bi = 0; bi < blueUnits.length; bi++) {
-      const t = blueUnits[bi];
+  const blueUnits = (player.alive ? [player] : []).concat(allies.filter(a => a.alive));
+  for (const t of blueUnits) t._spottedByRed = false;
+  for (const r of enemies) {
+    if (!r.alive) continue;
+    for (const t of blueUnits) {
       if (t._spottedByRed) continue;
       const dx = t.x - r.x, dy = t.y - r.y;
       const d2 = dx * dx + dy * dy;
-      if (d2 >= viewR2) continue;
+      if (d2 >= NN.VIEW_RANGE * NN.VIEW_RANGE) continue;
       const dist = Math.sqrt(d2);
       if (!angleInCone(r.angle, effectiveArc(dist), r.x, r.y, t.x, t.y)) continue;
       if (!lineOfSight(r.x, r.y, t.x, t.y)) continue;
@@ -5250,21 +5199,9 @@ function updateTeamVision() {
 }
 
 let _nnInferring = false;
-// Phase 2-perf: reusable scratch arrays for nnTick + updateTeamVision.
-// Cleared and re-populated each tick to avoid the allocation pressure
-// of building `[...allies, ...]` / `.concat(allies.filter(...))` from
-// scratch every dispatcher run.
-const _hostileForEnemyBuf = [];
-const _blueUnitsBuf       = [];
 async function nnTick() {
   if (!NN.loaded || _nnInferring) return;
   if (game.state !== 'playing') return;
-  // Phase 1 diagnostic — ?nonn=1 short-circuits the entire NN dispatcher
-  // so the 60Hz ONNX inference + cone-LoS scan + heatmap tick + obs
-  // batch + 18-action distribution all stay off the main thread. The
-  // flag is set by startNNSkirmish; reading game._nnNoBots is one cmp
-  // vs. re-parsing the URL string every frame.
-  if (game._nnNoBots) return;
   // Run NN dispatcher in campaign too if any unit has _useNN flagged. The
   // skirmish path sets game._nnMode and pre-flags every unit; the campaign
   // path now opts individual enemies in (spawnSoldier + spawnDroneEnemy
@@ -5272,20 +5209,9 @@ async function nnTick() {
   // legacy state machine). User asked for the merge: '把這個做融合,就是
   // 我們現在的NN跟現在的戰役的這個他們原本的程式做融合'.
   if (!game._nnMode) {
-    // Perf: manual loops with early break, no callback alloc per scan.
-    // (Skirmish mode short-circuits this whole block because
-    // game._nnMode is true; campaign mode hits here every nnTick.)
-    let anyNN = false;
-    for (let i = 0; i < enemies.length; i++) {
-      const e = enemies[i];
-      if (e && e.alive && e._useNN) { anyNN = true; break; }
-    }
-    if (!anyNN) {
-      for (let i = 0; i < allies.length; i++) {
-        const a = allies[i];
-        if (a && a.alive && a._useNN) { anyNN = true; break; }
-      }
-    }
+    const anyNN =
+      enemies.some(e => e.alive && e._useNN)
+      || allies.some(a => a.alive && a._useNN);
     if (!anyNN) return;
   }
 
@@ -5305,16 +5231,7 @@ async function nnTick() {
   //   • enemies' hostile = allies + player      (player is on the allies'
   //                                              team but stored separately)
   // Built once per tick so the inner loops don't re-spread the array.
-  //
-  // Perf: re-use a module-level array (length = allies + 1) instead of
-  // allocating a fresh one each tick. nnTick fires at the inference
-  // cadence — even at every-other-frame that's 30 allocations/sec
-  // worth of "allies + player" array garbage, all dropped on the next
-  // tick.
-  _hostileForEnemyBuf.length = 0;
-  for (let i = 0; i < allies.length; i++) _hostileForEnemyBuf.push(allies[i]);
-  if (player.alive) _hostileForEnemyBuf.push(player);
-  const _hostileForEnemy = _hostileForEnemyBuf;
+  const _hostileForEnemy = [...allies, ...(player.alive ? [player] : [])];
 
   const nnUnits = [];
   for (const a of allies) {
@@ -6642,34 +6559,13 @@ function updatePlayer() {
   if (moving) {
     const len = Math.hypot(mx, my);
     mx /= len; my /= len;
-    // Per-frame integration via the SHARED SIM module (js/sim/movement.js).
-    // Byte-identical to the per-tick math the server runs AND the per-tick
-    // replay in _mpHandleSnapshot. Prior to this, the local per-frame path
-    // was hand-coded `player.x += mx * player.speed * (wpnMul * sprintMul)`
-    // — missing the chassis mul that BOTH the server tick AND the replay
-    // pendingInputs loop apply. Result: heavy chassis at sprint drifted up
-    // to 78 px / sec faster on client than on server (=390 px in 5 s, matched
-    // the user's debug-overlay reading of err 370.5 px). The 1500 px snap
-    // threshold + spawn-calibration latch were band-aids over THIS divergence.
-    // Now per-frame, per-tick replay, and server tick all run the same code
-    // path → no accumulated drift, no hidden rubber-band.
+    // Heavy weapons (LMG/SNIPER/SHOTGUN) slow the player; light (SMG) speeds up.
     const wpnMul = (playerWeapon && playerWeapon.speedMul) ? playerWeapon.speedMul : 1.0;
-    const chsMul = (typeof player._chassisSpeedMul === 'number') ? player._chassisSpeedMul : 1.0;
-    if (typeof window.SIM === 'object' && typeof window.SIM.simStepPerFrame === 'function') {
-      const _stepState = { x: player.x, y: player.y, weaponSpeedMul: wpnMul, chassisSpeedMul: chsMul };
-      const _stepInput = { dx: mx, dy: my, sprint: player.sprinting ? 1 : 0 };
-      const _out = window.SIM.simStepPerFrame(_stepState, _stepInput);
-      player.x = _out.x;
-      player.y = _out.y;
-    } else {
-      // Defensive fallback (SIM <script> failed to load) — preserve the
-      // pre-Phase-1 hand-coded path so single-player still works.
-      const speedMul = wpnMul * (player.sprinting ? SPRINT_SPEED_MUL : 1.0);
-      player.x += mx * player.speed * speedMul;
-      player.y += my * player.speed * speedMul;
-    }
-    const _phaseMul = wpnMul * chsMul * (player.sprinting ? SPRINT_SPEED_MUL : 1.0);
-    player.walkPhase += 0.22 * _phaseMul;
+    const sprintMul = player.sprinting ? SPRINT_SPEED_MUL : 1.0;
+    const speedMul = wpnMul * sprintMul;
+    player.x += mx * player.speed * speedMul;
+    player.y += my * player.speed * speedMul;
+    player.walkPhase += 0.22 * speedMul;
     // FTUE step 0 → step 1 advance: detected first WASD movement
     // Footprint trail — every ~30 ticks while moving (any NN / campaign mode)
     if (game.time % 30 === 0) emitFootprint(player);
@@ -6746,58 +6642,50 @@ function tickPlayerCombat(isMoving) {
   if (!player.alive) return;
   const w = playerWeapon;
   const tactical = (game.mode === 'tactical' || game.mode === 'command');
-  // Phase 4b-followup — user '自瞄仍有時無效': tactical view's 60° cone
-  // was too tight for the small targets in industrial map. The bot is
-  // often visually right there but slightly outside the half-cone and
-  // aim-assist refuses to lock. Widen to 90° (was 60°) — still narrow
-  // enough to feel directional but catches anything roughly in front.
-  const ARC_HALF = tactical ? Math.PI / 2 : Math.PI;   // 90° vs 360°
+  const ARC_HALF = tactical ? Math.PI / 3 : Math.PI;   // 60° vs 360°
 
   player._aimAssistLockedAt = null;
   if (player._aimAssist) {
     const RANGE = 700;
     let bestE = null, bestD = Infinity;
-    // Phase 4b-followup — unified aim-assist scan. Pre-refactor we had
-    // THREE near-identical loops (local NN enemies, MP humans, MP
-    // server bots) — each with the same range/cone/LoS gating but
-    // different per-candidate skip rules. Easy to drop one branch
-    // accidentally + drift the gating logic between branches. User:
-    // '簡單最重要 別越補越糟'. One helper, one candidate list.
-    const _consider = (e) => {
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      if (e._koStunned) continue;     // Phase 18: aim-assist ignores stunned
       const dx = e.x - player.x, dy = e.y - player.y;
       const d = Math.hypot(dx, dy);
-      if (d > RANGE) return;
+      if (d > RANGE) continue;
       if (tactical) {
         let diff = Math.atan2(dy, dx) - player.angle;
         while (diff >  Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
-        if (Math.abs(diff) > ARC_HALF) return;
+        if (Math.abs(diff) > ARC_HALF) continue;
       }
-      if (!lineOfSight(player.x, player.y, e.x, e.y)) return;
+      if (!lineOfSight(player.x, player.y, e.x, e.y)) continue;
       if (d < bestD) { bestD = d; bestE = e; }
-    };
-    // Source 1: local NN enemies (SP + legacy MP paths).
-    for (const e of enemies) {
-      if (!e.alive) continue;
-      if (e._koStunned) continue;     // Phase 18: ignore stunned-KOed
-      _consider(e);
     }
-    // Source 2: remote MP humans (Phase 45). Same opponent class as
-    // local NN enemies; server hit-detect already routes our bullets
-    // at them via shooter-team logic.
+    // Phase 45: MP remote players are kept in _mpState.remotePlayers (not in
+    // the enemies[] array NN bots use). Fold them into the aim-assist scan
+    // so the user gets the same lock + auto-fire experience targeting human
+    // opponents that they get against AI. User report: '沒有辦法互相開啟
+    // 送瞄的設計 但是如果朝著那個方向打 打真的會射到互相' — meaning the
+    // SERVER-side hit detection works, but the local aim-assist was blind to
+    // them. Same range / cone / LoS rules as enemies above.
     if (typeof _mpState !== 'undefined' && _mpState.enabled && _mpState.remotePlayers) {
       for (const [id, rp] of _mpState.remotePlayers) {
         if (id === _mpState.myId) continue;
-        if (!rp.alive || rp.invuln) continue;
-        _consider(rp);
-      }
-    }
-    // Source 3: server-side NN bots when phase3 is active. Empty under
-    // legacy paths so this branch is a cheap no-op there.
-    if (typeof _mpState !== 'undefined' && _mpState.enabled && _mpState.remoteBots) {
-      for (const rb of _mpState.remoteBots.values()) {
-        if (!rb.alive || rb.team !== 1) continue;
-        _consider(rb);
+        if (!rp.alive) continue;
+        if (rp.invuln) continue;       // skip spawn-shielded
+        const dx = rp.x - player.x, dy = rp.y - player.y;
+        const d = Math.hypot(dx, dy);
+        if (d > RANGE) continue;
+        if (tactical) {
+          let diff = Math.atan2(dy, dx) - player.angle;
+          while (diff >  Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          if (Math.abs(diff) > ARC_HALF) continue;
+        }
+        if (!lineOfSight(player.x, player.y, rp.x, rp.y)) continue;
+        if (d < bestD) { bestD = d; bestE = rp; }
       }
     }
     if (bestE) {
@@ -7110,12 +6998,7 @@ function updateBullets() {
         if (_t < 0) _t = 0; else if (_t > 1) _t = 1;
       }
       const _cx = _prevX + _segVx * _t, _cy = _prevY + _segVy * _t;
-      // Perf: squared-distance comparison avoids one sqrt per enemy per
-      // bullet per frame. With ~20 bullets × ~16 enemies in flight that's
-      // ~320 sqrt calls/frame saved.
-      const _ddx = _cx - e.x, _ddy = _cy - e.y;
-      const _r = e.radius;
-      if (_ddx * _ddx + _ddy * _ddy < _r * _r) {
+      if (Math.hypot(_cx - e.x, _cy - e.y) < e.radius) {
         // Spawn invuln: still consume the bullet so it doesn't pass through,
         // but don't apply damage. Visually the bullet vanishes on impact.
         if (e._invulnUntil != null && game.time < e._invulnUntil) { hit = true; break; }
@@ -9444,91 +9327,6 @@ function renderWorld() {
     if (pInvuln) ctx.globalAlpha = 1;
   }
 
-  // Server-side bots, rendered whenever the snapshot carries any (MP-
-  // connected sessions only). Smooth-lerp toward snapshot targetX/Y so
-  // 15 Hz network beats don't strobe the render. Drawn via drawHumanoid
-  // for visual parity with local NN allies + other MP players (original
-  // cut drew unkeyed 22×22 squares — user '外型怪').
-  //
-  // Lerp at 0.45 converges in ~2 frames so the muzzle origin ≈ bullet
-  // origin within 1 frame of visual lag. Tighter lerps (0.25) made
-  // server-authoritative bullets appear to leave empty air ahead of the
-  // bot's silhouette (user '莫名其妙朝槍離開槍子彈').
-  if (_mpState && _mpState.remoteBots && _mpState.remoteBots.size > 0) {
-    const lerpK = 0.45;
-    for (const rb of _mpState.remoteBots.values()) {
-      if (!rb.alive) continue;
-      const prevX = rb.x, prevY = rb.y;
-      rb.x += (rb.targetX - rb.x) * lerpK;
-      rb.y += (rb.targetY - rb.y) * lerpK;
-      // Phase 3-followup — fog-of-war cull. AshGrid's design (see
-      // comment in render() at line ~9558) implements fog via NOT
-      // rendering enemies/bots that are outside the player+ally
-      // vision cones. We were drawing every server bot unconditionally,
-      // so '直接看到穿牆的' would show through walls.
-      //
-      // Hysteresis (Phase 4b polish — user '有些人一下消失 一下不消失'):
-      // hard pop-in/pop-out at the cone edge is jarring; we keep the
-      // bot visible for ~30 frames after it was last seen, so brief
-      // dips out of LoS (cone wobble + 15 Hz snapshot stutter)
-      // don't strobe the render. Same trick the NN _nnLastSeenTick
-      // memory uses; here just for visibility.
-      if (rb.team === 1) {
-        const isVis = typeof isVisibleToFriendly === 'function'
-                    && isVisibleToFriendly(rb.x, rb.y);
-        if (isVis) rb._visibleUntil = game.time + 30;
-        if (!isVis && (rb._visibleUntil == null || game.time >= rb._visibleUntil)) continue;
-      }
-      // Walk phase advances proportional to how far we moved this
-      // frame, mirroring drawHumanoid's expectation. Stationary bots
-      // freeze the leg shuffle; moving bots step naturally.
-      const moved = Math.hypot(rb.x - prevX, rb.y - prevY);
-      rb._walkPhase = (rb._walkPhase || 0) + Math.min(0.32, moved * 0.06);
-      // Synthetic unit object — drawHumanoid reads _chassis, radius,
-      // hp, maxHp off the last arg for silhouette + HP shading.
-      const synth = {
-        _chassis: 'humanoid',
-        radius: 14,
-        callsign: `BOT-${String(rb.id).slice(-4)}`,
-        gunAngle: rb.angle,
-        gunRecoil: 0,
-        x: rb.x, y: rb.y,
-        hp: rb.hp, maxHp: 100,
-      };
-      const bodyColor = (rb.team === 0) ? COLORS.creamDark : COLORS.red;
-      drawHumanoid(rb.x, rb.y, rb.angle, rb._walkPhase, bodyColor, rb.team === 1, synth);
-      // Hit-flash: latched by _mpHandleHit for ~8 frames per bullet. Paints
-      // a translucent red circle on top of the bot so the user reads "I
-      // just hit them" without waiting for the next HP-bar tick. Decrement
-      // here (this render path runs every frame at 60 Hz) — no need for a
-      // separate tick loop. User '都沒有損血或中彈的感覺,就突然死掉'.
-      if (rb._hitFlash && rb._hitFlash > 0) {
-        const a = rb._hitFlash / 8;       // 0..1, fades over the 8 frames
-        ctx.fillStyle = `rgba(230, 51, 41, ${0.55 * a})`;
-        ctx.beginPath();
-        ctx.arc(rb.x, rb.y, 18, 0, Math.PI * 2);
-        ctx.fill();
-        rb._hitFlash--;
-      }
-      // HP bar — same dimensions as ally/enemy bars so the eye reads it
-      // identically. Hidden when full.
-      if (rb.hp < 100) {
-        ctx.fillStyle = COLORS.black;
-        ctx.fillRect(rb.x - 15, rb.y - 26, 30, 3);
-        ctx.fillStyle = (rb.team === 0) ? COLORS.creamDark : COLORS.red;
-        ctx.fillRect(rb.x - 15, rb.y - 26, 30 * rb.hp / 100, 3);
-      }
-      // Small server-bot caption — fades into background so it doesn't
-      // dominate visually, but still distinguishes server bots from
-      // any other unit kind during phase3 A/B testing.
-      ctx.fillStyle = 'rgba(255, 210, 74, 0.55)';
-      ctx.font = 'bold 8px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('[S]', rb.x, rb.y - 32);
-      ctx.textAlign = 'left';
-    }
-  }
-
   // Phase 20a/b/24: remote players + bullets + pings + emote bubbles.
   // All no-ops when ?mp=1 absent (emotes still render locally so
   // single-player gets feedback when pressing T).
@@ -11229,50 +11027,7 @@ function drawMinimapPanel(mx, my, mw, mh) {
 // Continuation of renderHUD: mode overlays, crosshair, message banner, dead
 // overlay. Pulled out so the minimap-collapse path can short-circuit cleanly
 // without bailing on these.
-const _MP_DEBUG_OVERLAY = (() => {
-  try { return new URLSearchParams(location.search).get('debug') === '1'; }
-  catch (e) { return false; }
-})();
 function renderHUDOverlays() {
-  // MP debug strip — surfaces per-frame predX/player.x error magnitude
-  // plus RTT and pending-input depth so we can spot reconcile issues at
-  // a glance. Off by default; toggle with ?debug=1 on the URL so the
-  // live ashgrid.io HUD stays clean.
-  try {
-    if (_MP_DEBUG_OVERLAY && _mpState && _mpState.enabled) {
-      const fontPx = 11;
-      ctx.save();
-      ctx.font = `bold ${fontPx}px monospace`;
-      ctx.textAlign = 'left';
-      const lines = [];
-      const sx = Math.round(_mpState.serverSelfX);
-      const sy = Math.round(_mpState.serverSelfY);
-      const px = Math.round(player.x), py = Math.round(player.y);
-      const dErr = Math.hypot(px - sx, py - sy);
-      lines.push('MP DEBUG · ?debug=1');
-      lines.push(`player local  ${px},${py}`);
-      lines.push(`server known  ${sx},${sy}`);
-      lines.push(`err           ${dErr.toFixed(1)} px  ${dErr < 3 ? 'OK' : dErr < 150 ? 'drift' : 'snap'}`);
-      lines.push(`rtt           ${Math.round(_mpState?.rttSmoothed || 0)} ms`);
-      lines.push(`pending in    ${_mpState?.pendingInputs?.length || 0}`);
-      const w = 220, lh = fontPx + 4;
-      const h = lines.length * lh + 12;
-      const x0 = 12, y0 = 12;
-      ctx.fillStyle = 'rgba(20,20,28,0.78)';
-      ctx.fillRect(x0, y0, w, h);
-      ctx.strokeStyle = '#FFD24A';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x0 + 0.5, y0 + 0.5, w, h);
-      ctx.fillStyle = '#FFD24A';
-      ctx.fillText(lines[0], x0 + 8, y0 + lh);
-      ctx.fillStyle = '#E8E4D8';
-      for (let i = 1; i < lines.length; i++) {
-        ctx.fillText(lines[i], x0 + 8, y0 + lh * (i + 1));
-      }
-      ctx.restore();
-    }
-  } catch (e) { /* swallow — debug overlay can never break the frame */ }
-
   // Low-HP vignette — pulsing red edges that close in as HP drops, paired
   // with the heartbeat audio. Only renders once HP drops below 45%.
   if (player.alive && player.maxHp > 0) {
