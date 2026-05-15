@@ -45,53 +45,53 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=117"></script>
-<script src="js/arena_recruitment.js?v=117"></script>
-<script src="js/dynamic_radio.js?v=117"></script>
-<script src="js/i18n.js?v=117"></script>
-<script src="js/touch_input.js?v=117"></script>
-<script src="js/key_bindings.js?v=117"></script>
-<script src="js/grenades.js?v=117"></script>
-<script src="js/squad_commands.js?v=117"></script>
+<script src="js/audio/sfx.js?v=118"></script>
+<script src="js/arena_recruitment.js?v=118"></script>
+<script src="js/dynamic_radio.js?v=118"></script>
+<script src="js/i18n.js?v=118"></script>
+<script src="js/touch_input.js?v=118"></script>
+<script src="js/key_bindings.js?v=118"></script>
+<script src="js/grenades.js?v=118"></script>
+<script src="js/squad_commands.js?v=118"></script>
 <!-- Phase 1 / 2: shared sim modules (server uses byte-identical ESM
      mirrors at server/party/sim/*.js). Must load BEFORE multiplayer.js.
      Parity guard in ai_arena/scripts/check_sim_parity.sh; logic test
      harness in ai_arena/scripts/test_sim.mjs. -->
-<script src="js/sim/constants.js?v=117"></script>
-<script src="js/sim/movement.js?v=117"></script>
-<script src="js/sim/weapons.js?v=117"></script>
-<script src="js/sim/bullet.js?v=117"></script>
-<script src="js/multiplayer.js?v=117"></script>
-<script src="js/leaderboard.js?v=117"></script>
-<script src="js/structures.js?v=117"></script>
-<script src="js/tod.js?v=117"></script>
-<script src="js/weapons.js?v=117"></script>
-<script src="js/chassis.js?v=117"></script>
-<script src="js/respawn_buff.js?v=117"></script>
-<script src="js/death_recap.js?v=117"></script>
-<script src="js/mote_affinity.js?v=117"></script>
-<script src="js/stage_hints.js?v=117"></script>
-<script src="js/pawn_swap.js?v=117"></script>
-<script src="js/global_stats.js?v=117"></script>
-<script src="js/progressive_unlock.js?v=117"></script>
-<script src="js/ad_stubs.js?v=117"></script>
+<script src="js/sim/constants.js?v=118"></script>
+<script src="js/sim/movement.js?v=118"></script>
+<script src="js/sim/weapons.js?v=118"></script>
+<script src="js/sim/bullet.js?v=118"></script>
+<script src="js/multiplayer.js?v=118"></script>
+<script src="js/leaderboard.js?v=118"></script>
+<script src="js/structures.js?v=118"></script>
+<script src="js/tod.js?v=118"></script>
+<script src="js/weapons.js?v=118"></script>
+<script src="js/chassis.js?v=118"></script>
+<script src="js/respawn_buff.js?v=118"></script>
+<script src="js/death_recap.js?v=118"></script>
+<script src="js/mote_affinity.js?v=118"></script>
+<script src="js/stage_hints.js?v=118"></script>
+<script src="js/pawn_swap.js?v=118"></script>
+<script src="js/global_stats.js?v=118"></script>
+<script src="js/progressive_unlock.js?v=118"></script>
+<script src="js/ad_stubs.js?v=118"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=117"></script>
+<script src="js/crazygames.js?v=118"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=117"></script>
+<script src="js/gamemonetize.js?v=118"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=117"></script>
-<script src="js/world_gen.js?v=117"></script>
-<script src="js/squad.js?v=117"></script>
-<script src="js/drone_fpv.js?v=117"></script>
-<script src="js/vision_raycast.js?v=117"></script>
-<script src="js/camera.js?v=117"></script>
-<script src="js/defense_build_ui.js?v=117"></script>
-<script src="js/pause.js?v=117"></script>
+<script src="js/missions/nn_deathmatch.js?v=118"></script>
+<script src="js/world_gen.js?v=118"></script>
+<script src="js/squad.js?v=118"></script>
+<script src="js/drone_fpv.js?v=118"></script>
+<script src="js/vision_raycast.js?v=118"></script>
+<script src="js/camera.js?v=118"></script>
+<script src="js/defense_build_ui.js?v=118"></script>
+<script src="js/pause.js?v=118"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -6733,73 +6733,58 @@ function tickPlayerCombat(isMoving) {
   if (!player.alive) return;
   const w = playerWeapon;
   const tactical = (game.mode === 'tactical' || game.mode === 'command');
-  const ARC_HALF = tactical ? Math.PI / 3 : Math.PI;   // 60° vs 360°
+  // Phase 4b-followup — user '自瞄仍有時無效': tactical view's 60° cone
+  // was too tight for the small targets in industrial map. The bot is
+  // often visually right there but slightly outside the half-cone and
+  // aim-assist refuses to lock. Widen to 90° (was 60°) — still narrow
+  // enough to feel directional but catches anything roughly in front.
+  const ARC_HALF = tactical ? Math.PI / 2 : Math.PI;   // 90° vs 360°
 
   player._aimAssistLockedAt = null;
   if (player._aimAssist) {
     const RANGE = 700;
     let bestE = null, bestD = Infinity;
-    for (const e of enemies) {
-      if (!e.alive) continue;
-      if (e._koStunned) continue;     // Phase 18: aim-assist ignores stunned
+    // Phase 4b-followup — unified aim-assist scan. Pre-refactor we had
+    // THREE near-identical loops (local NN enemies, MP humans, MP
+    // server bots) — each with the same range/cone/LoS gating but
+    // different per-candidate skip rules. Easy to drop one branch
+    // accidentally + drift the gating logic between branches. User:
+    // '簡單最重要 別越補越糟'. One helper, one candidate list.
+    const _consider = (e) => {
       const dx = e.x - player.x, dy = e.y - player.y;
       const d = Math.hypot(dx, dy);
-      if (d > RANGE) continue;
+      if (d > RANGE) return;
       if (tactical) {
         let diff = Math.atan2(dy, dx) - player.angle;
         while (diff >  Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
-        if (Math.abs(diff) > ARC_HALF) continue;
+        if (Math.abs(diff) > ARC_HALF) return;
       }
-      if (!lineOfSight(player.x, player.y, e.x, e.y)) continue;
+      if (!lineOfSight(player.x, player.y, e.x, e.y)) return;
       if (d < bestD) { bestD = d; bestE = e; }
+    };
+    // Source 1: local NN enemies (SP + legacy MP paths).
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      if (e._koStunned) continue;     // Phase 18: ignore stunned-KOed
+      _consider(e);
     }
-    // Phase 45: MP remote players are kept in _mpState.remotePlayers (not in
-    // the enemies[] array NN bots use). Fold them into the aim-assist scan
-    // so the user gets the same lock + auto-fire experience targeting human
-    // opponents that they get against AI. User report: '沒有辦法互相開啟
-    // 送瞄的設計 但是如果朝著那個方向打 打真的會射到互相' — meaning the
-    // SERVER-side hit detection works, but the local aim-assist was blind to
-    // them. Same range / cone / LoS rules as enemies above.
+    // Source 2: remote MP humans (Phase 45). Same opponent class as
+    // local NN enemies; server hit-detect already routes our bullets
+    // at them via shooter-team logic.
     if (typeof _mpState !== 'undefined' && _mpState.enabled && _mpState.remotePlayers) {
       for (const [id, rp] of _mpState.remotePlayers) {
         if (id === _mpState.myId) continue;
-        if (!rp.alive) continue;
-        if (rp.invuln) continue;       // skip spawn-shielded
-        const dx = rp.x - player.x, dy = rp.y - player.y;
-        const d = Math.hypot(dx, dy);
-        if (d > RANGE) continue;
-        if (tactical) {
-          let diff = Math.atan2(dy, dx) - player.angle;
-          while (diff >  Math.PI) diff -= Math.PI * 2;
-          while (diff < -Math.PI) diff += Math.PI * 2;
-          if (Math.abs(diff) > ARC_HALF) continue;
-        }
-        if (!lineOfSight(player.x, player.y, rp.x, rp.y)) continue;
-        if (d < bestD) { bestD = d; bestE = rp; }
+        if (!rp.alive || rp.invuln) continue;
+        _consider(rp);
       }
     }
-    // Phase 3-followup — fold server-side bots (team 1) into the aim-
-    // assist scan. The legacy enemies[] is empty under phase3 because
-    // the client doesn't spawn its own NN; without this branch the
-    // user gets aim-assist on humans but never on server bots. User:
-    // '自動瞄準還是沒有生效'. Same range / cone / LoS gating as the
-    // other branches above.
+    // Source 3: server-side NN bots when phase3 is active. Empty under
+    // legacy paths so this branch is a cheap no-op there.
     if (typeof _mpState !== 'undefined' && _mpState.enabled && _mpState.remoteBots) {
       for (const rb of _mpState.remoteBots.values()) {
-        if (!rb.alive) continue;
-        if (rb.team !== 1) continue;     // only enemies; team-0 are allies
-        const dx = rb.x - player.x, dy = rb.y - player.y;
-        const d = Math.hypot(dx, dy);
-        if (d > RANGE) continue;
-        if (tactical) {
-          let diff = Math.atan2(dy, dx) - player.angle;
-          while (diff >  Math.PI) diff -= Math.PI * 2;
-          while (diff < -Math.PI) diff += Math.PI * 2;
-          if (Math.abs(diff) > ARC_HALF) continue;
-        }
-        if (!lineOfSight(player.x, player.y, rb.x, rb.y)) continue;
-        if (d < bestD) { bestD = d; bestE = rb; }
+        if (!rb.alive || rb.team !== 1) continue;
+        _consider(rb);
       }
     }
     if (bestE) {
