@@ -307,6 +307,37 @@ function _bulletInWall(b) {
   return null;
 }
 
+// Line-of-sight check: returns true iff a straight line from (ax,ay) to
+// (bx,by) is clear of every building. Used by bot aim selection so bots
+// don't keep firing at an enemy who walked behind a wall (the user-
+// reported '敵人還是穿牆攻擊' bug: server bots had a cone-only obs path
+// with no wall test, so they'd pick a hidden target as `nearestE` and
+// keep spawning bullets that just got eaten by _bulletInWall one tick
+// later — wasted CPU + visual confusion).
+//
+// Implementation: parametric ray-AABB step at 16 px increments. For a
+// 1800-px arena and bullet ranges ≤ 1100 the worst case is ~70 samples
+// per check, called once per alive bot per tick (4 bots × 30 Hz = 120/s).
+// Cheap.
+function _hasLineOfSight(ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1) return true;
+  const STEP = 16;
+  const n = Math.ceil(dist / STEP);
+  const nx = dx / n, ny = dy / n;
+  let px = ax, py = ay;
+  for (let i = 1; i < n; i++) {
+    px += nx; py += ny;
+    for (const w of _MAP_BUILDINGS) {
+      if (px >= w.x && px <= w.x + w.w && py >= w.y && py <= w.y + w.h) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 // Test whether a candidate spawn is too close to any building (within
 // PLAYER_RADIUS + small margin). Used by the spawn picker so respawning
 // players never appear half-clipped through a wall.
@@ -501,12 +532,22 @@ export default class AshGridRoom {
       // ~0.5 s). NN obs now sees the enemy in cone, picks fire when
       // the policy says to. Bullet aim direction is set precisely on
       // the fire path below (lead-aim).
+      //
+      // Wall-aware: only pick targets the bot has line-of-sight to.
+      // Without this, bots keep aiming at + spawning bullets toward an
+      // enemy who walked behind a building (user '敵人還是穿牆攻擊').
+      // The bullets got eaten by _bulletInWall one tick later but the
+      // visual silhouette of the bot would still pivot toward the
+      // hidden enemy + the OBS cone-of-vision was reading them as
+      // visible. Now we skip blocked targets entirely.
       let nearestE = null, nearestD2 = Infinity;
       for (const e of enemies) {
         if (!e.alive) continue;
         const ddx = e.x - b.x, ddy = e.y - b.y;
         const d2 = ddx * ddx + ddy * ddy;
-        if (d2 < nearestD2) { nearestD2 = d2; nearestE = e; }
+        if (d2 >= nearestD2) continue;
+        if (!_hasLineOfSight(b.x, b.y, e.x, e.y)) continue;
+        nearestD2 = d2; nearestE = e;
       }
       const NN_AIM_RANGE2 = 1100 * 1100;     // detect a little past view range
       if (nearestE && nearestD2 < NN_AIM_RANGE2) {

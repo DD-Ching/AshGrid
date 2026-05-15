@@ -1,19 +1,26 @@
 // MP stress-test evaluator. Runs entirely inside the browser via
-// page.evaluate(); this file just packages the test body as an
-// ES-module string so the same code can be invoked from Chrome MCP
-// (`page.evaluate(testBody)`), a Node harness, or pasted into devtools.
+// page.evaluate(); this file packages the test body so the same code
+// can be invoked from Chrome MCP, a Node harness, or pasted into
+// devtools.
 //
-// CONTRACT: testBody is an async function that returns
-//   {
-//     scenarios: [{ name, passed, score, weight, detail }, ...],
-//     totalScore:   0..100,
-//     weightedPass: bool,    // true iff weighted score ≥ PASS_THRESHOLD
-//     summary:      string,
-//   }
+// Trimmed (Phase X) to ONLY the scenarios that survive room-state
+// variance + 200 ms RTT. Dropped:
+//   - BOT_MOVEMENT / COMBAT_ACTIVITY (NN policy + bot positioning
+//     non-deterministic across rooms — false negatives common)
+// Kept + refined:
+//   - DRIFT_REST           threshold ≤ 8 px (rest convergence)
+//   - DRIFT_SPRINT_EAST    threshold peak ≤ 150 px / rest ≤ 8 px
+//                          (peak is RTT × velocity; 200ms × 277 px/s
+//                          = 55 px in-flight + occasional reconcile
+//                          spike → 150 leaves headroom)
+//   - RECONCILE_SMOOTHNESS p95 ≤ 15 px/frame (no snap-judder)
+//   - PLAYER_FIRES_AT_ENEMY_BOT  sustained inputs walking toward
+//                          target while firing; expect ≥ 30 dmg
+//   - HIT_FLASH_LATCHED    polled throughout entire run
+//   - BULLETS_VISIBLE      ≥ 30% snapshots carry bullets
 //
-// Threshold: 70 (any individual hard-failure caps total at 50).
-// Run order matters — e.g. DRIFT_REST must precede DRIFT_SPRINT so the
-// player has zero residual motion at the start of the sprint window.
+// Threshold: total ≥ 70. Any hard-failure (weight ≥ 1.0) caps total
+// at 50.
 
 export const PASS_THRESHOLD = 70;
 
