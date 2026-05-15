@@ -109,7 +109,16 @@ const _NN_OBS_BUF = new Float32Array(65);
 
 const TICK_HZ           = 30;
 const TICK_MS           = 1000 / TICK_HZ;
-const SNAPSHOT_EVERY    = 2;          // every 2 ticks → ~15Hz broadcast
+// Phase 3.1 — snapshot every tick (30 Hz broadcast, was every 2 ticks = 15
+// Hz). Doubles outbound bandwidth from server but fills the client's
+// interp buffer with twice as many samples, halving the worst-case
+// snapshot gap (was 66 ms → now 33 ms). CF Workers / PartyKit has plenty
+// of CPU + bandwidth headroom (`srv tick` was 0.00 ms on a 33 ms budget).
+// Visible benefit: remote players stop "skipping" between samples on
+// busy frames; lag-comp rewind window shrinks; hit feedback feels
+// snappier. Per-receiver AOI culling (Phase 3.2) will claw back the
+// bandwidth in crowded rooms.
+const SNAPSHOT_EVERY    = 1;          // every tick → ~30Hz broadcast
 const PLAYER_RADIUS     = 14;
 const PLAYER_SPEED      = 5.6;        // px per tick at 30Hz = ~168 px/sec.
                                       // Matches index.html's NN.PLAYER_SPEED (2.8) × 60fps frame
@@ -122,7 +131,10 @@ const ARENA_PAD         = 50;         // wall margin
 // Phase 3 — initial squad of server-side bots when a phase3 client
 // connects. Bumped to 6 once ONNX inference replaces the random-walk
 // MVP; for now 4 keeps the visual + bandwidth load easy to eyeball.
-const NN_BOTS_INITIAL   = 4;
+// Phase 3.3 — squad bumped 4 → 8. NN inference is ~32 µs per bot, so
+// 8 bots × 30 Hz = 7.7 ms CPU/sec — still well under the 33 ms tick
+// budget. Doubles combat density; user '戰鬥太稀疏'.
+const NN_BOTS_INITIAL   = 8;
 // Phase 3c — bot movement speed at 30 Hz. Same per-second as the
 // human PLAYER_SPEED (5.6 × 30 = 168 px/sec); bots and humans move
 // at the same pace so engagements feel even.
@@ -1276,76 +1288,79 @@ export default class AshGridRoom {
   }
 
   _broadcastSnapshot() {
-    const snap = {
-      type: 'snapshot',
-      tick: this.tickCount,
-      // Server clock at broadcast time. Clients use it to align the
-      // snapshot interpolation buffer to a single shared reference, so
-      // remote players move in straight lines between known samples
-      // instead of easing-toward-target (the "slug crawl" you'd see with
-      // pure lerp).
-      sT: Date.now(),
-      // Phase 2 net-audit trim:
-      //  - `name`: send only when changed or every NAME_REFRESH_TICKS so
-      //    we don't ship the same string every 33 ms. Client keeps last-
-      //    seen name on remotePlayers[id].name; missing on a snapshot ⇒
-      //    no overwrite (see `if (sp.name) rp.name = sp.name` in handler).
-      //  - `invuln`: only set when true. JSON drops undefined keys, and
-      //    the client reads `!!sp.invuln` so missing == false. The flag
-      //    is only true during 3 s spawn protection, so most snapshots
-      //    save ~12-14 bytes/player.
-      players: [...this.players.values()].map(p => {
-        const entry = {
-          id: p.id,
-          x: round1(p.x),
-          y: round1(p.y),
-          angle: round3(p.angle),
-          hp: p.hp,
-          alive: p.alive,
-          lastInputSeq: p.lastInputSeq,
-          // Latest client timestamp echoed back. Per-player so each client's
-          // own entry has its own t for an accurate self-RTT measurement.
-          t: p.lastInputT || 0,
-        };
-        if (this.tickCount < p.invulnUntil) entry.invuln = true;
-        const nameStale = (this.tickCount - (p._lastNameSentTick || 0)) >= 30;
-        const nameChanged = p.name !== p._lastSentName;
-        if (nameStale || nameChanged) {
-          entry.name = p.name;
-          p._lastNameSentTick = this.tickCount;
-          p._lastSentName = p.name;
-        }
-        return entry;
-      }),
-      bullets: this.bullets.map(b => ({
-        id: b.id,
-        x: round1(b.x),
-        y: round1(b.y),
-        vx: round1(b.vx),
-        vy: round1(b.vy),
-        s: b.shooterId,
-      })),
-      // Phase 3 — server-side bots. Empty array when no phase3 client
-      // is connected (saves bandwidth + the legacy snapshot reader on
-      // the client just ignores an empty `bots` field).
-      bots: this.simBotsEnabled ? [...this.bots.values()].map(b => ({
-        id: b.id,
-        team: b.team,
-        x: round1(b.x),
-        y: round1(b.y),
-        angle: round3(b.angle),
-        hp: b.hp,
-        alive: b.alive,
-      })) : [],
-    };
-    // Phase 1 net-audit — server-side debug stats. ~30 bytes per snapshot
-    // (negligible vs the player/bullet/bot payload). Old clients ignore
-    // unknown fields. Client overlay (?netdebug=1) renders these next to
-    // its own bandwidth + frame measurements.
+    // Phase 3.2 — per-receiver snapshot with AOI bullet culling.
+    //
+    // Players + bots are still broadcast to everyone (small N; players
+    // need minimap dots / kill-feed names + bots are highest-value
+    // entities for combat awareness). Bullets, in contrast, can spike to
+    // 50+ in a busy room and are useless if they're >1200 px from the
+    // receiver's player (off-screen at normal zoom). Culling per receiver
+    // can cut snapshot size 40-60% in heavy combat. CPU cost: one
+    // O(bullets) pass per connected client per tick — at 8 bullets × 20
+    // players × 30 Hz = 4800 dist-checks/sec = sub-ms.
+    //
+    // Old clients receive their unchanged-shape snapshot (just fewer
+    // bullet entries), so no protocol break.
+    const sT = Date.now();
+    const tick = this.tickCount;
+
+    // Build the SHARED player array once (same for every receiver — the
+    // Phase 2 invuln/name throttling still applies).
+    const playerEntries = [];
+    for (const p of this.players.values()) {
+      const entry = {
+        id: p.id,
+        x: round1(p.x),
+        y: round1(p.y),
+        angle: round3(p.angle),
+        hp: p.hp,
+        alive: p.alive,
+        lastInputSeq: p.lastInputSeq,
+        t: p.lastInputT || 0,
+      };
+      if (this.tickCount < p.invulnUntil) entry.invuln = true;
+      const nameStale = (this.tickCount - (p._lastNameSentTick || 0)) >= 30;
+      const nameChanged = p.name !== p._lastSentName;
+      if (nameStale || nameChanged) {
+        entry.name = p.name;
+        p._lastNameSentTick = this.tickCount;
+        p._lastSentName = p.name;
+      }
+      playerEntries.push(entry);
+    }
+
+    // Build full bullets list once (cheap shape transform) — culled per
+    // receiver below.
+    const allBullets = this.bullets.map(b => ({
+      id: b.id,
+      x: round1(b.x),
+      y: round1(b.y),
+      vx: round1(b.vx),
+      vy: round1(b.vy),
+      s: b.shooterId,
+    }));
+
+    // Bots: still shared. 4-12 entities, all combat-relevant. Sharing
+    // saves N×bots serialization work.
+    const botEntries = this.simBotsEnabled
+      ? [...this.bots.values()].map(b => ({
+          id: b.id,
+          team: b.team,
+          x: round1(b.x),
+          y: round1(b.y),
+          angle: round3(b.angle),
+          hp: b.hp,
+          alive: b.alive,
+        }))
+      : [];
+
+    // Server-side debug stats. Same for every receiver. Old clients
+    // ignore the unknown field.
+    let dbg = null;
     if (this._tickTimeWindow && this._tickTimeWindow.length > 0) {
       let sum = 0;
       for (const v of this._tickTimeWindow) sum += v;
-      snap._dbg = {
+      dbg = {
         tickMs:  +(sum / this._tickTimeWindow.length).toFixed(2),
         tickPk:  Math.max(...this._tickTimeWindow),
         players: this.players.size,
@@ -1353,7 +1368,43 @@ export default class AshGridRoom {
         bots:    this.bots.size,
       };
     }
-    this.party.broadcast(JSON.stringify(snap));
+
+    // AOI radius squared (compare to dist² to skip the sqrt).
+    const AOI = 1200;
+    const AOI2 = AOI * AOI;
+
+    // Iterate connections — if the runtime gives us getConnections() we
+    // use it for per-receiver custom snapshots; otherwise fall back to
+    // broadcast (old PartyKit / unknown runtime).
+    const conns = (typeof this.party.getConnections === 'function')
+      ? this.party.getConnections()
+      : null;
+    if (!conns) {
+      // Fallback: broadcast same snapshot to everyone (no AOI cull).
+      const snap = { type: 'snapshot', tick, sT, players: playerEntries, bullets: allBullets, bots: botEntries };
+      if (dbg) snap._dbg = dbg;
+      this.party.broadcast(JSON.stringify(snap));
+      return;
+    }
+
+    for (const conn of conns) {
+      const me = this.players.get(conn.id);
+      let bullets;
+      if (!me || !me.alive || allBullets.length === 0) {
+        // Dead / pre-game / no bullets in flight — send everything.
+        bullets = allBullets;
+      } else {
+        bullets = [];
+        const mx = me.x, my = me.y;
+        for (const b of allBullets) {
+          const dx = b.x - mx, dy = b.y - my;
+          if (dx * dx + dy * dy <= AOI2) bullets.push(b);
+        }
+      }
+      const snap = { type: 'snapshot', tick, sT, players: playerEntries, bullets, bots: botEntries };
+      if (dbg) snap._dbg = dbg;
+      try { conn.send(JSON.stringify(snap)); } catch (e) {}
+    }
   }
 }
 
