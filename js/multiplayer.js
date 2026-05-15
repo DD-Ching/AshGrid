@@ -1384,13 +1384,12 @@ function _mpRenderNetDebug() {
   // Server dbg.
   const sdbg = _mpState.lastServerDbg || {};
 
-  // Render panel top-right. All dimensions scale with devicePixelRatio so
-  // the panel is the same visible size on retina vs 1x. ctx draws into
-  // the canvas backing buffer (canvas.width = CSS-w × DPR), so we must
-  // multiply CSS-target sizes by DPR ourselves.
-  const DPR = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
-  const W = 290 * DPR, lh = 14 * DPR, pad = 8 * DPR;
-  const fontPx = 11 * DPR;
+  // Render panel top-right. AshGrid's ctx has a scale(DPR, DPR) baked in
+  // so all drawing code uses CSS-pixel coordinates — drawing N CSS pixels
+  // costs N×DPR canvas-backing pixels automatically. Do NOT multiply by
+  // DPR here; that double-scales and pushes the panel off-screen.
+  const W = 290, lh = 14, pad = 8;
+  const fontPx = 11;
   const lines = [
     ['NET DEBUG · ?netdebug=1', '#FFD24A'],
     ['rtt  ' + Math.round(_mpState.rttSmoothed) + ' ms · ' +
@@ -1408,22 +1407,26 @@ function _mpRenderNetDebug() {
     ['srv tick# ' + (_mpState.serverTick||0), '#E8E4D8'],
   ];
   const H = lines.length * lh + pad * 2;
-  const X = (typeof canvas !== 'undefined' ? canvas.width : 1200) - W - 10 * DPR;
-  // Y offset clears the top strip used by the operator-info HUD (NEURAL
-  // LINK SEVERED / BY R-F-x bar) AND the death-recap 64-px strip — those
-  // draw at Y < 70 CSS-px and would cover the overlay otherwise.
-  const Y = 80 * DPR;
+  // CSS-pixel coordinates throughout (ctx is pre-scaled by DPR). Use
+  // canvas.clientWidth — the visible CSS width — instead of canvas.width
+  // (the backing-buffer width, DPR × CSS) so right-align stays correct.
+  const cssW = (typeof canvas !== 'undefined' && canvas.clientWidth) || 1200;
+  const X = cssW - W - 10;
+  // Y offset clears the top strip used by the operator-info HUD AND the
+  // death-recap 64-px strip — those draw at Y < 70 CSS-px and would
+  // cover the overlay otherwise.
+  const Y = 80;
   ctx.save();
   ctx.fillStyle = 'rgba(20,20,28,0.82)';
   ctx.fillRect(X, Y, W, H);
   ctx.strokeStyle = '#FFD24A';
-  ctx.lineWidth = 1 * DPR;
+  ctx.lineWidth = 1;
   ctx.strokeRect(X + 0.5, Y + 0.5, W, H);
   ctx.font = 'bold ' + fontPx + 'px monospace';
   ctx.textAlign = 'left';
   for (let i = 0; i < lines.length; i++) {
     ctx.fillStyle = lines[i][1];
-    ctx.fillText(lines[i][0], X + pad, Y + pad + lh * (i + 1) - 3 * DPR);
+    ctx.fillText(lines[i][0], X + pad, Y + pad + lh * (i + 1) - 3);
   }
   ctx.restore();
 }
