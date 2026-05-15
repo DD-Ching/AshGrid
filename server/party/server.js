@@ -405,20 +405,13 @@ export default class AshGridRoom {
     // the full structure list in their welcome message so they see
     // everything that's already on the field.
     this.structures = new Map();       // sid → {sid, kind, x, y, hp, maxHp, owner}
-    // Phase 3 — server-side NN bots. Opt-in via `?phase3=1` flag in the
-    // client hello. When at least one phase3 client connects, the room
-    // spawns NN_BOTS_INITIAL bots in this map and starts ticking them
-    // on every server tick. Snapshot includes their state for any
-    // phase3-rendering client.
-    //
-    // For Phase 3a (this commit) bots run a SIMPLE random-walk so we
-    // can test the entire pipeline (spawn → tick → broadcast →
-    // render) without ONNX. Phase 3c will swap the random walk for
-    // real PPO inference using server/party/sim/nn_runtime.js (the
-    // pure-JS forward pass committed in Phase 0).
+    // Server-side NN bots. The room spawns NN_BOTS_INITIAL bots lazily on
+    // the first input from any player; they tick on every server frame
+    // and ship in every snapshot. PPO inference runs via the pure-JS
+    // forward pass in server/party/sim/nn_runtime.js.
     this.bots = new Map();             // botId → {id, team, x, y, angle, hp, alive, _patrolUntilTick}
     this.nextBotId = 10001;            // offset so bot ids don't collide with peer ids
-    this.simBotsEnabled = false;       // flipped true on first phase3 hello
+    this.simBotsEnabled = false;       // flipped true on first input arrival
   }
 
   // Phase 3 — spawn the initial server-side bot squad. Random positions
@@ -658,13 +651,10 @@ export default class AshGridRoom {
       p.input.angle = num(data.angle);
       p.input.fire  = !!data.fire;
       p.input.seq   = num(data.seq) | 0;
-      // Phase 3 — opt into server-side NN bots when ANY connected
-      // client signals phase3=1. We don't track per-player — once
-      // simBotsEnabled flips true the room hosts bots for everyone
-      // (matches single-room shared-arena semantics). Bots are spawned
-      // lazily on the FIRST phase3 input to save CPU for v1/v2-only
-      // rooms.
-      if (data.phase3 === 1 && !this.simBotsEnabled) {
+      // Server-side NN bots — spawned lazily on the FIRST input from any
+      // player in the room. Bots persist until the room empties (matches
+      // single-room shared-arena semantics).
+      if (!this.simBotsEnabled) {
         this.simBotsEnabled = true;
         this._ensureServerBots();
       }
@@ -775,50 +765,24 @@ export default class AshGridRoom {
         continue;
       }
       const inp = p.input;
-      // Phase 1: if client opted into v2 (URL ?v2=1 → input.v2=1), use
-      // the shared simStepPerTick which honours sprint (and later phases
-      // weapon/chassis mul). Default path stays exactly as before so
-      // legacy clients are byte-identical to pre-Phase-1 behaviour.
-      let nx, ny;
-      if (inp.v2) {
-        const out = simStepPerTickV2(
-          {
-            x: p.x, y: p.y,
-            // Phase 1 refactor: client now sends per-input weapon +
-            // chassis multipliers (wMul, cMul). Server applies them
-            // so wolf/heavy chassis + LMG/SMG no longer rubber-band
-            // while sprinting (4.62 px/tick divergence in the worst
-            // case — wolf+sprint hit the 150 snap threshold in ~1s).
-            weaponSpeedMul:  (typeof inp.wMul === 'number') ? inp.wMul : 1.0,
-            chassisSpeedMul: (typeof inp.cMul === 'number') ? inp.cMul : 1.0,
-          },
-          inp
-        );
-        nx = out.x; ny = out.y;
-      } else {
-        // Legacy path: normalize + apply PLAYER_SPEED with no multipliers.
-        let dx = inp.dx, dy = inp.dy;
-        const mag = Math.hypot(dx, dy);
-        if (mag > 1) { dx /= mag; dy /= mag; }
-        nx = p.x + dx * PLAYER_SPEED;
-        ny = p.y + dy * PLAYER_SPEED;
-      }
-      // Phase 4b — v2 path uses the SAME server-side collision as legacy.
-      // The server's _MAP_BUILDINGS / _MAP_OBSTACLES come from
-      // _buildIndustrialMap() which matches the client's industrial map
-      // anchors. With phase3 + v2 implying that the client doesn't run
-      // its own NN spawn (so no client-only chassis-mul math drifts) and
-      // the same geometry on both sides, the legacy snap-on-mismatch
-      // behaviour is no longer triggered.
-      //
-      // Pre-Phase-4b this branch SKIPPED clamp/pushout because the
-      // hardcoded server map didn't always match what the client had
-      // loaded (different MAPS[] index). Now that ?phase3=1 (which v2
-      // auto-engages) only runs in NN_ARENA mode (industrial), both
-      // sides have the same map. Re-enabling pushout fixes the user's
-      // '穿牆' complaint: server bots now bounce off walls, server
-      // bullets stop on walls (already did at line ~886), and the
-      // player can't walk through buildings server-side either.
+      // Movement: shared simStepPerTick (wings.io-style), honours sprint
+      // + weapon/chassis multipliers carried per-input (wMul, cMul). Server
+      // and client agree byte-for-byte; missing fields default to 1.0 so
+      // older clients still get sane motion.
+      const out = simStepPerTickV2(
+        {
+          x: p.x, y: p.y,
+          weaponSpeedMul:  (typeof inp.wMul === 'number') ? inp.wMul : 1.0,
+          chassisSpeedMul: (typeof inp.cMul === 'number') ? inp.cMul : 1.0,
+        },
+        inp
+      );
+      const nx = out.x, ny = out.y;
+      // Server-authoritative collision: clamp to arena + push out of walls
+      // and player-built structures. _MAP_BUILDINGS / _MAP_OBSTACLES come
+      // from _buildIndustrialMap() which matches the client's industrial
+      // map anchors exactly. Without these, players slipped through walls
+      // server-side (user '穿牆') and bullets stopped on walls one-sided.
       p.x = clamp(nx, ARENA_PAD, ARENA_W - ARENA_PAD);
       p.y = clamp(ny, ARENA_PAD, ARENA_H - ARENA_PAD);
       _pushOutOfWalls(p, PLAYER_RADIUS);
@@ -835,15 +799,11 @@ export default class AshGridRoom {
       // Fire (if cooldown done)
       if (inp.fire && this.tickCount >= p.fireCdUntil) {
         this._spawnBullet(p);
-        // Phase 2 — weapon-specific fire cooldown when v2. Without this,
-        // SNIPER (25-tick CD) fires as fast as SMG (2-tick CD) because
-        // the server used the flat FIRE_COOLDOWN=6 for everyone.
-        let cd = FIRE_COOLDOWN;
-        if (inp.v2) {
-          const wsim = getWeaponSim(inp.wId || 'RIFLE');
-          cd = wsim.fireCdTicks | 0;
-          if (cd < 1) cd = 1;
-        }
+        // Weapon-specific fire cooldown — SNIPER (25 ticks) shouldn't fire
+        // as fast as SMG (2 ticks). Defaults to RIFLE when wId missing.
+        const wsim = getWeaponSim(inp.wId || 'RIFLE');
+        let cd = wsim.fireCdTicks | 0;
+        if (cd < 1) cd = 1;
         p.fireCdUntil = this.tickCount + cd;
         // Phase 40: lag compensation. If the shooter's view tick says they
         // were aiming at where a target USED to be, register an instant hit.
@@ -1054,44 +1014,22 @@ export default class AshGridRoom {
   }
 
   _spawnBullet(p) {
-    // Phase 2 — when v2, spawn weapon-aware bullets via the shared sim.
-    // Pre-Phase-2 every gun fired the same flat profile (BULLET_SPEED
-    // = 14, BULLET_DAMAGE = 25, single pellet) → snipers didn't one-
-    // shot, shotguns didn't spread, LMG didn't rapid-fire. User
-    // '我打中他他沒死' for human-vs-human kills traces here.
-    //
-    // The weapon id arrives via input.wId (Phase 2 protocol bump);
-    // legacy clients without it default to RIFLE.
-    if (p.input && p.input.v2) {
-      const wid = (p.input.wId && typeof p.input.wId === 'string') ? p.input.wId : 'RIFLE';
-      const wsim = getWeaponSim(wid);
-      const newBullets = spawnBulletsFromUnit(
-        { x: p.x, y: p.y, id: p.id, team: 0 },
-        { ...wsim, weaponId: wid },
-        p.angle,
-      );
-      for (const b of newBullets) {
-        b.id = this.nextBulletId++;
-        b.shooterId = p.id;
-        b.weapon = wid;
-        this.bullets.push(b);
-      }
-      return;
+    // Weapon-aware bullets via the shared sim. Snipers one-shot, shotguns
+    // spread, LMG rapid-fires. Weapon id arrives via input.wId; missing
+    // value defaults to RIFLE for safety.
+    const wid = (p.input && typeof p.input.wId === 'string') ? p.input.wId : 'RIFLE';
+    const wsim = getWeaponSim(wid);
+    const newBullets = spawnBulletsFromUnit(
+      { x: p.x, y: p.y, id: p.id, team: 0 },
+      { ...wsim, weaponId: wid },
+      p.angle,
+    );
+    for (const b of newBullets) {
+      b.id = this.nextBulletId++;
+      b.shooterId = p.id;
+      b.weapon = wid;
+      this.bullets.push(b);
     }
-    // Legacy path — unchanged so non-v2 clients keep working.
-    const ax = Math.cos(p.angle);
-    const ay = Math.sin(p.angle);
-    this.bullets.push({
-      id: this.nextBulletId++,
-      x: p.x + ax * BULLET_OFFSET,
-      y: p.y + ay * BULLET_OFFSET,
-      vx: ax * BULLET_SPEED,
-      vy: ay * BULLET_SPEED,
-      life: BULLET_LIFE,
-      damage: BULLET_DAMAGE,
-      shooterId: p.id,
-      weapon: 'RIFLE',
-    });
   }
 
   // Phase 40: look up a player's position at a specific tick from history.

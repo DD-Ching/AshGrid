@@ -151,52 +151,19 @@ const _mpPings = [];
 
 function _mpIsActive() { return !!_mpState.enabled; }
 
-// Phase 1: v2 architecture opt-in flag. URL ?v2=1 routes through the
-// new server-authoritative path (shared sim/movement.js on both sides
-// of the wire; server applies same sprint multiplier; replay loop in
-// _mpHandleSnapshot uses SIM.simStepPerTick instead of hand-coded
-// `predX += dx * 5.6`).
+// MP architecture (wings.io-style server-authoritative). Server runs the
+// shared sim/movement.js (sprint + weapon/chassis multipliers), owns
+// bullets/HP/kills, and ticks NN bots locally so the client's main thread
+// stays free for rendering. The client (a) sends sprint+wMul+cMul+wId in
+// every input, (b) replays unacked inputs through SIM.simStepPerTick for
+// byte-identical local prediction, (c) renders snap.bots from snapshots,
+// (d) skips its own NN spawn while in MP (server provides them).
 //
-// Default (no v2): legacy hybrid pathway, unchanged from Phase 100.
-// This means existing ashgrid.io traffic + crazygames embeds keep
-// working exactly as before; only ?v2=1 sessions get the new code.
-// Server reads `inp.v2` flag for the same gate.
-//
-// Perf: cached at module load. _mpIsV2 was getting called from the
-// per-snapshot reconcile path (~15-30 Hz) AND _mpSendInput (~30 Hz),
-// each invocation parsing the entire URL with URLSearchParams. With
-// the cache, it's a property read.
-const _MP_IS_V2 = (() => {
-  try { return new URLSearchParams(location.search).get('v2') === '1'; }
-  catch (e) { return false; }
-})();
-function _mpIsV2() { return _MP_IS_V2; }
-
-// Phase 3 — server-side NN bots. When phase3 is on, the client
-// (a) sends phase3=1 in every input so the server flips
-// simBotsEnabled, (b) renders snap.bots from the snapshot, and (c)
-// skips local NN spawn (same effect as ?nonn=1 for that piece).
-//
-// Phase 3 polish — ?v2=1 now AUTOMATICALLY implies ?phase3=1. User
-// '走路 / sprint 還在拉回' on plain ?v2=1: the rubber-band was caused
-// by client-side ONNX inference (60 Hz × 16 bots × ~32 µs) blocking
-// the main thread, dropping the 60 fps update() ticks, leaving the
-// client position behind the server position until > 150 px → SNAP.
-// Moving NN to server (phase3) removes the main-thread load → no
-// tick drops → no rubber-band. Since v2 is opt-in already, treat it
-// as "the wings.io architecture switch" which includes server NN.
-//
-// Legacy URL ?phase3=0 explicitly opts OUT (kept for A/B comparison).
-const _MP_IS_PHASE3 = (() => {
-  try {
-    const q = new URLSearchParams(location.search);
-    const p = q.get('phase3');
-    if (p === '0') return false;            // explicit opt-out
-    if (p === '1') return true;             // explicit opt-in
-    return q.get('v2') === '1';             // default: follows v2
-  } catch (e) { return false; }
-})();
-function _mpIsPhase3() { return _MP_IS_PHASE3; }
+// Prior to consolidation this lived behind ?v2=1 / ?phase3=1 URL flags
+// while we A/B-tested the new architecture against the legacy hybrid
+// path. Once the new path stabilised (kills, bullets, walls, sprint,
+// aim-assist all working end-to-end) the legacy code became dead weight
+// and the flags were removed.
 function _mpPeerCount() {
   if (!_mpState.enabled) return 0;
   // remotePlayers includes self; count is just its size.
@@ -435,21 +402,13 @@ function _mpHandleSnapshot(snap) {
       }
       // Drop inputs the server has already processed
       _mpState.pendingInputs = _mpState.pendingInputs.filter(i => i.seq > sp.lastInputSeq);
-      // Replay remaining inputs from the server's confirmed position.
-      //
-      // Phase 1: v2 uses the SHARED simStepPerTick so server and client
-      // agree byte-for-byte on what each input did. Legacy path keeps
-      // the hand-coded predX += dx * 5.6 (no sprint multiplier, no
-      // weapon/chassis mul — which is why pre-v2 rubber-banded on
-      // sprint). The shared sim picks up sprint from inp.sprint.
+      // Replay remaining inputs from the server's confirmed position via
+      // the SHARED simStepPerTick so server and client agree byte-for-byte
+      // on what each input did. Each pending input carries its own wMul +
+      // cMul snapshot, so a mid-stride weapon swap or chassis change
+      // replays with the multiplier that was ACTIVE for that input.
       let predX = sp.x, predY = sp.y;
-      const isV2 = _mpIsV2();
-      if (isV2 && typeof window !== 'undefined' && window.SIM && window.SIM.simStepPerTick) {
-        // Phase 1 refactor: every pending input carries its own wMul +
-        // cMul snapshot, so a mid-stride weapon swap or chassis change
-        // replays with the multiplier that was ACTIVE for that input.
-        // Server applies the same per-input values from inp.wMul/cMul,
-        // so client replay and server tick produce byte-identical x/y.
+      if (typeof window !== 'undefined' && window.SIM && window.SIM.simStepPerTick) {
         const repState = { x: predX, y: predY };
         for (const inp of _mpState.pendingInputs) {
           repState.weaponSpeedMul  = (typeof inp.wMul === 'number') ? inp.wMul : 1.0;
@@ -459,6 +418,11 @@ function _mpHandleSnapshot(snap) {
         }
         predX = repState.x; predY = repState.y;
       } else {
+        // Defensive: sim module not loaded → integrate the WASD vector
+        // with the flat PLAYER_SPEED so replay still produces *some*
+        // motion estimate. This branch is impossible in normal builds
+        // (sim/movement.js loads via index.html <script>) but keeps the
+        // reconcile path from going NaN if the script fails to load.
         for (const inp of _mpState.pendingInputs) {
           let dx = inp.dx, dy = inp.dy;
           const mag = Math.hypot(dx, dy);
@@ -493,49 +457,27 @@ function _mpHandleSnapshot(snap) {
         // position reconciliation so the swap actually sticks visually
         // until client inputs catch the server up.
         const _ignoreReconcile = (game?.time || 0) < (player._mpIgnoreReconcileUntil || 0);
-        // Phase 1 hotfix — v2 skips spread-error reconcile. User report
-        // '還會被拉回 非常嚴重' after Phase 1's first cut: turns out
-        // server's pushOutOfWalls / NN_ARENA clamp / built-structure
-        // collision are ALL fighting the client's per-frame versions of
-        // the same logic with different geometry — every wall edge
-        // generates a 5-40 px sustained desync that the spread-error
-        // path bleeds into a continuous backward tug.
+        // Trust local prediction unless the error is teleport-scale
+        // (>1500 px ≈ most of arena width). Every other position
+        // transition has an explicit handler:
+        //   - Respawn        → _mpRespawnLocalPlayer snaps player.x = sp.x
+        //   - Pawn-swap      → _mpIgnoreReconcileUntil skips reconcile
+        //   - Sprint / sim drift → bounded ≤ tens of px, no snap needed
         //
-        // The proper fix is sharing geometry server-side (Phase 4-5).
-        // Until then v2 fully trusts the client's local prediction and
-        // only snaps on TELEPORT-scale errors (>150 px = respawn /
-        // pawn-swap / lag spike). Server still owns HP, kills, hits,
-        // and broadcasts our position to OTHER clients so they see us
-        // move smoothly.
+        // Earlier the legacy path tried to spread-error every drift, but
+        // server pushOutOfWalls + structure collision + arena clamp all
+        // fight the client's per-frame versions of the same logic with
+        // identical-ish geometry, generating 5-40 px sustained errors at
+        // every wall edge. Spread-error bled those into a continuous
+        // backward tug — user '還會被拉回 非常嚴重'. Trusting prediction
+        // + snapping only on sim explosions removes the tug entirely.
         if (_ignoreReconcile) {
           player._reconcileErr = null;
-        } else if (isV2) {
-          // Phase 3-followup — user '按Shift在衝刺的時候往回閃 尤其嚴重'
-          // after the 280 px threshold. Sprint transient on production
-          // RTT can still touch 280-400 px before server catches up.
-          // Every brush against the snap was a visible jerk backward.
-          //
-          // Resolution: in v2 the dist-based fallback snap exists ONLY
-          // as a safety net for genuine bugs (NaN, sim divergence). All
-          // real-game position changes already have explicit handlers:
-          //   - Respawn: _mpRespawnLocalPlayer() snaps player.x = sp.x
-          //   - Pawn-swap: _mpIgnoreReconcileUntil window skips reconcile
-          //   - Teleport: none in v2 yet (Phase 4 might add it)
-          // So we raise the bar to 1500 px (most of arena width). Sprint
-          // transient never approaches that; only a sim explosion would.
+        } else {
           if (dist > 1500) {
             player.x = predX; player.y = predY;
           }
           player._reconcileErr = null;
-        } else if (dist > 150) {
-          // Legacy: big snap — teleport / respawn / lag spike.
-          player.x = predX; player.y = predY;
-          player._reconcileErr = null;
-        } else if (dist < 3) {
-          // Legacy: inside dead zone — server agrees with us, nothing to do.
-        } else {
-          // Legacy: Spread-error reconcile (Phase 80).
-          player._reconcileErr = { dx, dy };
         }
         // HP has TWO writers because NN bots live client-only (see fire()
         // ghost-bullet note in index.html). min(local, server) picks the
@@ -672,165 +614,157 @@ function _mpHandleSnapshot(snap) {
 // only authority that says "yes, that bullet landed," so this is also the only
 // place that ever flashes the marker.
 let _mpHitMarker = { until: 0, kind: 'hit' };  // kind: 'hit' | 'kill'
+
+// Resolve the victim of a hit / kill event into a canonical descriptor.
+// Centralises the player ⇄ remotePlayer ⇄ remoteBot lookup so both
+// handlers can branch on a single object instead of repeating identity
+// checks. Coords fall back to the entity's last known position if the
+// server omitted them (older snapshots before the Phase 41 protocol bump).
+function _mpResolveVictim(data) {
+  const isBot = !!data.isBot;
+  const isLocal = !isBot && data.victim === _mpState.myId;
+  let entity = null;
+  if (isBot) {
+    entity = _mpState.remoteBots && _mpState.remoteBots.get(data.victim);
+  } else if (isLocal) {
+    entity = (typeof player !== 'undefined') ? player : null;
+  } else {
+    entity = _mpState.remotePlayers.get(data.victim);
+  }
+  let x = data.x, y = data.y;
+  if (typeof x !== 'number' || typeof y !== 'number') {
+    if (entity) { x = entity.x; y = entity.y; }
+    else        { x = null;     y = null; }
+  }
+  let name;
+  if (isBot) {
+    name = `BOT-${String(data.victim).slice(-4)}`;
+  } else if (isLocal) {
+    name = (typeof getOperatorName === 'function') ? getOperatorName() : 'YOU';
+  } else {
+    name = (entity && entity.name) || String(data.victim).slice(0, 6);
+  }
+  // Chassis for wreckage VFX. Bots are always humanoid; local player has
+  // _chassis; remote players' chassis isn't broadcast yet (snapshot doesn't
+  // include it) so we default to humanoid for them too.
+  let chassis = 'humanoid';
+  if (isLocal && entity && entity._chassis) chassis = entity._chassis;
+  else if (!isLocal && !isBot && entity && entity.chassis) chassis = entity.chassis;
+  return { isLocal, isBot, x, y, name, entity, chassis };
+}
+
+function _mpResolveShooter(data) {
+  const isLocal = data.shooter === _mpState.myId;
+  let name;
+  if (isLocal) {
+    name = (typeof getOperatorName === 'function') ? getOperatorName() : 'YOU';
+  } else {
+    name = _mpState.remotePlayers.get(data.shooter)?.name || String(data.shooter).slice(0, 6);
+  }
+  return { isLocal, name };
+}
+
 function _mpHandleHit(data) {
-  // Phase 41: server now sends impact coords; fall back to remote pos if
-  // event is from older deploy (dev still in flight).
+  const v = _mpResolveVictim(data);
+  // Phase 41 — server sends impact coords on `hit` events. Anchor VFX
+  // and the hurt indicator to those rather than the victim's lerped pos
+  // so the effects stay put even as the body drifts.
   const ix = (typeof data.x === 'number') ? data.x : null;
   const iy = (typeof data.y === 'number') ? data.y : null;
-  // Victim-side: flash red, screen shake, play hit sound, blood spray.
-  if (data.victim === _mpState.myId) {
+  // Victim-side (local player hit): flash, sfx, shake, directional hurt
+  // indicator, floating "-25". Single-player parity for triggerShake +
+  // _hurtAngle (index.html: bullet-vs-player site does the same).
+  if (v.isLocal && typeof player !== 'undefined') {
     if (typeof game !== 'undefined') game.hitFlash = Math.max(game.hitFlash || 0, 12);
     if (typeof playSfx === 'function') playSfx('hit', { vol: 0.55 });
-    // Phase 41: screen shake scales with damage. Single-player parity
-    // (index.html: triggerShake(min(6, b.damage * 0.25), 8) on player hit).
-    if (typeof triggerShake === 'function') {
-      triggerShake(Math.min(6, 25 * 0.25), 8);
-    }
-    // Phase 68 — MP parity for the Phase 67 directional hurt indicator.
-    // SP sets _hurtAngle + _hurtIntensity at the bullet-vs-player site
-    // (index.html line ~6785). MP damage is server-authoritative so the
-    // local bullet collision never runs — we have to set the indicator
-    // here from the impact coords the server already broadcast.
-    if (typeof player !== 'undefined' && typeof ix === 'number' && typeof iy === 'number') {
+    if (typeof triggerShake === 'function') triggerShake(Math.min(6, 25 * 0.25), 8);
+    if (typeof ix === 'number' && typeof iy === 'number') {
       player._hurtAngle = Math.atan2(iy - player.y, ix - player.x);
       player._hurtIntensity = Math.min(1, (player._hurtIntensity || 0) + 0.6);
     }
-    // Floating damage popup at the impact point so we know which side took it.
     if (typeof spawnDamagePopup === 'function' && ix != null && iy != null) {
       spawnDamagePopup(ix, iy, 25, false);
     }
     return;
   }
-  // Shooter-side: hitmarker on the crosshair + damage popup at victim.
+  // Shooter-side (local player landed a hit): hitmarker, beep, "-25" at
+  // impact. Telemetry tracks lag-compensated vs physics hits so the F3
+  // overlay can show the favor-the-shooter rate.
   if (data.shooter === _mpState.myId) {
     _mpHitMarker = { until: Date.now() + 180, kind: 'hit' };
     if (typeof playSfx === 'function') playSfx('beep', { vol: 0.25, freq: 1320 });
-    // Phase 41: floating "-25" at the victim — single-player has this for
-    // every hit on enemies. Anchored to impact coords, not victim's lerped
-    // pos, so it stays put while the body drifts.
     if (typeof spawnDamagePopup === 'function' && ix != null && iy != null) {
       spawnDamagePopup(ix, iy, 25, false);
     }
-    // Phase 40 telemetry: track lag-compensated vs physics hits so the F3
-    // overlay can show the favor-the-shooter rate.
     _mpState.totalHitsAsShooter++;
     if (data.lc) _mpState.lcHitsAsShooter++;
   }
-  // Phase 3e-followup — user '受傷效果延遲': server-bot victims got
-  // no visual blood spray. Player kills only saw the damage popup
-  // (shooter-side branch above) but no impact effect at the bot. Now
-  // every hit on a server bot spawns the same blood-spray VFX the
-  // local NN enemies use, anchored to the server's impact coords.
-  if (data.isBot && ix != null && iy != null) {
+  // Server-bot victim: blood spray VFX + instant HP apply for snappy
+  // feedback (otherwise the HP bar waited up to 66 ms for the next 15 Hz
+  // snapshot — user '受傷效果延遲'). Same min() trick we use for the local
+  // player's hp via the reconcile path.
+  if (v.isBot && ix != null && iy != null) {
     if (typeof createExplosion === 'function') createExplosion(ix, iy, 'small');
-    // Phase 4b-followup — user '子彈攻擊目前也無效': bullets DO
-    // damage server-side, but the bot's HP bar only refreshed on the
-    // next 15 Hz snapshot (up to 66 ms delayed). Apply the new HP
-    // locally as soon as the hit event arrives — snapshot will
-    // confirm it ~33 ms later but the player gets immediate visual
-    // feedback that the shot connected. Same trick we use for the
-    // local player's hp via the min() reconcile.
-    if (typeof data.hp === 'number') {
-      const rb = _mpState.remoteBots && _mpState.remoteBots.get(data.victim);
-      if (rb && typeof rb.hp === 'number') {
-        rb.hp = Math.min(rb.hp, data.hp);
-      }
+    if (v.entity && typeof v.entity.hp === 'number' && typeof data.hp === 'number') {
+      v.entity.hp = Math.min(v.entity.hp, data.hp);
     }
   }
 }
 
 function _mpHandleKill(data) {
-  // Update kill feed + scoreboard
+  const v = _mpResolveVictim(data);
+  const s = _mpResolveShooter(data);
   _mpScoreboard.set(data.shooter, (_mpScoreboard.get(data.shooter) || 0) + 1);
-  const shooterName = (data.shooter === _mpState.myId)
-    ? (typeof getOperatorName === 'function' ? getOperatorName() : 'YOU')
-    : (_mpState.remotePlayers.get(data.shooter)?.name || String(data.shooter).slice(0, 6));
-  // Phase 3e — server-bot victims get a "BOT-XX" name in the kill feed
-  // and ALSO bump the local player's killCount + score when *we* are
-  // the shooter (mirrors the SP path at index.html bullet-hit-enemy).
-  // remotePlayers lookup correctly fails for bot ids (10001+) so the
-  // existing fallback would just print the raw id — we override here.
-  let victimName;
-  if (data.isBot) {
-    victimName = `BOT-${String(data.victim).slice(-4)}`;
-    if (data.shooter === _mpState.myId && typeof game !== 'undefined') {
-      game.score = (game.score || 0) + 100;
-      game.killCount = (game.killCount || 0) + 1;
-      if (typeof _lbBumpKill === 'function') _lbBumpKill();
-      // Kill-streak telemetry — same window as SP (4s = 240 frames).
-      if (typeof player !== 'undefined') {
-        const KS_WIN = 240;
-        const t = (typeof game.time === 'number') ? game.time : 0;
-        const last = player._lastKillTick || -9999;
-        if (t - last < KS_WIN) {
-          player._killStreak = (player._killStreak || 1) + 1;
-        } else {
-          player._killStreak = 1;
-        }
-        player._lastKillTick = t;
-        player._killStreakFlashUntil = t + 90;
-        if (player._killStreak >= 2) game.score += player._killStreak * 25;
+
+  // Bot-victim bookkeeping for the local player: score, leaderboard,
+  // kill-streak, shake. Note: score+100/killCount++ also fire in the
+  // bottom-of-function shooter handler, so bot kills currently bump both
+  // counters TWICE on purpose (pre-refactor behaviour preserved verbatim
+  // — if this turns out to be a bug, file a separate fix).
+  if (v.isBot && s.isLocal && typeof game !== 'undefined') {
+    game.score = (game.score || 0) + 100;
+    game.killCount = (game.killCount || 0) + 1;
+    if (typeof _lbBumpKill === 'function') _lbBumpKill();
+    if (typeof player !== 'undefined') {
+      const KS_WIN = 240;            // 4 s window @ 60 fps (SP parity)
+      const t = (typeof game.time === 'number') ? game.time : 0;
+      const last = player._lastKillTick || -9999;
+      if (t - last < KS_WIN) {
+        player._killStreak = (player._killStreak || 1) + 1;
+      } else {
+        player._killStreak = 1;
       }
-      if (typeof triggerShake === 'function') triggerShake(2, 4);
+      player._lastKillTick = t;
+      player._killStreakFlashUntil = t + 90;
+      if (player._killStreak >= 2) game.score += player._killStreak * 25;
     }
-  } else if (data.victim === _mpState.myId) {
-    victimName = (typeof getOperatorName === 'function' ? getOperatorName() : 'YOU');
-  } else {
-    victimName = _mpState.remotePlayers.get(data.victim)?.name || String(data.victim).slice(0, 6);
+    if (typeof triggerShake === 'function') triggerShake(2, 4);
   }
-  _mpKillFeed.push({ killer: shooterName, victim: victimName, weapon: data.weapon || 'RIFLE', at: Date.now() });
+
+  _mpKillFeed.push({ killer: s.name, victim: v.name, weapon: data.weapon || 'RIFLE', at: Date.now() });
   if (_mpKillFeed.length > 6) _mpKillFeed.splice(0, _mpKillFeed.length - 6);
 
-  // Phase 41: death explosion — visible to ALL players, anchored at the
-  // victim's last known position. Server includes x,y in the kill event;
-  // fall back to the remote's lerped pos if absent (older server build).
-  let dx = data.x, dy = data.y;
-  if (typeof dx !== 'number' || typeof dy !== 'number') {
-    if (data.victim === _mpState.myId && typeof player !== 'undefined') {
-      dx = player.x; dy = player.y;
-    } else {
-      const rp = _mpState.remotePlayers.get(data.victim);
-      if (rp) { dx = rp.x; dy = rp.y; }
-    }
+  // Death VFX (anchored at the victim coords resolved by _mpResolveVictim).
+  // Visible to ALL players, regardless of whether this is our kill.
+  if (typeof createExplosion === 'function' && typeof v.x === 'number') {
+    createExplosion(v.x, v.y, 'big');
   }
-  if (typeof createExplosion === 'function' && typeof dx === 'number') {
-    createExplosion(dx, dy, 'big');
+  if (typeof spawnWreckage === 'function' && typeof v.x === 'number') {
+    spawnWreckage(v.x, v.y, v.chassis);
   }
-  // Phase 65 — burning wreckage on MP kills too (parity with NN-mode kills).
-  // remotePlayers don't carry a _chassis field yet (server snapshot doesn't
-  // broadcast it), so remote victims default to humanoid. Local player gets
-  // its own _chassis. Either way the user sees the same smoldering effect
-  // as in single-player.
-  if (typeof spawnWreckage === 'function' && typeof dx === 'number') {
-    let chassis = 'humanoid';
-    if (data.victim === _mpState.myId && typeof player !== 'undefined') {
-      chassis = player._chassis || 'humanoid';
-    } else {
-      const rp = _mpState.remotePlayers.get(data.victim);
-      if (rp && rp.chassis) chassis = rp.chassis;
-    }
-    spawnWreckage(dx, dy, chassis);
-  }
-  // Phase 64 — softened kill cue + smaller volume (user '擊殺的声音太大').
   if (typeof playSfx === 'function') playSfx('death', { vol: 0.32 });
 
-  // Local player got killed?
-  if (data.victim === _mpState.myId && typeof player !== 'undefined') {
+  // Local player got killed → death recap + respawn timer.
+  if (v.isLocal && typeof player !== 'undefined') {
     if (typeof _lbBumpDeath === 'function') _lbBumpDeath();
     player.alive = false;
-    player._killer = { callsign: shooterName };
+    player._killer = { callsign: s.name };
     player._killerWeapon = data.weapon;
-    // Phase 59: set _respawnAt + _killedAtTime so (a) the dead-state
-    // countdown overlay at index.html:9546 actually renders (was checking
-    // player._respawnAt != null and that was never set on MP death → user
-    // saw 'instant respawn' because no UI marked the 3s window), and (b)
-    // the snapshot dead→alive transition above has a death-time anchor
-    // to gate against insta-flip races.
-    //
-    // Phase 60: respawn duration is buffable via 'watch ad' rewarded video.
-    // Default 15s, buff active 5s (÷3, 30 min duration). Server-side
-    // RESPAWN_TICKS bumped to match (see server/party/server.js). Both
-    // sides must agree or dead→alive transition will stall.
+    // Phase 59/60 — set both _respawnAt (drives the dead-state countdown
+    // overlay) and _killedAtTime (anchors the snapshot dead→alive transition
+    // against insta-flip races). Respawn duration is buffable via 'watch ad'
+    // rewarded video; both sides MUST agree on the count or dead→alive
+    // stalls server-side.
     const _gt = (typeof game !== 'undefined' && game.time) ? game.time : 0;
     const _respawnFrames = (typeof getRespawnSeconds === 'function')
       ? getRespawnSeconds() * 60
@@ -844,22 +778,20 @@ function _mpHandleKill(data) {
     }
     if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
   }
-  // Local player got the kill? Fattest hitmarker variant + confirm tone +
-  // KILL popup at victim.
-  if (data.shooter === _mpState.myId) {
+
+  // Local player got the kill → score, leaderboard, fat hitmarker, KILL
+  // popup. SP parity: index.html's bullet-hit-enemy site does the same
+  // (score+100, killCount++); MP was missing the score smoothing before
+  // (_scoreDisplay lerps toward game.score and had nothing to chase).
+  if (s.isLocal) {
     if (typeof _lbBumpKill === 'function') _lbBumpKill();
-    // Phase 68 — MP parity for the Phase 66 score count-up animation.
-    // SP kill handler at index.html:6418/6540 increments game.score+100
-    // and game.killCount+1 on every kill. MP was only bumping the
-    // leaderboard, so the smoothing tick (`_scoreDisplay` lerps toward
-    // `game.score`) had nothing to chase — number never moved in PvP.
     if (typeof game !== 'undefined') {
       game.score = (game.score || 0) + 100;
       game.killCount = (game.killCount || 0) + 1;
     }
     _mpHitMarker = { until: Date.now() + 350, kind: 'kill' };
-    if (typeof spawnDamagePopup === 'function' && typeof dx === 'number') {
-      spawnDamagePopup(dx, dy, 0, true);  // `true` = kill flag → "KILL" label
+    if (typeof spawnDamagePopup === 'function' && typeof v.x === 'number') {
+      spawnDamagePopup(v.x, v.y, 0, true);  // `true` = kill flag → "KILL" label
     }
   }
 }
@@ -920,33 +852,25 @@ function _mpSendInput() {
                   && game.mode !== 'fpv');
 
   const seq = ++_mpState.localInputSeq;
-  // Phase 1: sprint flag for shared movement sim. v2 gate keeps the
-  // payload unchanged for legacy server tick logic (which doesn't read
-  // sprint and would just ignore the field anyway — but better to be
-  // explicit about the protocol version).
-  // Phase 1 refactor: also send weapon + chassis multipliers. Without
-  // them, server defaulted to 1.0 for both and the math diverged for
-  // ANY non-default loadout (LMG ×0.85 / SMG ×1.10 / wolf chassis ×1.50
-  // / heavy chassis ×0.72). With sprint stacked on top, divergence per
-  // tick reached up to 4.62 px → snap-threshold hit in ~1s of holding
-  // shift. User '請用力重構優化' — this is the actual fix.
-  const isV2 = _mpIsV2();
-  const sprint = isV2
-    ? !!(typeof player !== 'undefined' && player.sprinting)
-    : 0;
-  const wMul = isV2
-    ? ((typeof playerWeapon !== 'undefined' && playerWeapon && typeof playerWeapon.speedMul === 'number') ? playerWeapon.speedMul : 1.0)
+  // Per-input loadout snapshot: sprint flag + weapon/chassis speed mul +
+  // weapon id. Server applies them on its tick so a mid-stride weapon
+  // swap or chassis change stays byte-identical across replay. Without
+  // these the server defaulted to 1.0 for both muls and the math
+  // diverged for ANY non-default loadout (LMG ×0.85 / SMG ×1.10 / wolf
+  // chassis ×1.50 / heavy chassis ×0.72) — sprint on top of that hit
+  // ~4.62 px/tick divergence and tripped the snap threshold in ~1 s.
+  const sprint = !!(typeof player !== 'undefined' && player.sprinting);
+  const wMul = (typeof playerWeapon !== 'undefined' && playerWeapon && typeof playerWeapon.speedMul === 'number')
+    ? playerWeapon.speedMul
     : 1.0;
-  const cMul = isV2
-    ? ((typeof player !== 'undefined' && typeof player._chassisSpeedMul === 'number') ? player._chassisSpeedMul : 1.0)
+  const cMul = (typeof player !== 'undefined' && typeof player._chassisSpeedMul === 'number')
+    ? player._chassisSpeedMul
     : 1.0;
-  // Phase 2 — weapon id for server-side weapon-aware bullet spawn.
-  // Recovered by walking the WEAPONS map (declared in js/weapons.js)
-  // and picking the key whose value === playerWeapon. Caches across
-  // calls because re-looking up every input would be wasteful.
+  // Weapon id for server-side weapon-aware bullet spawn. Recovered by
+  // walking the WEAPONS map and picking the key whose value === the
+  // current playerWeapon object.
   let wId = 'RIFLE';
-  if (isV2 && typeof WEAPONS !== 'undefined' && typeof playerWeapon !== 'undefined' && playerWeapon) {
-    // Common-case fast path: weapon name carries the id verbatim.
+  if (typeof WEAPONS !== 'undefined' && typeof playerWeapon !== 'undefined' && playerWeapon) {
     if (playerWeapon === WEAPONS.RIFLE)        wId = 'RIFLE';
     else if (playerWeapon === WEAPONS.SMG)     wId = 'SMG';
     else if (playerWeapon === WEAPONS.LMG)     wId = 'LMG';
@@ -977,20 +901,11 @@ function _mpSendInput() {
     // decide RESPAWN_TICKS (default 15s vs buffed 5s). Cheap to send every
     // input (1 boolean); avoids needing a dedicated 'buff-state' message.
     buffActive: (typeof isRespawnBuffed === 'function') ? isRespawnBuffed() : false,
-    // Phase 1: sprint multiplier signal. Server reads only when input.v2 is
-    // truthy so legacy servers ignore it.
-    v2: isV2 ? 1 : 0,
+    // Per-tick loadout (see big comment above).
     sprint: sprint ? 1 : 0,
-    // Phase 1 refactor: weapon + chassis muls. See big comment above.
     wMul,
     cMul,
-    // Phase 2: weapon id for server-side bullet profile lookup.
     wId,
-    // Phase 3 — opt into server-side NN bots. Server reads the FIRST
-    // truthy value across all connected clients and flips
-    // simBotsEnabled on; bots persist in the room state until the
-    // last player leaves.
-    phase3: _mpIsPhase3() ? 1 : 0,
   };
   _mpSendRaw(input);
 
@@ -1000,11 +915,11 @@ function _mpSendInput() {
   // path for our own gun. We just stamp `fire: true` into the input
   // packet so the server spawns the network-authoritative bullet.
 
-  // Phase 38 prediction — index.html's per-frame WASD code IS our
-  // prediction. We just record the input here so reconciliation can
-  // replay any unacked inputs from the server's confirmed position.
-  // Phase 1: also stash sprint + wMul + cMul so v2 replay matches
-  // both per-frame client integration and server tick byte-for-byte.
+  // Prediction record — index.html's per-frame WASD code IS our
+  // prediction. We record the input here so reconciliation can replay
+  // any unacked inputs from the server's confirmed position. We stash
+  // sprint + wMul + cMul too so replay matches per-frame client
+  // integration and server tick byte-for-byte.
   _mpState.pendingInputs.push({ seq, dx, dy, angle, fire, sprint, wMul, cMul });
 
   // Cap the pendingInputs queue so it doesn't grow forever during net loss

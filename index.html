@@ -45,53 +45,53 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=118"></script>
-<script src="js/arena_recruitment.js?v=118"></script>
-<script src="js/dynamic_radio.js?v=118"></script>
-<script src="js/i18n.js?v=118"></script>
-<script src="js/touch_input.js?v=118"></script>
-<script src="js/key_bindings.js?v=118"></script>
-<script src="js/grenades.js?v=118"></script>
-<script src="js/squad_commands.js?v=118"></script>
+<script src="js/audio/sfx.js?v=120"></script>
+<script src="js/arena_recruitment.js?v=120"></script>
+<script src="js/dynamic_radio.js?v=120"></script>
+<script src="js/i18n.js?v=120"></script>
+<script src="js/touch_input.js?v=120"></script>
+<script src="js/key_bindings.js?v=120"></script>
+<script src="js/grenades.js?v=120"></script>
+<script src="js/squad_commands.js?v=120"></script>
 <!-- Phase 1 / 2: shared sim modules (server uses byte-identical ESM
      mirrors at server/party/sim/*.js). Must load BEFORE multiplayer.js.
      Parity guard in ai_arena/scripts/check_sim_parity.sh; logic test
      harness in ai_arena/scripts/test_sim.mjs. -->
-<script src="js/sim/constants.js?v=118"></script>
-<script src="js/sim/movement.js?v=118"></script>
-<script src="js/sim/weapons.js?v=118"></script>
-<script src="js/sim/bullet.js?v=118"></script>
-<script src="js/multiplayer.js?v=118"></script>
-<script src="js/leaderboard.js?v=118"></script>
-<script src="js/structures.js?v=118"></script>
-<script src="js/tod.js?v=118"></script>
-<script src="js/weapons.js?v=118"></script>
-<script src="js/chassis.js?v=118"></script>
-<script src="js/respawn_buff.js?v=118"></script>
-<script src="js/death_recap.js?v=118"></script>
-<script src="js/mote_affinity.js?v=118"></script>
-<script src="js/stage_hints.js?v=118"></script>
-<script src="js/pawn_swap.js?v=118"></script>
-<script src="js/global_stats.js?v=118"></script>
-<script src="js/progressive_unlock.js?v=118"></script>
-<script src="js/ad_stubs.js?v=118"></script>
+<script src="js/sim/constants.js?v=120"></script>
+<script src="js/sim/movement.js?v=120"></script>
+<script src="js/sim/weapons.js?v=120"></script>
+<script src="js/sim/bullet.js?v=120"></script>
+<script src="js/multiplayer.js?v=120"></script>
+<script src="js/leaderboard.js?v=120"></script>
+<script src="js/structures.js?v=120"></script>
+<script src="js/tod.js?v=120"></script>
+<script src="js/weapons.js?v=120"></script>
+<script src="js/chassis.js?v=120"></script>
+<script src="js/respawn_buff.js?v=120"></script>
+<script src="js/death_recap.js?v=120"></script>
+<script src="js/mote_affinity.js?v=120"></script>
+<script src="js/stage_hints.js?v=120"></script>
+<script src="js/pawn_swap.js?v=120"></script>
+<script src="js/global_stats.js?v=120"></script>
+<script src="js/progressive_unlock.js?v=120"></script>
+<script src="js/ad_stubs.js?v=120"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=118"></script>
+<script src="js/crazygames.js?v=120"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=118"></script>
+<script src="js/gamemonetize.js?v=120"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=118"></script>
-<script src="js/world_gen.js?v=118"></script>
-<script src="js/squad.js?v=118"></script>
-<script src="js/drone_fpv.js?v=118"></script>
-<script src="js/vision_raycast.js?v=118"></script>
-<script src="js/camera.js?v=118"></script>
-<script src="js/defense_build_ui.js?v=118"></script>
-<script src="js/pause.js?v=118"></script>
+<script src="js/missions/nn_deathmatch.js?v=120"></script>
+<script src="js/world_gen.js?v=120"></script>
+<script src="js/squad.js?v=120"></script>
+<script src="js/drone_fpv.js?v=120"></script>
+<script src="js/vision_raycast.js?v=120"></script>
+<script src="js/camera.js?v=120"></script>
+<script src="js/defense_build_ui.js?v=120"></script>
+<script src="js/pause.js?v=120"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -3755,31 +3755,23 @@ function startSkirmish() {
 }
 
 async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', weaponId = 'RIFLE', lineup = null, gameMode = 'dm') {
-  // Phase 1 diagnostic — ?nonn=1 strips ALL NN-driven units from the
-  // skirmish: 0 allies + 0 enemies at spawn AND no wave respawn AND
-  // nnTick short-circuits. Lets the user A/B test whether MP rubber-
-  // band is the network code or the 60 Hz ONNX load on main thread.
-  // User '我也想看看若無nn其他玩家 是否真的就不卡' (first cut just
-  // froze the bots in place — they were spawned but nnTick was the
-  // ONLY thing being skipped; the wave spawner kept refilling them
-  // because the gate is below the size-clamp + the mission factory's
-  // _spawnRedWave wasn't gated at all).
+  // Suppress client-side NN spawn when the server is authoritative for
+  // bots (we'd otherwise render TWO squads — the server's via remoteBots
+  // and our own local NN-driven ones). The runtime discriminator is
+  // simply "am I connected to MP?": in MP, server provides bots; in SP
+  // (offline / local-only), we spawn the local NN squad as before.
+  //
+  // ?nonn=1 stays as an escape hatch for diagnosing whether NN inference
+  // load is causing stutter (user '我也想看看若無nn其他玩家 是否真的就
+  // 不卡'). Without bots the wave spawner short-circuits too; without
+  // that gate, every 15 s a fresh wave would respawn the squad we just
+  // skipped, undermining the diagnostic.
   const _nonn = (() => {
     try {
       const q = new URLSearchParams(location.search);
-      // Phase 3 — ?phase3=1 implies ?nonn=1 for the SP-side spawn path:
-      // when server is authoritative for bots, the client must NOT also
-      // spawn its own NN allies/enemies or we'd see TWO sets of bots.
-      // The server's bot squad is rendered via _mpState.remoteBots from
-      // snap.bots in multiplayer.js.
-      // Phase 3 polish — ?v2=1 implies phase3 (and therefore nonn) by
-      // default. Explicit ?phase3=0 opts OUT for A/B comparison.
       if (q.get('nonn') === '1') return true;
-      const p = q.get('phase3');
-      if (p === '0') return false;
-      if (p === '1') return true;
-      return q.get('v2') === '1';
-    } catch (e) { return false; }
+    } catch (e) { /* fall through */ }
+    return !!(typeof _mpState !== 'undefined' && _mpState && _mpState.enabled);
   })();
   document.getElementById('start').classList.add('hidden');
   document.getElementById('nnLobby')?.classList.add('hidden');
@@ -9431,22 +9423,17 @@ function renderWorld() {
     if (pInvuln) ctx.globalAlpha = 1;
   }
 
-  // Phase 3 — server-side bots, rendered when ?phase3=1 is active.
-  // Smooth-lerp toward snapshot targetX/Y so 15Hz network beats don't
-  // strobe the render. Drawn via drawHumanoid for visual parity with
-  // local NN allies + other MP players (Phase 3-followup — user
-  // '外型怪'; original cut drew unkeyed 22×22 squares).
-  if (typeof _mpIsPhase3 === 'function' && _mpIsPhase3() && _mpState && _mpState.remoteBots) {
-    // Phase 4b-followup — bot lerp tightened from 0.25 to 0.45. With
-    // 0.25 the visual bot trailed its server position by 3-4 frames
-    // (50-66 ms at 60 fps). Server fires bullets from the server's
-    // authoritative bot.x/y AT the moment of fire; the client then
-    // renders the bullet at server coords but the bot's silhouette
-    // at the lerp-trailed coords → bullets appear to emerge from
-    // empty air ahead of the bot. User '莫名其妙朝槍離開槍子彈'.
-    // 0.45 converges in ~2 frames so muzzle ≈ bullet origin within
-    // 1 frame of visual lag (acceptable; still smooths the 15 Hz
-    // snapshot beat).
+  // Server-side bots, rendered whenever the snapshot carries any (MP-
+  // connected sessions only). Smooth-lerp toward snapshot targetX/Y so
+  // 15 Hz network beats don't strobe the render. Drawn via drawHumanoid
+  // for visual parity with local NN allies + other MP players (original
+  // cut drew unkeyed 22×22 squares — user '外型怪').
+  //
+  // Lerp at 0.45 converges in ~2 frames so the muzzle origin ≈ bullet
+  // origin within 1 frame of visual lag. Tighter lerps (0.25) made
+  // server-authoritative bullets appear to leave empty air ahead of the
+  // bot's silhouette (user '莫名其妙朝槍離開槍子彈').
+  if (_mpState && _mpState.remoteBots && _mpState.remoteBots.size > 0) {
     const lerpK = 0.45;
     for (const rb of _mpState.remoteBots.values()) {
       if (!rb.alive) continue;
@@ -11208,23 +11195,27 @@ function drawMinimapPanel(mx, my, mw, mh) {
 // Continuation of renderHUD: mode overlays, crosshair, message banner, dead
 // overlay. Pulled out so the minimap-collapse path can short-circuit cleanly
 // without bailing on these.
+const _MP_DEBUG_OVERLAY = (() => {
+  try { return new URLSearchParams(location.search).get('debug') === '1'; }
+  catch (e) { return false; }
+})();
 function renderHUDOverlays() {
-  // Phase 1 — v2 debug strip. Visible whenever ?v2=1 is in the URL, so
-  // you can confirm at a glance that the new code path is actually live
-  // and observe the per-frame predX/player.x error magnitude. Disappears
-  // automatically on default (non-v2) URLs so live ashgrid.io is clean.
+  // MP debug strip — surfaces per-frame predX/player.x error magnitude
+  // plus RTT and pending-input depth so we can spot reconcile issues at
+  // a glance. Off by default; toggle with ?debug=1 on the URL so the
+  // live ashgrid.io HUD stays clean.
   try {
-    if (typeof _mpIsV2 === 'function' && _mpIsV2()) {
+    if (_MP_DEBUG_OVERLAY && _mpState && _mpState.enabled) {
       const fontPx = 11;
       ctx.save();
       ctx.font = `bold ${fontPx}px monospace`;
       ctx.textAlign = 'left';
       const lines = [];
-      const sx = (typeof _mpState !== 'undefined') ? Math.round(_mpState.serverSelfX) : 0;
-      const sy = (typeof _mpState !== 'undefined') ? Math.round(_mpState.serverSelfY) : 0;
+      const sx = Math.round(_mpState.serverSelfX);
+      const sy = Math.round(_mpState.serverSelfY);
       const px = Math.round(player.x), py = Math.round(player.y);
       const dErr = Math.hypot(px - sx, py - sy);
-      lines.push('V2 ARCHITECTURE · ?v2=1');
+      lines.push('MP DEBUG · ?debug=1');
       lines.push(`player local  ${px},${py}`);
       lines.push(`server known  ${sx},${sy}`);
       lines.push(`err           ${dErr.toFixed(1)} px  ${dErr < 3 ? 'OK' : dErr < 150 ? 'drift' : 'snap'}`);
