@@ -107,28 +107,25 @@ const _NN_MOVE_DIRS = [
 const _NN_MIRROR_MOVE = [0, 1, 8, 7, 6, 5, 4, 3, 2];
 const _NN_OBS_BUF = new Float32Array(65);
 
-// Phase 4 — server tick rate bumped 30 Hz → 60 Hz. CF/PartyKit has the
-// CPU headroom and the player benefit is real: input-to-action latency
-// drops by up to 16 ms (one extra tick within the 33 ms input cycle).
-// History granularity for lag-comp also doubles, sharpening "favor the
-// shooter" outcomes.
+// Phase 4 → Phase 4b — server tick rate 30 Hz → 100 Hz (was 60 Hz). CF/
+// PartyKit on Workers has tons of CPU headroom and the player wins
+// compound: input→action latency drops to 0-10 ms (was 0-16 ms at 60 Hz,
+// 0-33 ms at 30 Hz), lag-comp granularity 3.3× over the original.
 //
-// To keep gameplay velocity / fire rate / range identical, EVERY per-
-// tick constant rescales:
-//   - SPEED constants (px/tick)   halve   (60 ticks × half = same px/s)
-//   - DURATION constants (ticks)  double  (double ticks × half tick = same s)
+// All per-tick constants rescale via TICK_FACTOR = TICK_HZ / 30:
+//   - SPEED constants (px/tick)   ÷ TICK_FACTOR  → same px/sec
+//   - DURATION constants (ticks)  × TICK_FACTOR  → same wall-time
 //
-// TICK_FACTOR is the integer scale (30→60 = ×2). Grep for it in this
-// file to find every retuned literal. Same factor applies to the sim
-// modules in server/party/sim/* — see comments there.
-const TICK_HZ           = 60;
-const TICK_FACTOR       = TICK_HZ / 30;  // 2 — multiplier vs the 30-Hz baseline
+// Non-integer factor (3.333) means some derived tick counts are floats
+// (e.g. bot _fireCd = wsim.fireCdTicks | 0 already truncates; lag-comp
+// uses Math.round). Doesn't affect game balance.
+const TICK_HZ           = 100;
+const TICK_FACTOR       = TICK_HZ / 30;     // 3.333 — multiplier vs the 30-Hz baseline
 const TICK_MS           = 1000 / TICK_HZ;
-// Snapshot every 2 ticks keeps the 30 Hz broadcast rate established in
-// Phase 3.1 (raised from 15 Hz). Doubling tick rate without doubling
-// snapshot rate gives finer SIMULATION but the same NETWORK pacing —
-// good trade-off since per-snapshot client work is dominant.
-const SNAPSHOT_EVERY    = 2;          // 2 ticks @ 60Hz = 30Hz broadcast
+// Snapshot every 3 ticks @ 100 Hz = 33.3 Hz broadcast — close to the
+// 30 Hz set in Phase 3.1. Network pacing stays the same while sim
+// granularity bumps 1.67× (60 Hz → 100 Hz).
+const SNAPSHOT_EVERY    = 3;          // 3 ticks @ 100Hz = 33Hz broadcast
 const PLAYER_RADIUS     = 14;
 const PLAYER_SPEED      = 5.6 / TICK_FACTOR;   // 2.8 — half of 30-Hz baseline
 const ARENA_W           = 1800;
