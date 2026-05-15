@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=109"></script>
-<script src="js/arena_recruitment.js?v=109"></script>
-<script src="js/dynamic_radio.js?v=109"></script>
-<script src="js/i18n.js?v=109"></script>
-<script src="js/touch_input.js?v=109"></script>
-<script src="js/key_bindings.js?v=109"></script>
-<script src="js/grenades.js?v=109"></script>
-<script src="js/squad_commands.js?v=109"></script>
-<script src="js/multiplayer.js?v=109"></script>
-<script src="js/leaderboard.js?v=109"></script>
-<script src="js/structures.js?v=109"></script>
-<script src="js/tod.js?v=109"></script>
-<script src="js/weapons.js?v=109"></script>
-<script src="js/chassis.js?v=109"></script>
-<script src="js/respawn_buff.js?v=109"></script>
-<script src="js/death_recap.js?v=109"></script>
-<script src="js/mote_affinity.js?v=109"></script>
-<script src="js/stage_hints.js?v=109"></script>
-<script src="js/pawn_swap.js?v=109"></script>
-<script src="js/global_stats.js?v=109"></script>
-<script src="js/progressive_unlock.js?v=109"></script>
-<script src="js/ad_stubs.js?v=109"></script>
+<script src="js/audio/sfx.js?v=110"></script>
+<script src="js/arena_recruitment.js?v=110"></script>
+<script src="js/dynamic_radio.js?v=110"></script>
+<script src="js/i18n.js?v=110"></script>
+<script src="js/touch_input.js?v=110"></script>
+<script src="js/key_bindings.js?v=110"></script>
+<script src="js/grenades.js?v=110"></script>
+<script src="js/squad_commands.js?v=110"></script>
+<script src="js/multiplayer.js?v=110"></script>
+<script src="js/leaderboard.js?v=110"></script>
+<script src="js/structures.js?v=110"></script>
+<script src="js/tod.js?v=110"></script>
+<script src="js/weapons.js?v=110"></script>
+<script src="js/chassis.js?v=110"></script>
+<script src="js/respawn_buff.js?v=110"></script>
+<script src="js/death_recap.js?v=110"></script>
+<script src="js/mote_affinity.js?v=110"></script>
+<script src="js/stage_hints.js?v=110"></script>
+<script src="js/pawn_swap.js?v=110"></script>
+<script src="js/global_stats.js?v=110"></script>
+<script src="js/progressive_unlock.js?v=110"></script>
+<script src="js/ad_stubs.js?v=110"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=109"></script>
+<script src="js/crazygames.js?v=110"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=109"></script>
+<script src="js/gamemonetize.js?v=110"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=109"></script>
-<script src="js/world_gen.js?v=109"></script>
-<script src="js/squad.js?v=109"></script>
-<script src="js/drone_fpv.js?v=109"></script>
-<script src="js/vision_raycast.js?v=109"></script>
-<script src="js/camera.js?v=109"></script>
-<script src="js/defense_build_ui.js?v=109"></script>
-<script src="js/pause.js?v=109"></script>
+<script src="js/missions/nn_deathmatch.js?v=110"></script>
+<script src="js/world_gen.js?v=110"></script>
+<script src="js/squad.js?v=110"></script>
+<script src="js/drone_fpv.js?v=110"></script>
+<script src="js/vision_raycast.js?v=110"></script>
+<script src="js/camera.js?v=110"></script>
+<script src="js/defense_build_ui.js?v=110"></script>
+<script src="js/pause.js?v=110"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -9363,6 +9363,49 @@ function renderWorld() {
     if (pInvuln) ctx.globalAlpha = 0.7 + 0.3 * Math.abs(Math.sin(game.time * 0.25));
     drawHumanoid(player.x, player.y, player.angle, player.walkPhase, COLORS.black, false, player);
     if (pInvuln) ctx.globalAlpha = 1;
+  }
+
+  // Phase 5 (re-add) — server-side NN bots from snapshot. Without this
+  // block bots fire bullets server-side but the shooter is invisible on
+  // screen (user '隱形單位射子彈'). Smooth-lerp toward server-sent target
+  // pos so 33 Hz snapshots don't strobe the silhouette. drawHumanoid
+  // for visual parity with local NN allies + remote MP players.
+  if (typeof _mpState !== 'undefined' && _mpState && _mpState.remoteBots && _mpState.remoteBots.size > 0) {
+    const lerpK = 0.45;
+    for (const rb of _mpState.remoteBots.values()) {
+      if (!rb.alive) continue;
+      const prevX = rb.x, prevY = rb.y;
+      rb.x += (rb.targetX - rb.x) * lerpK;
+      rb.y += (rb.targetY - rb.y) * lerpK;
+      // Fog-of-war: team-1 (red/enemy) bots only render when visible to a
+      // friendly cone/drone/FPV. Sticky 30-frame visibility so brief LoS
+      // dips at cone edges don't strobe.
+      if (rb.team === 1) {
+        const isVis = typeof isVisibleToFriendly === 'function'
+                    && isVisibleToFriendly(rb.x, rb.y);
+        if (isVis) rb._visibleUntil = game.time + 30;
+        if (!isVis && (rb._visibleUntil == null || game.time >= rb._visibleUntil)) continue;
+      }
+      const moved = Math.hypot(rb.x - prevX, rb.y - prevY);
+      rb._walkPhase = (rb._walkPhase || 0) + Math.min(0.32, moved * 0.06);
+      const synth = {
+        _chassis: 'humanoid',
+        radius: 14,
+        callsign: 'BOT-' + String(rb.id).slice(-4),
+        gunAngle: rb.angle,
+        gunRecoil: 0,
+        x: rb.x, y: rb.y,
+        hp: rb.hp, maxHp: 100,
+      };
+      const bodyColor = (rb.team === 0) ? COLORS.creamDark : COLORS.red;
+      drawHumanoid(rb.x, rb.y, rb.angle, rb._walkPhase, bodyColor, rb.team === 1, synth);
+      if (rb.hp < 100) {
+        ctx.fillStyle = COLORS.black;
+        ctx.fillRect(rb.x - 15, rb.y - 26, 30, 3);
+        ctx.fillStyle = (rb.team === 0) ? COLORS.creamDark : COLORS.red;
+        ctx.fillRect(rb.x - 15, rb.y - 26, 30 * rb.hp / 100, 3);
+      }
+    }
   }
 
   // Phase 20a/b/24: remote players + bullets + pings + emote bubbles.

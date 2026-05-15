@@ -89,6 +89,13 @@ const _mpState = {
   // Server-owned bullets (id keyed). We forward-extrapolate between
   // snapshots so they don't visually jitter.
   remoteBullets:  new Map(),       // bulletId → {x, y, vx, vy, s, lastSnapshotAt}
+  // Phase 5 (re-add) — server-side NN bots, mirrored from snap.bots. Same
+  // delta-compression rules as players: first-seen entries carry full
+  // state, subsequent only changed fields. Render path in index.html
+  // draws each via drawHumanoid; without this Map, server bots fire
+  // bullets but the shooter silhouette never appears — user '隱形單位
+  // 在設獨特的子彈'.
+  remoteBots:     new Map(),       // botId → {id, team, x, y, targetX, targetY, angle, hp, alive, _walkPhase, _visibleUntil}
   // Client prediction queue. Each entry is {seq, dx, dy, angle, fire}.
   // We replay these (in order, > server's lastInputSeq) every snapshot
   // so the local player position stays "ahead" of the server.
@@ -580,6 +587,37 @@ function _mpHandleSnapshot(snap) {
   // Re-build the legacy list mirror for index.html's render loop.
   _mpRemoteBullets.length = 0;
   for (const bl of _mpState.remoteBullets.values()) _mpRemoteBullets.push(bl);
+
+  // ─ bots ─ (Phase 5-aware delta merge)
+  // snap.bots entries: keyframe carries full state, deltas only fields
+  // that changed. Apply only-when-defined. targetX/Y lerped toward in
+  // the render loop in index.html (lerpK=0.45) for smooth interpolation
+  // between the 30 Hz snapshots.
+  if (Array.isArray(snap.bots)) {
+    for (const sb of snap.bots) {
+      let rb = _mpState.remoteBots.get(sb.id);
+      if (!rb) {
+        // Keyframe — full state. Server is required to send a keyframe
+        // on first appearance for a receiver, so the team/etc. fields
+        // are present.
+        rb = {
+          id: sb.id, team: sb.team,
+          x: sb.x, y: sb.y,
+          targetX: sb.x, targetY: sb.y,
+          angle: sb.angle, hp: sb.hp, alive: sb.alive,
+          _walkPhase: 0,
+        };
+        _mpState.remoteBots.set(sb.id, rb);
+      } else {
+        if (sb.team !== undefined) rb.team = sb.team;
+        if (sb.x !== undefined) rb.targetX = sb.x;
+        if (sb.y !== undefined) rb.targetY = sb.y;
+        if (sb.angle !== undefined) rb.angle = sb.angle;
+        if (sb.hp !== undefined) rb.hp = sb.hp;
+        if (sb.alive !== undefined) rb.alive = sb.alive;
+      }
+    }
+  }
 }
 
 // Phase 39: shooter-side hit feedback. When the server reports a hit and the
@@ -792,6 +830,32 @@ function _mpSendInput() {
                   && player.alive
                   && game.mode !== 'fpv');
 
+  // Per-input loadout snapshot: sprint flag + weapon/chassis speed
+  // multipliers + weapon id. Server uses these in its tick math so its
+  // movement byte-matches the client's per-frame integration. Without
+  // these the server defaults to 1.0 / no-sprint → server runs ~25 %
+  // slower than client when sprinting on a wolf chassis → reconcile
+  // tugs client back every snapshot → user '機器狼移動 衝刺時不順'.
+  const sprint = !!(typeof player !== 'undefined' && player.sprinting);
+  const wMul = (typeof playerWeapon !== 'undefined' && playerWeapon && typeof playerWeapon.speedMul === 'number')
+    ? playerWeapon.speedMul : 1.0;
+  const cMul = (typeof player !== 'undefined' && typeof player._chassisSpeedMul === 'number')
+    ? player._chassisSpeedMul : 1.0;
+  let wId = 'RIFLE';
+  if (typeof WEAPONS !== 'undefined' && typeof playerWeapon !== 'undefined' && playerWeapon) {
+    if (playerWeapon === WEAPONS.RIFLE)        wId = 'RIFLE';
+    else if (playerWeapon === WEAPONS.SMG)     wId = 'SMG';
+    else if (playerWeapon === WEAPONS.LMG)     wId = 'LMG';
+    else if (playerWeapon === WEAPONS.SNIPER)  wId = 'SNIPER';
+    else if (playerWeapon === WEAPONS.SHOTGUN) wId = 'SHOTGUN';
+    else if (playerWeapon === WEAPONS.ROCKET)  wId = 'ROCKET';
+    else {
+      for (const k of Object.keys(WEAPONS)) {
+        if (WEAPONS[k] === playerWeapon) { wId = k; break; }
+      }
+    }
+  }
+
   const seq = ++_mpState.localInputSeq;
   const input = {
     type: 'input',
@@ -810,6 +874,9 @@ function _mpSendInput() {
     // decide RESPAWN_TICKS (default 15s vs buffed 5s). Cheap to send every
     // input (1 boolean); avoids needing a dedicated 'buff-state' message.
     buffActive: (typeof isRespawnBuffed === 'function') ? isRespawnBuffed() : false,
+    // Per-tick loadout (see big comment above).
+    sprint: sprint ? 1 : 0,
+    wMul, cMul, wId,
   };
   _mpSendRaw(input);
 
@@ -822,7 +889,7 @@ function _mpSendInput() {
   // Phase 38 prediction — index.html's per-frame WASD code IS our
   // prediction. We just record the input here so reconciliation can
   // replay any unacked inputs from the server's confirmed position.
-  _mpState.pendingInputs.push({ seq, dx, dy, angle, fire });
+  _mpState.pendingInputs.push({ seq, dx, dy, angle, fire, sprint, wMul, cMul });
 
   // Cap the pendingInputs queue so it doesn't grow forever during net loss
   if (_mpState.pendingInputs.length > 120) {
