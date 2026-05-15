@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=111"></script>
-<script src="js/arena_recruitment.js?v=111"></script>
-<script src="js/dynamic_radio.js?v=111"></script>
-<script src="js/i18n.js?v=111"></script>
-<script src="js/touch_input.js?v=111"></script>
-<script src="js/key_bindings.js?v=111"></script>
-<script src="js/grenades.js?v=111"></script>
-<script src="js/squad_commands.js?v=111"></script>
-<script src="js/multiplayer.js?v=111"></script>
-<script src="js/leaderboard.js?v=111"></script>
-<script src="js/structures.js?v=111"></script>
-<script src="js/tod.js?v=111"></script>
-<script src="js/weapons.js?v=111"></script>
-<script src="js/chassis.js?v=111"></script>
-<script src="js/respawn_buff.js?v=111"></script>
-<script src="js/death_recap.js?v=111"></script>
-<script src="js/mote_affinity.js?v=111"></script>
-<script src="js/stage_hints.js?v=111"></script>
-<script src="js/pawn_swap.js?v=111"></script>
-<script src="js/global_stats.js?v=111"></script>
-<script src="js/progressive_unlock.js?v=111"></script>
-<script src="js/ad_stubs.js?v=111"></script>
+<script src="js/audio/sfx.js?v=112"></script>
+<script src="js/arena_recruitment.js?v=112"></script>
+<script src="js/dynamic_radio.js?v=112"></script>
+<script src="js/i18n.js?v=112"></script>
+<script src="js/touch_input.js?v=112"></script>
+<script src="js/key_bindings.js?v=112"></script>
+<script src="js/grenades.js?v=112"></script>
+<script src="js/squad_commands.js?v=112"></script>
+<script src="js/multiplayer.js?v=112"></script>
+<script src="js/leaderboard.js?v=112"></script>
+<script src="js/structures.js?v=112"></script>
+<script src="js/tod.js?v=112"></script>
+<script src="js/weapons.js?v=112"></script>
+<script src="js/chassis.js?v=112"></script>
+<script src="js/respawn_buff.js?v=112"></script>
+<script src="js/death_recap.js?v=112"></script>
+<script src="js/mote_affinity.js?v=112"></script>
+<script src="js/stage_hints.js?v=112"></script>
+<script src="js/pawn_swap.js?v=112"></script>
+<script src="js/global_stats.js?v=112"></script>
+<script src="js/progressive_unlock.js?v=112"></script>
+<script src="js/ad_stubs.js?v=112"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=111"></script>
+<script src="js/crazygames.js?v=112"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=111"></script>
+<script src="js/gamemonetize.js?v=112"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=111"></script>
-<script src="js/world_gen.js?v=111"></script>
-<script src="js/squad.js?v=111"></script>
-<script src="js/drone_fpv.js?v=111"></script>
-<script src="js/vision_raycast.js?v=111"></script>
-<script src="js/camera.js?v=111"></script>
-<script src="js/defense_build_ui.js?v=111"></script>
-<script src="js/pause.js?v=111"></script>
+<script src="js/missions/nn_deathmatch.js?v=112"></script>
+<script src="js/world_gen.js?v=112"></script>
+<script src="js/squad.js?v=112"></script>
+<script src="js/drone_fpv.js?v=112"></script>
+<script src="js/vision_raycast.js?v=112"></script>
+<script src="js/camera.js?v=112"></script>
+<script src="js/defense_build_ui.js?v=112"></script>
+<script src="js/pause.js?v=112"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -6715,6 +6715,28 @@ function tickPlayerCombat(isMoving) {
         }
         if (!lineOfSight(player.x, player.y, rp.x, rp.y)) continue;
         if (d < bestD) { bestD = d; bestE = rp; }
+      }
+    }
+    // Phase X — server-side NN bots (Phase 3 re-added in e0d40c7). Aim-
+    // assist must include them as candidate targets, otherwise the user
+    // sees a red bot silhouette but the auto-lock skips it (user '有些
+    // 單位看到不會自動瞄準攻擊'). Filter: team === 1 only (team-0 bots
+    // are friendly NN allies fighting alongside us — never target them).
+    if (typeof _mpState !== 'undefined' && _mpState.enabled && _mpState.remoteBots) {
+      for (const rb of _mpState.remoteBots.values()) {
+        if (!rb.alive) continue;
+        if (rb.team === 0) continue;    // skip ally bots (team-0)
+        const dx = rb.x - player.x, dy = rb.y - player.y;
+        const d = Math.hypot(dx, dy);
+        if (d > RANGE) continue;
+        if (tactical) {
+          let diff = Math.atan2(dy, dx) - player.angle;
+          while (diff >  Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          if (Math.abs(diff) > ARC_HALF) continue;
+        }
+        if (!lineOfSight(player.x, player.y, rb.x, rb.y)) continue;
+        if (d < bestD) { bestD = d; bestE = rb; }
       }
     }
     if (bestE) {
