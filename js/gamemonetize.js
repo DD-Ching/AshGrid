@@ -73,6 +73,17 @@
   // the reward.
   let _adReallyPlaying = false;
   let _adPlayStartedAt = 0;      // wall-clock ms when ad started playing
+  // Phase 102 — track audio mute state at ad start so we can RESTORE on
+  // ad end without nuking the user's manual mute preference. Without
+  // this, the GM verification would fail: GM explicitly forbids game
+  // audio playing during ads ('background audio through video
+  // advertisements is forbidden' — README), so we MUST mute on PAUSE.
+  let _audioMutedByAd = false;
+  // Phase 102 — preroll guard. GM verifier expects at least one
+  // sdk.showBanner() call to fire during the activation flow. Best
+  // location per GM blog: first time the player presses Play. Use
+  // _prerollFired so we only fire it once per page session.
+  let _prerollFired = false;
   const _devMode = !GM_GAME_ID;
 
   // ─── Load GM SDK (only when configured) ───────────────────────────
@@ -101,6 +112,15 @@
           case 'SDK_GAME_START':
             // Ad finished — resume gameplay.
             if (typeof game !== 'undefined') game._paused = false;
+            // Phase 102 — restore audio. Only un-mute if WE were the one
+            // who muted on PAUSE; otherwise the user had it manually
+            // muted and we shouldn't override their preference.
+            try {
+              if (_audioMutedByAd && typeof setAudioMuted === 'function') {
+                setAudioMuted(false);
+              }
+              _audioMutedByAd = false;
+            } catch (e) {}
             // Phase 101 — early-skip detection. GM fires SDK_GAME_START on
             // ALL three close paths: full-play, user-skip, and ad-error.
             // Previously we always granted the reward (cb(true)), which
@@ -133,6 +153,16 @@
             // Ad about to play — pause gameplay so the player doesn't
             // get shot while watching a 15s mid-roll.
             if (typeof game !== 'undefined') game._paused = true;
+            // Phase 102 — MUST mute audio during ads (GM rule: game
+            // audio during ads is forbidden; #1 cause of verification
+            // failure). Save current mute state so we restore — not
+            // wipe — the user's manual mute preference on ad end.
+            try {
+              if (typeof AUDIO !== 'undefined' && typeof setAudioMuted === 'function') {
+                _audioMutedByAd = !AUDIO.muted;  // we only need to restore if WE muted
+                setAudioMuted(true);
+              }
+            } catch (e) {}
             _adPlayStartedAt = Date.now();
             _adReallyPlaying = true;
             break;
@@ -279,6 +309,51 @@
   // when player clicks 'Watch Ad' → 30-min respawn buff in return.
   window.crazyAd_midgame   = ()  => { /* no-op: no fullscreen passive */ };
   window.crazyAd_rewarded  = (cb) => showAd(cb, { rewarded: true });
+
+  // Phase 102 — GM-specific exports.
+  //
+  // gmPreroll(): fires ONCE per page session, on the first 'ENTER ARENA'
+  // click. GM's verification flow watches for at least one showBanner()
+  // call during the iframe-load probe; without it activation is rejected.
+  // Best-practice location per GM blog: 'Play button'. Throttle bypass —
+  // this counts as the FIRST ad, not a midgame.
+  window.gmPreroll = function() {
+    if (_prerollFired) return;
+    _prerollFired = true;
+    if (_devMode) {
+      console.log('[gamemonetize] dev-mode preroll — would showBanner() on first match');
+      return;
+    }
+    try {
+      if (window.sdk && typeof window.sdk.showBanner === 'function') {
+        window.sdk.showBanner();
+        _lastAdAt = Date.now();
+      }
+    } catch (e) {
+      console.warn('[gamemonetize] preroll showBanner threw:', e);
+    }
+  };
+
+  // gmEndMatch(): fires a midgame interstitial at match end (win/lose).
+  // Respects MIN_AD_INTERVAL_MS so back-to-back short matches don't
+  // double-ad. Per GM blog this is the second-best inventory location
+  // after the Play button.
+  window.gmEndMatch = function() {
+    const now = Date.now();
+    if (now - _lastAdAt < MIN_AD_INTERVAL_MS) return;
+    _lastAdAt = now;
+    if (_devMode) {
+      console.log('[gamemonetize] dev-mode end-match — would showBanner()');
+      return;
+    }
+    try {
+      if (window.sdk && typeof window.sdk.showBanner === 'function') {
+        window.sdk.showBanner();
+      }
+    } catch (e) {
+      console.warn('[gamemonetize] end-match showBanner threw:', e);
+    }
+  };
 
   // Phase 84 — death counter kept for analytics, but does NOT trigger
   // fullscreen video ads. User '不是全螢幕的, 視窗那種靜態的, 全螢幕是
