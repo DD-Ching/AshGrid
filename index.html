@@ -45,53 +45,53 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=112"></script>
-<script src="js/arena_recruitment.js?v=112"></script>
-<script src="js/dynamic_radio.js?v=112"></script>
-<script src="js/i18n.js?v=112"></script>
-<script src="js/touch_input.js?v=112"></script>
-<script src="js/key_bindings.js?v=112"></script>
-<script src="js/grenades.js?v=112"></script>
-<script src="js/squad_commands.js?v=112"></script>
+<script src="js/audio/sfx.js?v=113"></script>
+<script src="js/arena_recruitment.js?v=113"></script>
+<script src="js/dynamic_radio.js?v=113"></script>
+<script src="js/i18n.js?v=113"></script>
+<script src="js/touch_input.js?v=113"></script>
+<script src="js/key_bindings.js?v=113"></script>
+<script src="js/grenades.js?v=113"></script>
+<script src="js/squad_commands.js?v=113"></script>
 <!-- Phase 1 / 2: shared sim modules (server uses byte-identical ESM
      mirrors at server/party/sim/*.js). Must load BEFORE multiplayer.js.
      Parity guard in ai_arena/scripts/check_sim_parity.sh; logic test
      harness in ai_arena/scripts/test_sim.mjs. -->
-<script src="js/sim/constants.js?v=112"></script>
-<script src="js/sim/movement.js?v=112"></script>
-<script src="js/sim/weapons.js?v=112"></script>
-<script src="js/sim/bullet.js?v=112"></script>
-<script src="js/multiplayer.js?v=112"></script>
-<script src="js/leaderboard.js?v=112"></script>
-<script src="js/structures.js?v=112"></script>
-<script src="js/tod.js?v=112"></script>
-<script src="js/weapons.js?v=112"></script>
-<script src="js/chassis.js?v=112"></script>
-<script src="js/respawn_buff.js?v=112"></script>
-<script src="js/death_recap.js?v=112"></script>
-<script src="js/mote_affinity.js?v=112"></script>
-<script src="js/stage_hints.js?v=112"></script>
-<script src="js/pawn_swap.js?v=112"></script>
-<script src="js/global_stats.js?v=112"></script>
-<script src="js/progressive_unlock.js?v=112"></script>
-<script src="js/ad_stubs.js?v=112"></script>
+<script src="js/sim/constants.js?v=113"></script>
+<script src="js/sim/movement.js?v=113"></script>
+<script src="js/sim/weapons.js?v=113"></script>
+<script src="js/sim/bullet.js?v=113"></script>
+<script src="js/multiplayer.js?v=113"></script>
+<script src="js/leaderboard.js?v=113"></script>
+<script src="js/structures.js?v=113"></script>
+<script src="js/tod.js?v=113"></script>
+<script src="js/weapons.js?v=113"></script>
+<script src="js/chassis.js?v=113"></script>
+<script src="js/respawn_buff.js?v=113"></script>
+<script src="js/death_recap.js?v=113"></script>
+<script src="js/mote_affinity.js?v=113"></script>
+<script src="js/stage_hints.js?v=113"></script>
+<script src="js/pawn_swap.js?v=113"></script>
+<script src="js/global_stats.js?v=113"></script>
+<script src="js/progressive_unlock.js?v=113"></script>
+<script src="js/ad_stubs.js?v=113"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=112"></script>
+<script src="js/crazygames.js?v=113"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=112"></script>
+<script src="js/gamemonetize.js?v=113"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=112"></script>
-<script src="js/world_gen.js?v=112"></script>
-<script src="js/squad.js?v=112"></script>
-<script src="js/drone_fpv.js?v=112"></script>
-<script src="js/vision_raycast.js?v=112"></script>
-<script src="js/camera.js?v=112"></script>
-<script src="js/defense_build_ui.js?v=112"></script>
-<script src="js/pause.js?v=112"></script>
+<script src="js/missions/nn_deathmatch.js?v=113"></script>
+<script src="js/world_gen.js?v=113"></script>
+<script src="js/squad.js?v=113"></script>
+<script src="js/drone_fpv.js?v=113"></script>
+<script src="js/vision_raycast.js?v=113"></script>
+<script src="js/camera.js?v=113"></script>
+<script src="js/defense_build_ui.js?v=113"></script>
+<script src="js/pause.js?v=113"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -3772,7 +3772,13 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
       // spawn its own NN allies/enemies or we'd see TWO sets of bots.
       // The server's bot squad is rendered via _mpState.remoteBots from
       // snap.bots in multiplayer.js.
-      return q.get('nonn') === '1' || q.get('phase3') === '1';
+      // Phase 3 polish — ?v2=1 implies phase3 (and therefore nonn) by
+      // default. Explicit ?phase3=0 opts OUT for A/B comparison.
+      if (q.get('nonn') === '1') return true;
+      const p = q.get('phase3');
+      if (p === '0') return false;
+      if (p === '1') return true;
+      return q.get('v2') === '1';
     } catch (e) { return false; }
   })();
   document.getElementById('start').classList.add('hidden');

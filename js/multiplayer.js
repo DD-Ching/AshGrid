@@ -172,17 +172,29 @@ const _MP_IS_V2 = (() => {
 })();
 function _mpIsV2() { return _MP_IS_V2; }
 
-// Phase 3 — opt-in flag for server-side NN bots. URL ?phase3=1 makes
-// the client (a) send phase3=1 in every input so the server flips
+// Phase 3 — server-side NN bots. When phase3 is on, the client
+// (a) sends phase3=1 in every input so the server flips
 // simBotsEnabled, (b) renders snap.bots from the snapshot, and (c)
 // skips local NN spawn (same effect as ?nonn=1 for that piece).
 //
-// While ONNX inference still lives on the client by default, phase3
-// is the migration switch that lets us A/B test the server-NN
-// architecture against the legacy one on the same dev preview URL.
+// Phase 3 polish — ?v2=1 now AUTOMATICALLY implies ?phase3=1. User
+// '走路 / sprint 還在拉回' on plain ?v2=1: the rubber-band was caused
+// by client-side ONNX inference (60 Hz × 16 bots × ~32 µs) blocking
+// the main thread, dropping the 60 fps update() ticks, leaving the
+// client position behind the server position until > 150 px → SNAP.
+// Moving NN to server (phase3) removes the main-thread load → no
+// tick drops → no rubber-band. Since v2 is opt-in already, treat it
+// as "the wings.io architecture switch" which includes server NN.
+//
+// Legacy URL ?phase3=0 explicitly opts OUT (kept for A/B comparison).
 const _MP_IS_PHASE3 = (() => {
-  try { return new URLSearchParams(location.search).get('phase3') === '1'; }
-  catch (e) { return false; }
+  try {
+    const q = new URLSearchParams(location.search);
+    const p = q.get('phase3');
+    if (p === '0') return false;            // explicit opt-out
+    if (p === '1') return true;             // explicit opt-in
+    return q.get('v2') === '1';             // default: follows v2
+  } catch (e) { return false; }
 })();
 function _mpIsPhase3() { return _MP_IS_PHASE3; }
 function _mpPeerCount() {
@@ -498,7 +510,19 @@ function _mpHandleSnapshot(snap) {
         if (_ignoreReconcile) {
           player._reconcileErr = null;
         } else if (isV2) {
-          if (dist > 150) {
+          // Phase 3-followup — Chrome MCP measurement: sprinting north
+          // for 1 s at localhost RTT had err climb 22 → 111 px before
+          // catching back to 33 px (steady-state prediction lead). On
+          // production with 30-60 ms RTT, the climb is ~1.5× larger so
+          // err easily hits 150 px on the way up → snap → user feels
+          // rubber-band even though no spread-error is running.
+          //
+          // Raising the snap threshold to 280 absorbs the transient
+          // sprint-start lead without triggering snap, while still
+          // catching real teleports / respawn / lag-spikes. Steady-
+          // state drift naturally bleeds back to ~33 px once server
+          // catches up on its tick.
+          if (dist > 280) {
             player.x = predX; player.y = predY;
           }
           player._reconcileErr = null;
