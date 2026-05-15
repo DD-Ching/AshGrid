@@ -418,6 +418,29 @@ function _mpHandleSnapshot(snap) {
           _mpRespawnLocalPlayer();
         }
       }
+      // Phase X — alive→dead safety net. User '有時候被幹掉我就會變成
+      // 停在原地不能動,然後就動了會回去': the 'kill' event got lost in
+      // transit so _mpHandleKill never fired; client kept player.alive=
+      // true while server-side they were dead, server rejected their
+      // movement inputs, client per-frame integration pushed them ahead,
+      // reconcile snapped them back every snapshot = stuck-in-place.
+      // Now the snapshot itself drives the dead transition when the
+      // event was missed. Synthesize minimal kill metadata so the death
+      // recap UI still works; killer name shows as '?' since we never
+      // got the kill event.
+      if (typeof player !== 'undefined' && player.alive && _mpState.serverSelfAlive === false) {
+        const _gt = (typeof game !== 'undefined' && game.time) ? game.time : 0;
+        const _respawnFrames = (typeof getRespawnSeconds === 'function')
+          ? getRespawnSeconds() * 60 : 180;
+        player.alive = false;
+        player._killedAtTime = _gt;
+        player._respawnAt = _gt + _respawnFrames;
+        if (!player._killer) player._killer = { callsign: '?' };
+        if (typeof triggerShake === 'function') triggerShake(8, 18);
+        if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
+        if (typeof _lbBumpDeath === 'function') _lbBumpDeath();
+        console.log('[mp] alive→dead via snapshot (kill event was lost)');
+      }
       // Drop inputs the server has already processed. lastInputSeq is
       // ALWAYS in every snapshot (never delta-omitted) since it changes
       // every tick — but guard anyway.
