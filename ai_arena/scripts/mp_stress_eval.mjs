@@ -17,7 +17,9 @@
 //   - PLAYER_FIRES_AT_ENEMY_BOT  sustained inputs walking toward
 //                          target while firing; expect ≥ 30 dmg
 //   - HIT_FLASH_LATCHED    polled throughout entire run
-//   - BULLETS_VISIBLE      ≥ 30% snapshots carry bullets
+//   - BULLETS_VISIBLE      ≥ 15% snapshots carry bullets
+//     (post-LoS-gate baseline; bots no longer waste shots through
+//     walls so density dropped 50% → 20% — bring threshold to 15)
 //
 // Threshold: total ≥ 70. Any hard-failure (weight ≥ 1.0) caps total
 // at 50.
