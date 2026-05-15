@@ -300,6 +300,33 @@ function _mpHandleMessage(data) {
     case 'kill':
       _mpHandleKill(data);
       break;
+    case 'swap':
+      // Phase 102 — server confirmed a pawn-swap. For the LOCAL player
+      // (data.id === myId) this is just an ACK; our local _mpIgnoreReconcileUntil
+      // can now end early since the server is in sync with the swap target.
+      // For REMOTE peers, teleport their interpolated render position so
+      // the swap looks instant on every screen (instead of a 0.5 s slide
+      // while the snapshot buffer catches up).
+      if (data.id === _mpState.myId) {
+        if (typeof player !== 'undefined') {
+          player._mpIgnoreReconcileUntil = 0;     // server now agrees with us
+        }
+      } else {
+        const rp = _mpState.remotePlayers.get(data.id);
+        if (rp) {
+          rp.x = data.x; rp.y = data.y;
+          rp.samples = [{ t: Date.now(), x: data.x, y: data.y, angle: rp.angle, alive: rp.alive }];
+        }
+      }
+      // If a server bot was consumed by this swap, mirror server-side
+      // death locally so we stop rendering it. Server's next snapshot
+      // would do this anyway but acting on the broadcast feels instant.
+      if (data.botId && _mpState.remoteBots && _mpState.remoteBots.has(data.botId)) {
+        const rb = _mpState.remoteBots.get(data.botId);
+        rb.alive = false;
+        rb.hp = 0;
+      }
+      break;
     case 'wallHit':
       // Phase 44: NO explosion. Single-player regular bullets just vanish
       // when they hit a wall (only rockets detonate on impact, see
@@ -1356,6 +1383,18 @@ function _mpBroadcastBuild(sid, kind, x, y) {
 function _mpBroadcastExplosion(x, y, radius, dmg) {
   if (!_mpState.enabled) return;
   _mpSendRaw({ type: 'explosionRequest', x, y, r: radius, dmg });
+}
+
+// Phase 102 — pawn-swap broadcast. Tell the authoritative server WHERE
+// the local player just teleported so it stops simulating us at the old
+// position. Without this, the next snapshot reconciles us back to A
+// ('權威伺服器認為我上一秒在哪裡,下一秒在哪裡,然後他把我補償回去了').
+// `botId` is optional — when swapping to a server-spawned NN bot, pass
+// its id so server consumes that bot (kills it server-side, schedules
+// respawn) and we don't end up with two entities stacked at the target.
+function _mpBroadcastSwap(x, y, botId) {
+  if (!_mpState.enabled) return;
+  _mpSendRaw({ type: 'swap', x: Math.round(x), y: Math.round(y), botId: botId || 0 });
 }
 
 // Respawn handler — when server says we respawned, the snapshot will

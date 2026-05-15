@@ -813,6 +813,47 @@ export default class AshGridRoom {
       this.party.broadcast(JSON.stringify({ type: 'structureAdd', s }));
       return;
     }
+    // Phase 102 — pawn-swap request. Client sends after a local swap so
+    // server-side player position matches. Without this the server keeps
+    // simulating the player at the OLD position; reconcile would snap
+    // the client back ('B會瞬移到A這邊 我切換過可能0.5秒之後 這個B載具
+    // 會瞬移到A載具這邊' — user diagnosed correctly). Validation:
+    //   • target must be inside arena
+    //   • if targetBotId given, the bot must exist, be alive, same team
+    //   • optional: consume the bot (server-side death, no respawn)
+    if (data.type === 'swap') {
+      const x = num(data.x), y = num(data.y);
+      if (x < ARENA_PAD || x > ARENA_W - ARENA_PAD) return;
+      if (y < ARENA_PAD || y > ARENA_H - ARENA_PAD) return;
+      // Optional bot consumption — if the swap targets a server bot,
+      // mark it dead so two entities don't stack at the same position.
+      const botId = num(data.botId) | 0;
+      if (botId) {
+        const bot = this.bots.get(botId);
+        if (!bot) return;                         // unknown bot id — reject
+        if (!bot.alive) return;                   // already dead — reject
+        if (bot.team !== 0) return;               // wrong team — reject
+        bot.alive = false;
+        bot.hp = 0;
+        bot._respawnAt = this.tickCount + BOT_RESPAWN_TICKS;
+      }
+      // Move the player. Wipe input vector so the queued WASD from
+      // pre-swap doesn't drag them off the new spot. Clear lag-comp
+      // history so the next hit-check doesn't rewind into the old
+      // location. Grant spawn-protection so they can't be insta-killed
+      // by a peer who was already tracking the old position.
+      p.x = x;
+      p.y = y;
+      p.input.dx = 0; p.input.dy = 0;
+      p.history.length = 0;
+      p.invulnUntil = this.tickCount + INVULN_TICKS;
+      // Broadcast a 'swap' event so peers can render the teleport as
+      // a discrete event (and skip the smoothing buffer for this player).
+      this.party.broadcast(JSON.stringify({
+        type: 'swap', id: sender.id, x, y, botId: botId || 0,
+      }));
+      return;
+    }
     // Phase 43: explosion request from a client. Used for grenades / FPV /
     // airstrikes — server validates and applies AOE damage to structures
     // (and broadcasts hit/gone events). Bullets damage structures via the

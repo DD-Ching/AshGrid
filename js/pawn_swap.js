@@ -21,39 +21,15 @@ function swapPlayerToAlly(idx) {
   if (idx < 0 || idx >= allies.length) return;
   const a = allies[idx];
   if (!a || !a.alive) return;
-  // Phase 83 — pawn-swap in MP now allowed WHEN ALONE in the room. User
-  // '在正常模式下沒有辦法正常切換隊友 ... 工廠生產出來的新隊友無法操控'.
-  // Since Phase 74 made MP the default, every solo session was actually
-  // hitting the Phase 63 block. The reason Phase 63 blocked: in a real
-  // multi-peer match, a local teleport diverges from server position +
-  // server's reconciliation snaps you back. But if there are NO other
-  // peers in the room, divergence is harmless — no one else needs to
-  // see consistent state. We DO still need to ride out the next ~60
-  // ticks until the server catches up to inputs that drove the player
-  // toward the new position; player._mpIgnoreReconcileUntil suppresses
-  // the dist > 150u snap during that window so the swap actually sticks.
+  // Phase 102 (server-side support shipped) — Phase 83's peers-present
+  // block is REMOVED. The server now has a 'swap' message handler that
+  // accepts an authoritative position update + clears lag-comp history +
+  // grants spawn protection. With that in place, real multi-peer swap
+  // works correctly. We still set the local reconcile-ignore window as
+  // belt-and-braces in case the broadcast is dropped before the next
+  // snapshot — the server's 'swap' echo (handled in multiplayer.js)
+  // will clear it as soon as it round-trips.
   if (typeof _mpIsActive === 'function' && _mpIsActive()) {
-    const peers = (typeof _mpState !== 'undefined' && _mpState.remotePlayers)
-      ? Math.max(0, _mpState.remotePlayers.size - 1)
-      : 0;
-    if (peers > 0) {
-      // Real multi-peer match — block. Server-authoritative state would
-      // snap us back anyway, and the brief client-side teleport visually
-      // looks like 'the other ally just zoomed onto your screen'.
-      if (typeof showSwapToast === 'function') {
-        showSwapToast(T('▶ 聯機模式有其他玩家時不支援角色切換',
-                        '▶ Pawn-swap disabled while peers present'));
-      }
-      return;
-    }
-    // Phase 102 — solo MP: suppress reconcile UNTIL NEXT DEATH/RESPAWN
-    // instead of a fixed 1.5s window. User: 'B會瞬移到A這邊 我切換過
-    // 可能0.5秒之後 這個B載具會瞬移到A載具這邊'. The 90-tick window
-    // expired and the server (which never learned about the swap) snapped
-    // us back to A. Since solo MP has no peers, the server position is
-    // moot for everyone except hit-detection from peer bullets (which
-    // don't exist solo). Holding Infinity until _mpRespawnLocalPlayer
-    // clears it on next respawn is safe and makes the swap permanent.
     if (typeof game !== 'undefined' && typeof player !== 'undefined') {
       player._mpIgnoreReconcileUntil = Infinity;
     }
@@ -186,6 +162,17 @@ function swapPlayerToAlly(idx) {
   if (typeof camera !== 'undefined') {
     camera.x = player.x;
     camera.y = player.y;
+  }
+
+  // Phase 102 — tell the authoritative server we just teleported. Without
+  // this the server keeps simulating us at the OLD position and the next
+  // snapshot would reconcile us back. The server handler clears its
+  // lag-comp history + grants spawn-protection so peers can't insta-kill
+  // us by aiming at the OLD position. botId is 0 here because allies[]
+  // are client-side NN units, not server bots; a future hook for
+  // _mpState.remoteBots-targeted swap would pass the actual id.
+  if (typeof _mpBroadcastSwap === 'function') {
+    _mpBroadcastSwap(player.x, player.y, 0);
   }
 
   showSwapToast(`${wasResurrected ? T('紧急接管', 'EMERGENCY SWAP') : T('接管', 'SWAP')} ${targetCallsign}`);
