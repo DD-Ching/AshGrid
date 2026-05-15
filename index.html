@@ -2584,12 +2584,20 @@ try {
 
 // Phase 82 — static respawn ad slot visibility. Shows the #respawnAdSlot
 // HTML element during the respawn countdown (5s buffed / 15s default).
-// Idempotent + runs every render frame; the only state mutation is
-// element.style.display, so the cost is one DOM lookup + one assignment
-// at most. The 300×250 slot inside the element is currently a placeholder;
-// can be swapped for a real GameMonetize Banner ad-tag later.
+// Idempotent + runs every render frame; cost is one cached property
+// read + one style assignment. The 300×250 slot inside the element is
+// currently a placeholder; can be swapped for a real GameMonetize
+// Banner ad-tag later.
+//
+// Cached refs for the two #1/#2 hot DOM lookups in the audit —
+// each was hit 60 times/sec for a static node that never gets
+// rebuilt. `_nnEndCardEl` is consumed by the main render loop's
+// objective-panel-suppression block.
+let _respawnAdSlotEl = null;
+let _nnEndCardEl     = null;
 function _updateRespawnAdSlot() {
-  const slot = document.getElementById('respawnAdSlot');
+  if (!_respawnAdSlotEl) _respawnAdSlotEl = document.getElementById('respawnAdSlot');
+  const slot = _respawnAdSlotEl;
   if (!slot) return;
   // Phase 87 — gated on TEAM WIPE only (not individual death).
   // User '每一次死都會有廣告 應該是每一次全軍覆沒'. Single deaths now
@@ -4422,6 +4430,20 @@ async function nnLoadModel(difficulty = 'hard') {
     NN.error = 'onnxruntime-web not loaded';
     console.warn(NN.error);
     return false;
+  }
+  // ONNX WASM thread count. Defaults to 4 (one per physical core); we'd
+  // need cross-origin isolation (COOP + COEP) for SharedArrayBuffer to
+  // actually use them, and we don't ship those headers (Cloudflare Pages
+  // serves no Cross-Origin-Opener-Policy by default). So the threaded
+  // wasm-MT bundle gets downloaded + initialized then silently falls
+  // back to single-threaded with the noisy 'env.wasm.numThreads is set
+  // to 4, but this will not work unless you enable crossOriginIsolated'
+  // warning. Forcing 1 skips loading the multi-threaded wasm blob
+  // entirely — same actual inference speed, smaller initial download,
+  // clean console. Setting on ort.env is idempotent; safe to repeat if
+  // multiple difficulty sessions get created.
+  if (typeof ort.env !== 'undefined' && ort.env.wasm) {
+    ort.env.wasm.numThreads = 1;
   }
   const path = NN.modelPaths[difficulty] || NN.modelPath;
   const promise = (async () => {
@@ -10663,7 +10685,9 @@ function renderHUD() {
   // Mission objective panel + off-screen compass. Suppress when the HTML
   // end-card is up — the canvas-drawn MATCH RESULT block would otherwise
   // overlap the HTML overlay (the user reported '兩個視窗會重疊').
-  const _endCard = document.getElementById('nnEndCard');
+  // Cached _nnEndCardEl skips the 60-Hz getElementById call.
+  if (!_nnEndCardEl) _nnEndCardEl = document.getElementById('nnEndCard');
+  const _endCard = _nnEndCardEl;
   const _endCardVisible = _endCard && _endCard.style.display === 'flex';
   // FTUE: hide mission objective panel + compass while tutorial is
   // active. Reveal driven by the per-step `reveal.mission` flag — no
