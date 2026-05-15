@@ -582,6 +582,17 @@ export default class AshGridRoom {
         moveDir = action >> 1;
         fire = action & 1;
         if (flipX) moveDir = _NN_MIRROR_MOVE[moveDir];
+        // Wander fallback: when NN says idle (0) AND no enemy in LoS, the
+        // bot would otherwise stand frozen — the user reported '敵人的游
+        // 走機制也消失了'. Override with a deterministic patrol direction
+        // derived from bot.id × time so each bot wanders differently and
+        // the pattern rotates every ~1 s. Combat-state (nearestE present)
+        // skips this so the PPO's intentional idle-while-aiming behaviour
+        // is preserved.
+        if (moveDir === 0 && !nearestE) {
+          const _patrolPhase = ((b.id * 7) + (this.tickCount >> 7)) >>> 0;
+          moveDir = 1 + (_patrolPhase % 8);     // 1..8
+        }
         b._lastAction = { moveDir, fire };
       } else {
         moveDir = b._lastAction.moveDir;
