@@ -498,6 +498,32 @@ export default class AshGridRoom {
       const enemies    = (b.team === 0) ? team1 : team0;
       const flipX = (b.team === 1);   // team-1 mirrored to match training
 
+      // Phase 3-followup — AIM before OBS. Original code set angle to
+      // movement direction; the NN cone-of-vision (140° in obs) then
+      // missed enemies behind the walking direction, so is_visible
+      // was 0 every tick and the policy never picked fire=1.
+      //
+      // Mirror the client behaviour: lerp the bot's "head" toward the
+      // nearest enemy each tick (~18% per tick = full alignment over
+      // ~0.5 s). NN obs now sees the enemy in cone, picks fire when
+      // the policy says to. Bullet aim direction is set precisely on
+      // the fire path below (lead-aim).
+      let nearestE = null, nearestD2 = Infinity;
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        const ddx = e.x - b.x, ddy = e.y - b.y;
+        const d2 = ddx * ddx + ddy * ddy;
+        if (d2 < nearestD2) { nearestD2 = d2; nearestE = e; }
+      }
+      const NN_AIM_RANGE2 = 1100 * 1100;     // detect a little past view range
+      if (nearestE && nearestD2 < NN_AIM_RANGE2) {
+        const desired = Math.atan2(nearestE.y - b.y, nearestE.x - b.x);
+        let dAng = desired - b.angle;
+        while (dAng > Math.PI)  dAng -= Math.PI * 2;
+        while (dAng < -Math.PI) dAng += Math.PI * 2;
+        b.angle += dAng * 0.22;
+      }
+
       buildObs(b, friendlies, enemies, _NN_OBS_BUF, flipX);
       const action = _NN_NET.argmax(_NN_OBS_BUF);
       let moveDir = action >> 1;       // 0..8
@@ -521,25 +547,12 @@ export default class AshGridRoom {
         } else {
           b.y = ny;
         }
-        b.angle = Math.atan2(dy, dx);
-      } else {
-        // Idle: aim at nearest visible enemy (slow lerp) so the gun
-        // tracks targets while not moving.
-        let bestE = null, bestD2 = Infinity;
-        for (const e of enemies) {
-          if (!e.alive) continue;
-          const ddx = e.x - b.x, ddy = e.y - b.y;
-          const d2 = ddx * ddx + ddy * ddy;
-          if (d2 < bestD2) { bestD2 = d2; bestE = e; }
-        }
-        if (bestE) {
-          const desired = Math.atan2(bestE.y - b.y, bestE.x - b.x);
-          let d = desired - b.angle;
-          while (d > Math.PI)  d -= Math.PI * 2;
-          while (d < -Math.PI) d += Math.PI * 2;
-          b.angle += d * 0.18;
-        }
+        // NOTE: angle stays pointed at enemy (set above), NOT at the
+        // move direction. The bot is now a strafing shooter — moves
+        // diagonally while head tracks the target. Looks much more
+        // alive than the old "always facing the way you walk" model.
       }
+      // (no extra idle-aim block — angle was already updated above)
 
       // Decrement bot's fire cooldown (used as the gate below + obs feature).
       if (b._fireCd > 0) b._fireCd--;
@@ -548,12 +561,19 @@ export default class AshGridRoom {
       // Fire — bot spawns a server bullet at its muzzle, weapon-aware
       // via the shared bullet sim. Default RIFLE for all bots in Phase
       // 3c; weapon variety will come from the recruit / chassis path.
-      if (fire && b._fireCd <= 0) {
+      //
+      // We use the precise target angle (atan2 to the nearest enemy
+      // we picked above) instead of b.angle, so even mid-strafe the
+      // shot lands where intended. b.angle gets snapped to the same
+      // value here so the bullet visual matches the muzzle.
+      if (fire && b._fireCd <= 0 && nearestE) {
+        const aim = Math.atan2(nearestE.y - b.y, nearestE.x - b.x);
+        b.angle = aim;
         const wsim = getWeaponSim('RIFLE');
         const newBullets = spawnBulletsFromUnit(
           { x: b.x, y: b.y, id: b.id, team: b.team },
           { ...wsim, weaponId: 'RIFLE' },
-          b.angle,
+          aim,
         );
         for (const bb of newBullets) {
           bb.id = this.nextBulletId++;

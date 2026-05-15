@@ -691,6 +691,14 @@ function _mpHandleHit(data) {
     _mpState.totalHitsAsShooter++;
     if (data.lc) _mpState.lcHitsAsShooter++;
   }
+  // Phase 3e-followup — user '受傷效果延遲': server-bot victims got
+  // no visual blood spray. Player kills only saw the damage popup
+  // (shooter-side branch above) but no impact effect at the bot. Now
+  // every hit on a server bot spawns the same blood-spray VFX the
+  // local NN enemies use, anchored to the server's impact coords.
+  if (data.isBot && ix != null && iy != null) {
+    if (typeof createExplosion === 'function') createExplosion(ix, iy, 'small');
+  }
 }
 
 function _mpHandleKill(data) {
