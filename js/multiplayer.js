@@ -1403,7 +1403,13 @@ function _mpRenderNetDebug() {
     ['peers ' + remoteP + ' · bullets ' + remoteB + ' · bots ' + remoteN, '#E8E4D8'],
     ['pending in ' + _mpState.pendingInputs.length, '#E8E4D8'],
     ['────────', '#7A7A7A'],
-    ['srv tick ' + (sdbg.tickMs != null ? sdbg.tickMs.toFixed(2) : '?') + ' ms (budget 33.3)', '#E8E4D8'],
+    // Budget = 1000 / server tick rate. We can't know the server's rate
+    // directly here, but the server's tick# advance rate ≈ snap rate ×
+    // SNAPSHOT_EVERY. For ?netdebug=1 display we just show the absolute
+    // tick-ms and let the user infer load — anything under 1 ms is fine
+    // for any tick rate up to ~500 Hz.
+    ['srv tick ' + (sdbg.tickMs != null ? sdbg.tickMs.toFixed(2) : '?') + ' ms (lower is better)', '#E8E4D8'],
+    ['srv tick pk ' + (sdbg.tickPk != null ? sdbg.tickPk.toFixed(2) : '?') + ' ms', '#E8E4D8'],
     ['srv tick# ' + (_mpState.serverTick||0), '#E8E4D8'],
   ];
   const H = lines.length * lh + pad * 2;

@@ -809,9 +809,14 @@ export default class AshGridRoom {
   tick() {
     // Phase 1 net-audit — time the tick body. Average over the last 30
     // samples (≈ 1 s) is attached to every snapshot as `_dbg.tickMs` so
-    // a client overlay can show server CPU pressure. Cheap: 2 Date.now()
-    // calls + 1 unshift per tick.
-    const _tickStart = Date.now();
+    // a client overlay can show server CPU pressure.
+    //
+    // Phase 4b: switch Date.now() (1 ms resolution) → performance.now()
+    // when available (µs resolution on CF Workers / Node). At 100 Hz tick
+    // individual ticks complete in <1 ms — Date.now() rounded them all
+    // to 0. perf.now() reveals real fractional cost.
+    const _now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const _tickStart = _now;
     this.tickCount++;
 
     // 1. Apply inputs + advance players
@@ -1070,7 +1075,8 @@ export default class AshGridRoom {
 
     // Phase 1 net-audit — record tick duration. Window of 30 samples
     // (≈ 1 s) is averaged at snapshot time, attached as `_dbg.tickMs`.
-    const _tickMs = Date.now() - _tickStart;
+    const _tickEnd = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const _tickMs = _tickEnd - _tickStart;
     if (!this._tickTimeWindow) this._tickTimeWindow = [];
     this._tickTimeWindow.push(_tickMs);
     if (this._tickTimeWindow.length > 30) this._tickTimeWindow.shift();
