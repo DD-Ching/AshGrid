@@ -582,16 +582,39 @@ export default class AshGridRoom {
         moveDir = action >> 1;
         fire = action & 1;
         if (flipX) moveDir = _NN_MIRROR_MOVE[moveDir];
-        // Wander fallback: when NN says idle (0) AND no enemy in LoS, the
-        // bot would otherwise stand frozen — the user reported '敵人的游
-        // 走機制也消失了'. Override with a deterministic patrol direction
-        // derived from bot.id × time so each bot wanders differently and
-        // the pattern rotates every ~1 s. Combat-state (nearestE present)
-        // skips this so the PPO's intentional idle-while-aiming behaviour
-        // is preserved.
+        // Wander fallback: each bot picks its own RANDOM waypoint and
+        // walks toward it. Re-pick when reached (within 60 px) or after
+        // 10 s expiry (in case wedged against a wall). User reported
+        // even after the first wander attempt, all bots clumped left
+        // — root cause: the previous `b.id * 7 + tickCount>>7` formula
+        // gave EVERY bot the same direction at any given moment because
+        // tickCount>>7 dominates and modulo arithmetic on sequential ids
+        // produces a tight cluster of values. Real randomness fixes it.
         if (moveDir === 0 && !nearestE) {
-          const _patrolPhase = ((b.id * 7) + (this.tickCount >> 7)) >>> 0;
-          moveDir = 1 + (_patrolPhase % 8);     // 1..8
+          const needNewWp = b._wpX == null
+                         || (b._wpExpire != null && this.tickCount >= b._wpExpire)
+                         || Math.hypot(b.x - b._wpX, b.y - b._wpY) < 60;
+          if (needNewWp) {
+            for (let tries = 0; tries < 8; tries++) {
+              const wx = ARENA_PAD + 80 + Math.random() * (ARENA_W - 2 * ARENA_PAD - 160);
+              const wy = ARENA_PAD + 80 + Math.random() * (ARENA_H - 2 * ARENA_PAD - 160);
+              if (!_spawnClearOfWalls(wx, wy)) continue;
+              b._wpX = wx; b._wpY = wy;
+              break;
+            }
+            if (b._wpX == null) { b._wpX = ARENA_W / 2; b._wpY = ARENA_H / 2; }
+            b._wpExpire = this.tickCount + 10 * TICK_HZ;     // 10 s
+          }
+          // 8-way move closest to the desired waypoint direction.
+          const ang = Math.atan2(b._wpY - b.y, b._wpX - b.x);
+          let bestDir = 1, bestDot = -Infinity;
+          for (let d = 1; d <= 8; d++) {
+            const [vx, vy] = _NN_MOVE_DIRS[d];
+            const m = Math.hypot(vx, vy);
+            const dot = (vx / m) * Math.cos(ang) + (vy / m) * Math.sin(ang);
+            if (dot > bestDot) { bestDot = dot; bestDir = d; }
+          }
+          moveDir = bestDir;
         }
         b._lastAction = { moveDir, fire };
       } else {
