@@ -711,27 +711,52 @@ function _mpHandleHit(data) {
     }
     return;
   }
-  // Shooter-side (local player landed a hit): hitmarker, beep, "-25" at
-  // impact. Telemetry tracks lag-compensated vs physics hits so the F3
-  // overlay can show the favor-the-shooter rate.
+  // Look up real weapon damage. Server doesn't echo damage on hit events
+  // — we know the weapon, look up its profile from js/weapons.js. Default
+  // 25 only if the weapon is unknown.
+  const _dmgFor = (wid) => {
+    if (typeof WEAPONS !== 'undefined' && wid && WEAPONS[wid] && typeof WEAPONS[wid].damage === 'number') {
+      return WEAPONS[wid].damage;
+    }
+    return 25;
+  };
+  // Shooter-side (local player landed a hit): hitmarker, beep, real-dmg
+  // popup at impact. Telemetry tracks lag-compensated vs physics hits so
+  // the F3 overlay can show the favor-the-shooter rate.
   if (data.shooter === _mpState.myId) {
     _mpHitMarker = { until: Date.now() + 180, kind: 'hit' };
     if (typeof playSfx === 'function') playSfx('beep', { vol: 0.25, freq: 1320 });
     if (typeof spawnDamagePopup === 'function' && ix != null && iy != null) {
-      spawnDamagePopup(ix, iy, 25, false);
+      spawnDamagePopup(ix, iy, _dmgFor(data.weapon), false);
     }
     _mpState.totalHitsAsShooter++;
     if (data.lc) _mpState.lcHitsAsShooter++;
   }
-  // Server-bot victim: blood spray VFX + instant HP apply for snappy
-  // feedback (otherwise the HP bar waited up to 66 ms for the next 15 Hz
-  // snapshot — user '受傷效果延遲'). Same min() trick we use for the local
-  // player's hp via the reconcile path.
-  if (v.isBot && ix != null && iy != null) {
-    if (typeof createExplosion === 'function') createExplosion(ix, iy, 'small');
+  // Server-bot victim: instant HP apply + hit-flash latch for render
+  // overlay. The previous build used createExplosion('small') here which
+  // is the grenade flame VFX — wrong shape + size for a single bullet,
+  // and worse, it has its own particle life so the bot's *render* gave
+  // no "I just took a bullet" signal beyond the tiny HP-bar tick. User
+  // '都沒有損血或中彈的感覺,就突然死掉': bots felt frozen during damage
+  // then blinked out on death. Now every hit sets _hitFlash so the bot
+  // sprite pulses red for ~8 frames + drops a damage popup at the impact
+  // point regardless of shooter (so bot-vs-bot kills are visible too).
+  if (v.isBot) {
     if (v.entity && typeof v.entity.hp === 'number' && typeof data.hp === 'number') {
       v.entity.hp = Math.min(v.entity.hp, data.hp);
     }
+    if (v.entity) v.entity._hitFlash = 8;
+    if (ix != null && iy != null && typeof spawnDamagePopup === 'function' && data.shooter !== _mpState.myId) {
+      // Bot-vs-bot / other-player-vs-bot hit — pop a smaller popup so
+      // the user can see WHO got hit and HOW HARD without it being the
+      // big shooter-side popup above.
+      spawnDamagePopup(ix, iy, _dmgFor(data.weapon), false);
+    }
+  }
+  // Remote-player victim (PvP hit): same hit-flash latch so other-player
+  // bullets read as landing. Shooter-side popup still fires above.
+  if (!v.isLocal && !v.isBot && v.entity) {
+    v.entity._hitFlash = 8;
   }
 }
 
@@ -1101,6 +1126,17 @@ function _mpRenderRemote() {
     // Pass walkPhase so legs swing while moving. Phase 47 swaps the body
     // colour to redBright so MP players read brighter than NPCs.
     drawHumanoid(rp.x, rp.y, rp.angle || 0, rp.walkPhase || 0, COLORS.redBright, true, rp);
+    // Hit-flash: _mpHandleHit latches _hitFlash = 8 on the victim entity
+    // so the user sees a red pulse for ~8 frames when their bullets land
+    // on a remote player. Same shape + color as the server-bot hit-flash.
+    if (rp._hitFlash && rp._hitFlash > 0) {
+      const a = rp._hitFlash / 8;
+      ctx.fillStyle = `rgba(230, 51, 41, ${0.55 * a})`;
+      ctx.beginPath();
+      ctx.arc(rp.x, rp.y, 18, 0, Math.PI * 2);
+      ctx.fill();
+      rp._hitFlash--;
+    }
     // HP bar — matches NPC bar at index.html:7910 (30×3 @ y-26).
     const hp = (typeof rp.hp === 'number') ? rp.hp : 100;
     if (hp < 100) {
