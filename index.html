@@ -11052,6 +11052,9 @@ function drawMinimapPanel(mx, my, mw, mh) {
 // overlay. Pulled out so the minimap-collapse path can short-circuit cleanly
 // without bailing on these.
 function renderHUDOverlays() {
+  // Phase 1 net-audit — opt-in overlay (?netdebug=1). No-op when flag off.
+  if (typeof _mpRenderNetDebug === 'function') _mpRenderNetDebug();
+
   // Low-HP vignette — pulsing red edges that close in as HP drops, paired
   // with the heartbeat audio. Only renders once HP drops below 45%.
   if (player.alive && player.maxHp > 0) {

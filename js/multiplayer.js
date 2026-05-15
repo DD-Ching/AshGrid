@@ -116,6 +116,18 @@ const _mpState = {
   serverClockOffset: 0,        // serverClock − performance.now() at receive
   // Tick rate measurement for debug HUD: snapshot count over the last 1s.
   snapshotsRecvTimes: [],
+  // Phase 1 (network audit) — bandwidth counters. Each entry is
+  // { t: Date.now(), bytes: N }. Window-pruned at read time. Cheap; one
+  // push per ws message. Used by _mpRenderNetDebug behind ?netdebug=1.
+  bytesRxWindow:   [],
+  bytesTxWindow:   [],
+  // Last snapshot size + server-attached _dbg payload (server tick time
+  // etc). Filled by _mpHandleMessage on every 'snapshot' frame.
+  lastSnapBytes:   0,
+  lastServerDbg:   null,
+  // Frame-time samples. Filled by the per-frame raf-driven sampler that
+  // _mpRenderNetDebug installs lazily on first use.
+  frameTimeWindow: [],
   // Phase 40 — count lag-compensated outcomes (when WE were the shooter).
   // Surfaced in the F3 debug overlay so the user can see how often the
   // server is favoring them.
@@ -206,9 +218,23 @@ function _mpOpen(url) {
     }
   });
   ws.addEventListener('message', (e) => {
+    // Phase 1 net-audit — measure inbound bytes BEFORE parse so the count
+    // reflects raw wire traffic. ev.data may be a string or ArrayBuffer;
+    // length covers both safely. Sliding 2-second window so the overlay's
+    // KB/s readout responds quickly without long-tail averaging.
+    const _len = (typeof e.data === 'string') ? e.data.length : (e.data && e.data.byteLength) || 0;
+    if (_len) _mpState.bytesRxWindow.push({ t: Date.now(), bytes: _len });
     let data;
     try { data = JSON.parse(e.data); } catch { return; }
-    if (data && typeof data === 'object') _mpHandleMessage(data);
+    if (data && typeof data === 'object') {
+      // Track snapshot size + server-attached debug payload so the overlay
+      // can render server-tick-time alongside client metrics.
+      if (data.type === 'snapshot') {
+        _mpState.lastSnapBytes = _len;
+        if (data._dbg) _mpState.lastServerDbg = data._dbg;
+      }
+      _mpHandleMessage(data);
+    }
   });
   ws.addEventListener('error', (e) => {
     console.error('[mp] WebSocket error:', e);
@@ -672,7 +698,13 @@ function _mpHandleKill(data) {
 function _mpSendRaw(payload) {
   const ws = _mpState.ws;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  try { ws.send(JSON.stringify(payload)); } catch (e) {}
+  // Phase 1 net-audit — stringify once, count its length, send the same
+  // buffer. Same single JSON.stringify cost we had before; +1 array push
+  // for the bandwidth window. Cheap.
+  let json;
+  try { json = JSON.stringify(payload); } catch (e) { return; }
+  try { ws.send(json); } catch (e) { return; }
+  _mpState.bytesTxWindow.push({ t: Date.now(), bytes: json.length });
 }
 
 // Per-frame: gather input, send to server, locally predict.
@@ -1277,6 +1309,115 @@ function _mpRenderEmotes() {
       drawBubble(rp.x, rp.y, rp.emote.char);
     }
   }
+}
+
+// ============================================================
+// Phase 1 NETWORK AUDIT — opt-in instrumentation overlay
+// ============================================================
+//
+// Renders a top-right panel with live bandwidth + tick + entity metrics
+// when ?netdebug=1 is in the URL. Zero gameplay impact: the data lives
+// in window-pruned arrays that already get pushed every send/recv, and
+// the render only fires when the flag is on.
+//
+// Sources:
+//   bytesRxWindow / bytesTxWindow  — pushed from ws.onmessage / _mpSendRaw
+//   snapshotsRecvTimes             — pre-existing, already maintained
+//   lastSnapBytes                  — set by 'snapshot' branch in handler
+//   lastServerDbg                  — server-attached {tickMs, ...} payload
+//   frameTimeWindow                — sampled by an rAF loop we install
+//                                    on first overlay invocation
+//
+// Cost when flag is OFF: 2 array pushes per ws message (sub-µs each).
+// Cost when flag is ON: ~25 fillText calls per frame in the corner.
+
+const _MP_NETDEBUG = (() => {
+  try { return new URLSearchParams(location.search).get('netdebug') === '1'; }
+  catch (e) { return false; }
+})();
+let _mpNetDebugFrameSamplerInstalled = false;
+function _mpInstallFrameSampler() {
+  if (_mpNetDebugFrameSamplerInstalled) return;
+  _mpNetDebugFrameSamplerInstalled = true;
+  let last = performance.now();
+  const tick = () => {
+    const now = performance.now();
+    _mpState.frameTimeWindow.push({ t: now, ms: now - last });
+    last = now;
+    // Cap window at 120 entries (~2 s @ 60 fps).
+    if (_mpState.frameTimeWindow.length > 120) _mpState.frameTimeWindow.shift();
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+function _mpRenderNetDebug() {
+  if (!_MP_NETDEBUG) return;
+  if (typeof ctx === 'undefined') return;
+  _mpInstallFrameSampler();
+  // Prune bandwidth windows to last 2 s.
+  const nowMs = Date.now();
+  const prune = (arr) => {
+    while (arr.length > 0 && nowMs - arr[0].t > 2000) arr.shift();
+  };
+  prune(_mpState.bytesRxWindow);
+  prune(_mpState.bytesTxWindow);
+  prune(_mpState.snapshotsRecvTimes && _mpState.snapshotsRecvTimes._objWindow || []);
+  // Sum bytes in window.
+  let rxBytes = 0, txBytes = 0;
+  for (const e of _mpState.bytesRxWindow) rxBytes += e.bytes;
+  for (const e of _mpState.bytesTxWindow) txBytes += e.bytes;
+  // Snapshot rate.
+  const sList = _mpState.snapshotsRecvTimes;
+  const snapsLast2s = sList.length;
+  // Per-frame stats.
+  let frameP50 = 0, frameP95 = 0;
+  if (_mpState.frameTimeWindow.length > 5) {
+    const arr = _mpState.frameTimeWindow.map(s => s.ms).sort((a, b) => a - b);
+    frameP50 = arr[Math.floor(arr.length * 0.5)];
+    frameP95 = arr[Math.floor(arr.length * 0.95)];
+  }
+  // Entity counts.
+  const remoteP = _mpState.remotePlayers.size;
+  const remoteB = _mpState.remoteBullets.size;
+  const remoteN = _mpState.remoteBots ? _mpState.remoteBots.size : 0;
+  // Server dbg.
+  const sdbg = _mpState.lastServerDbg || {};
+
+  // Render panel top-right.
+  const W = 290, lh = 14, pad = 8;
+  const lines = [
+    ['NET DEBUG · ?netdebug=1', '#FFD24A'],
+    ['rtt  ' + Math.round(_mpState.rttSmoothed) + ' ms · ' +
+      (_mpState.rttSmoothed < MP_PING_GREEN ? 'good' :
+       _mpState.rttSmoothed < MP_PING_YELLOW ? 'ok' : 'bad'), '#E8E4D8'],
+    ['snap ' + (snapsLast2s / 2).toFixed(1) + ' Hz · ' + (_mpState.lastSnapBytes||0) + ' B/snap', '#E8E4D8'],
+    ['rx   ' + (rxBytes / 2 / 1024).toFixed(2) + ' KB/s', '#E8E4D8'],
+    ['tx   ' + (txBytes / 2 / 1024).toFixed(2) + ' KB/s', '#E8E4D8'],
+    ['frame ' + frameP50.toFixed(1) + ' ms · p95 ' + frameP95.toFixed(1), '#E8E4D8'],
+    ['────────', '#7A7A7A'],
+    ['peers ' + remoteP + ' · bullets ' + remoteB + ' · bots ' + remoteN, '#E8E4D8'],
+    ['pending in ' + _mpState.pendingInputs.length, '#E8E4D8'],
+    ['────────', '#7A7A7A'],
+    ['srv tick ' + (sdbg.tickMs != null ? sdbg.tickMs.toFixed(2) : '?') + ' ms (budget 33.3)', '#E8E4D8'],
+    ['srv tick# ' + (_mpState.serverTick||0), '#E8E4D8'],
+  ];
+  const H = lines.length * lh + pad * 2;
+  const X = (typeof canvas !== 'undefined' ? canvas.width : 1200) - W - 10;
+  const Y = 10;
+  ctx.save();
+  ctx.fillStyle = 'rgba(20,20,28,0.82)';
+  ctx.fillRect(X, Y, W, H);
+  ctx.strokeStyle = '#FFD24A';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(X + 0.5, Y + 0.5, W, H);
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'left';
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillStyle = lines[i][1];
+    ctx.fillText(lines[i][0], X + pad, Y + pad + lh * (i + 1) - 3);
+  }
+  ctx.restore();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

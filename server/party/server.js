@@ -797,6 +797,11 @@ export default class AshGridRoom {
 
   // ─── Tick ──────────────────────────────────────────────────────────
   tick() {
+    // Phase 1 net-audit — time the tick body. Average over the last 30
+    // samples (≈ 1 s) is attached to every snapshot as `_dbg.tickMs` so
+    // a client overlay can show server CPU pressure. Cheap: 2 Date.now()
+    // calls + 1 unshift per tick.
+    const _tickStart = Date.now();
     this.tickCount++;
 
     // 1. Apply inputs + advance players
@@ -1052,6 +1057,13 @@ export default class AshGridRoom {
       this.lastSnapshotTick = this.tickCount;
       this._broadcastSnapshot();
     }
+
+    // Phase 1 net-audit — record tick duration. Window of 30 samples
+    // (≈ 1 s) is averaged at snapshot time, attached as `_dbg.tickMs`.
+    const _tickMs = Date.now() - _tickStart;
+    if (!this._tickTimeWindow) this._tickTimeWindow = [];
+    this._tickTimeWindow.push(_tickMs);
+    if (this._tickTimeWindow.length > 30) this._tickTimeWindow.shift();
   }
 
   _spawnBullet(p) {
@@ -1301,6 +1313,21 @@ export default class AshGridRoom {
         alive: b.alive,
       })) : [],
     };
+    // Phase 1 net-audit — server-side debug stats. ~30 bytes per snapshot
+    // (negligible vs the player/bullet/bot payload). Old clients ignore
+    // unknown fields. Client overlay (?netdebug=1) renders these next to
+    // its own bandwidth + frame measurements.
+    if (this._tickTimeWindow && this._tickTimeWindow.length > 0) {
+      let sum = 0;
+      for (const v of this._tickTimeWindow) sum += v;
+      snap._dbg = {
+        tickMs:  +(sum / this._tickTimeWindow.length).toFixed(2),
+        tickPk:  Math.max(...this._tickTimeWindow),
+        players: this.players.size,
+        bullets: this.bullets.length,
+        bots:    this.bots.size,
+      };
+    }
     this.party.broadcast(JSON.stringify(snap));
   }
 }
