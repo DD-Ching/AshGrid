@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=102"></script>
-<script src="js/arena_recruitment.js?v=102"></script>
-<script src="js/dynamic_radio.js?v=102"></script>
-<script src="js/i18n.js?v=102"></script>
-<script src="js/touch_input.js?v=102"></script>
-<script src="js/key_bindings.js?v=102"></script>
-<script src="js/grenades.js?v=102"></script>
-<script src="js/squad_commands.js?v=102"></script>
-<script src="js/multiplayer.js?v=102"></script>
-<script src="js/leaderboard.js?v=102"></script>
-<script src="js/structures.js?v=102"></script>
-<script src="js/tod.js?v=102"></script>
-<script src="js/weapons.js?v=102"></script>
-<script src="js/chassis.js?v=102"></script>
-<script src="js/respawn_buff.js?v=102"></script>
-<script src="js/death_recap.js?v=102"></script>
-<script src="js/mote_affinity.js?v=102"></script>
-<script src="js/stage_hints.js?v=102"></script>
-<script src="js/pawn_swap.js?v=102"></script>
-<script src="js/global_stats.js?v=102"></script>
-<script src="js/progressive_unlock.js?v=102"></script>
-<script src="js/ad_stubs.js?v=102"></script>
+<script src="js/audio/sfx.js?v=103"></script>
+<script src="js/arena_recruitment.js?v=103"></script>
+<script src="js/dynamic_radio.js?v=103"></script>
+<script src="js/i18n.js?v=103"></script>
+<script src="js/touch_input.js?v=103"></script>
+<script src="js/key_bindings.js?v=103"></script>
+<script src="js/grenades.js?v=103"></script>
+<script src="js/squad_commands.js?v=103"></script>
+<script src="js/multiplayer.js?v=103"></script>
+<script src="js/leaderboard.js?v=103"></script>
+<script src="js/structures.js?v=103"></script>
+<script src="js/tod.js?v=103"></script>
+<script src="js/weapons.js?v=103"></script>
+<script src="js/chassis.js?v=103"></script>
+<script src="js/respawn_buff.js?v=103"></script>
+<script src="js/death_recap.js?v=103"></script>
+<script src="js/mote_affinity.js?v=103"></script>
+<script src="js/stage_hints.js?v=103"></script>
+<script src="js/pawn_swap.js?v=103"></script>
+<script src="js/global_stats.js?v=103"></script>
+<script src="js/progressive_unlock.js?v=103"></script>
+<script src="js/ad_stubs.js?v=103"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=102"></script>
+<script src="js/crazygames.js?v=103"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=102"></script>
+<script src="js/gamemonetize.js?v=103"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=102"></script>
-<script src="js/world_gen.js?v=102"></script>
-<script src="js/squad.js?v=102"></script>
-<script src="js/drone_fpv.js?v=102"></script>
-<script src="js/vision_raycast.js?v=102"></script>
-<script src="js/camera.js?v=102"></script>
-<script src="js/defense_build_ui.js?v=102"></script>
-<script src="js/pause.js?v=102"></script>
+<script src="js/missions/nn_deathmatch.js?v=103"></script>
+<script src="js/world_gen.js?v=103"></script>
+<script src="js/squad.js?v=103"></script>
+<script src="js/drone_fpv.js?v=103"></script>
+<script src="js/vision_raycast.js?v=103"></script>
+<script src="js/camera.js?v=103"></script>
+<script src="js/defense_build_ui.js?v=103"></script>
+<script src="js/pause.js?v=103"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -10832,6 +10832,9 @@ function renderHUD() {
     game._buildShopDrawnThisFrame = false;
     renderHUDOverlays();
     renderDeathRecap();
+    // Phase 1 net-audit — opt-in overlay (?netdebug=1). After death recap
+    // so it stays visible during respawn countdowns.
+    if (typeof _mpRenderNetDebug === 'function') _mpRenderNetDebug();
     return;
   }
   // Mini-map (bottom-right) — collapsible. Click the small toggle in the
@@ -10869,6 +10872,9 @@ function renderHUD() {
   renderHUDOverlays();
   // Death recap sits on top of the HUD so it dims everything behind it.
   renderDeathRecap();
+  // Phase 1 net-audit — opt-in overlay (?netdebug=1). Drawn LAST, after
+  // even the death recap's top strip, so it stays visible while dead.
+  if (typeof _mpRenderNetDebug === 'function') _mpRenderNetDebug();
 }
 
 // Full minimap panel — extracted so renderHUD can early-skip when collapsed
@@ -11450,10 +11456,6 @@ function renderHUDOverlays() {
     ctx.textAlign = 'left';
   }
 
-  // Phase 1 net-audit — opt-in overlay (?netdebug=1). Drawn LAST so it sits
-  // on top of the operator-info canvas HUD strip (top-right) instead of
-  // being painted over by it. No-op when flag is off.
-  if (typeof _mpRenderNetDebug === 'function') _mpRenderNetDebug();
 }
 
 function getModeLabel() {
