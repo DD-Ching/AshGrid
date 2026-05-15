@@ -108,16 +108,6 @@ const _mpState = {
   serverSelfAngle:0,
   serverSelfHp:   100,
   serverSelfAlive:true,
-  // Spawn-calibration latch. The very first snapshot we receive AFTER
-  // the game enters 'playing' state force-snaps the local player to
-  // server.x/y, even if dist < 1500 (the persistent-divergence snap
-  // threshold). Without this, client's local spawn (arena center) and
-  // server's chosen spawn diverge by ~400-700 px and the gap NEVER
-  // closes (sustained error stays under 1500, no snap fires). User
-  // saw '走牆穿過去' because their on-screen position differed from
-  // where the server held them; bullets fired from server-pos passed
-  // through "themselves" on the client. One-shot, reset on respawn.
-  _spawnCalibrated: false,
   serverSelfInvuln:false,
   // Phase 39 — RTT (round-trip) latency in ms. Updated whenever we receive
   // a snapshot whose self-entry echoes back a `t` we sent. EMA smoothed so
@@ -460,49 +450,32 @@ function _mpHandleSnapshot(snap) {
       // Dead zone (<3px) silenced entirely so 1-2px snapshot noise never
       // triggers any visible jitter.
       if (typeof player !== 'undefined') {
-        // Spawn-calibration latch: the FIRST snapshot we get while the
-        // game is in 'playing' state force-snaps to server's coords.
-        // Welcome carries no spawn (just id/tick/arena/structures), so
-        // until this fires the local player sits at the menu's default
-        // (~arena center) while the server holds them at their actual
-        // spawn point — a sustained 400-700 px offset that the
-        // threshold-snap below never converges. Reset by
-        // _mpRespawnLocalPlayer for subsequent respawns.
-        if (!_mpState._spawnCalibrated &&
-            typeof game !== 'undefined' && game.state === 'playing') {
+        // wings.io / krunker / surviv.io reconcile: every snapshot snaps the
+        // local player to predX/predY (= server's authoritative position +
+        // replay of any inputs the server hasn't yet acked). Because
+        //   1. per-frame integration runs SIM.simStepPerFrame  (60 Hz)
+        //   2. replay runs SIM.simStepPerTick                  (30 Hz)
+        //   3. server tick runs simStepPerTickV2 (same code)   (30 Hz)
+        // are all byte-identical, predX should equal player.x to within
+        // sub-pixel — the snap is invisible.
+        //
+        // If a divergence DOES appear here, it points at a real bug: a
+        // missing multiplier (chassis/weapon/sprint), a collision-geometry
+        // mismatch, or pendingInputs filter dropping the wrong entries.
+        // Suppressing the snap with a 1500 px threshold (the prior cut)
+        // just hid those bugs and let drift accumulate forever — exactly
+        // what surfaced as '子彈直接穿過敵人' (server fired bullets from
+        // server-pos, not the client-rendered pos, so they missed the
+        // visible target by the drift distance).
+        //
+        // Pawn-swap still skips reconcile during its 90-frame window so
+        // the swap visually sticks before inputs catch the server up.
+        const _ignoreReconcile = (game?.time || 0) < (player._mpIgnoreReconcileUntil || 0);
+        if (!_ignoreReconcile) {
           player.x = predX;
           player.y = predY;
-          _mpState._spawnCalibrated = true;
         }
-        const dx = predX - player.x, dy = predY - player.y;
-        const dist = Math.hypot(dx, dy);
-        // Phase 83 — honour _mpIgnoreReconcileUntil. Pawn-swap sets it
-        // to game.time + 90 ticks; during that window we skip ALL
-        // position reconciliation so the swap actually sticks visually
-        // until client inputs catch the server up.
-        const _ignoreReconcile = (game?.time || 0) < (player._mpIgnoreReconcileUntil || 0);
-        // Trust local prediction unless the error is teleport-scale
-        // (>1500 px ≈ most of arena width). Every other position
-        // transition has an explicit handler:
-        //   - Respawn        → _mpRespawnLocalPlayer snaps player.x = sp.x
-        //   - Pawn-swap      → _mpIgnoreReconcileUntil skips reconcile
-        //   - Sprint / sim drift → bounded ≤ tens of px, no snap needed
-        //
-        // Earlier the legacy path tried to spread-error every drift, but
-        // server pushOutOfWalls + structure collision + arena clamp all
-        // fight the client's per-frame versions of the same logic with
-        // identical-ish geometry, generating 5-40 px sustained errors at
-        // every wall edge. Spread-error bled those into a continuous
-        // backward tug — user '還會被拉回 非常嚴重'. Trusting prediction
-        // + snapping only on sim explosions removes the tug entirely.
-        if (_ignoreReconcile) {
-          player._reconcileErr = null;
-        } else {
-          if (dist > 1500) {
-            player.x = predX; player.y = predY;
-          }
-          player._reconcileErr = null;
-        }
+        player._reconcileErr = null;
         // HP has TWO writers because NN bots live client-only (see fire()
         // ghost-bullet note in index.html). min(local, server) picks the
         // lower of:
@@ -1404,17 +1377,15 @@ function _mpBroadcastExplosion(x, y, radius, dmg) {
 // snapshot's alive flag.
 function _mpRespawnLocalPlayer() {
   if (typeof player === 'undefined') return;
-  // The server already reset our state. Reflect that locally.
+  // The server already reset our state. Reflect that locally. The next
+  // snapshot's always-snap reconcile (see _mpHandleSnapshot) will fine-
+  // tune any sub-pixel difference, so we don't need the old spawn-
+  // calibration latch anymore.
   player.alive = _mpState.serverSelfAlive;
   player.hp = _mpState.serverSelfHp;
   player.x = _mpState.serverSelfX;
   player.y = _mpState.serverSelfY;
   player.ammo = player.maxAmmo;
-  // Respawn re-runs the spawn-calibration latch. The server may place us
-  // at a different spawn point than our last position; without resetting
-  // the latch the player's local pos would drift again until the next
-  // session's first snapshot.
-  _mpState._spawnCalibrated = false;
   player.reserve = Math.max(player.reserve || 0, 120);
   player.reloading = false;
   // Phase 59: clear the per-player death markers so the dead-state overlay

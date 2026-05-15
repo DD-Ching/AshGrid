@@ -45,53 +45,53 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=122"></script>
-<script src="js/arena_recruitment.js?v=122"></script>
-<script src="js/dynamic_radio.js?v=122"></script>
-<script src="js/i18n.js?v=122"></script>
-<script src="js/touch_input.js?v=122"></script>
-<script src="js/key_bindings.js?v=122"></script>
-<script src="js/grenades.js?v=122"></script>
-<script src="js/squad_commands.js?v=122"></script>
+<script src="js/audio/sfx.js?v=123"></script>
+<script src="js/arena_recruitment.js?v=123"></script>
+<script src="js/dynamic_radio.js?v=123"></script>
+<script src="js/i18n.js?v=123"></script>
+<script src="js/touch_input.js?v=123"></script>
+<script src="js/key_bindings.js?v=123"></script>
+<script src="js/grenades.js?v=123"></script>
+<script src="js/squad_commands.js?v=123"></script>
 <!-- Phase 1 / 2: shared sim modules (server uses byte-identical ESM
      mirrors at server/party/sim/*.js). Must load BEFORE multiplayer.js.
      Parity guard in ai_arena/scripts/check_sim_parity.sh; logic test
      harness in ai_arena/scripts/test_sim.mjs. -->
-<script src="js/sim/constants.js?v=122"></script>
-<script src="js/sim/movement.js?v=122"></script>
-<script src="js/sim/weapons.js?v=122"></script>
-<script src="js/sim/bullet.js?v=122"></script>
-<script src="js/multiplayer.js?v=122"></script>
-<script src="js/leaderboard.js?v=122"></script>
-<script src="js/structures.js?v=122"></script>
-<script src="js/tod.js?v=122"></script>
-<script src="js/weapons.js?v=122"></script>
-<script src="js/chassis.js?v=122"></script>
-<script src="js/respawn_buff.js?v=122"></script>
-<script src="js/death_recap.js?v=122"></script>
-<script src="js/mote_affinity.js?v=122"></script>
-<script src="js/stage_hints.js?v=122"></script>
-<script src="js/pawn_swap.js?v=122"></script>
-<script src="js/global_stats.js?v=122"></script>
-<script src="js/progressive_unlock.js?v=122"></script>
-<script src="js/ad_stubs.js?v=122"></script>
+<script src="js/sim/constants.js?v=123"></script>
+<script src="js/sim/movement.js?v=123"></script>
+<script src="js/sim/weapons.js?v=123"></script>
+<script src="js/sim/bullet.js?v=123"></script>
+<script src="js/multiplayer.js?v=123"></script>
+<script src="js/leaderboard.js?v=123"></script>
+<script src="js/structures.js?v=123"></script>
+<script src="js/tod.js?v=123"></script>
+<script src="js/weapons.js?v=123"></script>
+<script src="js/chassis.js?v=123"></script>
+<script src="js/respawn_buff.js?v=123"></script>
+<script src="js/death_recap.js?v=123"></script>
+<script src="js/mote_affinity.js?v=123"></script>
+<script src="js/stage_hints.js?v=123"></script>
+<script src="js/pawn_swap.js?v=123"></script>
+<script src="js/global_stats.js?v=123"></script>
+<script src="js/progressive_unlock.js?v=123"></script>
+<script src="js/ad_stubs.js?v=123"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=122"></script>
+<script src="js/crazygames.js?v=123"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=122"></script>
+<script src="js/gamemonetize.js?v=123"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=122"></script>
-<script src="js/world_gen.js?v=122"></script>
-<script src="js/squad.js?v=122"></script>
-<script src="js/drone_fpv.js?v=122"></script>
-<script src="js/vision_raycast.js?v=122"></script>
-<script src="js/camera.js?v=122"></script>
-<script src="js/defense_build_ui.js?v=122"></script>
-<script src="js/pause.js?v=122"></script>
+<script src="js/missions/nn_deathmatch.js?v=123"></script>
+<script src="js/world_gen.js?v=123"></script>
+<script src="js/squad.js?v=123"></script>
+<script src="js/drone_fpv.js?v=123"></script>
+<script src="js/vision_raycast.js?v=123"></script>
+<script src="js/camera.js?v=123"></script>
+<script src="js/defense_build_ui.js?v=123"></script>
+<script src="js/pause.js?v=123"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -6642,13 +6642,34 @@ function updatePlayer() {
   if (moving) {
     const len = Math.hypot(mx, my);
     mx /= len; my /= len;
-    // Heavy weapons (LMG/SNIPER/SHOTGUN) slow the player; light (SMG) speeds up.
+    // Per-frame integration via the SHARED SIM module (js/sim/movement.js).
+    // Byte-identical to the per-tick math the server runs AND the per-tick
+    // replay in _mpHandleSnapshot. Prior to this, the local per-frame path
+    // was hand-coded `player.x += mx * player.speed * (wpnMul * sprintMul)`
+    // — missing the chassis mul that BOTH the server tick AND the replay
+    // pendingInputs loop apply. Result: heavy chassis at sprint drifted up
+    // to 78 px / sec faster on client than on server (=390 px in 5 s, matched
+    // the user's debug-overlay reading of err 370.5 px). The 1500 px snap
+    // threshold + spawn-calibration latch were band-aids over THIS divergence.
+    // Now per-frame, per-tick replay, and server tick all run the same code
+    // path → no accumulated drift, no hidden rubber-band.
     const wpnMul = (playerWeapon && playerWeapon.speedMul) ? playerWeapon.speedMul : 1.0;
-    const sprintMul = player.sprinting ? SPRINT_SPEED_MUL : 1.0;
-    const speedMul = wpnMul * sprintMul;
-    player.x += mx * player.speed * speedMul;
-    player.y += my * player.speed * speedMul;
-    player.walkPhase += 0.22 * speedMul;
+    const chsMul = (typeof player._chassisSpeedMul === 'number') ? player._chassisSpeedMul : 1.0;
+    if (typeof window.SIM === 'object' && typeof window.SIM.simStepPerFrame === 'function') {
+      const _stepState = { x: player.x, y: player.y, weaponSpeedMul: wpnMul, chassisSpeedMul: chsMul };
+      const _stepInput = { dx: mx, dy: my, sprint: player.sprinting ? 1 : 0 };
+      const _out = window.SIM.simStepPerFrame(_stepState, _stepInput);
+      player.x = _out.x;
+      player.y = _out.y;
+    } else {
+      // Defensive fallback (SIM <script> failed to load) — preserve the
+      // pre-Phase-1 hand-coded path so single-player still works.
+      const speedMul = wpnMul * (player.sprinting ? SPRINT_SPEED_MUL : 1.0);
+      player.x += mx * player.speed * speedMul;
+      player.y += my * player.speed * speedMul;
+    }
+    const _phaseMul = wpnMul * chsMul * (player.sprinting ? SPRINT_SPEED_MUL : 1.0);
+    player.walkPhase += 0.22 * _phaseMul;
     // FTUE step 0 → step 1 advance: detected first WASD movement
     // Footprint trail — every ~30 ticks while moving (any NN / campaign mode)
     if (game.time % 30 === 0) emitFootprint(player);
