@@ -29,10 +29,15 @@ const CHASSIS = {
   // 但是護甲值低於線以下時，受到傷害仍會傳遞50%的損傷治血量'.
   heavy: {
     speedMul: 0.72, hpMul: 1.80, radiusMul: 1.20,
-    armor: 100,                    // max armor; refills from 0 over ~3.3 sec
-    armorRegenDelay: 3 * 60,       // ticks of no-damage before regen starts
-    armorRegenPerTick: 0.50,       // ~30 armor / second once regen kicks in
-    armorBleedFactor: 0.50,        // share of damage that hits HP after armor=0
+    // Phase X balance: user '重裝甲 護盾太厚了'. EHP cut from
+    // 100 + 180/0.50 = 460 → 60 + 180/0.65 = 337 (-27%). Still tankier
+    // than humanoid's 100 EHP, but no longer absurd. Regen mechanic
+    // preserved so the "duck behind cover and recover" gameplay loop
+    // still works; just less raw absorption per encounter.
+    armor: 60,                     // was 100 — max armor
+    armorRegenDelay: 3 * 60,       // ticks of no-damage before regen starts (unchanged)
+    armorRegenPerTick: 0.50,       // ~30 armor / second once regen kicks in (unchanged)
+    armorBleedFactor: 0.65,        // was 0.50 — more HP damage after armor depleted
     label: () => T('重甲', 'HEAVY'),
     blurb: () => T('慢 · 護甲再生 · 高血量', 'Slow · regen armor · tanky'),
   },
