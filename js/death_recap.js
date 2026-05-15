@@ -274,21 +274,33 @@ function renderDeathRecap() {
     if (!_deathRecap.adReviveUsed && !_alreadyBuffed) {
       const btnW = 360, btnH = 70;
       const btnX = W_ / 2 - btnW / 2;
-      // Phase 99/100/101 — anchor button BELOW the actual banner stack.
-      // Phase 101 upgraded the secondary slot 728×90 → 970×250 Billboard,
-      // adding 160 px of height; the centered stack's bottom moves
-      // down by 80 px (160 / 2).
-      // The full vertical extent of the centered #respawnAdSlot:
-      //   label  ~12       ← "ADVERTISEMENT"
-      //   336×280          ← primary
-      //   gap    ~12
-      //   label  ~12
-      //   970×250          ← billboard (was 728×90)
-      //   ≈ 566 total, centered at H/2 → bottom ≈ H/2 + 283
-      // Hard 30px gap below that. Floor at 0.86H so taller viewports
-      // don't leave the button stranded halfway up.
-      const bannerBottom = H_ / 2 + 283;
-      const btnY = Math.max(bannerBottom + 30, Math.round(H_ * 0.86) - btnH / 2);
+      // Phase 102 — anchor button below the ACTUAL rendered ad slot.
+      // The previous formula (H/2 + 283) was a hand-computed estimate of
+      // the centered #respawnAdSlot's bottom. Browser line-height + label
+      // metrics make this off by 3-10 px depending on system fonts, and
+      // at certain viewport heights the button visually butted up against
+      // the billboard bottom (user screenshot: '綠色的按鈕被擋住了').
+      // Reading the DOM rect directly is bulletproof regardless of
+      // viewport, DPR, or font rendering — the gap is always exactly
+      // 30 px below whatever the ad slot's actual painted bottom is.
+      // Also CLAMP the button so it never collides with the bottom hint
+      // strip (red 'SQUAD WIPED' bar at H - hintH).
+      let bannerBottom;
+      const _adSlotEl = document.getElementById('respawnAdSlot');
+      if (_adSlotEl && _adSlotEl.style.display !== 'none') {
+        bannerBottom = _adSlotEl.getBoundingClientRect().bottom;
+      } else {
+        // Mobile / ad-hidden fallback: anchor near 86% viewport height
+        // (where the old hardcoded formula floored). Subtract the
+        // button+gap so the +30 below pushes it back to roughly the
+        // same spot.
+        bannerBottom = Math.round(H_ * 0.86) - btnH - 30;
+      }
+      // Preferred: 30 px below ad slot. Ceiling: never overlap the red
+      // strip at the bottom (which sits at H - hintH).
+      const _maxBtnY = (H_ - hintH) - btnH - 10;       // 10 px margin above red strip
+      const _preferredBtnY = bannerBottom + 30;
+      const btnY = Math.min(_maxBtnY, _preferredBtnY);
       _deathRecap.adReviveBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
       const pulse2 = 0.85 + 0.15 * Math.sin(game.time * 0.22);
       ctx.fillStyle = `rgba(63, 230, 63, ${pulse2})`;
