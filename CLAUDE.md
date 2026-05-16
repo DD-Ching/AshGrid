@@ -9,16 +9,21 @@
 
 ## Coding standard — modular-first
 
-**改動前要先想「這要不要抽成模組」**,尤其下列五塊(回歸 bug 都在這冒):
+**指標不是「index.html 多短」,是「同一塊 state 有幾個地方能寫」。** 12,000 行不是病,9 個地方都能戳 `mouse.down` 才是病。改動前要先看:這塊 state 還有誰在寫?
 
-1. **Input state** — `mouse.*`, `keys[]`, hit-rect dispatch, touch handlers
-2. **Weapon state** — `playerWeapon`, `_weaponSlots`, fire trigger, swap, reload
-3. **Ad lifecycle** — `_pendingAdCb`, `_didReallyPause`, overlay timers, reward gate
-4. **HUD render/cache** — offsets, cache regions, canvas inset
-5. **Pawn / swap state** — `allies[i]._consumed`, `_useNN`, `_humanPiloted`, `_respawnAt`
+### 五個熱點(回歸 bug 都從這冒)
 
-碰到其中任何一個 → 先用一兩句話提議抽成 `js/<module>.js`,問用戶要不要做這個重構;同意才做。若用戶說 inline 就好,inline 修法 + 在檔案頂端加 TODO 註明累積的 bug 次數。
+| 熱點 | 已抽? | 模組 |
+|---|---|---|
+| Input(`mouse.*`, `keys[]`, hit-rect, 觸控)| ✅ | `js/input.js` |
+| Weapon state(swap / fire / reload / cd)| ✅ | `js/weapon_state.js` |
+| Ad lifecycle(reward gate, overlay timer)| ✅ | `js/ad_state.js` |
+| HUD render driver(cache region, canvas inset offset)| ⚠️ | helpers 已抽,driver 還在 index |
+| Pawn-swap state(`_consumed` / `_useNN` / `_humanPiloted` / `_respawnAt`)| ⚠️ | 部分在 `js/pawn_swap.js`,auto swap 在 mission |
 
-`index.html` 已 ~12000 行 → 新代碼若不是修改既有 < 50 行小區段,一律抽出成新檔。
+### 紀律
 
-**不要主動發起整個 codebase 大重構** — vibe-coding 流程不適合長重構;**機會性 refactor**:每次碰到上述五塊就順手抽一塊。
+1. **碰到上面任何熱點前**,先用一兩句話提議抽模組,問用戶 yes / no。同意才做;說 inline 就 inline,但在檔案頂端加 TODO + 該檔的累積 bug 計數。
+2. **新功能預設寫新檔** `js/<feature>.js`。只有「修改既有 < 50 行小區段」才 inline 進 index.html。
+3. **不主動發起大重構** — vibe-coding 流程不適合長 refactor。**機會性 refactor**:每次碰到熱點順手抽一塊。
+4. 每次 bug 修完問自己:這個 fix 有沒有讓某塊 state 多了第 7 個寫入點?有的話就抽。
