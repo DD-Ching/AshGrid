@@ -214,25 +214,47 @@
     document.head.appendChild(s);
   }
 
-  // ─── Ad-mode overlay (Phase 95) ───────────────────────────────────
-  // Shows the #adPlayOverlay element for 15 seconds with a 15→0 countdown
-  // and pauses gameplay. Used when the player clicks 'Watch Ad' so they
-  // get an honest ad-watching window even if GameMonetize hasn't approved
-  // the publisher site yet (no real ad fill → SDK_GAME_START fires
-  // instantly = 'click → instant revive' which the user flagged as broken
-  // UX: '按了之後馬上復活...我沒有看到廣告'). When GM does start serving
-  // real inventory, the GM iframe sits above this overlay (its z-index is
-  // 10000+; ours is 9000) so the placeholder is hidden by the real ad.
-  let _adOverlayTimer = null;
+  // ─── Ad-mode overlay (Phase 95 / 110) ─────────────────────────────
+  // Two-phase overlay:
+  //   1. LOADING. Shown the moment the player clicks 'WATCH AD'. No
+  //      countdown yet — just a 'LOADING AD…' message + pause game.
+  //      GM's iframe takes 1–3 s to actually start playing the ad,
+  //      and our previous version started counting from 15 immediately
+  //      so by the time the real ad began the placeholder already read
+  //      12 / 11 — user '15秒跟別人的15秒就沒有對上路了'.
+  //   2. COUNTDOWN (fallback only). If SDK_GAME_PAUSE hasn't fired
+  //      after _AD_LOAD_TIMEOUT_MS (4 s default), assume no fill and
+  //      run a local 15 s timer so the reward UX still happens. When a
+  //      real ad DOES start, SDK_GAME_PAUSE hides this overlay entirely
+  //      (Phase 108d) and the GM iframe carries the visuals.
+  const _AD_LOAD_TIMEOUT_MS = 4000;
+  let _adOverlayTimer       = null;
+  let _adLoadingTimer       = null;
   function _showAdPlayOverlay() {
     if (typeof document === 'undefined') return;
     const el = document.getElementById('adPlayOverlay');
     if (!el) return;
     el.style.display = 'flex';
     if (typeof game !== 'undefined') game._paused = true;
-    let remaining = 15;
     const cdEl    = document.getElementById('adPlayCountdown');
     const trailEl = document.getElementById('adPlayCountdownTrail');
+    // Phase 110 — start in LOADING state, no number yet. Real countdown
+    // (or fallback) starts when _beginAdCountdown is called.
+    if (cdEl)    cdEl.textContent    = '…';
+    if (trailEl) trailEl.textContent = 'loading';
+    if (_adOverlayTimer)  { clearInterval(_adOverlayTimer);  _adOverlayTimer  = null; }
+    if (_adLoadingTimer)  { clearTimeout(_adLoadingTimer);  _adLoadingTimer  = null; }
+    _adLoadingTimer = setTimeout(() => {
+      _adLoadingTimer = null;
+      // No real ad arrived in time — run the local placeholder window
+      // so the reward UX is still consistent.
+      if (el.style.display === 'flex') _beginAdCountdown(15);
+    }, _AD_LOAD_TIMEOUT_MS);
+  }
+  function _beginAdCountdown(durationSec) {
+    const cdEl    = document.getElementById('adPlayCountdown');
+    const trailEl = document.getElementById('adPlayCountdownTrail');
+    let remaining = durationSec;
     if (cdEl)    cdEl.textContent    = String(remaining);
     if (trailEl) trailEl.textContent = String(remaining);
     if (_adOverlayTimer) clearInterval(_adOverlayTimer);
@@ -252,10 +274,8 @@
       const el = document.getElementById('adPlayOverlay');
       if (el) el.style.display = 'none';
     }
-    if (_adOverlayTimer) {
-      clearInterval(_adOverlayTimer);
-      _adOverlayTimer = null;
-    }
+    if (_adOverlayTimer) { clearInterval(_adOverlayTimer); _adOverlayTimer = null; }
+    if (_adLoadingTimer) { clearTimeout(_adLoadingTimer);  _adLoadingTimer = null; }
   }
 
   // ─── Show ad ──────────────────────────────────────────────────────
