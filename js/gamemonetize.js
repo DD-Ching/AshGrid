@@ -108,6 +108,27 @@
                 window.sdk.preloadAd('rewarded');
               }
             } catch (e) {}
+            // Phase 108 — override the ad_stubs.js `requestRewardedAd`
+            // stub (which just simulates 500ms + always succeeds) with
+            // the real GM showAd(rewarded) path. This is what wires the
+            // green 'WATCH AD · REVIVE' button in death_recap.js to an
+            // actual sdk.showBanner() call. Without this override,
+            // clicking the button instantly revived the player with NO
+            // ad shown — user '在我點綠色可以看全屏廣告的情況下,他不
+            // 給我做了全屏廣告'.
+            try {
+              if (typeof window.requestRewardedAd === 'function'
+                  && !window._requestRewardedAd_gm_wired) {
+                window._requestRewardedAd_stub = window.requestRewardedAd;
+                window.requestRewardedAd = function(rewardId, cb) {
+                  showAd(function(ok) {
+                    if (cb) try { cb(ok, { rewardId, amount: 1 }); } catch (e) {}
+                  }, { rewarded: true });
+                };
+                window._requestRewardedAd_gm_wired = true;
+                console.log('[gamemonetize] requestRewardedAd → showAd(rewarded) wired');
+              }
+            } catch (e) {}
             break;
           case 'SDK_GAME_START':
             // Ad finished — resume gameplay.
