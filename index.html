@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=127"></script>
-<script src="js/arena_recruitment.js?v=127"></script>
-<script src="js/dynamic_radio.js?v=127"></script>
-<script src="js/i18n.js?v=127"></script>
-<script src="js/touch_input.js?v=127"></script>
-<script src="js/key_bindings.js?v=127"></script>
-<script src="js/grenades.js?v=127"></script>
-<script src="js/squad_commands.js?v=127"></script>
-<script src="js/multiplayer.js?v=127"></script>
-<script src="js/leaderboard.js?v=127"></script>
-<script src="js/structures.js?v=127"></script>
-<script src="js/tod.js?v=127"></script>
-<script src="js/weapons.js?v=127"></script>
-<script src="js/chassis.js?v=127"></script>
-<script src="js/respawn_buff.js?v=127"></script>
-<script src="js/death_recap.js?v=127"></script>
-<script src="js/mote_affinity.js?v=127"></script>
-<script src="js/stage_hints.js?v=127"></script>
-<script src="js/pawn_swap.js?v=127"></script>
-<script src="js/global_stats.js?v=127"></script>
-<script src="js/progressive_unlock.js?v=127"></script>
-<script src="js/ad_stubs.js?v=127"></script>
+<script src="js/audio/sfx.js?v=128"></script>
+<script src="js/arena_recruitment.js?v=128"></script>
+<script src="js/dynamic_radio.js?v=128"></script>
+<script src="js/i18n.js?v=128"></script>
+<script src="js/touch_input.js?v=128"></script>
+<script src="js/key_bindings.js?v=128"></script>
+<script src="js/grenades.js?v=128"></script>
+<script src="js/squad_commands.js?v=128"></script>
+<script src="js/multiplayer.js?v=128"></script>
+<script src="js/leaderboard.js?v=128"></script>
+<script src="js/structures.js?v=128"></script>
+<script src="js/tod.js?v=128"></script>
+<script src="js/weapons.js?v=128"></script>
+<script src="js/chassis.js?v=128"></script>
+<script src="js/respawn_buff.js?v=128"></script>
+<script src="js/death_recap.js?v=128"></script>
+<script src="js/mote_affinity.js?v=128"></script>
+<script src="js/stage_hints.js?v=128"></script>
+<script src="js/pawn_swap.js?v=128"></script>
+<script src="js/global_stats.js?v=128"></script>
+<script src="js/progressive_unlock.js?v=128"></script>
+<script src="js/ad_stubs.js?v=128"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=127"></script>
+<script src="js/crazygames.js?v=128"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=127"></script>
+<script src="js/gamemonetize.js?v=128"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=127"></script>
-<script src="js/world_gen.js?v=127"></script>
-<script src="js/squad.js?v=127"></script>
-<script src="js/drone_fpv.js?v=127"></script>
-<script src="js/vision_raycast.js?v=127"></script>
-<script src="js/camera.js?v=127"></script>
-<script src="js/defense_build_ui.js?v=127"></script>
-<script src="js/pause.js?v=127"></script>
+<script src="js/missions/nn_deathmatch.js?v=128"></script>
+<script src="js/world_gen.js?v=128"></script>
+<script src="js/squad.js?v=128"></script>
+<script src="js/drone_fpv.js?v=128"></script>
+<script src="js/vision_raycast.js?v=128"></script>
+<script src="js/camera.js?v=128"></script>
+<script src="js/defense_build_ui.js?v=128"></script>
+<script src="js/pause.js?v=128"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -1426,6 +1426,38 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   </div>
 </div>
 
+<!-- Phase 107 — permanent OUTER AD FRAME. Two 60-px horizontal strips
+     pinned to the top + bottom of the viewport. Always visible during
+     active play (not lobby / not death overlay), holding the slim
+     leaderboard-style ad inventory. The HUD itself is inset by
+     HUD_AD_TOP / HUD_AD_BOTTOM so nothing draws underneath these strips,
+     replacing the popup-style side ad rails the user complained about
+     ('广告不要在不该跳出的时候跳出 ... 外面外圍就是專門放廣告的'). -->
+<div id="frameAdTop" style="
+     display:none;
+     position:fixed; top:0; left:0; right:0; height:60px;
+     z-index:7;
+     background: rgba(10, 10, 14, 0.92);
+     border-bottom: 1px solid rgba(200, 38, 28, 0.55);
+     pointer-events:none;
+     font-family: 'Helvetica Neue', sans-serif;
+     align-items: center; justify-content: center;">
+  <!-- Replace with a GameMonetize 728×90 or 970×90 banner ad-tag once
+       provisioned: <ins data-ad-key="YOUR_LEADERBOARD_KEY"></ins> -->
+  <div style="color:#666; font-size:9px; letter-spacing:3px;">ADVERTISEMENT</div>
+</div>
+<div id="frameAdBottom" style="
+     display:none;
+     position:fixed; bottom:0; left:0; right:0; height:60px;
+     z-index:7;
+     background: rgba(10, 10, 14, 0.92);
+     border-top: 1px solid rgba(200, 38, 28, 0.55);
+     pointer-events:none;
+     font-family: 'Helvetica Neue', sans-serif;
+     align-items: center; justify-content: center;">
+  <div style="color:#666; font-size:9px; letter-spacing:3px;">ADVERTISEMENT</div>
+</div>
+
 <!-- (arena-mp: #ftueDialogue bar removed — tied to the cut FTUE prologue.) -->
 
 <!-- ============ INTRO / AWAKEN SEQUENCE ============ -->
@@ -2763,18 +2795,31 @@ function _updateRespawnAdSlot() {
 let _sideAdLeftEl  = null;
 let _sideAdRightEl = null;
 function _updateSideAdSlots() {
-  // Phase 106 — side ad rails permanently disabled. User: '广告不要在
-  // 不该跳出的时候跳出'. The 160×600 wide skyscraper format is also a
-  // dead end with GameMonetize (their SDK only ships VIDEO interstitials,
-  // not static banner inventory), so the rails were only ever showing the
-  // 'AshGrid 160×600' placeholder which adds noise without revenue.
-  // Death-overlay ad slot + flanking 336×280 slots stay (gated on team
-  // wipe in _updateRespawnAdSlot); preroll + end-match GM video calls
-  // also stay. This just kills the in-play sideboards.
+  // Phase 106 — side ad rails permanently disabled (replaced by the
+  // top/bottom outer ad frame, see _updateFrameAdSlots).
   if (!_sideAdLeftEl)  _sideAdLeftEl  = document.getElementById('sideAdLeft');
   if (!_sideAdRightEl) _sideAdRightEl = document.getElementById('sideAdRight');
   if (_sideAdLeftEl  && _sideAdLeftEl.style.display  !== 'none') _sideAdLeftEl.style.display  = 'none';
   if (_sideAdRightEl && _sideAdRightEl.style.display !== 'none') _sideAdRightEl.style.display = 'none';
+}
+
+// Phase 107 — top + bottom permanent ad frame. Both strips fade in
+// when the player enters active play and fade out anywhere else
+// (lobby, paused, mission-end card up). They sit OUTSIDE the HUD safe
+// zone defined by HUD_AD_TOP / HUD_AD_BOTTOM so HUD draws never overlap
+// them. User: '外面外圍就是專門放廣告的 ... 不要這樣擋住'.
+let _frameAdTopEl = null, _frameAdBottomEl = null;
+function _updateFrameAdSlots() {
+  if (!_frameAdTopEl)    _frameAdTopEl    = document.getElementById('frameAdTop');
+  if (!_frameAdBottomEl) _frameAdBottomEl = document.getElementById('frameAdBottom');
+  if (!_frameAdTopEl || !_frameAdBottomEl) return;
+  const playing = (typeof game !== 'undefined') && game.state === 'playing';
+  const isMobile = (typeof touchInput !== 'undefined') && touchInput.enabled;
+  // Mobile UI is already cramped; skip the frame so the action column
+  // and bottom HP bar don't get pushed off-screen.
+  const want = (playing && !isMobile) ? 'flex' : 'none';
+  if (_frameAdTopEl.style.display    !== want) _frameAdTopEl.style.display    = want;
+  if (_frameAdBottomEl.style.display !== want) _frameAdBottomEl.style.display = want;
 }
 
 // Sprint tuning
@@ -10750,7 +10795,7 @@ function renderHUD() {
   const _narrow = W() < 560;
   const _missionW = _narrow ? 180 : 232;
   if (_narrow) {
-    _hud_drawMissionCard(14, 14, _missionW, 92);
+    _hud_drawMissionCard(14, 14 + HUD_AD_TOP, _missionW, 92);
     game._squadChipRects = null;
   } else {
     _hudDrawCachedPanels();
@@ -10763,7 +10808,7 @@ function renderHUD() {
   if (_isMpModeForBtn) {
     game._pauseBtnRect = null;
   } else {
-    const _pbX = 14 + _missionW - 22, _pbY = 18, _pbW = 16, _pbH = 16;
+    const _pbX = 14 + _missionW - 22, _pbY = 18 + HUD_AD_TOP, _pbW = 16, _pbH = 16;
     ctx.fillStyle = 'rgba(200, 38, 28, 0.85)';
     ctx.fillRect(_pbX, _pbY, _pbW, _pbH);
     ctx.fillStyle = COLORS.cream;
@@ -10826,6 +10871,8 @@ function renderHUD() {
   // Phase 101 — also tick the side ad rails so they appear/disappear with
   // game state in the same render frame.
   if (typeof _updateSideAdSlots === 'function') _updateSideAdSlots();
+  // Phase 107 — top/bottom outer ad-frame strips
+  if (typeof _updateFrameAdSlots === 'function') _updateFrameAdSlots();
 
   // Mission objective panel + off-screen compass. Suppress when the HTML
   // end-card is up — the canvas-drawn MATCH RESULT block would otherwise
@@ -10852,7 +10899,7 @@ function renderHUD() {
     // 6-zone layout. Uses the old draw shapes inline since the helpers
     // assume ≥ 290 px width.
     const _bW = Math.max(280, W() - 40);
-    const _bX = 20, _bH = 54, _bY = H() - _bH - 12;
+    const _bX = 20, _bH = 54, _bY = H() - _bH - 12 - HUD_AD_BOTTOM;
     drawHUDPanel(_bX, _bY, _bW, _bH, null);
     const _hpw = 120;
     ctx.fillStyle = COLORS.creamDark;
@@ -10896,10 +10943,11 @@ function renderHUD() {
   const _tinyMM = W() < 400;
   const mw = _tinyMM ? 100 : (_narrowMM ? 130 : 180);
   const mh = mw;
-  const mx = W() - mw - 16, my = H() - mh - 16;
+  // Phase 107 — bottom inset for outer ad strip
+  const mx = W() - mw - 16, my = H() - mh - 16 - HUD_AD_BOTTOM;
   if (game._minimapCollapsed) {
     const tw = 70, th = 26;
-    const tx = W() - tw - 16, ty = H() - th - 16;
+    const tx = W() - tw - 16, ty = H() - th - 16 - HUD_AD_BOTTOM;
     ctx.fillStyle = 'rgba(232, 228, 216, 0.92)';
     ctx.fillRect(tx, ty, tw, th);
     ctx.strokeStyle = COLORS.black;
@@ -11569,16 +11617,15 @@ const _HUD_PANEL_INTERVAL = 6;   // ticks (10 Hz at TICK_HZ=60)
 let _hudCacheRegions = [];
 
 function _hudComputeRegions() {
-  // Phase 106 — tighter / shorter rects matching the new dark compact
-  // sizes. Squad dots column moves outside the mission card so they
-  // don't share a region with it.
+  // Phase 106 sizes + Phase 107 outer ad-frame Y offsets.
+  const T = HUD_AD_TOP, B = HUD_AD_BOTTOM;
   _hudCacheRegions = [
-    { x: 12,          y: 12,         w: 236,                       h: 114 },  // mission card
-    { x: 12,          y: 132,        w: 32,                        h: 162 },  // squad dots column (5 × 26 + 4 × 6 = 154 tall)
-    { x: W()/2 - 102, y: 10,         w: 204,                       h: 28  },  // mode chip
-    { x: W() - 248,   y: 12,         w: 236,                       h: 114 },  // score block
-    { x: 12,          y: H() - 164,  w: 304,                       h: 152 },  // vitals card (generous box)
-    { x: 326,         y: H() - 100,  w: Math.max(420, W() - 600),  h: 86  },  // action bar
+    { x: 12,          y: 12 + T,         w: 236,                       h: 114 },  // mission card
+    { x: 12,          y: 132 + T,        w: 32,                        h: 162 },  // squad dots column
+    { x: W()/2 - 102, y: 10 + T,         w: 204,                       h: 28  },  // mode chip
+    { x: W() - 248,   y: 12 + T,         w: 236,                       h: 114 },  // score block
+    { x: 12,          y: H() - 164 - B,  w: 304,                       h: 152 },  // vitals card
+    { x: 326,         y: H() - 100 - B,  w: Math.max(420, W() - 600),  h: 86  },  // action bar
   ];
 }
 
@@ -11602,24 +11649,30 @@ function _hudInitCache() {
 function _hudDrawCachedPanels() {
   _hudInitCache();
   const tick = (typeof game !== 'undefined') ? game.time : 0;
-  // tick < lastTick → game.time was reset (new match). Force refresh so
-  // the cache doesn't stay stale until lastTick catches up again.
   if (tick < _hudPanelLastTick) _hudPanelLastTick = -9999;
+  // Phase 107 — TAB / Q / E swap into a different camera mode (tactical,
+  // drone, fpv, command) should refresh the mode chip in the same render
+  // frame instead of waiting up to 6 ticks for the next cache tick.
+  if (typeof game !== 'undefined' && game.mode !== _hudLastCachedMode) {
+    _hudLastCachedMode = game.mode;
+    _hudPanelLastTick = -9999;
+  }
   const refresh = (tick - _hudPanelLastTick) >= _HUD_PANEL_INTERVAL;
   if (refresh) {
     _hudPanelLastTick = tick;
-    // Phase 106 — fresh render onto MAIN canvas at the new compact sizes.
-    _hud_drawMissionCard(14, 14, 232, 110);
-    _hud_drawSquadDots(14, 134);                       // 5 × 26 + 4 × 6 = 154 tall
+    // Phase 106 sizes + Phase 107 outer ad-frame Y offsets.
+    const T = HUD_AD_TOP, B = HUD_AD_BOTTOM;
+    _hud_drawMissionCard(14, 14 + T, 232, 110);
+    _hud_drawSquadDots(14, 134 + T);                   // 5 × 26 + 4 × 6 = 154 tall
     _hud_drawModeChip();
-    _hud_drawScoreBlock(W() - 14 - 232, 14, 232, 110);
+    _hud_drawScoreBlock(W() - 14 - 232, 14 + T, 232, 110);
     const _hasArmor = player._chassis === 'heavy' && player.maxArmor > 0;
     const _vRows = 1 + (_hasArmor ? 1 : 0) + (game._nnMode ? 1 : 0);
     const _vCardH = 26 + _vRows * 21 + 20;             // header + bars + chip
-    _hud_drawVitalsCard(14, H() - _vCardH - 12, 300, _vCardH);
+    _hud_drawVitalsCard(14, H() - _vCardH - 12 - B, 300, _vCardH);
     const _aX = 14 + 300 + 12;
     const _aW = Math.max(420, W() - _aX - 270);
-    _hud_drawActionBar(_aX, H() - 86 - 12, _aW, 86);
+    _hud_drawActionBar(_aX, H() - 86 - 12 - B, _aW, 86);
     // Snapshot the 6 regions from main canvas → offscreen cache.
     _hudCacheCtx.clearRect(0, 0, _hudCacheCanvas.width, _hudCacheCanvas.height);
     for (const r of _hudCacheRegions) {
@@ -11635,6 +11688,22 @@ function _hudDrawCachedPanels() {
   }
   return refresh;
 }
+
+// Phase 107 — outer ad-frame reserve. The top and bottom strips of the
+// viewport are kept clear of HUD draws so permanent ad banners can sit
+// there (the #frameAdTop / #frameAdBottom DOM divs). All HUD helpers
+// and cache regions offset their Y coordinates by these constants so
+// nothing ever leaks into the ad zone. User: '外面外圍就是專門放廣告的,
+// 一個就是可能厚度, 你知道我一上往外增加一個厚度是專門放廣告的,
+// 不要這樣擋住'.
+const HUD_AD_TOP = 60;
+const HUD_AD_BOTTOM = 60;
+
+// Tracks game.mode across cached frames so a TAB-press (tactical ↔
+// command etc.) invalidates the cache instantly instead of waiting up
+// to 6 ticks for the next refresh — user: '按下Tab的時候的那個模式也
+// 要切換, 不要讓全部卡在一起'.
+let _hudLastCachedMode = null;
 
 // ============ HUD: PHASE 106 DARK COMPACT ============
 // Phase 104 introduced the 6-zone HUD with cream cards; Phase 106 swaps
@@ -11687,24 +11756,10 @@ function _hud_drawMissionCard(x, y, w, h) {
   ctx.fillText(`ENEMIES ${_remaining}`, x + 12, y + 72);
   ctx.fillStyle = '#aaa';
   ctx.fillText(`SQUAD ${_sqAlive}/${allies.length}`, x + 12 + 90, y + 72);
-  // SEED GATE indicator + [G] chip when ready
-  if (game._nnMode) {
-    const sv = Math.floor(player._seed || 0);
-    const over = sv > ARENA_SEED_GAP;
-    ctx.fillStyle = over ? '#3CD46A' : '#777';
-    ctx.font = 'bold 10px sans-serif';
-    ctx.fillText(`SEED: ${over ? 'READY' : 'LOCKED'}`, x + 12, y + 92);
-    if (over) {
-      const bx = x + 12 + 84;
-      ctx.fillStyle = '#1E9A4A';
-      ctx.fillRect(bx, y + 82, 16, 14);
-      ctx.fillStyle = COLORS.cream;
-      ctx.font = 'bold 10px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('G', bx + 8, y + 92);
-      ctx.textAlign = 'left';
-    }
-  }
+  // Phase 107 — SEED gameplay temporarily removed from the HUD; the
+  // mission card no longer shows a 'SEED GATE: READY [G]' line. The
+  // POWER bar (formerly SEED) lives in the vitals card and the
+  // recruit-ready chip is the green G cell in the action bar.
 }
 
 function _hud_drawSquadDots(x, y) {
@@ -11775,7 +11830,7 @@ function _hud_drawModeChip() {
   if (W() < 560) return;
   const lbl = getModeLabel() || 'TACTICAL';
   const cw = 200, ch = 22;
-  const cx = W()/2 - cw/2, cy = 12;
+  const cx = W()/2 - cw/2, cy = 12 + HUD_AD_TOP;
   ctx.fillStyle = COLORS.red;
   ctx.fillRect(cx, cy, cw, 1.5);
   ctx.fillStyle = 'rgba(20, 22, 28, 0.92)';
@@ -11865,23 +11920,24 @@ function _hud_drawVitalsCard(x, y, w, h) {
   ctx.fillStyle = player.hp > player.maxHp * 0.3 ? '#C8261C' : '#7A1A14';
   ctx.fillRect(barX, by, barW * Math.max(0, player.hp) / player.maxHp, barH);
   by += barH + 10;
-  // SEED INTEGRITY
+  // POWER bar (Phase 107 — formerly SEED INTEGRITY. The SEED-as-recruit-
+  // gate gameplay is temporarily shelved, so the bar is now branded
+  // 'POWER' and the recruit-gate notch is removed. The underlying
+  // player._seed value still ticks since the action bar 'G RECRUIT'
+  // cell uses it for ready/lock, but it's not shown as a hard threshold
+  // on this bar anymore.)
   if (game._nnMode) {
     const sv = Math.floor(player._seed || 0);
     const sFrac = Math.max(0, Math.min(1, sv / ARENA_SEED_MAX));
-    const over = sv > ARENA_SEED_GAP;
     ctx.fillStyle = '#aaa';
     ctx.font = 'bold 8px monospace';
-    ctx.fillText('SEED', barX, by - 1);
+    ctx.fillText('POWER', barX, by - 1);
     ctx.textAlign = 'right';
     ctx.fillText(`${sv}/${ARENA_SEED_MAX}`, barX + barW, by - 1);
     ctx.textAlign = 'left';
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(barX, by, barW, barH);
-    const gateFrac = Math.min(1, ARENA_SEED_GAP / ARENA_SEED_MAX);
-    ctx.fillStyle = 'rgba(200, 38, 28, 0.55)';
-    ctx.fillRect(barX + barW * gateFrac - 1, by - 2, 2, barH + 4);
-    ctx.fillStyle = over ? '#E67A2C' : '#A8682E';
+    ctx.fillStyle = '#E67A2C';
     ctx.fillRect(barX, by, barW * sFrac, barH);
     by += barH + 10;
   }
