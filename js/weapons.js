@@ -151,12 +151,24 @@ function swapPlayerWeapon() {
   player.ammo = next.ammo;
   player.reserve = next.reserve;
   // Phase 67 — 0.15s swap animation. Sets _weaponSwapUntil so renderHUD
-  // can pulse the ammo block + temporarily fade the crosshair. Also acts
-  // as a brief fire lockout (read by the fire() function so the new
-  // weapon doesn't shoot mid-handle-pull).
+  // can pulse the ammo block + temporarily fade the crosshair.
   if (typeof game !== 'undefined' && game.time != null) {
     player._weaponSwapUntil = game.time + 9;   // 9 ticks = 0.15s @ 60fps
   }
+  // Phase 110c — clean fire state across swap. User: '按X切換到下一個
+  // 武器就沒有辦法繼續攻擊'. If the player was holding the mouse down to
+  // auto-fire the previous weapon and X swapped them into a semi-auto
+  // (sniper / shotgun), the rising-edge check (`mouse.down &&
+  // !mouse._wasDown`) never re-armed because _wasDown was already true
+  // → semi-auto wouldn't shoot until the player released and re-
+  // clicked. Force-release here so the new weapon needs a fresh click,
+  // which matches expectation for a swap. Also zero fireCooldown so the
+  // previous gun's rate-of-fire timer doesn't lock out the new one.
+  if (typeof mouse !== 'undefined') {
+    mouse.down = false;
+    mouse._wasDown = false;
+  }
+  player.fireCooldown = 0;
   if (typeof showSwapToast === 'function') {
     const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
     const wname = next.weapon.name || (lang === 'zh' ? '副武器' : 'SECONDARY');
