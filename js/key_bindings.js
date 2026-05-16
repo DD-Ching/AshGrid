@@ -135,6 +135,9 @@ const KEY_BINDINGS = {
     //   (1) Arena recruit SED on a downed enemy nearby (Phase 18+)
     //   (2) Phase 63: defuse the nearest hostile mine
     //   (3) Fallback: throw a hand grenade
+    // Phase 104 — F is now the PRIMARY frag throw key (resolves the
+    // G grenade vs G recruit ambiguity in the HUD label). G keeps the
+    // fallback throwGrenade() for backward compatibility / muscle memory.
     if (typeof _arenaTrySEDConvert === 'function' && _arenaTrySEDConvert()) {
       return;
     }
@@ -143,6 +146,8 @@ const KEY_BINDINGS = {
     }
     throwGrenade();
   } },
+  // Phase 104 — primary frag key (matches new action-bar label 'F FRAG').
+  f:   { action: () => throwGrenade() },
   b:   { action: () => toggleBuildMode() },
   x:   { action: () => swapPlayerWeapon() },
   u:   { action: () => upgradeNearestModule() },

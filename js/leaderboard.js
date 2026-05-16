@@ -75,6 +75,10 @@ function _lbBumpKill() {
 }
 function _lbBumpDeath() {
   _lbStats.deaths += 1;
+  // Phase 104 — also tick a per-match death counter so the new HUD
+  // Score Block can show 'DEATHS N' alongside KILLS / TIME. Reset to 0
+  // alongside game.killCount in the match-start paths.
+  if (typeof game !== 'undefined') game.deaths = (game.deaths || 0) + 1;
   _lbStats.lastSeen = Date.now();
   _lbSaveLocal();
   _lbSchedulePush();

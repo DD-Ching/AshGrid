@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=124"></script>
-<script src="js/arena_recruitment.js?v=124"></script>
-<script src="js/dynamic_radio.js?v=124"></script>
-<script src="js/i18n.js?v=124"></script>
-<script src="js/touch_input.js?v=124"></script>
-<script src="js/key_bindings.js?v=124"></script>
-<script src="js/grenades.js?v=124"></script>
-<script src="js/squad_commands.js?v=124"></script>
-<script src="js/multiplayer.js?v=124"></script>
-<script src="js/leaderboard.js?v=124"></script>
-<script src="js/structures.js?v=124"></script>
-<script src="js/tod.js?v=124"></script>
-<script src="js/weapons.js?v=124"></script>
-<script src="js/chassis.js?v=124"></script>
-<script src="js/respawn_buff.js?v=124"></script>
-<script src="js/death_recap.js?v=124"></script>
-<script src="js/mote_affinity.js?v=124"></script>
-<script src="js/stage_hints.js?v=124"></script>
-<script src="js/pawn_swap.js?v=124"></script>
-<script src="js/global_stats.js?v=124"></script>
-<script src="js/progressive_unlock.js?v=124"></script>
-<script src="js/ad_stubs.js?v=124"></script>
+<script src="js/audio/sfx.js?v=125"></script>
+<script src="js/arena_recruitment.js?v=125"></script>
+<script src="js/dynamic_radio.js?v=125"></script>
+<script src="js/i18n.js?v=125"></script>
+<script src="js/touch_input.js?v=125"></script>
+<script src="js/key_bindings.js?v=125"></script>
+<script src="js/grenades.js?v=125"></script>
+<script src="js/squad_commands.js?v=125"></script>
+<script src="js/multiplayer.js?v=125"></script>
+<script src="js/leaderboard.js?v=125"></script>
+<script src="js/structures.js?v=125"></script>
+<script src="js/tod.js?v=125"></script>
+<script src="js/weapons.js?v=125"></script>
+<script src="js/chassis.js?v=125"></script>
+<script src="js/respawn_buff.js?v=125"></script>
+<script src="js/death_recap.js?v=125"></script>
+<script src="js/mote_affinity.js?v=125"></script>
+<script src="js/stage_hints.js?v=125"></script>
+<script src="js/pawn_swap.js?v=125"></script>
+<script src="js/global_stats.js?v=125"></script>
+<script src="js/progressive_unlock.js?v=125"></script>
+<script src="js/ad_stubs.js?v=125"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=124"></script>
+<script src="js/crazygames.js?v=125"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=124"></script>
+<script src="js/gamemonetize.js?v=125"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=124"></script>
-<script src="js/world_gen.js?v=124"></script>
-<script src="js/squad.js?v=124"></script>
-<script src="js/drone_fpv.js?v=124"></script>
-<script src="js/vision_raycast.js?v=124"></script>
-<script src="js/camera.js?v=124"></script>
-<script src="js/defense_build_ui.js?v=124"></script>
-<script src="js/pause.js?v=124"></script>
+<script src="js/missions/nn_deathmatch.js?v=125"></script>
+<script src="js/world_gen.js?v=125"></script>
+<script src="js/squad.js?v=125"></script>
+<script src="js/drone_fpv.js?v=125"></script>
+<script src="js/vision_raycast.js?v=125"></script>
+<script src="js/camera.js?v=125"></script>
+<script src="js/defense_build_ui.js?v=125"></script>
+<script src="js/pause.js?v=125"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -3906,7 +3906,7 @@ function startSkirmish() {
   game.state = 'playing';
   game.mode = 'tactical';
   game.wave = 1; // not really a wave — just a marker
-  game.score = 0; game.killCount = 0; game.time = 0;
+  game.score = 0; game.killCount = 0; game.deaths = 0; game.time = 0;
   game.message = ''; game.waveBreak = 0; game.missionRetries = 0;
   game._skirmish = true;
   player.hp = player.maxHp;
@@ -4035,7 +4035,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   game.state = 'playing';
   game.mode = 'tactical';
   game.wave = 1;
-  game.score = 0; game.killCount = 0; game.time = 0;
+  game.score = 0; game.killCount = 0; game.deaths = 0; game.time = 0;
   game.message = ''; game.waveBreak = 0; game.missionRetries = 0;
   game._skirmish = true;
   game._nnMode = true;
@@ -4319,7 +4319,7 @@ async function startGame() {
   game.mode = 'tactical';
   game.wave = 0;
   game.score = 0;
-  game.killCount = 0;
+  game.killCount = 0; game.deaths = 0;
   game.time = 0;
   game.message = '';
   game.waveBreak = 0;
@@ -10736,49 +10736,32 @@ function renderHUD() {
     ctx.fillStyle = `rgba(0, 0, 0, ${game._sceneFade})`;
     ctx.fillRect(0, 0, W(), H());
   }
-  // Phase 20a/28: MP indicator — top-right corner. Shows TWO counts:
-  // 'MP · 3p · 2v / room'
-  //   3p = peers Firebase signaling matched in the room
-  //   2v = peers whose position WebRTC actually delivered
-  // If p > v, the WebRTC handshake hasn't fully landed (still tunneling
-  // through TURN, or NAT blocked) so the player understands the lag.
-  if (typeof _mpIsActive === 'function' && _mpIsActive()) {
-    const visible = _mpState ? _mpState.remotePlayers.size + 1 : 1;
-    const peers = (_mpState && _mpState.room && _mpState.room.getPeers)
-      ? Object.keys(_mpState.room.getPeers()).length + 1
-      : visible;
-    const roomLbl = (_mpState && _mpState.roomName) ? _mpState.roomName.slice(0, 12) : 'room';
-    ctx.save();
-    ctx.fillStyle = COLORS.red;
-    ctx.font = 'bold 11px monospace';
-    ctx.textAlign = 'right';
-    const label = (peers === visible)
-      ? `MP · ${peers} · ${roomLbl}`
-      : `MP · ${peers}p · ${visible}v · ${roomLbl}`;   // mismatch = WebRTC catching up
-    ctx.fillText(label, W() - 18, 18);
-    ctx.textAlign = 'left';
-    ctx.restore();
-  }
+  // Phase 104 — standalone MP chip removed; MP peers + room name are
+  // integrated into the new top-right Score Block (see _hud_drawScoreBlock).
   // Phase 20c: kill feed + scoreboard (no-op when MP inactive).
   if (typeof _mpRenderHUD === 'function') _mpRenderHUD();
 
-  // Top-left: compact status panel — shrinks on narrow viewports (≤500px)
-  // so it doesn't overlap the mode banner or score on portrait phones.
-  const _narrow = W() < 500;
-  const _panelW = _narrow ? 160 : 220;
-  const _panelH = _narrow ? 80  : 100;
-  drawHUDPanel(16, 16, _panelW, _panelH, null);
-  // Pause button (top-right of the status panel) — clickable + matches the
-  // canvas-drawn minimap toggle pattern. Stored rect is hit-tested in mousedown.
-  // Phase 34/35: hidden + rect cleared in MP MODE (URL flag), since pause
-  // doesn't apply. Gate on URL flag instead of _mpState.enabled so the
-  // button is hidden from page-load, not after-welcome.
+  // Phase 104 — new TOP-LEFT layout: Mission Status Card + Squad Strip
+  // (replaces the dense single-panel debug-looking status from before).
+  // On viewport < 560 fall back to compact single card without squad
+  // strip so phones / small windows don't get squeezed.
+  const _narrow = W() < 560;
+  const _missionW = _narrow ? 200 : 290;
+  const _missionH = _narrow ? 100 : 132;
+  _hud_drawMissionCard(16, 16, _missionW, _missionH);
+  if (!_narrow) {
+    _hud_drawSquadStrip(16, 16 + _missionH + 8, _missionW, 210);
+  } else {
+    game._squadChipRects = null;
+  }
+  // Pause button (top-right of the mission card, unchanged behaviour;
+  // re-anchored relative to new card size).
   let _isMpModeForBtn = false;
   try { _isMpModeForBtn = new URLSearchParams(location.search).get('mp') === '1'; } catch (e) {}
   if (_isMpModeForBtn) {
     game._pauseBtnRect = null;
   } else {
-    const _pbX = 16 + _panelW - 24, _pbY = 22, _pbW = 18, _pbH = 18;
+    const _pbX = 16 + _missionW - 24, _pbY = 22, _pbW = 18, _pbH = 18;
     ctx.fillStyle = 'rgba(200, 38, 28, 0.85)';
     ctx.fillRect(_pbX, _pbY, _pbW, _pbH);
     ctx.fillStyle = COLORS.cream;
@@ -10788,171 +10771,15 @@ function renderHUD() {
     ctx.textAlign = 'left';
     game._pauseBtnRect = { x: _pbX, y: _pbY, w: _pbW, h: _pbH };
   }
-  ctx.fillStyle = COLORS.red;
-  ctx.font = _narrow ? 'bold 10px sans-serif' : 'bold 12px sans-serif';
-  ctx.fillText(`${T('关卡', 'Stage')} ${game.wave}/${MISSIONS.length}  ${mapName(currentMap)}`, 26, 36);
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 10px sans-serif';
-  if (!_narrow) ctx.fillText(`${T('视角', 'View')} ${getModeLabel()}`, 26, 54);
-  const remaining = enemies.filter(e=>e.alive).length + enemyDrones.filter(d=>d.alive).length;
-  ctx.fillStyle = remaining > 0 ? COLORS.red : COLORS.gray;
-  ctx.fillText(`${T('敌方', 'Enemies')} ${remaining}`, 26, _narrow ? 54 : 70);
-  // Squad — in NN mode each chip is clickable to swap operator into that slot
-  const sqAlive = allies.filter(a=>a.alive).length;
-  ctx.fillStyle = sqAlive > 0 ? COLORS.black : COLORS.gray;
-  const _chipBaseY = _narrow ? 60 : 76;
-  const _chipTextY = _narrow ? 70 : 86;
-  // On touch devices, expand the click rect ~10px on every side so a
-  // thumb tap lands reliably even though the visible chip is small.
-  const _touchPad = (typeof touchInput !== 'undefined' && touchInput.enabled) ? 8 : 0;
-  if (game._nnMode) {
-    game._squadChipRects = [];
-    const chipH = 14;
-    let cursorX = 26;
-    const selfTxt = `[1·${T('你', 'YOU')}${player.alive ? '' : '✕'}]`;
-    ctx.fillText(selfTxt, cursorX, _chipTextY);
-    cursorX += ctx.measureText(selfTxt).width + 4;
-    ctx.font = 'bold 10px sans-serif';
-    for (let i = 0; i < allies.length; i++) {
-      const a = allies[i];
-      const tag = (a.callsign && a.callsign[0]) || '?';
-      const text = `[${i+2}·${tag}${a.alive ? a.hp : '✕'}]`;
-      const w = ctx.measureText(text).width + 6;
-      if (a.alive) {
-        ctx.fillStyle = 'rgba(200, 38, 28, 0.12)';
-        ctx.fillRect(cursorX - 2, _chipBaseY, w, chipH);
-        ctx.fillStyle = COLORS.black;
-      } else {
-        ctx.fillStyle = COLORS.gray;
-      }
-      ctx.fillText(text, cursorX, _chipTextY);
-      // Hit-rect padded for thumbs (touch only) — visible rect unchanged.
-      game._squadChipRects.push({
-        x: cursorX - 2 - _touchPad,
-        y: _chipBaseY - _touchPad,
-        w: w + _touchPad * 2,
-        h: chipH + _touchPad * 2,
-        allyIdx: i,
-        alive: a.alive
-      });
-      cursorX += w + 2;
-    }
-    // Phase X — MP swap slots. In MP, allies[] is empty (NN allies live
-    // server-side). Surface the team-0 server bots as additional chips
-    // so the player sees who they could pawn-swap to. Blue = alive +
-    // swap-target candidate; grey = dead/empty. Step 1 (this commit):
-    // visual only. Step 2 will wire keys 2-5 + click → swap-request
-    // input to server.
-    if (typeof _mpState !== 'undefined' && _mpState.enabled && _mpState.remoteBots && _mpState.remoteBots.size > 0) {
-      const _mpAllies = [..._mpState.remoteBots.values()]
-        .filter(b => b.team === 0)
-        .sort((a, b) => a.id - b.id)
-        .slice(0, Math.max(0, 4 - allies.length));
-      const _slotStart = allies.length + 2;     // continues SP numbering
-      for (let i = 0; i < _mpAllies.length; i++) {
-        const rb = _mpAllies[i];
-        const tag = String(rb.id).slice(-2);
-        const text = `[${_slotStart + i}·${tag}${rb.alive ? Math.round(rb.hp) : '✕'}]`;
-        const w = ctx.measureText(text).width + 6;
-        if (rb.alive) {
-          // Blue tint for swap-available — distinguishes from the SP red
-          // ally chips at a glance, signalling 'server bot, not local'.
-          ctx.fillStyle = 'rgba(80, 140, 220, 0.18)';
-          ctx.fillRect(cursorX - 2, _chipBaseY, w, chipH);
-          ctx.fillStyle = COLORS.black;
-        } else {
-          ctx.fillStyle = COLORS.gray;
-        }
-        ctx.fillText(text, cursorX, _chipTextY);
-        game._squadChipRects.push({
-          x: cursorX - 2 - _touchPad,
-          y: _chipBaseY - _touchPad,
-          w: w + _touchPad * 2,
-          h: chipH + _touchPad * 2,
-          mpBotId: rb.id,           // Step 2 will read this on click
-          alive: rb.alive
-        });
-        cursorX += w + 2;
-      }
-    }
-  } else {
-    game._squadChipRects = null;
-    const sqList = allies.map(a => a.alive ? a.callsign[0] + a.hp : a.callsign[0] + '✕').join(' ');
-    ctx.fillText(`${T('小组', 'Squad')} ${sqAlive}/${allies.length}  ${sqList}`, 26, _chipTextY);
-  }
-  if (!_narrow) {
-    ctx.fillStyle = COLORS.gray;
-    ctx.font = '9px sans-serif';
-    ctx.fillText(`T+${Math.floor(game.time/60)}s`, 26, 102);
-    if (player._aimAssist) {
-      ctx.fillStyle = COLORS.red;
-      ctx.font = 'bold 9px sans-serif';
-      ctx.fillText('● AIM-ASSIST · V', 110, 102);
-    }
-  }
-  // Phase 4: SEED chip (NN mode only). Per-vehicle skill 0–100 — gates
-  // active recruit (G). Bar fills red, pulses gentle red once it crosses
-  // the recruit-gate threshold so the player knows they can G to capture.
-  if (game._nnMode) {
-    const _seedVal = Math.floor(player._seed || 0);
-    const _barX = 26, _barY = _narrow ? 72 : 108, _barW = _narrow ? 100 : 140, _barH = 8;
-    // Track
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-    ctx.fillRect(_barX - 1, _barY - 1, _barW + 2, _barH + 2);
-    ctx.fillStyle = 'rgba(232, 228, 216, 0.18)';
-    ctx.fillRect(_barX, _barY, _barW, _barH);
-    // Fill
-    const _seedFrac = Math.max(0, Math.min(1, _seedVal / ARENA_SEED_MAX));
-    const _gateFrac = Math.min(1, ARENA_SEED_GAP / ARENA_SEED_MAX);
-    // Gate notch (visual marker at SEED=10) — below threshold = locked
-    ctx.fillStyle = 'rgba(200, 38, 28, 0.35)';
-    ctx.fillRect(_barX + _barW * _gateFrac - 1, _barY - 2, 2, _barH + 4);
-    // Filled portion — turns vivid red + pulses once over the gate
-    const _overGate = _seedVal > ARENA_SEED_GAP;
-    const _pulse = _overGate ? (0.85 + 0.15 * Math.sin(game.time * 0.18)) : 1;
-    ctx.fillStyle = _overGate
-      ? `rgba(230, 51, 41, ${_pulse})`
-      : 'rgba(184, 180, 168, 0.70)';
-    ctx.fillRect(_barX, _barY, _barW * _seedFrac, _barH);
-    // Label
-    ctx.fillStyle = _overGate ? COLORS.red : COLORS.gray;
-    ctx.font = 'bold 9px monospace';
-    ctx.fillText(`SEED · ${_seedVal}` + (_overGate ? '  ▶ G' : ''), _barX, _barY - 3);
-    ctx.font = '9px sans-serif';
-  }
 
-  // Top-right: score. On narrow, shrink so multi-digit values don't reach
-  // back into the right-edge action button column (x ≥ ~303 on portrait).
-  ctx.textAlign = 'right';
-  ctx.fillStyle = COLORS.red;
-  ctx.font = _narrow ? 'bold 16px sans-serif' : 'bold 30px sans-serif';
-  // Phase 66: animated count-up via game._scoreDisplay (ticked in update())
-  // so a kill payout ramps up over ~0.4s instead of snapping.
-  const _scoreShown = (game._scoreDisplay != null)
-    ? Math.floor(game._scoreDisplay)
-    : game.score;
-  ctx.fillText(`${_scoreShown}`, W() - 20, _narrow ? 30 : 46);
-  ctx.fillStyle = COLORS.black;
-  ctx.font = _narrow ? 'bold 8px sans-serif' : 'bold 9px sans-serif';
-  ctx.fillText(`SCORE · ${T('击杀', 'KILLS')} ${game.killCount}`, W() - 20, _narrow ? 44 : 62);
-  ctx.textAlign = 'left';
-
-  // View mode banner (top-center) — slimmer. Hidden on narrow viewports so
-  // it doesn't crash into the status panel + score row on a 375px portrait.
-  if (!_narrow) {
-    ctx.fillStyle = COLORS.red;
-    ctx.fillRect(W()/2 - 90, 16, 180, 3);
-    ctx.fillStyle = 'rgba(232, 228, 216, 0.92)';
-    ctx.fillRect(W()/2 - 90, 19, 180, 26);
-    ctx.strokeStyle = COLORS.black;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(W()/2 - 90, 19, 180, 26);
-    ctx.fillStyle = COLORS.black;
-    ctx.font = 'bold 11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(getModeLabel(), W()/2, 36);
-    ctx.textAlign = 'left';
-  }
+  // Phase 104 — TOP-RIGHT Score Block + TOP-CENTER mode chip (helpers).
+  // Score Block consolidates the standalone MP line + big score + K/D/T
+  // into one cream card; mode chip is the slimmer pill replacing the old
+  // wide view banner.
+  const _scoreW = _narrow ? 200 : 294;
+  const _scoreH = _narrow ? 100 : 132;
+  _hud_drawScoreBlock(W() - 16 - _scoreW, 16, _scoreW, _scoreH);
+  _hud_drawModeChip();
 
   // Respawn countdown overlay — when player is dead in NN mode and waiting
   // for the 5-second respawn timer to elapse. Big "重生中 N" text + ring.
@@ -11021,128 +10848,45 @@ function renderHUD() {
   if (mission && mission.renderHUD && !_endCardVisible && showMsn) mission.renderHUD();
   if (mission && (game.mode === 'tactical' || game.mode === 'command') && showMsn) drawObjectiveCompass();
 
-  // ----- Compact bottom command bar: HP + Ammo + UAV in one slim row -----
-  // Phase 75 — mobile-aware widths. On narrow viewports the old 560px-wide
-  // bar overflowed a 375px portrait phone by ~200px. Now it scales to
-  // (viewport - 40) so the right edge always fits with a small margin.
-  const _hudNarrow = W() < 500;
-  const barH = 54;
-  const barY = H() - barH - 12;
-  const barW = _hudNarrow ? Math.max(280, W() - 40) : 560;
-  const barX = _hudNarrow ? 20 : 20;
-  drawHUDPanel(barX, barY, barW, barH, null);
-  // HP bar (left third) — width scaled so total HP+gap+ammo+gap+UAV fits.
-  const hpw = _hudNarrow ? 120 : 180;
-  // Heavy chassis armor bar — drawn FIRST/above HP so player can read both
-  // at a glance. Same width as HP, but 10px tall + cyan + 'ARMOR N/M' label.
-  // User: '當我在操作重型裝甲的時候,那我也應該要看得到我的護甲的這個值數,
-  // 在我左下角這邊才對'. Renders only when piloting heavy chassis.
-  const showArmorBar = player._chassis === 'heavy' && player.maxArmor > 0;
-  if (showArmorBar) {
-    const aby = barY + 4;
-    ctx.fillStyle = 'rgba(20,20,32,0.85)';
-    ctx.fillRect(barX + 12, aby, hpw, 12);
-    ctx.fillStyle = '#42B7E8';
-    ctx.fillRect(barX + 12, aby, hpw * Math.max(0, player.armor) / player.maxArmor, 12);
-    ctx.strokeStyle = '#1A4B5E';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(barX + 12, aby, hpw, 12);
-    ctx.fillStyle = COLORS.cream;
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(`ARMOR ${Math.floor(player.armor)}/${player.maxArmor}`, barX + 18, aby + 10);
-  }
-  // HP bar — push down a hair if armor bar above. Phase 66 adds a damage
-  // 'trail' bar BEHIND the main fill: when HP drops, the trail lingers
-  // and the visible gap between trail and main reads as 'you just took
-  // this much'. Updated each tick by the smoothing block in update().
-  const hpBarY = showArmorBar ? barY + 22 : barY + 22;
-  ctx.fillStyle = COLORS.creamDark;
-  ctx.fillRect(barX + 12, hpBarY, hpw, 18);
-  const _hpTrailVal = (player._hpTrail != null) ? player._hpTrail : player.hp;
-  if (_hpTrailVal > player.hp + 0.5) {
-    ctx.fillStyle = '#F2402E';   // bright orange-red — decaying damage 'ghost'
-    ctx.fillRect(barX + 12, hpBarY, hpw * (_hpTrailVal / player.maxHp), 18);
-  }
-  ctx.fillStyle = player.hp > 30 ? COLORS.black : COLORS.red;
-  ctx.fillRect(barX + 12, hpBarY, hpw * (player.hp/player.maxHp), 18);
-  ctx.fillStyle = COLORS.cream;
-  ctx.font = 'bold 12px sans-serif';
-  ctx.fillText(`HP ${Math.floor(player.hp)}/${player.maxHp}`, barX + 18, hpBarY + 14);
-  // Stamina sliver (just below HP bar) — orange when sprinting, dim when locked.
-  const stamFrac = player.stamina / player.maxStamina;
-  const stamLocked = player._spentToZero && player.stamina < STAMINA_RECOVERY_MIN;
-  ctx.fillStyle = COLORS.creamDark;
-  ctx.fillRect(barX + 12, barY + 42, hpw, 5);
-  ctx.fillStyle = stamLocked ? '#7A4030' : (player.sprinting ? '#E67A2C' : '#B25F2A');
-  ctx.fillRect(barX + 12, barY + 42, hpw * stamFrac, 5);
-  // Ammo (middle). Phase 67: yellow flash + slight scale-up during the
-  // 0.15s weapon-swap window. Phase 75: position scales with hpw so the
-  // ammo block sits ~30px to the right of the HP bar regardless of
-  // narrow/wide width.
-  const _ammoX    = barX + hpw + 30;
-  const _reserveX = _ammoX + 40;
-  const _wsLeft = Math.max(0, (player._weaponSwapUntil || 0) - game.time);
-  const _wsT = _wsLeft / 9;                 // 1.0 at swap moment, 0 at end
-  if (_wsT > 0) {
-    ctx.save();
-    ctx.fillStyle = '#FFD24A';              // bright yellow during swap
-    ctx.font = `bold ${22 + Math.round(_wsT * 4)}px sans-serif`;
-    ctx.globalAlpha = 0.85 + 0.15 * _wsT;
-    ctx.fillText(`${player.ammo}`, _ammoX, barY + 38);
-    ctx.restore();
-  } else {
-    ctx.fillStyle = COLORS.black;
-    ctx.font = 'bold 22px sans-serif';
-    ctx.fillText(`${player.ammo}`, _ammoX, barY + 38);
-  }
-  ctx.font = 'bold 11px sans-serif';
-  ctx.fillStyle = COLORS.gray;
-  ctx.fillText(`/${player.reserve}`, _reserveX, barY + 38);
-  if (player.reloading) {
-    const _rt = player.reloadTime / 80;
-    const _rtEase = 1 - _rt * _rt;
-    ctx.fillStyle = COLORS.red;
-    ctx.fillRect(_ammoX, barY + 44, 80 * _rtEase, 4);
-    ctx.fillStyle = COLORS.black;
-    ctx.font = 'bold 9px sans-serif';
-    ctx.fillText(T('R 装填中', 'R RELOADING'), _ammoX, barY + 18);
-  } else {
-    ctx.fillStyle = COLORS.gray;
-    ctx.font = '9px sans-serif';
-    ctx.fillText(T('R · 装填', 'R · RELOAD'), _ammoX, barY + 18);
-  }
-  // UAV/FPV cluster (right of bar). Phase 75: hidden on narrow viewports —
-  // the right-side touch action column (Q UAV / E FPV / V / R / B) already
-  // shows these so duplicating in the bottom bar wastes width.
-  if (!_hudNarrow) {
-    ctx.fillStyle = COLORS.black;
-    ctx.font = 'bold 10px monospace';
-    ctx.fillText(`Q UAV ${drone.battery.toFixed(0)}%`, barX + 320, barY + 20);
-    ctx.fillText('E FPV', barX + 320, barY + 38);
-  }
-  // Grenade count + UAV battery bar + FPV pip strip. Phase 75: all
-  // hidden on narrow viewports — same reason as UAV/FPV cluster above
-  // (the right-side touch action column carries Q E G B; players see
-  // current counts in the radial preview or the build pill).
-  if (!_hudNarrow) {
-    ctx.font = 'bold 10px monospace';
-    ctx.fillStyle = COLORS.black;
-    ctx.fillText(`G ${player.grenades}/${player.maxGrenades}`, barX + 280, barY + 20);
-    for (let i = 0; i < player.maxGrenades; i++) {
-      ctx.fillStyle = i < player.grenades ? COLORS.black : COLORS.lightGray;
-      ctx.beginPath();
-      ctx.arc(barX + 285 + i*9, barY + 32, 3, 0, Math.PI*2);
-      ctx.fill();
-    }
+  // Phase 104 — BOTTOM-LEFT Vitals Card + BOTTOM-CENTER Action Bar.
+  // Vitals stacks ARMOR (heavy only) / HP / SEED INTEGRITY + AIM ASSIST
+  // chip; Action Bar is the 6-cell R F Q E B G strip (resolves the old
+  // 'G grenade vs G recruit' ambiguity by adopting F as primary frag key).
+  const _hudNarrow = W() < 560;
+  if (_hudNarrow) {
+    // Compact fallback for narrow viewports — single slim panel with
+    // HP / Ammo only. Keeps phones playable while desktops get the full
+    // 6-zone layout. Uses the old draw shapes inline since the helpers
+    // assume ≥ 290 px width.
+    const _bW = Math.max(280, W() - 40);
+    const _bX = 20, _bH = 54, _bY = H() - _bH - 12;
+    drawHUDPanel(_bX, _bY, _bW, _bH, null);
+    const _hpw = 120;
     ctx.fillStyle = COLORS.creamDark;
-    ctx.fillRect(barX + 396, barY + 12, 152, 6);
-    ctx.fillStyle = drone.battery > 30 ? COLORS.black : COLORS.red;
-    ctx.fillRect(barX + 396, barY + 12, 152 * (drone.battery/drone.maxBattery), 6);
-    for (let i = 0; i < fpv.max; i++) {
-      ctx.fillStyle = i < fpv.available ? COLORS.red : COLORS.lightGray;
-      ctx.fillRect(barX + 396 + i*18, barY + 30, 14, 10);
-    }
+    ctx.fillRect(_bX + 12, _bY + 22, _hpw, 18);
+    ctx.fillStyle = player.hp > 30 ? '#C8261C' : '#7A2A22';
+    ctx.fillRect(_bX + 12, _bY + 22, _hpw * Math.max(0, player.hp) / player.maxHp, 18);
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(`HP ${Math.max(0, Math.floor(player.hp))}/${player.maxHp}`, _bX + 18, _bY + 36);
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 18px sans-serif';
+    ctx.fillText(`${player.ammo}/${player.reserve}`, _bX + 12 + _hpw + 20, _bY + 36);
+  } else {
+    // Vitals card: under the squad strip; height adapts to chassis (heavy
+    // adds an ARMOR bar). NN-mode adds a SEED INTEGRITY bar.
+    const _hasArmor = player._chassis === 'heavy' && player.maxArmor > 0;
+    const _vRows    = 1 + (_hasArmor ? 1 : 0) + (game._nnMode ? 1 : 0);
+    const _vCardH   = 30 + _vRows * 28 + 24;
+    const _vCardW   = 414;
+    _hud_drawVitalsCard(16, H() - _vCardH - 12, _vCardW, _vCardH);
+    // Action bar — fills the gap between vitals card and minimap (~280 wide
+    // pinned to right). Clamp min width so the 6 cells stay legible.
+    const _aX = 16 + _vCardW + 12;
+    const _aMinimapPad = 280;
+    const _aW = Math.max(420, W() - _aX - _aMinimapPad);
+    const _aH = 98;
+    _hud_drawActionBar(_aX, H() - _aH - 12, _aW, _aH);
   }
 
   // FTUE: minimap reveal is driven by reveal.minimap on the current step
@@ -11186,7 +10930,12 @@ function renderHUD() {
     ctx.fillText('MAP ▲', tx + tw/2, ty + 17);
     ctx.textAlign = 'left';
     game._minimapToggleRect = { x: tx, y: ty, w: tw, h: th };
-  } else { drawMinimapPanel(mx, my, mw, mh); }
+  } else {
+    drawMinimapPanel(mx, my, mw, mh);
+    // Phase 104 — small legend strip under the minimap (YOU / ENEMY /
+    // ALLY / OBJ) so first-time players parse the marker colours.
+    if (W() >= 560) _hud_drawMinimapLegend(mx, my, mw, mh);
+  }
   // Build status pill + radial picker — render in every NN mode (defense
   // factory's renderHUD also calls drawDefenseShop, guard against double-
   // call by checking if we already rendered it this frame).
@@ -11807,6 +11556,396 @@ function drawHUDPanel(x, y, w, h, label) {
     ctx.fillText(label, x + 12, y + 18);
     ctx.fillRect(x + 12, y + 22, 28, 1);
   }
+}
+
+// ============ HUD: PHASE 104 REDESIGN ============
+// Six-zone HUD redesign per user's GPT mockup. Each helper draws ONE
+// cream-card panel; renderHUD() composes them on a 0.5-second-read
+// layout:
+//   TL = Mission Status     TR = Score Block
+//   left strip = Squad      bottom-left = Vitals Card
+//   bottom-center = Action Bar (R F Q E B G)
+//   bottom-right = Minimap (+ legend underneath)
+// Style preserved (cream + red border + segmented bars). No neon, no
+// sci-fi gradients. Resolves the G/G ambiguity by adopting F as the
+// FRAG primary hotkey (G still falls through to throwGrenade() when no
+// recruit / mine target is in range — see key_bindings.js).
+
+function _hud_drawMissionCard(x, y, w, h) {
+  drawHUDPanel(x, y, w, h, null);
+  // Header: MSN · <map name>
+  ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillText('MSN', x + 14, y + 22);
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 13px sans-serif';
+  const _mapNm = (typeof mapName === 'function') ? mapName(currentMap) : 'ARENA';
+  ctx.fillText(`· ${(_mapNm || 'ARENA').toUpperCase()}`, x + 40, y + 22);
+  // Stage
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(`STAGE ${game.wave || 1}/${MISSIONS.length}`, x + 14, y + 44);
+  // Objective (NN arena = RECRUIT, fallback ELIMINATE)
+  const obj = game._nnMode ? 'RECRUIT' : 'ELIMINATE';
+  ctx.fillStyle = COLORS.black;
+  ctx.font = '11px sans-serif';
+  ctx.fillText(`OBJECTIVE: ${obj}`, x + 14, y + 64);
+  // Enemies + Squad on same row
+  const _remaining = enemies.filter(e=>e.alive).length
+                   + (typeof enemyDrones !== 'undefined' ? enemyDrones.filter(d=>d.alive).length : 0);
+  const _sqAlive = allies.filter(a=>a.alive).length;
+  ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(`ENEMIES ${_remaining}`, x + 14, y + 88);
+  ctx.fillStyle = COLORS.black;
+  ctx.fillText(`SQUAD ${_sqAlive}/${allies.length}`, x + 14 + 112, y + 88);
+  // SEED GATE indicator + [G] chip when ready
+  if (game._nnMode) {
+    const sv = Math.floor(player._seed || 0);
+    const over = sv > ARENA_SEED_GAP;
+    ctx.fillStyle = over ? '#1E9A4A' : COLORS.gray;
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(`SEED GATE: ${over ? 'READY' : 'LOCKED'}`, x + 14, y + 112);
+    if (over) {
+      const bx = x + 14 + 120;
+      ctx.fillStyle = '#1E9A4A';
+      ctx.fillRect(bx, y + 100, 18, 16);
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('G', bx + 9, y + 112);
+      ctx.textAlign = 'left';
+    }
+  }
+}
+
+function _hud_drawSquadStrip(x, y, w, h) {
+  drawHUDPanel(x, y, w, h, null);
+  ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 9px sans-serif';
+  ctx.fillText('SQUAD STATUS  [1-5 TO SWITCH]', x + 14, y + 16);
+  game._squadChipRects = [];
+  const headerH = 24;
+  const rowH = (h - headerH - 8) / 5;
+  const _touchPad = (typeof touchInput !== 'undefined' && touchInput.enabled) ? 6 : 0;
+  // Build 5 rows: 0 = YOU, 1-4 = allies (or MP team-0 bots)
+  const rows = [{
+    label: 'YOU', alive: player.alive,
+    hp: Math.max(0, Math.floor(player.hp)),
+    maxHp: player.maxHp, isSelf: true
+  }];
+  for (let i = 0; i < 4; i++) {
+    const a = allies[i];
+    if (a) {
+      rows.push({
+        label: (a.callsign || '?').toString().slice(0, 4),
+        alive: a.alive,
+        hp: a.alive ? Math.max(0, Math.floor(a.hp)) : 0,
+        maxHp: a.maxHp || 100,
+        allyIdx: i,
+      });
+    } else {
+      rows.push({ label: '——', alive: false, hp: 0, maxHp: 100, empty: true });
+    }
+  }
+  for (let r = 0; r < 5; r++) {
+    const row = rows[r];
+    const ry = y + headerH + r * rowH;
+    const aliveCol = row.alive ? COLORS.black : COLORS.gray;
+    // [N] number badge
+    ctx.fillStyle = row.alive ? COLORS.red : COLORS.lightGray;
+    ctx.fillRect(x + 12, ry + 4, 22, rowH - 8);
+    ctx.fillStyle = row.alive ? COLORS.cream : '#666';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${r+1}`, x + 23, ry + rowH/2 + 5);
+    ctx.textAlign = 'left';
+    // Label
+    ctx.fillStyle = aliveCol;
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(row.label, x + 42, ry + rowH/2);
+    // HP value (right-aligned)
+    ctx.fillStyle = row.alive ? COLORS.gray : COLORS.lightGray;
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(row.alive ? `HP ${row.hp}` : '——', x + w - 14, ry + rowH/2);
+    ctx.textAlign = 'left';
+    // HP bar
+    const bx = x + 42, by = ry + rowH/2 + 6, bw = w - 56 - 4, bh = 4;
+    ctx.fillStyle = COLORS.creamDark;
+    ctx.fillRect(bx, by, bw, bh);
+    if (row.alive && row.maxHp > 0) {
+      ctx.fillStyle = (row.hp / row.maxHp > 0.3) ? '#C8261C' : '#7A2A22';
+      ctx.fillRect(bx, by, bw * (row.hp / row.maxHp), bh);
+    }
+    // Click rect (skip self)
+    if (!row.empty && !row.isSelf) {
+      game._squadChipRects.push({
+        x: x + 8 - _touchPad, y: ry - _touchPad,
+        w: w - 16 + _touchPad * 2, h: rowH + _touchPad * 2,
+        allyIdx: row.allyIdx, alive: row.alive
+      });
+    }
+  }
+}
+
+function _hud_drawModeChip() {
+  if (W() < 560) return;   // hide on narrow
+  const lbl = getModeLabel() || 'TACTICAL';
+  const cw = 220, ch = 26;
+  const cx = W()/2 - cw/2, cy = 14;
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(cx, cy, cw, 2);
+  ctx.fillStyle = 'rgba(232, 228, 216, 0.96)';
+  ctx.fillRect(cx, cy + 2, cw, ch);
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(cx, cy + 2, cw, ch);
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(lbl.toUpperCase(), W()/2, cy + 20);
+  ctx.textAlign = 'left';
+}
+
+function _hud_drawScoreBlock(x, y, w, h) {
+  drawHUDPanel(x, y, w, h, null);
+  ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillText('SCORE', x + 14, y + 22);
+  const sShown = (game._scoreDisplay != null)
+    ? Math.floor(game._scoreDisplay)
+    : (game.score || 0);
+  ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 34px sans-serif';
+  ctx.fillText(`${sShown}`, x + 14, y + 60);
+  // K / D / T row
+  const kills = game.killCount || 0;
+  const deaths = game.deaths || 0;
+  const mins = Math.floor((game.time || 0) / 3600);
+  const secs = Math.floor(((game.time || 0) / 60) % 60);
+  const tStr = `${mins}:${secs < 10 ? '0' + secs : secs}`;
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 10px monospace';
+  ctx.fillText(`KILLS ${kills}   DEATHS ${deaths}   TIME ${tStr}`, x + 14, y + 92);
+  // MP line
+  ctx.font = 'bold 10px monospace';
+  ctx.fillStyle = COLORS.gray;
+  let mpStr;
+  if (typeof _mpIsActive === 'function' && _mpIsActive()) {
+    const visible = _mpState ? _mpState.remotePlayers.size + 1 : 1;
+    const peers = (_mpState && _mpState.room && _mpState.room.getPeers)
+      ? Object.keys(_mpState.room.getPeers()).length + 1
+      : visible;
+    const roomLbl = (_mpState && _mpState.roomName) ? _mpState.roomName.slice(0, 14) : 'room';
+    mpStr = `MP · ${peers} PEER · ${roomLbl.toUpperCase()}`;
+  } else {
+    mpStr = 'SOLO · NN ARENA';
+  }
+  ctx.fillText(mpStr, x + 14, y + h - 14);
+}
+
+function _hud_drawVitalsCard(x, y, w, h) {
+  drawHUDPanel(x, y, w, h, null);
+  // Header
+  ctx.fillStyle = COLORS.red;
+  ctx.font = 'bold 11px sans-serif';
+  const chassisLbl = (player._chassis || 'humanoid').toUpperCase();
+  ctx.fillText(`V-07 · ${chassisLbl} UNIT`, x + 14, y + 22);
+  const barX = x + 14, barW = w - 28, barH = 14;
+  let by = y + 42;
+  // ARMOR (heavy only)
+  if (player._chassis === 'heavy' && player.maxArmor > 0) {
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('ARMOR', barX, by - 2);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${Math.floor(player.armor)}/${player.maxArmor}`, barX + barW, by - 2);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = COLORS.creamDark;
+    ctx.fillRect(barX, by, barW, barH);
+    ctx.fillStyle = '#42B7E8';
+    ctx.fillRect(barX, by, barW * Math.max(0, player.armor) / player.maxArmor, barH);
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, by, barW, barH);
+    by += barH + 14;
+  }
+  // HP (with damage trail)
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 9px monospace';
+  ctx.fillText('HP', barX, by - 2);
+  ctx.textAlign = 'right';
+  ctx.fillText(`${Math.max(0, Math.floor(player.hp))}/${player.maxHp}`, barX + barW, by - 2);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = COLORS.creamDark;
+  ctx.fillRect(barX, by, barW, barH);
+  const _hpTrail = (player._hpTrail != null) ? player._hpTrail : player.hp;
+  if (_hpTrail > player.hp + 0.5) {
+    ctx.fillStyle = '#F2402E';
+    ctx.fillRect(barX, by, barW * Math.max(0, _hpTrail) / player.maxHp, barH);
+  }
+  ctx.fillStyle = player.hp > player.maxHp * 0.3 ? '#C8261C' : '#7A1A14';
+  ctx.fillRect(barX, by, barW * Math.max(0, player.hp) / player.maxHp, barH);
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX, by, barW, barH);
+  by += barH + 14;
+  // SEED INTEGRITY
+  if (game._nnMode) {
+    const sv = Math.floor(player._seed || 0);
+    const sFrac = Math.max(0, Math.min(1, sv / ARENA_SEED_MAX));
+    const over = sv > ARENA_SEED_GAP;
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('SEED INTEGRITY', barX, by - 2);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${sv}/${ARENA_SEED_MAX}`, barX + barW, by - 2);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = COLORS.creamDark;
+    ctx.fillRect(barX, by, barW, barH);
+    const gateFrac = Math.min(1, ARENA_SEED_GAP / ARENA_SEED_MAX);
+    ctx.fillStyle = 'rgba(200, 38, 28, 0.55)';
+    ctx.fillRect(barX + barW * gateFrac - 1, by - 2, 2, barH + 4);
+    ctx.fillStyle = over ? '#E67A2C' : '#A8682E';
+    ctx.fillRect(barX, by, barW * sFrac, barH);
+    ctx.strokeStyle = COLORS.black;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, by, barW, barH);
+    by += barH + 14;
+  }
+  // AIM ASSIST chip row (bottom)
+  const chipY = y + h - 16;
+  ctx.fillStyle = COLORS.gray;
+  ctx.font = 'bold 9px sans-serif';
+  ctx.fillText('AIM ASSIST', barX, chipY);
+  ctx.fillStyle = player._aimAssist ? '#1E9A4A' : COLORS.lightGray;
+  ctx.beginPath();
+  ctx.arc(barX + 80, chipY - 3, 4, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 9px sans-serif';
+  ctx.fillText(player._aimAssist ? 'ON' : 'OFF', barX + 90, chipY);
+  ctx.fillStyle = COLORS.gray;
+  ctx.font = '9px monospace';
+  ctx.fillText('(V) TOGGLE', barX + 120, chipY);
+}
+
+function _hud_drawActionBar(x, y, w, h) {
+  // 6 cells: R / F / Q / E / B / G
+  const cellW = Math.floor(w / 6);
+  const _gOver = game._nnMode && (player._seed || 0) > ARENA_SEED_GAP;
+  const cells = [
+    { hk: 'R', name: 'RELOAD',  big: `${player.ammo}`, sub: `/${player.reserve}` },
+    { hk: 'F', name: 'FRAG',    big: `${player.grenades}`, sub: `/${player.maxGrenades}` },
+    { hk: 'Q', name: 'UAV',     big: `${drone.battery.toFixed(0)}`, sub: '%' },
+    { hk: 'E', name: 'FPV',     big: `${fpv.available}`, sub: `/${fpv.max}` },
+    { hk: 'B', name: 'BUILD',   big: 'READY', sub: null },
+    { hk: 'G', name: 'RECRUIT', big: _gOver ? 'READY' : 'LOCK', sub: null },
+  ];
+  // Panel
+  ctx.fillStyle = 'rgba(232, 228, 216, 0.94)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(x, y, 4, h);
+  for (let i = 0; i < 6; i++) {
+    const cx = x + i * cellW;
+    if (i > 0) {
+      ctx.fillStyle = COLORS.creamDark;
+      ctx.fillRect(cx, y + 8, 1, h - 16);
+    }
+    const c = cells[i];
+    // Hotkey badge
+    ctx.fillStyle = COLORS.black;
+    ctx.fillRect(cx + 12, y + 10, 18, 18);
+    ctx.fillStyle = COLORS.cream;
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(c.hk, cx + 21, y + 23);
+    ctx.textAlign = 'left';
+    // Name
+    ctx.fillStyle = COLORS.black;
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText(c.name, cx + 36, y + 23);
+    // Big value
+    if (c.big === 'READY' || c.big === 'LOCK' || c.big === 'LOCKED') {
+      ctx.fillStyle = (c.big === 'READY') ? '#1E9A4A' : COLORS.gray;
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(c.big, cx + 14, y + 52);
+    } else {
+      ctx.fillStyle = COLORS.black;
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillText(c.big, cx + 14, y + 56);
+      if (c.sub) {
+        ctx.fillStyle = COLORS.gray;
+        ctx.font = 'bold 11px monospace';
+        const _bw = ctx.measureText(c.big).width;
+        ctx.fillText(c.sub, cx + 18 + _bw, y + 56);
+      }
+    }
+    // Per-cell extras
+    if (i === 0) {
+      // Reload progress / hint
+      if (player.reloading) {
+        const _rt = (player.reloadTime || 0) / 80;
+        const _rtEase = 1 - _rt * _rt;
+        ctx.fillStyle = COLORS.red;
+        ctx.fillRect(cx + 14, y + h - 14, (cellW - 28) * _rtEase, 3);
+      } else {
+        ctx.fillStyle = COLORS.gray;
+        ctx.font = '9px monospace';
+        ctx.fillText('MAG', cx + 14, y + h - 8);
+      }
+    }
+    if (i === 1) {
+      // FRAG pips
+      for (let g = 0; g < (player.maxGrenades || 0); g++) {
+        ctx.fillStyle = g < player.grenades ? COLORS.black : COLORS.lightGray;
+        ctx.beginPath();
+        ctx.arc(cx + 18 + g * 10, y + h - 12, 3, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+    if (i === 2) {
+      // UAV battery sliver
+      ctx.fillStyle = COLORS.creamDark;
+      ctx.fillRect(cx + 14, y + h - 14, cellW - 28, 4);
+      ctx.fillStyle = drone.battery > 30 ? COLORS.black : COLORS.red;
+      ctx.fillRect(cx + 14, y + h - 14, (cellW - 28) * (drone.battery / drone.maxBattery), 4);
+    }
+    if (i === 3) {
+      // FPV pip squares
+      for (let f = 0; f < fpv.max; f++) {
+        ctx.fillStyle = f < fpv.available ? '#C8261C' : COLORS.lightGray;
+        ctx.fillRect(cx + 14 + f * 12, y + h - 14, 9, 8);
+      }
+    }
+  }
+}
+
+function _hud_drawMinimapLegend(mx, my, mw, mh) {
+  const ly = my + mh + 2;
+  if (ly + 16 > H()) return;   // no room below
+  // ● YOU · ENEMY ○ ALLY □ OBJ
+  ctx.font = 'bold 8px monospace';
+  ctx.fillStyle = '#C8261C';
+  ctx.beginPath(); ctx.arc(mx + 12, ly + 8, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = COLORS.black;
+  ctx.fillText('YOU', mx + 20, ly + 11);
+  ctx.fillStyle = COLORS.gray;
+  ctx.beginPath(); ctx.arc(mx + 52, ly + 8, 2, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = COLORS.black;
+  ctx.fillText('ENEMY', mx + 58, ly + 11);
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(mx + 96, ly + 8, 3, 0, Math.PI*2); ctx.stroke();
+  ctx.fillStyle = COLORS.black;
+  ctx.fillText('ALLY', mx + 103, ly + 11);
+  ctx.strokeRect(mx + 130, ly + 5, 6, 6);
+  ctx.fillText('OBJ', mx + 140, ly + 11);
 }
 
 function renderFPVOverlay() {
