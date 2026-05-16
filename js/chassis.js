@@ -47,10 +47,11 @@ const CHASSIS_ORDER = ['humanoid', 'wolf', 'heavy'];
 // Phase 64 — per-chassis equipment budget. Each chassis has a total budget
 // (in 'points') and items cost a fixed number of points:
 //   grenade = 2 pts, FPV suicide drone = 3 pts
-// Budgets are randomly distributed at spawn so a wolf might come out with
-// 5 grenades + 0 drones, or 2 grenades + 2 drones, etc — and two wolves
-// from the same spawn rarely share an identical loadout. The user's spec
-// was '機器狼 額度 10 / 正常人 15 / 重型 20'.
+// Phase 102 — counts are now DETERMINISTIC per chassis (was random within
+// the budget — '一個wolf可能5顆手雷+0台無人機, 另一個wolf 2+2', made
+// kamikaze access feel arbitrary). User '自殺式人機, 每一個載具都要有
+// 三台或兩台或四台(看種類)' — fixed FPV count per chassis class.
+// Grenades fill whatever budget remains so total per chassis is unchanged.
 const CHASSIS_LOADOUT_BUDGET = {
   wolf:     10,
   humanoid: 15,
@@ -60,28 +61,25 @@ const LOADOUT_COSTS = {
   grenade: 2,
   fpv:     3,
 };
+// Fixed kamikaze-drone count per chassis (Phase 102). Sizes scale with the
+// chassis profile: wolf is small / fragile / fast → minimum carry (2);
+// humanoid balanced default (3); heavy is the tank / biggest carrier (4).
+const CHASSIS_FPV_COUNT = {
+  wolf:     2,
+  humanoid: 3,
+  heavy:    4,
+};
 
-// Roll a random {grenades, fpv} split given a chassis's total budget. Used
+// Return the deterministic {grenades, fpv} loadout for a chassis. Used
 // at spawn (applyChassisToUnit) and respawn (server snapshot side). Caller
 // stores the result on the unit as _grenadeAmmo / _fpvAmmo.
 function rollUnitLoadout(chassisId) {
   const budget = CHASSIS_LOADOUT_BUDGET[chassisId] || CHASSIS_LOADOUT_BUDGET.humanoid;
-  let remaining = budget;
-  let grenades = 0, fpv = 0;
-  // Bias slightly toward FPV early (more expensive item gets first crack at
-  // the budget) but flip on every roll so distributions vary across units.
-  // Stop when neither item fits the remaining budget.
-  while (remaining >= LOADOUT_COSTS.grenade) {
-    const canFpv = remaining >= LOADOUT_COSTS.fpv;
-    const pickFpv = canFpv && Math.random() < 0.45;
-    if (pickFpv) {
-      fpv++;
-      remaining -= LOADOUT_COSTS.fpv;
-    } else {
-      grenades++;
-      remaining -= LOADOUT_COSTS.grenade;
-    }
-  }
+  const fpv = CHASSIS_FPV_COUNT[chassisId] != null
+    ? CHASSIS_FPV_COUNT[chassisId]
+    : CHASSIS_FPV_COUNT.humanoid;
+  const remaining = budget - (fpv * LOADOUT_COSTS.fpv);
+  const grenades = Math.max(0, Math.floor(remaining / LOADOUT_COSTS.grenade));
   return { grenades, fpv };
 }
 
@@ -114,13 +112,23 @@ function applyChassisToUnit(u, chassisId, baseSpeed, baseHp, baseRadius) {
     u.maxArmor = 0;
     u.armor = 0;
   }
-  // Phase 64 — roll the random grenade/FPV loadout from this chassis's
-  // budget. Stamped onto the unit even if it'll never use them yet; the
-  // bot grenade-throw / drone-launch AI hooks will read these counters
-  // when (eventually) wired.
+  // Phase 64 / 102 — deterministic grenade + FPV loadout per chassis.
+  // Stamped onto the unit even if it'll never use them yet; the bot
+  // grenade-throw / drone-launch AI hooks will read these counters when
+  // (eventually) wired.
   const loadout = rollUnitLoadout(u._chassis);
   u._grenadeAmmo = loadout.grenades;
   u._fpvAmmo     = loadout.fpv;
+  // Phase 102 — when the chassis is applied to the LOCAL player, also
+  // sync the global fpv state (player tracks both u._fpvAmmo for the
+  // bot/NN parity field AND the global fpv.max/fpv.available driving
+  // the launch HUD + key-binding). Without this, wolf→heavy or
+  // humanoid→wolf transitions left the HUD stuck at the previous chassis's
+  // count. User '自殺式人機, 每一個載具都要有 N 台(看種類)'.
+  if (typeof player !== 'undefined' && u === player && typeof fpv !== 'undefined') {
+    fpv.max = loadout.fpv;
+    fpv.available = loadout.fpv;
+  }
 }
 
 // ============ DAMAGE ROUTING (heavy armor) ============

@@ -140,6 +140,18 @@ function swapPlayerToAlly(idx) {
   // it up. See chassis.js applyChassisToUnit for rationale.
   player._chassisSpeedMul = _cdef.speedMul;
   player.radius = Math.round(14 * _cdef.radiusMul);
+  // Phase 102 — entering a new chassis refills the kamikaze loadout to
+  // that chassis's fixed count (wolf 2, humanoid 3, heavy 4). User:
+  // '自殺式人機, 每一個載具都要有三台或兩台或四台'. Implicit policy:
+  // each vehicle carries its own drones, taking it over hands you what
+  // it had on the rack — not what your previous body had left over.
+  if (typeof CHASSIS_FPV_COUNT !== 'undefined' && typeof fpv !== 'undefined') {
+    const newFpvMax = CHASSIS_FPV_COUNT[player._chassis] != null
+      ? CHASSIS_FPV_COUNT[player._chassis]
+      : CHASSIS_FPV_COUNT.humanoid;
+    fpv.max = newFpvMax;
+    fpv.available = newFpvMax;
+  }
   // Phase 102 — 3 s spawn protection on pawn-swap (matches server INVULN_TICKS
   // = 3 * TICK_HZ and respawn invuln). Was 60 ticks (1 s) which let the
   // player get insta-killed the instant after switching to a body —
