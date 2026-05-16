@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=121"></script>
-<script src="js/arena_recruitment.js?v=121"></script>
-<script src="js/dynamic_radio.js?v=121"></script>
-<script src="js/i18n.js?v=121"></script>
-<script src="js/touch_input.js?v=121"></script>
-<script src="js/key_bindings.js?v=121"></script>
-<script src="js/grenades.js?v=121"></script>
-<script src="js/squad_commands.js?v=121"></script>
-<script src="js/multiplayer.js?v=121"></script>
-<script src="js/leaderboard.js?v=121"></script>
-<script src="js/structures.js?v=121"></script>
-<script src="js/tod.js?v=121"></script>
-<script src="js/weapons.js?v=121"></script>
-<script src="js/chassis.js?v=121"></script>
-<script src="js/respawn_buff.js?v=121"></script>
-<script src="js/death_recap.js?v=121"></script>
-<script src="js/mote_affinity.js?v=121"></script>
-<script src="js/stage_hints.js?v=121"></script>
-<script src="js/pawn_swap.js?v=121"></script>
-<script src="js/global_stats.js?v=121"></script>
-<script src="js/progressive_unlock.js?v=121"></script>
-<script src="js/ad_stubs.js?v=121"></script>
+<script src="js/audio/sfx.js?v=122"></script>
+<script src="js/arena_recruitment.js?v=122"></script>
+<script src="js/dynamic_radio.js?v=122"></script>
+<script src="js/i18n.js?v=122"></script>
+<script src="js/touch_input.js?v=122"></script>
+<script src="js/key_bindings.js?v=122"></script>
+<script src="js/grenades.js?v=122"></script>
+<script src="js/squad_commands.js?v=122"></script>
+<script src="js/multiplayer.js?v=122"></script>
+<script src="js/leaderboard.js?v=122"></script>
+<script src="js/structures.js?v=122"></script>
+<script src="js/tod.js?v=122"></script>
+<script src="js/weapons.js?v=122"></script>
+<script src="js/chassis.js?v=122"></script>
+<script src="js/respawn_buff.js?v=122"></script>
+<script src="js/death_recap.js?v=122"></script>
+<script src="js/mote_affinity.js?v=122"></script>
+<script src="js/stage_hints.js?v=122"></script>
+<script src="js/pawn_swap.js?v=122"></script>
+<script src="js/global_stats.js?v=122"></script>
+<script src="js/progressive_unlock.js?v=122"></script>
+<script src="js/ad_stubs.js?v=122"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=121"></script>
+<script src="js/crazygames.js?v=122"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=121"></script>
+<script src="js/gamemonetize.js?v=122"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=121"></script>
-<script src="js/world_gen.js?v=121"></script>
-<script src="js/squad.js?v=121"></script>
-<script src="js/drone_fpv.js?v=121"></script>
-<script src="js/vision_raycast.js?v=121"></script>
-<script src="js/camera.js?v=121"></script>
-<script src="js/defense_build_ui.js?v=121"></script>
-<script src="js/pause.js?v=121"></script>
+<script src="js/missions/nn_deathmatch.js?v=122"></script>
+<script src="js/world_gen.js?v=122"></script>
+<script src="js/squad.js?v=122"></script>
+<script src="js/drone_fpv.js?v=122"></script>
+<script src="js/vision_raycast.js?v=122"></script>
+<script src="js/camera.js?v=122"></script>
+<script src="js/defense_build_ui.js?v=122"></script>
+<script src="js/pause.js?v=122"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -1293,20 +1293,27 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   </div>
   <!-- Phase 101 — secondary Billboard (970×250) directly below. Replaces
        Phase 100's 728×90 Leaderboard so the second slot is both wider
-       AND taller, more inventory for the same passive attention window. -->
-  <div style="font-size:9px; color:#888; letter-spacing:3px; margin-top:12px; margin-bottom:4px; text-transform:uppercase;">
-    Advertisement
-  </div>
-  <div id="respawnAdLeader" style="
-       width:970px; height:250px; max-width:96vw;
-       margin: 0 auto;
-       background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
-       border:1px solid #444;
-       display:flex; align-items:center; justify-content:center;
-       color:#888;">
-    <!-- Replace with a GameMonetize 970×250 banner ad-tag:
-         <ins data-ad-key="YOUR_970x250_KEY"></ins> -->
-    <div style="font-size:11px; color:#666; letter-spacing:3px;">970 × 250 BILLBOARD</div>
+       AND taller, more inventory for the same passive attention window.
+       Phase 102 (6/x) — wrapper #respawnAdSecondary so the billboard +
+       its label can be hidden as ONE unit on short viewports
+       (GameMonetize iframe is ~1280×720, where the 572 px-tall full
+       stack pushes the revive button off-screen — user '綠按鈕被徹底
+       擋住了'). Toggled by _updateRespawnAdSlot in JS. -->
+  <div id="respawnAdSecondary">
+    <div style="font-size:9px; color:#888; letter-spacing:3px; margin-top:12px; margin-bottom:4px; text-transform:uppercase;">
+      Advertisement
+    </div>
+    <div id="respawnAdLeader" style="
+         width:970px; height:250px; max-width:96vw;
+         margin: 0 auto;
+         background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+         border:1px solid #444;
+         display:flex; align-items:center; justify-content:center;
+         color:#888;">
+      <!-- Replace with a GameMonetize 970×250 banner ad-tag:
+           <ins data-ad-key="YOUR_970x250_KEY"></ins> -->
+      <div style="font-size:11px; color:#666; letter-spacing:3px;">970 × 250 BILLBOARD</div>
+    </div>
   </div>
 </div>
 
@@ -2666,6 +2673,17 @@ function _updateRespawnAdSlot() {
     && game._teamWipe.blue.wipedSince != null;
   const isMobile = (typeof touchInput !== 'undefined') && touchInput.enabled;
   slot.style.display = (teamWiped && !isMobile) ? 'block' : 'none';
+  // Phase 102 (6/x) — gate the secondary 970×250 billboard on viewport
+  // height. GameMonetize iframe is typically 1280×720; the full stack
+  // (336×280 + 970×250 + labels + gaps ≈ 572 px) plus top/bottom strips
+  // leaves no room for the green REVIVE button — user '綠按鈕被徹底
+  // 擋住了'. Below 850 px tall we drop the billboard and keep just
+  // the Large Rect, leaving ~470 px of vertical room which the
+  // DOM-anchored button (death_recap.js) can land cleanly below.
+  const secondary = document.getElementById('respawnAdSecondary');
+  if (secondary) {
+    secondary.style.display = (window.innerHeight >= 850) ? 'block' : 'none';
+  }
 }
 
 // Phase 101 — side ad rails visibility. Shows #sideAdLeft / #sideAdRight
