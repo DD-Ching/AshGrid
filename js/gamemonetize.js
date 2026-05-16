@@ -65,6 +65,14 @@
   let _lastAdAt = 0;
   let _deathCount = 0;
   let _pendingAdCb = null;       // fired when ad ACTUALLY finishes
+  // Phase 112 — explicit 'did a real ad play' flag. Set true ONLY when
+  // SDK_GAME_PAUSE fires (GM signals 'real ad starting'). If GM has no
+  // fill, PAUSE never fires and START fires immediately; we use this
+  // flag to refuse the reward instead of computing elapsed-since-zero
+  // (which used to evaluate to ~1.7 trillion ms and pass the gate
+  // unconditionally — the 'third time the reward fires after 5s with
+  // no ad shown' bug the user reported).
+  let _didReallyPause = false;
   // Phase 101 — tracks whether a REAL ad is currently on screen (true
   // between SDK_GAME_PAUSE and SDK_GAME_START). The 15-s placeholder
   // timeout uses this to decide whether to take over: if a real ad is
@@ -158,6 +166,21 @@
             _adReallyPlaying = false;
             if (typeof _hideAdPlayOverlay === 'function') _hideAdPlayOverlay();
             if (_pendingAdCb) {
+              // Phase 112 — strict gate. SDK_GAME_START WITHOUT a preceding
+              // SDK_GAME_PAUSE means GM never actually played an ad (no fill /
+              // ad-blocker / instant close). Treat that exactly like a hard
+              // skip: cb(false), no revive, button re-arms. Stops the
+              // user-reported '第三次直接5秒給獎勵' exploit dead.
+              if (!_didReallyPause) {
+                console.log('[gamemonetize] SDK_GAME_START fired without prior SDK_GAME_PAUSE — no real ad played → no reward');
+                if (typeof showSwapToast === 'function') {
+                  try { showSwapToast('▶ 暫無廣告 · 再試一次'); } catch (e) {}
+                }
+                try { _pendingAdCb(false); } catch (e) {}
+                _pendingAdCb = null;
+                _didReallyPause = false;
+                break;
+              }
               const elapsedMs = Date.now() - (_adPlayStartedAt || 0);
               const earned = elapsedMs >= MIN_REWARD_PLAY_MS;
               if (!earned) {
@@ -168,6 +191,7 @@
               }
               try { _pendingAdCb(earned); } catch (e) {}
               _pendingAdCb = null;
+              _didReallyPause = false;
             }
             break;
           case 'SDK_GAME_PAUSE':
@@ -186,6 +210,7 @@
             } catch (e) {}
             _adPlayStartedAt = Date.now();
             _adReallyPlaying = true;
+            _didReallyPause = true;          // Phase 112 — gate flag
             // Phase 108d — a real ad just started playing. Hide our
             // 15-second placeholder overlay so the GM ad iframe is
             // visible. User: '我聽到了有廣告, 但是還是被黑色的那個畫面
@@ -314,6 +339,12 @@
       //      on top of our placeholder (z-index 10000+ vs our 9000)
       //   4. After 15s elapses, hide overlay, resume game, fire cb
       _pendingAdCb = cb || null;
+      // Phase 112 — reset reward gate state at the start of every ad
+      // request so leftover values from a previous ad don't grant /
+      // deny incorrectly on this one.
+      _didReallyPause = false;
+      _adPlayStartedAt = 0;
+      _adReallyPlaying = false;
       if (isRewarded) {
         _showAdPlayOverlay();
         try {
@@ -336,9 +367,19 @@
           }
           _hideAdPlayOverlay();
           if (_pendingAdCb) {
-            try { _pendingAdCb(true); } catch (e3) {}
+            // Phase 112 — STRICT: 15s passed and a real ad NEVER played
+            // (no SDK_GAME_PAUSE was observed). Deny the reward instead
+            // of the old free-grant. User '第三次之後我發現他就直接給我
+            // 獎勵了' was this code path firing cb(true) for nothing.
+            // Player can click again next death; GM may have fill by then.
+            console.log('[gamemonetize] 15s timer fired, no real ad seen — denying reward');
+            if (typeof showSwapToast === 'function') {
+              try { showSwapToast('▶ 暫無廣告 · 再試一次'); } catch (e) {}
+            }
+            try { _pendingAdCb(false); } catch (e3) {}
             _pendingAdCb = null;
           }
+          _didReallyPause = false;
           if (typeof game !== 'undefined') game._paused = false;
         }, 15000);
         return;
