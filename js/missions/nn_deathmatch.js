@@ -219,11 +219,44 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       for (const e of enemies) {
         if (e && e.alive && Math.hypot(e.x - s.x, e.y - s.y) < FD.captureR) redIn++;
       }
-      // Contested: both teams inside → pause progress (no change)
+      // Phase X — two-stage capture. User: '如果別人佔領了工廠, 那是不是
+      // 要有解除佔領工廠, 然後再變成自己佔領的工廠'.
+      //
+      // Old behaviour: standing in an enemy-owned factory ticked
+      // _captureProgress straight from 0 → FD.captureTicks then flipped
+      // _team in one go. The user wanted a clearer two-step feel:
+      // first DECAPTURE (the owning team's progress drains back to 0,
+      // factory reverts to neutral), THEN CAPTURE (your team accrues
+      // progress from neutral to full).
+      //
+      // New flow:
+      //   Enemy-owned + you stand in radius → _captureBy = you,
+      //     _captureProgress accrues. At captureTicks the factory
+      //     becomes NEUTRAL (not yours yet). Keep standing → progress
+      //     resets to 0 and starts accruing again toward YOUR ownership.
+      //     At captureTicks (second time) → _team = you.
+      //   Neutral + you stand in radius → standard single-stage capture
+      //     direct to ownership.
+      //   Contested (both teams in radius) → progress paused.
+      //   Uncontested + progress > 0 → decay back toward 0.
       if (blueIn > 0 && redIn > 0) {
-        // no-op
-      } else if (blueIn > 0 && s._team !== 'blue') {
-        // Blue capturing
+        // no-op: contested
+      } else if (blueIn > 0 && s._team === 'red') {
+        // Stage 1: decapture from red back to neutral
+        s._captureBy = 'blue';
+        s._captureProgress = Math.min(FD.captureTicks, s._captureProgress + 1);
+        if (s._captureProgress >= FD.captureTicks) {
+          s._team = 'neutral';
+          s._captureProgress = 0;
+          s._captureBy = null;
+          s._nextProductionAt = 0;
+          if (typeof showSwapToast === 'function') {
+            showSwapToast(T('▶ 工廠回歸中立 · 繼續佔領為你方',
+                            '▶ FACTORY NEUTRALISED · keep standing to capture'));
+          }
+        }
+      } else if (blueIn > 0 && s._team === 'neutral') {
+        // Stage 2 (from neutral) — actually capture for blue
         s._captureBy = 'blue';
         s._captureProgress = Math.min(FD.captureTicks, s._captureProgress + 1);
         if (s._captureProgress >= FD.captureTicks) {
@@ -235,7 +268,21 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
             showSwapToast(T('▶ 工廠被你佔領', '▶ FACTORY CAPTURED'));
           }
         }
-      } else if (redIn > 0 && s._team !== 'red') {
+      } else if (redIn > 0 && s._team === 'blue') {
+        // Stage 1: red decaptures blue back to neutral
+        s._captureBy = 'red';
+        s._captureProgress = Math.min(FD.captureTicks, s._captureProgress + 1);
+        if (s._captureProgress >= FD.captureTicks) {
+          s._team = 'neutral';
+          s._captureProgress = 0;
+          s._captureBy = null;
+          s._nextProductionAt = 0;
+          if (typeof showSwapToast === 'function') {
+            showSwapToast(T('▶ 你的工廠被中立化', '▶ YOUR FACTORY NEUTRALISED'));
+          }
+        }
+      } else if (redIn > 0 && s._team === 'neutral') {
+        // Stage 2 — red captures neutral
         s._captureBy = 'red';
         s._captureProgress = Math.min(FD.captureTicks, s._captureProgress + 1);
         if (s._captureProgress >= FD.captureTicks) {

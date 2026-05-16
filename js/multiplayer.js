@@ -223,6 +223,15 @@ function _mpOpen(url) {
     if (typeof showSwapToast === 'function') {
       showSwapToast('▶ 多人連線 · room: ' + _mpState.roomName);
     }
+    // HitTel-1 — opt-in per-shot logging on the server. Enable via
+    // ?hitdebug=1 in the URL. Server logs land in `partykit tail`.
+    try {
+      const params = new URLSearchParams(location.search);
+      if (params.get('hitdebug') === '1') {
+        _mpSendRaw({ type: 'hitdebug', on: true });
+        console.log('[mp] hitdebug enabled — bullet outcomes logged on server');
+      }
+    } catch (e) {}
   });
   ws.addEventListener('message', (e) => {
     // Phase 1 net-audit — measure inbound bytes BEFORE parse so the count

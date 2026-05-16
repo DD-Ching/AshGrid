@@ -137,6 +137,15 @@ const NN_BOTS_INITIAL   = 8;
 // velocity as before.
 const BOT_SPEED_PER_TICK = 4.5 / TICK_FACTOR;  // 2.25
 const BOT_RESPAWN_TICKS = 5 * TICK_HZ;     // 5 s
+// R+1 — AFK respawn gate. If a dead player hasn't sent any input in this
+// many ticks at the moment their respawn timer fires, hold them in the
+// dead state. They'll respawn on the FIRST input after they return.
+// User: '讓別人死亡的時候復活, 如果他不在頁面中的話, 那他就不該進場,
+// 不會以第三方會感覺看到一個有一個無敵的人一直在朝一個地方開槍'.
+// 3 s threshold = browsers throttle background tabs to ≥ 1 input/s so
+// 3 s is safely past 'tab is hidden' without falsely flagging brief
+// network hiccups on the focused tab.
+const AFK_RESPAWN_MAX_TICKS = 3 * TICK_HZ; // 3 s
 const HP_MAX            = 100;
 const INVULN_TICKS      = 3 * TICK_HZ;     // 3 s spawn protection
 // Phase 60: respawn time is ad-buffable (DEFAULT_SEC / BUFFED_SEC in
@@ -703,6 +712,15 @@ export default class AshGridRoom {
       fireCdUntil: 0,
       invulnUntil: this.tickCount + INVULN_TICKS,
       respawnAt: 0,
+      // R+1 — last tick we received an input. Seeded to current tick on
+      // join so new players (whose respawnAt is also 0) can spawn right
+      // away. Updated on every onMessage('input') in this.tickCount units.
+      lastInputTickAt: this.tickCount,
+      // HitTel-1 — per-player switch for verbose per-shot logging. Off
+      // by default; client toggles via {type:'hitdebug', on:true} when
+      // running with ?hitdebug=1 in the URL. Used to diagnose 'why didn't
+      // my MG bullets register' reports.
+      hitDebug: false,
       name: 'PLAYER',
       // Phase 60: client-driven buff flag — set from every input message
       // by reading the player's localStorage `ag.respawnBuffUntil`. Used
@@ -771,6 +789,9 @@ export default class AshGridRoom {
       if (p.input.seq > p.lastInputSeq) p.lastInputSeq = p.input.seq;
       // Stamp the freshest client timestamp; echoed back in snapshot for RTT.
       if (typeof data.t === 'number' && data.t > p.lastInputT) p.lastInputT = data.t;
+      // R+1 — server-tick stamp for AFK respawn gate. Uses our own
+      // tickCount (not client wall-clock) so it's robust to clock skew.
+      p.lastInputTickAt = this.tickCount;
       if (data.name) p.name = String(data.name).slice(0, 12);
       // Phase 60: latest buff state from client. Cheap to overwrite every
       // input — server only reads this on death (~once per 5–15s per player)
@@ -782,6 +803,15 @@ export default class AshGridRoom {
       // Transient peer-to-peer — server just relays.
       data.from = sender.id;
       this.party.broadcast(JSON.stringify(data), [sender.id]);
+      return;
+    }
+    if (data.type === 'hitdebug') {
+      // HitTel-1 — per-player verbose shot logging toggle. Client opts in
+      // with ?hitdebug=1 in the URL. Logs land in the PartyKit server
+      // console (visible via `partykit tail`).
+      const on = !!data.on;
+      p.hitDebug = on;
+      console.log(`[hitdebug] ${p.id} (${p.name}) ${on ? 'ON' : 'OFF'}`);
       return;
     }
     // Phase 43: build request. Client sends a sid it generated locally so
@@ -921,7 +951,15 @@ export default class AshGridRoom {
     // 1. Apply inputs + advance players
     for (const p of this.players.values()) {
       if (!p.alive) {
-        if (this.tickCount >= p.respawnAt) this._respawn(p);
+        if (this.tickCount >= p.respawnAt) {
+          // R+1 — AFK gate. Only respawn if the client has shown a
+          // recent heartbeat (input within AFK_RESPAWN_MAX_TICKS).
+          // Otherwise hold them dead — when they tab back in, their
+          // first input updates lastInputTickAt and the next tick
+          // respawns them naturally.
+          const idleTicks = this.tickCount - (p.lastInputTickAt | 0);
+          if (idleTicks < AFK_RESPAWN_MAX_TICKS) this._respawn(p);
+        }
         continue;
       }
       const inp = p.input;
@@ -959,6 +997,11 @@ export default class AshGridRoom {
       // Fire (if cooldown done)
       if (inp.fire && this.tickCount >= p.fireCdUntil) {
         this._spawnBullet(p);
+        if (p.hitDebug) {
+          const b = this.bullets[this.bullets.length - 1];
+          if (b) b._dbgShooter = p.id;
+          console.log(`[hitdebug] t${this.tickCount} ${p.id} FIRE wId=${inp.wId || 'RIFLE'} bid=${b && b.id}`);
+        }
         // Weapon-specific fire cooldown — SNIPER (25 ticks) shouldn't fire
         // as fast as SMG (2 ticks). Defaults to RIFLE when wId missing.
         const wsim = getWeaponSim(inp.wId || 'RIFLE');
@@ -979,6 +1022,7 @@ export default class AshGridRoom {
       b.x += b.vx; b.y += b.vy; b.life--;
       if (b.life <= 0 ||
           b.x < 0 || b.x > ARENA_W || b.y < 0 || b.y > ARENA_H) {
+        if (b._dbgShooter) console.log(`[hitdebug] t${this.tickCount} bid=${b.id} EXPIRED life<=0 or OOB`);
         this.bullets.splice(i, 1);
         continue;
       }
@@ -995,6 +1039,7 @@ export default class AshGridRoom {
         this.party.broadcast(JSON.stringify({
           type: 'wallHit', x: round1(b.x), y: round1(b.y), kind: obs.kind,
         }));
+        if (b._dbgShooter) console.log(`[hitdebug] t${this.tickCount} bid=${b.id} WALL @(${b.x.toFixed(0)},${b.y.toFixed(0)}) kind=${obs.kind}`);
         this.bullets.splice(i, 1);
         continue;
       }
@@ -1026,6 +1071,7 @@ export default class AshGridRoom {
             x: round1(b.x), y: round1(b.y),
           }));
         }
+        if (b._dbgShooter) console.log(`[hitdebug] t${this.tickCount} bid=${b.id} STRUCT sid=${struct.sid} hp=${struct.hp}`);
         this.bullets.splice(i, 1);
         continue;
       }
@@ -1057,6 +1103,7 @@ export default class AshGridRoom {
         if (dx * dx + dy * dy < r2) {
           p.hp -= b.damage;
           consumed = true;
+          if (b._dbgShooter) console.log(`[hitdebug] t${this.tickCount} bid=${b.id} PLAYER victim=${p.id} dmg=${b.damage} → hp=${p.hp}`);
           // Phase 2 — rocket AOE on direct hit. The wsim profile sets
           // isRocket + blastR + blastDmg; every player within blastR of
           // the impact (excluding the just-hit primary victim, who
@@ -1309,6 +1356,7 @@ export default class AshGridRoom {
     const lcDmg    = (lastBullet && typeof lastBullet.damage === 'number') ? lastBullet.damage : BULLET_DAMAGE;
     const lcWeapon = (lastBullet && lastBullet.weapon) ? lastBullet.weapon : 'RIFLE';
     bestVictim.hp -= lcDmg;
+    if (shooter.hitDebug) console.log(`[hitdebug] t${this.tickCount} LAGCOMP shooter=${shooter.id} victim=${bestVictim.id} dmg=${lcDmg} → hp=${bestVictim.hp}`);
     if (this.bullets.length > 0) this.bullets.pop();
     // Phase 41: include impact coords for client-side blood/popup placement.
     // Use the historic position (where the shooter SAW them) so the spark

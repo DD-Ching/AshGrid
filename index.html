@@ -45,60 +45,60 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=144"></script>
-<script src="js/arena_recruitment.js?v=144"></script>
-<script src="js/dynamic_radio.js?v=144"></script>
-<script src="js/i18n.js?v=144"></script>
-<script src="js/touch_input.js?v=144"></script>
-<script src="js/key_bindings.js?v=144"></script>
-<script src="js/grenades.js?v=144"></script>
-<script src="js/squad_commands.js?v=144"></script>
-<script src="js/multiplayer.js?v=144"></script>
-<script src="js/leaderboard.js?v=144"></script>
-<script src="js/structures.js?v=144"></script>
-<script src="js/tod.js?v=144"></script>
-<script src="js/weapons.js?v=144"></script>
-<script src="js/chassis.js?v=144"></script>
-<script src="js/respawn_buff.js?v=144"></script>
-<script src="js/death_recap.js?v=144"></script>
-<script src="js/mote_affinity.js?v=144"></script>
-<script src="js/stage_hints.js?v=144"></script>
-<script src="js/pawn_swap.js?v=144"></script>
-<script src="js/global_stats.js?v=144"></script>
-<script src="js/progressive_unlock.js?v=144"></script>
-<script src="js/ad_stubs.js?v=144"></script>
+<script src="js/audio/sfx.js?v=145"></script>
+<script src="js/arena_recruitment.js?v=145"></script>
+<script src="js/dynamic_radio.js?v=145"></script>
+<script src="js/i18n.js?v=145"></script>
+<script src="js/touch_input.js?v=145"></script>
+<script src="js/key_bindings.js?v=145"></script>
+<script src="js/grenades.js?v=145"></script>
+<script src="js/squad_commands.js?v=145"></script>
+<script src="js/multiplayer.js?v=145"></script>
+<script src="js/leaderboard.js?v=145"></script>
+<script src="js/structures.js?v=145"></script>
+<script src="js/tod.js?v=145"></script>
+<script src="js/weapons.js?v=145"></script>
+<script src="js/chassis.js?v=145"></script>
+<script src="js/respawn_buff.js?v=145"></script>
+<script src="js/death_recap.js?v=145"></script>
+<script src="js/mote_affinity.js?v=145"></script>
+<script src="js/stage_hints.js?v=145"></script>
+<script src="js/pawn_swap.js?v=145"></script>
+<script src="js/global_stats.js?v=145"></script>
+<script src="js/progressive_unlock.js?v=145"></script>
+<script src="js/ad_stubs.js?v=145"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=144"></script>
+<script src="js/crazygames.js?v=145"></script>
 <!-- R1 refactor — explicit ad-lifecycle state machine. MUST load before
      gamemonetize.js so its window.adState is defined when GM forwards
      SDK events. See js/ad_state.js header for the state diagram. -->
-<script src="js/ad_state.js?v=144"></script>
+<script src="js/ad_state.js?v=145"></script>
 <!-- R2 refactor — Input module. Owns ALL writes to the global `mouse`
      state + canvas-inset coord translation. See js/input.js header
      for the trigger-edge primitives. -->
-<script src="js/input.js?v=144"></script>
+<script src="js/input.js?v=145"></script>
 <!-- R3 refactor — WeaponState module. Owns every weapon-state write on
      `player` (ammo / reload / fireCooldown / swap / equip). Loads
      AFTER js/weapons.js (above) — weapons.js installs the
      window.__setPlayerWeapon setter shim at top-level so WeaponState
      can mutate `playerWeapon` even though it's a `let` in another
      classic-script file. See js/weapon_state.js header. -->
-<script src="js/weapon_state.js?v=144"></script>
+<script src="js/weapon_state.js?v=145"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=144"></script>
+<script src="js/gamemonetize.js?v=145"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=144"></script>
-<script src="js/world_gen.js?v=144"></script>
-<script src="js/squad.js?v=144"></script>
-<script src="js/drone_fpv.js?v=144"></script>
-<script src="js/vision_raycast.js?v=144"></script>
-<script src="js/camera.js?v=144"></script>
-<script src="js/defense_build_ui.js?v=144"></script>
-<script src="js/pause.js?v=144"></script>
+<script src="js/missions/nn_deathmatch.js?v=145"></script>
+<script src="js/world_gen.js?v=145"></script>
+<script src="js/squad.js?v=145"></script>
+<script src="js/drone_fpv.js?v=145"></script>
+<script src="js/vision_raycast.js?v=145"></script>
+<script src="js/camera.js?v=145"></script>
+<script src="js/defense_build_ui.js?v=145"></script>
+<script src="js/pause.js?v=145"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -8402,6 +8402,38 @@ function renderStructures() {
       ctx.font = 'bold 9px monospace';
       ctx.textAlign = 'center';
       ctx.fillText('FACTORY', s.x, s.y + 4);
+      // Owner banner above the factory. User '工廠上面會寫說誰現在
+      // 正在佔領, 這個工廠現在屬於誰的, 會為誰生產'. Three lines:
+      //   1. ownership state (OWNED BY YOU / RED / NEUTRAL)
+      //   2. capturing party (only when progress > 0; says CAPTURING
+      //      from neutral, NEUTRALISING when reverting a held faction)
+      //   3. production countdown (owner only; existing)
+      const _bannerY = s.y - r - 24;
+      let _bLabel, _bColor;
+      if (s._team === 'blue') {
+        _bLabel = T('屬於你 · 為你方生產', 'OWNED BY YOU · for your squad');
+        _bColor = '#42B7E8';
+      } else if (s._team === 'red') {
+        _bLabel = T('屬於敵方 · 為敵方生產', 'OWNED BY RED · for enemy');
+        _bColor = '#E63329';
+      } else {
+        _bLabel = T('中立 · 待佔領', 'NEUTRAL · capturable');
+        _bColor = COLORS.cream;
+      }
+      ctx.font = 'bold 9px monospace';
+      ctx.fillStyle = _bColor;
+      ctx.fillText(_bLabel, s.x, _bannerY);
+      if (s._captureProgress > 0 && s._captureBy) {
+        const _cCol = s._captureBy === 'blue' ? '#42B7E8' : '#E63329';
+        const _stage = (s._team === 'neutral')
+          ? T('佔領中', 'CAPTURING')
+          : T('解除佔領中', 'NEUTRALISING');
+        ctx.font = 'bold 8px monospace';
+        ctx.fillStyle = _cCol;
+        ctx.globalAlpha = 0.9;
+        ctx.fillText(`${s._captureBy === 'blue' ? 'YOU' : 'RED'} · ${_stage}`, s.x, _bannerY + 11);
+        ctx.globalAlpha = 1.0;
+      }
       // Owner-only: production countdown — cream so it doesn't shout team color
       if (s._team !== 'neutral' && s._nextProductionAt > 0) {
         const remTicks = Math.max(0, s._nextProductionAt - game.time);
