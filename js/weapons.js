@@ -97,99 +97,41 @@ const WEAPONS = {
 // Currently-selected player weapon (mutable). Default RIFLE = balanced baseline.
 let playerWeapon = WEAPONS.RIFLE;
 
+// R3 — expose a setter so js/weapon_state.js (which owns weapon state
+// mutations) can assign through to this `let`. JavaScript hoisting +
+// classic-script semantics mean a closure-free module can't reach in
+// to set `playerWeapon` directly; this thin shim is how.
+window.__setPlayerWeapon = function(w) { playerWeapon = w; };
+
 // ---- Weapon helpers (apply / swap / NN pool / tick) ----
+// R3: applyWeaponToPlayer + swapPlayerWeapon now delegate to
+// window.WeaponState (js/weapon_state.js). These wrappers stay so the
+// existing callsites (pawn_swap.js, mission factories, key bindings)
+// don't need to change.
 function applyWeaponToPlayer(w) {
+  if (window.WeaponState && WeaponState.equip) {
+    WeaponState.equip(w);
+    return;
+  }
+  // Fallback for the edge case where weapon_state.js failed to load.
   playerWeapon = w;
   player.maxAmmo = w.magSize;
   player.ammo = w.magSize;
   player.reserve = w.reserveStart;
   player.reloading = false;
   player.reloadTime = 0;
-  // Refill grenades + stamina on weapon change / match start / respawn
   player.grenades = player.maxGrenades;
   player.stamina = player.maxStamina;
   player._spentToZero = false;
 }
 
-// Mid-match weapon swap: primary (lobby pick) ↔ secondary (RIFLE fallback).
-// Press X to toggle. Each weapon keeps its own ammo state so the player
-// can save the rocket and pop back to RIFLE for a long fight, then flip
-// when a wall or grouped enemy shows up.
+// Mid-match weapon swap (X key). Logic owned by js/weapon_state.js —
+// see that file's `swap()` for the full contract (stash + pick other
+// slot or random NN pool weapon + reset trigger edge + toast).
 function swapPlayerWeapon() {
-  if (!playerWeapon || game.state !== 'playing' || game._paused) return;
-  if (player.reloading) return;                  // can't swap mid-reload
-  // Stash current weapon's ammo
-  const cur = playerWeapon;
-  const curKey = cur.name || cur.blurb || 'cur';
-  player._weaponSlots = player._weaponSlots || {};
-  player._weaponSlots[curKey] = {
-    weapon: cur,
-    ammo: player.ammo,
-    reserve: player.reserve,
-  };
-  // Pick the other slot. If only one weapon recorded, fall back to a
-  // random pick from NN_WEAPON_POOL — Phase 63 fix per user '按X一定要切換
-  // 到不一樣的槍'. Old code fell back to WEAPONS.RIFLE which silently
-  // collided when the player's current weapon WAS already RIFLE → X did
-  // nothing, looked broken.
-  let next = null;
-  for (const k of Object.keys(player._weaponSlots)) {
-    if (k !== curKey) { next = player._weaponSlots[k]; break; }
+  if (window.WeaponState && WeaponState.swap) {
+    WeaponState.swap();
   }
-  if (!next || (next.weapon && (next.weapon.name || next.weapon.blurb) === curKey)) {
-    // Roll a random weapon that ISN'T the current one. Use the NN pool
-    // since it's the canonical "valid loadout weapons" list.
-    const others = NN_WEAPON_POOL.filter(id => {
-      const w = WEAPONS[id];
-      return w && (w.name || w.blurb) !== curKey;
-    });
-    const pickId = others[Math.floor(Math.random() * others.length)] || 'SMG';
-    const pickW  = WEAPONS[pickId] || WEAPONS.SMG;
-    next = { weapon: pickW, ammo: pickW.magSize, reserve: pickW.reserveStart };
-  }
-  applyWeaponToPlayer(next.weapon);
-  player.ammo = next.ammo;
-  player.reserve = next.reserve;
-  // Phase 67 — 0.15s swap animation. Sets _weaponSwapUntil so renderHUD
-  // can pulse the ammo block + temporarily fade the crosshair.
-  if (typeof game !== 'undefined' && game.time != null) {
-    player._weaponSwapUntil = game.time + 9;   // 9 ticks = 0.15s @ 60fps
-  }
-  // Phase 110c/111c — clean fire state across swap.
-  //
-  // Background: if the player holds the mouse down to auto-fire SMG and
-  // presses X to swap to a semi-auto (sniper / shotgun), the trigger
-  // check for semi is `mouse.down && !mouse._wasDown` (rising edge). Once
-  // they've been holding mouse, _wasDown is already true → rising edge
-  // never re-arms → new weapon refuses to shoot.
-  //
-  // Phase 110c set mouse.down = false to force a release-and-reclick. That
-  // worked but broke auto-keeps-firing: even if the player swapped to
-  // ANOTHER auto weapon they had to re-click, which the user reported as
-  // '另外一隻槍又不能用了'.
-  //
-  // New rule: only reset _wasDown + fireCooldown. mouse.down stays put.
-  //   • auto → next frame triggerOK = mouse.down (true) → keeps firing
-  //   • semi → next frame triggerOK = mouse.down && !_wasDown
-  //           = true && !false = true → ONE shot, then _wasDown=true at
-  //           frame end so the next semi shot needs a release+reclick
-  //           (which is correct semi-auto behaviour anyway).
-  // R2 — go through Input. resetTriggerEdge keeps mouse.down (auto guns
-  // keep firing across swap) but clears _wasDown so semi-auto sees a
-  // rising edge from the held trigger. Same contract Phase 111c shipped,
-  // just no longer poking globals directly.
-  if (typeof Input !== 'undefined' && Input.resetTriggerEdge) {
-    Input.resetTriggerEdge();
-  } else if (typeof mouse !== 'undefined') {
-    mouse._wasDown = false;
-  }
-  player.fireCooldown = 0;
-  if (typeof showSwapToast === 'function') {
-    const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
-    const wname = next.weapon.name || (lang === 'zh' ? '副武器' : 'SECONDARY');
-    showSwapToast(`${lang === 'zh' ? '切換 ▶ ' : 'SWITCH ▶ '}${wname}`);
-  }
-  if (typeof playRadioBeep === 'function') playRadioBeep(620, 0.1);
 }
 
 // Weapons NN units can spawn with. Same trade-offs as player picks.

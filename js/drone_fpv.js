@@ -41,7 +41,14 @@ function launchFPV() {
                 'FPV kamikaze launched · SPACE = detonate'), 90);
 }
 
+// R3: reload owned by js/weapon_state.js. This wrapper stays so
+// key_bindings.js (R key) doesn't need to change its callsite.
 function startReload() {
+  if (window.WeaponState && WeaponState.beginReload) {
+    WeaponState.beginReload();
+    return;
+  }
+  // Fallback if weapon_state.js failed to load.
   if (player.reloading || player.ammo >= player.maxAmmo || player.reserve <= 0) return;
   player.reloading = true;
   player.reloadTime = playerWeapon.reloadFrames || 80;
