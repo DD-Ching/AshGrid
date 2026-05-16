@@ -214,10 +214,15 @@ window.addEventListener('keydown', e => {
     _detonateFPV(true);
     return;
   }
-  // Build-radial number shortcut MUST run before the FTUE-lock check so that
-  // pressing a digit while build mode is active picks a module instead of
-  // showing the locked-key toast (user report: '按下 1 也不知道發生什麼事情').
-  if (game.state === 'playing' && buildMode.active
+  // Build-radial number shortcut: digits pick a module ONLY when the
+  // radial picker UI is actually visible. Earlier this gated on the
+  // bare `buildMode.active` flag, which meant ANY time the player had
+  // build mode toggled on (the green placement cursor) digits 1-9 / 0
+  // got eaten by the picker — pawn-swap on 2-5 silently died. User:
+  // '按B的時候我就沒有辦法透過按1234來切換人, 或者是死掉的時候我會
+  // 真的會掛掉, 而不是切換載具'. Radial closed → fall through to the
+  // regular pawn-swap / squad-order path below.
+  if (game.state === 'playing' && buildMode.active && buildMode.radialOpen
       && ((e.key >= '1' && e.key <= '9') || e.key === '0')) {
     _pickBuildModuleByNumber(e.key);
     e.preventDefault();
