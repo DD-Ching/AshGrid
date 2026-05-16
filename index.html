@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=137"></script>
-<script src="js/arena_recruitment.js?v=137"></script>
-<script src="js/dynamic_radio.js?v=137"></script>
-<script src="js/i18n.js?v=137"></script>
-<script src="js/touch_input.js?v=137"></script>
-<script src="js/key_bindings.js?v=137"></script>
-<script src="js/grenades.js?v=137"></script>
-<script src="js/squad_commands.js?v=137"></script>
-<script src="js/multiplayer.js?v=137"></script>
-<script src="js/leaderboard.js?v=137"></script>
-<script src="js/structures.js?v=137"></script>
-<script src="js/tod.js?v=137"></script>
-<script src="js/weapons.js?v=137"></script>
-<script src="js/chassis.js?v=137"></script>
-<script src="js/respawn_buff.js?v=137"></script>
-<script src="js/death_recap.js?v=137"></script>
-<script src="js/mote_affinity.js?v=137"></script>
-<script src="js/stage_hints.js?v=137"></script>
-<script src="js/pawn_swap.js?v=137"></script>
-<script src="js/global_stats.js?v=137"></script>
-<script src="js/progressive_unlock.js?v=137"></script>
-<script src="js/ad_stubs.js?v=137"></script>
+<script src="js/audio/sfx.js?v=138"></script>
+<script src="js/arena_recruitment.js?v=138"></script>
+<script src="js/dynamic_radio.js?v=138"></script>
+<script src="js/i18n.js?v=138"></script>
+<script src="js/touch_input.js?v=138"></script>
+<script src="js/key_bindings.js?v=138"></script>
+<script src="js/grenades.js?v=138"></script>
+<script src="js/squad_commands.js?v=138"></script>
+<script src="js/multiplayer.js?v=138"></script>
+<script src="js/leaderboard.js?v=138"></script>
+<script src="js/structures.js?v=138"></script>
+<script src="js/tod.js?v=138"></script>
+<script src="js/weapons.js?v=138"></script>
+<script src="js/chassis.js?v=138"></script>
+<script src="js/respawn_buff.js?v=138"></script>
+<script src="js/death_recap.js?v=138"></script>
+<script src="js/mote_affinity.js?v=138"></script>
+<script src="js/stage_hints.js?v=138"></script>
+<script src="js/pawn_swap.js?v=138"></script>
+<script src="js/global_stats.js?v=138"></script>
+<script src="js/progressive_unlock.js?v=138"></script>
+<script src="js/ad_stubs.js?v=138"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=137"></script>
+<script src="js/crazygames.js?v=138"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=137"></script>
+<script src="js/gamemonetize.js?v=138"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=137"></script>
-<script src="js/world_gen.js?v=137"></script>
-<script src="js/squad.js?v=137"></script>
-<script src="js/drone_fpv.js?v=137"></script>
-<script src="js/vision_raycast.js?v=137"></script>
-<script src="js/camera.js?v=137"></script>
-<script src="js/defense_build_ui.js?v=137"></script>
-<script src="js/pause.js?v=137"></script>
+<script src="js/missions/nn_deathmatch.js?v=138"></script>
+<script src="js/world_gen.js?v=138"></script>
+<script src="js/squad.js?v=138"></script>
+<script src="js/drone_fpv.js?v=138"></script>
+<script src="js/vision_raycast.js?v=138"></script>
+<script src="js/camera.js?v=138"></script>
+<script src="js/defense_build_ui.js?v=138"></script>
+<script src="js/pause.js?v=138"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -7183,7 +7183,8 @@ function detonateRocket(b) {
   const splashDmg = b.blastDmg || 60;
   const structMul = b.structDmgMul || 4;
   createExplosion(b.x, b.y, 'big');
-  emitSound(b.x, b.y, 1900, false);
+  // Phase 111 — rocket impact uses the new 'boom' kind (low rumble + crash).
+  emitSound(b.x, b.y, 1900, false, false, null, 'boom');
   playSfx('death', { vol: 0.6 });
   // Heavy shake on every rocket detonation — feels like ordnance
   if (player.alive) {
@@ -7843,6 +7844,26 @@ function updateWreckages() {
     w.life--;
     if (w.life <= 0) { wreckages.splice(i, 1); continue; }
     const heat = w.life / w.maxLife;
+    // Phase 111 — burning crackle audio. Each wreckage schedules its own
+    // crackle pops; volume scales with heat × distance attenuation so a
+    // fresh kill near the player is loud, embers across the map are
+    // quiet, and the whole thing tapers off as the fire dies. User:
+    // '接近快燃盡的這個遺殘還會從大自然燃燒聲會越來越小嘛, 然後越來越
+    // 遠的話也會越來越小嘛'. Sound emission gated on the AUDIO context
+    // being unlocked (handled inside playPositionalSound).
+    if (heat > 0.08 && now >= (w.nextCrackleAt || 0)
+        && typeof playPositionalSound === 'function') {
+      // Intensity 700 = ~ wreckage 'earshot' range (player won't hear
+      // wrecks > 700 u away, which matches the camera-visible area).
+      // volMul = heat^1.3 so cooling crackles fade fast (sounds like the
+      // fire actually dying, not just getting quieter on a flat line).
+      playPositionalSound(w.x, w.y, 700, 'crackle', false,
+        { volMul: Math.pow(heat, 1.3) });
+      // Re-schedule: 0.8-2.5 s interval, longer as it cools. Per-wreck
+      // jitter so 5 simultaneous wrecks don't crackle in sync.
+      const intervalTicks = Math.round((50 + Math.random() * 100) / Math.max(0.15, heat));
+      w.nextCrackleAt = now + intervalTicks;
+    }
     // Ember spawn: rate scales with heat (more sparks while hot, sparse as
     // it cools). Cap at 10 concurrent embers per wreck for perf.
     if (heat > 0.05 && now >= w.nextEmberAt && w.embers.length < 10) {
@@ -8133,7 +8154,8 @@ function _detonateFPV(manual) {
   // 可以摧毀建築物'.
   createExplosion(fpv.x, fpv.y, 'huge');
   if (typeof triggerShake === 'function') triggerShake(8);
-  if (typeof emitSound === 'function') emitSound(fpv.x, fpv.y, 1700, false);
+  // Phase 111 — boom audio kind (sub-bass sweep + crash + debris tail).
+  if (typeof emitSound === 'function') emitSound(fpv.x, fpv.y, 1700, false, false, null, 'boom');
   fpv.active = false;
   if (game.mode === 'fpv') game.mode = 'tactical';
   showMessage(T(`FPV ${manual ? '手動引爆' : '命中'} · 剩余 ${fpv.available}`,

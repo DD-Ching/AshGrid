@@ -87,7 +87,8 @@ function updateGrenades() {
 function explodeGrenade(g) {
   createExplosion(g.x, g.y, 'big');
   playSfx('death', { vol: 0.6 });
-  emitSound(g.x, g.y, 1500, false);
+  // Phase 111 — grenade uses the layered 'boom' synthesis path.
+  emitSound(g.x, g.y, 1500, false, false, null, 'boom');
   // Shake intensity scales with proximity to player
   if (player.alive) {
     const d = Math.hypot(player.x - g.x, player.y - g.y);

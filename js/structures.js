@@ -765,7 +765,8 @@ function updateAirstrikes() {
       for (const [ox, oy] of offsets) {
         const ex = a.x + ox, ey = a.y + oy;
         createExplosion(ex, ey, 'big');
-        emitSound(ex, ey, 1500, false);
+        // Phase 111 — airstrike booms use the new boom kind.
+        emitSound(ex, ey, 1500, false, false, null, 'boom');
         // Damage all enemies in radius
         for (const e of enemies) {
           if (!e.alive) continue;

@@ -65,6 +65,119 @@ function playPositionalSound(sx, sy, intensity, kind = 'shot', isSelf = false, p
   const pan = isSelf ? 0 : Math.max(-1, Math.min(1, localX / 350));
   const closeness = isSelf ? 1 : Math.max(0, 1 - dist / maxDist);
 
+  // === BOOM kind (Phase 111) — explosions: sub-bass sweep + low crash ===
+  // Used by FPV detonations, rockets, airstrikes, etc. Layered so far hits
+  // still rumble (bass survives distance) while near ones feel concussive
+  // (broadband crash + heavy low end).
+  if (kind === 'boom') {
+    // Layer 1 — sub-bass sweep (220 → 35 Hz over 0.8 s, sine wave)
+    const subDur = 0.8;
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(220, ctx.currentTime);
+    sub.frequency.exponentialRampToValueAtTime(35, ctx.currentTime + subDur);
+    const subGain = ctx.createGain();
+    subGain.gain.setValueAtTime(vol * 1.0, ctx.currentTime);
+    subGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + subDur);
+    let subChain = sub.connect(subGain);
+    if (ctx.createStereoPanner) {
+      const p1 = ctx.createStereoPanner();
+      p1.pan.value = pan * 0.5;   // low freqs less directional
+      subChain = subChain.connect(p1);
+    }
+    subChain.connect(AUDIO.master);
+    sub.start();
+    sub.stop(ctx.currentTime + subDur + 0.05);
+
+    // Layer 2 — broadband crash (filtered noise, fast decay)
+    const crashDur = 0.50;
+    const cbuf = ctx.createBuffer(1, Math.max(64, Math.floor(ctx.sampleRate * crashDur)), ctx.sampleRate);
+    const cdata = cbuf.getChannelData(0);
+    for (let i = 0; i < cdata.length; i++) {
+      const t = i / cdata.length;
+      cdata[i] = (Math.random() * 2 - 1) * Math.exp(-t * 5.5);
+    }
+    const cs = ctx.createBufferSource();
+    cs.buffer = cbuf;
+    const cbp = ctx.createBiquadFilter();
+    cbp.type = 'bandpass';
+    cbp.frequency.value = 220;
+    cbp.Q.value = 0.5;
+    const clp = ctx.createBiquadFilter();
+    clp.type = 'lowpass';
+    clp.frequency.value = 350 + closeness * 1800;
+    const cg = ctx.createGain();
+    cg.gain.value = vol * 0.7;
+    let cChain = cs.connect(cbp).connect(clp);
+    if (ctx.createStereoPanner) {
+      const p2 = ctx.createStereoPanner();
+      p2.pan.value = pan;
+      cChain = cChain.connect(p2);
+    }
+    cChain.connect(cg).connect(AUDIO.master);
+    cs.start();
+
+    // Layer 3 — debris tail (very low-volume mid-band hiss for 0.3 s after)
+    if (closeness > 0.15) {
+      const tailDur = 0.35;
+      const tbuf = ctx.createBuffer(1, Math.max(64, Math.floor(ctx.sampleRate * tailDur)), ctx.sampleRate);
+      const tdata = tbuf.getChannelData(0);
+      for (let i = 0; i < tdata.length; i++) {
+        const t = i / tdata.length;
+        tdata[i] = (Math.random() * 2 - 1) * Math.exp(-t * 2.5) * (1 - t * 0.7);
+      }
+      const ts = ctx.createBufferSource();
+      ts.buffer = tbuf;
+      const tbp = ctx.createBiquadFilter();
+      tbp.type = 'bandpass';
+      tbp.frequency.value = 700;
+      tbp.Q.value = 1;
+      const tg = ctx.createGain();
+      tg.gain.value = vol * 0.35 * closeness;
+      let tChain = ts.connect(tbp);
+      if (ctx.createStereoPanner) {
+        const p3 = ctx.createStereoPanner();
+        p3.pan.value = pan;
+        tChain = tChain.connect(p3);
+      }
+      tChain.connect(tg).connect(AUDIO.master);
+      ts.start(ctx.currentTime + 0.06);   // delayed 60 ms after the crash
+    }
+    return;
+  }
+
+  // === CRACKLE kind (Phase 111) — burning wreckage embers ===
+  // Tiny mid-band pops with randomised pitch. Used by wreckage tick to
+  // emit positional ambient fire crackles whose volume scales with the
+  // wreckage's remaining heat. Each call is one pop; the wreckage loop
+  // schedules them at intervals.
+  if (kind === 'crackle') {
+    const dur = 0.04 + Math.random() * 0.05;
+    const buf = ctx.createBuffer(1, Math.max(32, Math.floor(ctx.sampleRate * dur)), ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      const t = i / data.length;
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-t * (18 + Math.random() * 12));
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 320 + Math.random() * 360;
+    bp.Q.value = 2.5;
+    const gain = ctx.createGain();
+    gain.gain.value = vol * 0.55;
+    let chain = src.connect(bp);
+    if (ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = pan;
+      chain = chain.connect(p);
+    }
+    chain.connect(gain).connect(AUDIO.master);
+    src.start();
+    return;
+  }
+
   // === Crack (noise burst) — bandpass center varies per weapon ===
   const peakFreq = (profile && profile.peakFreq) ||
                    (kind === 'buzz' ? 1200 : (kind === 'self' ? 480 : 600));
@@ -242,11 +355,19 @@ function playSfx(name, opts = {}) {
 // positional audio. Gunshots are LOUD (1300-1500u) so most of the map is
 // within earshot.
 const soundEvents = [];
-function emitSound(x, y, intensity, fromPlayer, isPlayerSelf = false, profile = null) {
+function emitSound(x, y, intensity, fromPlayer, isPlayerSelf = false, profile = null, audioKind = null) {
   soundEvents.push({ x, y, intensity, fromPlayer, isPlayerSelf, life: 80, maxLife: 80 });
-  // Audio: actually play it. Drone buzz (intensity ~700-850) is emitted every
-  // frame so we throttle it. Gunshots (>=1000) play every event.
-  if (intensity >= 1000) {
+  // Phase 111 — explicit audioKind override. When the caller knows what
+  // kind of sound it really is (a 'boom' explosion vs a 'shot' gunshot),
+  // pass it here and the dispatcher routes to the right synthesis path
+  // instead of the auto-by-intensity heuristic. Default still inferred.
+  if (audioKind === 'boom') {
+    playPositionalSound(x, y, intensity, 'boom', isPlayerSelf, profile);
+  } else if (audioKind === 'crackle') {
+    playPositionalSound(x, y, intensity, 'crackle', isPlayerSelf, profile);
+  } else if (audioKind === 'silent') {
+    // alerts-only, no audio (caller plays its own)
+  } else if (intensity >= 1000) {
     playPositionalSound(x, y, intensity, 'shot', isPlayerSelf, profile);
   } else {
     // Throttled drone buzz — at most once per 12 frames per drone (rate limit globally)
