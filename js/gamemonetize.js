@@ -186,6 +186,20 @@
             } catch (e) {}
             _adPlayStartedAt = Date.now();
             _adReallyPlaying = true;
+            // Phase 108d — a real ad just started playing. Hide our
+            // 15-second placeholder overlay so the GM ad iframe is
+            // visible. User: '我聽到了有廣告, 但是還是被黑色的那個畫面
+            // 蓋起來, 十五秒的那個畫面蓋起來, 所以可能被遮蓋住了, 然後
+            // 時間秒數好像沒對齊'. The placeholder was z-index 9000 with
+            // an opaque black background — GM iframes don't always
+            // climb above that, and the placeholder's own 15-second
+            // countdown doesn't line up with the real ad's length, so
+            // hiding it the moment SDK_GAME_PAUSE fires gives the
+            // player a clean unobstructed real-ad view AND drops the
+            // wrong countdown. The placeholder still serves its
+            // purpose when GM has no fill (SDK_GAME_START fires
+            // instantly without a PAUSE — placeholder runs to 0s).
+            if (typeof _hideAdPlayOverlay === 'function') _hideAdPlayOverlay();
             break;
         }
       },
