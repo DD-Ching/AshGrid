@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=123"></script>
-<script src="js/arena_recruitment.js?v=123"></script>
-<script src="js/dynamic_radio.js?v=123"></script>
-<script src="js/i18n.js?v=123"></script>
-<script src="js/touch_input.js?v=123"></script>
-<script src="js/key_bindings.js?v=123"></script>
-<script src="js/grenades.js?v=123"></script>
-<script src="js/squad_commands.js?v=123"></script>
-<script src="js/multiplayer.js?v=123"></script>
-<script src="js/leaderboard.js?v=123"></script>
-<script src="js/structures.js?v=123"></script>
-<script src="js/tod.js?v=123"></script>
-<script src="js/weapons.js?v=123"></script>
-<script src="js/chassis.js?v=123"></script>
-<script src="js/respawn_buff.js?v=123"></script>
-<script src="js/death_recap.js?v=123"></script>
-<script src="js/mote_affinity.js?v=123"></script>
-<script src="js/stage_hints.js?v=123"></script>
-<script src="js/pawn_swap.js?v=123"></script>
-<script src="js/global_stats.js?v=123"></script>
-<script src="js/progressive_unlock.js?v=123"></script>
-<script src="js/ad_stubs.js?v=123"></script>
+<script src="js/audio/sfx.js?v=124"></script>
+<script src="js/arena_recruitment.js?v=124"></script>
+<script src="js/dynamic_radio.js?v=124"></script>
+<script src="js/i18n.js?v=124"></script>
+<script src="js/touch_input.js?v=124"></script>
+<script src="js/key_bindings.js?v=124"></script>
+<script src="js/grenades.js?v=124"></script>
+<script src="js/squad_commands.js?v=124"></script>
+<script src="js/multiplayer.js?v=124"></script>
+<script src="js/leaderboard.js?v=124"></script>
+<script src="js/structures.js?v=124"></script>
+<script src="js/tod.js?v=124"></script>
+<script src="js/weapons.js?v=124"></script>
+<script src="js/chassis.js?v=124"></script>
+<script src="js/respawn_buff.js?v=124"></script>
+<script src="js/death_recap.js?v=124"></script>
+<script src="js/mote_affinity.js?v=124"></script>
+<script src="js/stage_hints.js?v=124"></script>
+<script src="js/pawn_swap.js?v=124"></script>
+<script src="js/global_stats.js?v=124"></script>
+<script src="js/progressive_unlock.js?v=124"></script>
+<script src="js/ad_stubs.js?v=124"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=123"></script>
+<script src="js/crazygames.js?v=124"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=123"></script>
+<script src="js/gamemonetize.js?v=124"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=123"></script>
-<script src="js/world_gen.js?v=123"></script>
-<script src="js/squad.js?v=123"></script>
-<script src="js/drone_fpv.js?v=123"></script>
-<script src="js/vision_raycast.js?v=123"></script>
-<script src="js/camera.js?v=123"></script>
-<script src="js/defense_build_ui.js?v=123"></script>
-<script src="js/pause.js?v=123"></script>
+<script src="js/missions/nn_deathmatch.js?v=124"></script>
+<script src="js/world_gen.js?v=124"></script>
+<script src="js/squad.js?v=124"></script>
+<script src="js/drone_fpv.js?v=124"></script>
+<script src="js/vision_raycast.js?v=124"></script>
+<script src="js/camera.js?v=124"></script>
+<script src="js/defense_build_ui.js?v=124"></script>
+<script src="js/pause.js?v=124"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -1314,6 +1314,62 @@ body.lang-en .lang-toggle .on { color: var(--black); }
            <ins data-ad-key="YOUR_970x250_KEY"></ins> -->
       <div style="font-size:11px; color:#666; letter-spacing:3px;">970 × 250 BILLBOARD</div>
     </div>
+  </div>
+</div>
+
+<!-- Phase 103 — death-overlay flanking slots. Two extra 336×280 Large Rect
+     ads pinned to the LEFT and RIGHT of the centered #respawnAdSlot, so
+     the empty gutters during the team-wipe overlay double as ad inventory.
+     User pointed to those gutters and said '藍色方框框的地方,它也可以
+     放廣告呀'. Each flank is its own position:fixed wrapper, anchored
+     by the left:50% + margin-left trick so it lives at viewport-center
+     ±(485 + gap + 336/2). Toggled with the main slot in _updateRespawnAdSlot
+     and gated on viewport width ≥ 1720 px (anything narrower — GameMonetize
+     iframe at 1280, tablets, portrait — falls back to just the center). -->
+<div id="respawnAdLeftFlank" style="
+     display:none;
+     position:fixed; left:50%; top:50%;
+     margin-left:-851px;
+     transform: translateY(-50%);
+     z-index:50;
+     pointer-events:none;
+     font-family: 'Helvetica Neue', sans-serif;
+     text-align:center;">
+  <div style="font-size:9px; color:#888; letter-spacing:3px; margin-bottom:4px; text-transform:uppercase;">
+    Advertisement
+  </div>
+  <div style="width:336px; height:280px;
+       background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+       border:1px solid #444;
+       display:flex; align-items:center; justify-content:center;
+       flex-direction:column; color:#888;">
+    <!-- Replace with a GameMonetize 336×280 banner:
+         <ins data-ad-key="YOUR_336x280_LEFT_KEY"></ins> -->
+    <div style="font-size:26px; font-weight:900; color:#C8261C; opacity:0.5;">AshGrid</div>
+    <div style="font-size:10px; color:#666; margin-top:8px; letter-spacing:2px;">336 × 280</div>
+  </div>
+</div>
+<div id="respawnAdRightFlank" style="
+     display:none;
+     position:fixed; left:50%; top:50%;
+     margin-left:515px;
+     transform: translateY(-50%);
+     z-index:50;
+     pointer-events:none;
+     font-family: 'Helvetica Neue', sans-serif;
+     text-align:center;">
+  <div style="font-size:9px; color:#888; letter-spacing:3px; margin-bottom:4px; text-transform:uppercase;">
+    Advertisement
+  </div>
+  <div style="width:336px; height:280px;
+       background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+       border:1px solid #444;
+       display:flex; align-items:center; justify-content:center;
+       flex-direction:column; color:#888;">
+    <!-- Replace with a GameMonetize 336×280 banner:
+         <ins data-ad-key="YOUR_336x280_RIGHT_KEY"></ins> -->
+    <div style="font-size:26px; font-weight:900; color:#C8261C; opacity:0.5;">AshGrid</div>
+    <div style="font-size:10px; color:#666; margin-top:8px; letter-spacing:2px;">336 × 280</div>
   </div>
 </div>
 
@@ -2658,6 +2714,8 @@ try {
 // objective-panel-suppression block.
 let _respawnAdSlotEl = null;
 let _nnEndCardEl     = null;
+let _respawnAdLeftFlankEl  = null;
+let _respawnAdRightFlankEl = null;
 function _updateRespawnAdSlot() {
   if (!_respawnAdSlotEl) _respawnAdSlotEl = document.getElementById('respawnAdSlot');
   const slot = _respawnAdSlotEl;
@@ -2684,6 +2742,16 @@ function _updateRespawnAdSlot() {
   if (secondary) {
     secondary.style.display = (window.innerHeight >= 850) ? 'block' : 'none';
   }
+  // Phase 103 — flanking 336×280 slots beside the center rect. Gated on
+  // viewport ≥ 1720 px wide (each flank lives at center ± [515..851] px,
+  // so anything narrower would clip them into the HUD or off-screen).
+  // GameMonetize iframe 1280-wide → falls back to just the center slot.
+  if (!_respawnAdLeftFlankEl)  _respawnAdLeftFlankEl  = document.getElementById('respawnAdLeftFlank');
+  if (!_respawnAdRightFlankEl) _respawnAdRightFlankEl = document.getElementById('respawnAdRightFlank');
+  const wideEnough = window.innerWidth >= 1720;
+  const flankWant = (teamWiped && !isMobile && wideEnough) ? 'block' : 'none';
+  if (_respawnAdLeftFlankEl  && _respawnAdLeftFlankEl.style.display  !== flankWant) _respawnAdLeftFlankEl.style.display  = flankWant;
+  if (_respawnAdRightFlankEl && _respawnAdRightFlankEl.style.display !== flankWant) _respawnAdRightFlankEl.style.display = flankWant;
 }
 
 // Phase 101 — side ad rails visibility. Shows #sideAdLeft / #sideAdRight
