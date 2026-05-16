@@ -155,17 +155,26 @@ function swapPlayerWeapon() {
   if (typeof game !== 'undefined' && game.time != null) {
     player._weaponSwapUntil = game.time + 9;   // 9 ticks = 0.15s @ 60fps
   }
-  // Phase 110c — clean fire state across swap. User: '按X切換到下一個
-  // 武器就沒有辦法繼續攻擊'. If the player was holding the mouse down to
-  // auto-fire the previous weapon and X swapped them into a semi-auto
-  // (sniper / shotgun), the rising-edge check (`mouse.down &&
-  // !mouse._wasDown`) never re-armed because _wasDown was already true
-  // → semi-auto wouldn't shoot until the player released and re-
-  // clicked. Force-release here so the new weapon needs a fresh click,
-  // which matches expectation for a swap. Also zero fireCooldown so the
-  // previous gun's rate-of-fire timer doesn't lock out the new one.
+  // Phase 110c/111c — clean fire state across swap.
+  //
+  // Background: if the player holds the mouse down to auto-fire SMG and
+  // presses X to swap to a semi-auto (sniper / shotgun), the trigger
+  // check for semi is `mouse.down && !mouse._wasDown` (rising edge). Once
+  // they've been holding mouse, _wasDown is already true → rising edge
+  // never re-arms → new weapon refuses to shoot.
+  //
+  // Phase 110c set mouse.down = false to force a release-and-reclick. That
+  // worked but broke auto-keeps-firing: even if the player swapped to
+  // ANOTHER auto weapon they had to re-click, which the user reported as
+  // '另外一隻槍又不能用了'.
+  //
+  // New rule: only reset _wasDown + fireCooldown. mouse.down stays put.
+  //   • auto → next frame triggerOK = mouse.down (true) → keeps firing
+  //   • semi → next frame triggerOK = mouse.down && !_wasDown
+  //           = true && !false = true → ONE shot, then _wasDown=true at
+  //           frame end so the next semi shot needs a release+reclick
+  //           (which is correct semi-auto behaviour anyway).
   if (typeof mouse !== 'undefined') {
-    mouse.down = false;
     mouse._wasDown = false;
   }
   player.fireCooldown = 0;
