@@ -178,6 +178,36 @@ function playPositionalSound(sx, sy, intensity, kind = 'shot', isSelf = false, p
     return;
   }
 
+  const isGunshot = (kind !== 'buzz');
+
+  // === MECHANICAL CLICK (Phase 111b) — sharp 1-3 ms transient at the
+  // very top of the gunshot. Hammer-fall / bolt-release tick. Skipped
+  // for drone buzz, played at REDUCED volume when very far away (it's a
+  // close-quarters detail — too much from across the map sounds tinny).
+  if (isGunshot) {
+    const clickDur = 0.003;
+    const clickBuf = ctx.createBuffer(1, Math.max(8, Math.floor(ctx.sampleRate * clickDur)), ctx.sampleRate);
+    const cdata = clickBuf.getChannelData(0);
+    for (let i = 0; i < cdata.length; i++) {
+      cdata[i] = (Math.random() * 2 - 1) * Math.exp(-i / cdata.length * 8);
+    }
+    const cs = ctx.createBufferSource();
+    cs.buffer = clickBuf;
+    const cbp = ctx.createBiquadFilter();
+    cbp.type = 'highpass';
+    cbp.frequency.value = 2000;
+    const cg = ctx.createGain();
+    cg.gain.value = vol * (0.18 + closeness * 0.25);
+    let cChain = cs.connect(cbp);
+    if (ctx.createStereoPanner) {
+      const cp = ctx.createStereoPanner();
+      cp.pan.value = pan;
+      cChain = cChain.connect(cp);
+    }
+    cChain.connect(cg).connect(AUDIO.master);
+    cs.start();
+  }
+
   // === Crack (noise burst) — bandpass center varies per weapon ===
   const peakFreq = (profile && profile.peakFreq) ||
                    (kind === 'buzz' ? 1200 : (kind === 'self' ? 480 : 600));
@@ -235,6 +265,70 @@ function playPositionalSound(sx, sy, intensity, kind = 'shot', isSelf = false, p
       bassChain.connect(AUDIO.master);
       osc.start();
       osc.stop(ctx.currentTime + bassDur + 0.02);
+    }
+  }
+
+  // === UNIVERSAL SUB-THUMP (Phase 111b) — small low-freq pulse on EVERY
+  // gunshot (not just profiled big guns). Adds body / 'weight' to SMG /
+  // pistol pops so they don't feel paper-thin. Skipped for drone buzz.
+  // Profile bass thump above is bigger and survives further; this one is
+  // a short attached pulse for the close/mid range.
+  if (isGunshot && !(profile && profile.bassFreq > 0)) {
+    const subDur = 0.08;
+    const subVol = isSelf ? 0.28 * volMul : 0.34 * vol;
+    if (subVol >= 0.003) {
+      const sub = ctx.createOscillator();
+      sub.type = 'sine';
+      sub.frequency.setValueAtTime(140, ctx.currentTime);
+      sub.frequency.exponentialRampToValueAtTime(70, ctx.currentTime + subDur);
+      const sg = ctx.createGain();
+      sg.gain.setValueAtTime(subVol, ctx.currentTime);
+      sg.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + subDur);
+      let subChain = sub.connect(sg);
+      if (ctx.createStereoPanner) {
+        const sp = ctx.createStereoPanner();
+        sp.pan.value = pan * 0.6;     // low freqs less directional
+        subChain = subChain.connect(sp);
+      }
+      subChain.connect(AUDIO.master);
+      sub.start();
+      sub.stop(ctx.currentTime + subDur + 0.02);
+    }
+  }
+
+  // === REFLECTION TAIL (Phase 111b) — for distant gunshots only. Soft
+  // delayed mid-band noise that simulates the 'crack-and-echo' of a shot
+  // bouncing off buildings. Only audible past ~60 % of max range so close
+  // shots stay punchy, not muddy. Drone buzz never gets a tail.
+  if (isGunshot && !isSelf && closeness < 0.6 && closeness > 0.05) {
+    const tailDur = 0.28;
+    const tailVol = vol * 0.5 * (1 - closeness);
+    if (tailVol >= 0.004) {
+      const tbuf = ctx.createBuffer(1, Math.max(64, Math.floor(ctx.sampleRate * tailDur)), ctx.sampleRate);
+      const tdata = tbuf.getChannelData(0);
+      for (let i = 0; i < tdata.length; i++) {
+        const t = i / tdata.length;
+        tdata[i] = (Math.random() * 2 - 1) * Math.exp(-t * 3.5);
+      }
+      const ts = ctx.createBufferSource();
+      ts.buffer = tbuf;
+      const tbp = ctx.createBiquadFilter();
+      tbp.type = 'bandpass';
+      tbp.frequency.value = 500;
+      tbp.Q.value = 0.9;
+      const tlp = ctx.createBiquadFilter();
+      tlp.type = 'lowpass';
+      tlp.frequency.value = 1200;
+      const tg = ctx.createGain();
+      tg.gain.value = tailVol;
+      let tChain = ts.connect(tbp).connect(tlp);
+      if (ctx.createStereoPanner) {
+        const tp = ctx.createStereoPanner();
+        tp.pan.value = pan * 0.7;     // partial pan, echo bounces around
+        tChain = tChain.connect(tp);
+      }
+      tChain.connect(tg).connect(AUDIO.master);
+      ts.start(ctx.currentTime + 0.035);   // 35 ms delay — feels like an echo
     }
   }
 }
