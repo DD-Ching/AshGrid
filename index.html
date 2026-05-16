@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=125"></script>
-<script src="js/arena_recruitment.js?v=125"></script>
-<script src="js/dynamic_radio.js?v=125"></script>
-<script src="js/i18n.js?v=125"></script>
-<script src="js/touch_input.js?v=125"></script>
-<script src="js/key_bindings.js?v=125"></script>
-<script src="js/grenades.js?v=125"></script>
-<script src="js/squad_commands.js?v=125"></script>
-<script src="js/multiplayer.js?v=125"></script>
-<script src="js/leaderboard.js?v=125"></script>
-<script src="js/structures.js?v=125"></script>
-<script src="js/tod.js?v=125"></script>
-<script src="js/weapons.js?v=125"></script>
-<script src="js/chassis.js?v=125"></script>
-<script src="js/respawn_buff.js?v=125"></script>
-<script src="js/death_recap.js?v=125"></script>
-<script src="js/mote_affinity.js?v=125"></script>
-<script src="js/stage_hints.js?v=125"></script>
-<script src="js/pawn_swap.js?v=125"></script>
-<script src="js/global_stats.js?v=125"></script>
-<script src="js/progressive_unlock.js?v=125"></script>
-<script src="js/ad_stubs.js?v=125"></script>
+<script src="js/audio/sfx.js?v=126"></script>
+<script src="js/arena_recruitment.js?v=126"></script>
+<script src="js/dynamic_radio.js?v=126"></script>
+<script src="js/i18n.js?v=126"></script>
+<script src="js/touch_input.js?v=126"></script>
+<script src="js/key_bindings.js?v=126"></script>
+<script src="js/grenades.js?v=126"></script>
+<script src="js/squad_commands.js?v=126"></script>
+<script src="js/multiplayer.js?v=126"></script>
+<script src="js/leaderboard.js?v=126"></script>
+<script src="js/structures.js?v=126"></script>
+<script src="js/tod.js?v=126"></script>
+<script src="js/weapons.js?v=126"></script>
+<script src="js/chassis.js?v=126"></script>
+<script src="js/respawn_buff.js?v=126"></script>
+<script src="js/death_recap.js?v=126"></script>
+<script src="js/mote_affinity.js?v=126"></script>
+<script src="js/stage_hints.js?v=126"></script>
+<script src="js/pawn_swap.js?v=126"></script>
+<script src="js/global_stats.js?v=126"></script>
+<script src="js/progressive_unlock.js?v=126"></script>
+<script src="js/ad_stubs.js?v=126"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=125"></script>
+<script src="js/crazygames.js?v=126"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=125"></script>
+<script src="js/gamemonetize.js?v=126"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=125"></script>
-<script src="js/world_gen.js?v=125"></script>
-<script src="js/squad.js?v=125"></script>
-<script src="js/drone_fpv.js?v=125"></script>
-<script src="js/vision_raycast.js?v=125"></script>
-<script src="js/camera.js?v=125"></script>
-<script src="js/defense_build_ui.js?v=125"></script>
-<script src="js/pause.js?v=125"></script>
+<script src="js/missions/nn_deathmatch.js?v=126"></script>
+<script src="js/world_gen.js?v=126"></script>
+<script src="js/squad.js?v=126"></script>
+<script src="js/drone_fpv.js?v=126"></script>
+<script src="js/vision_raycast.js?v=126"></script>
+<script src="js/camera.js?v=126"></script>
+<script src="js/defense_build_ui.js?v=126"></script>
+<script src="js/pause.js?v=126"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -10741,21 +10741,24 @@ function renderHUD() {
   // Phase 20c: kill feed + scoreboard (no-op when MP inactive).
   if (typeof _mpRenderHUD === 'function') _mpRenderHUD();
 
-  // Phase 104 — new TOP-LEFT layout: Mission Status Card + Squad Strip
-  // (replaces the dense single-panel debug-looking status from before).
-  // On viewport < 560 fall back to compact single card without squad
-  // strip so phones / small windows don't get squeezed.
+  // Phase 104 / 105 — 6-zone HUD draw + offscreen panel cache.
+  // _hudDrawCachedPanels() runs ALL six cream-card helpers (mission /
+  // squad / mode / score / vitals / action) once every 6 ticks (10 Hz)
+  // and blits cached pixels in between. On narrow viewports (< 560)
+  // we fall back to a single compact mission card here + a slim HP/
+  // ammo bar at the bottom (drawn later); no caching for the narrow
+  // path because there's only ~1 panel of work.
   const _narrow = W() < 560;
   const _missionW = _narrow ? 200 : 290;
-  const _missionH = _narrow ? 100 : 132;
-  _hud_drawMissionCard(16, 16, _missionW, _missionH);
-  if (!_narrow) {
-    _hud_drawSquadStrip(16, 16 + _missionH + 8, _missionW, 210);
-  } else {
+  if (_narrow) {
+    _hud_drawMissionCard(16, 16, _missionW, 100);
     game._squadChipRects = null;
+  } else {
+    _hudDrawCachedPanels();
   }
-  // Pause button (top-right of the mission card, unchanged behaviour;
-  // re-anchored relative to new card size).
+  // Pause button — drawn every tick on top of the (possibly cached)
+  // mission card so its 'II' button stays interactive. Same hit-rect
+  // size and position as before.
   let _isMpModeForBtn = false;
   try { _isMpModeForBtn = new URLSearchParams(location.search).get('mp') === '1'; } catch (e) {}
   if (_isMpModeForBtn) {
@@ -10771,15 +10774,6 @@ function renderHUD() {
     ctx.textAlign = 'left';
     game._pauseBtnRect = { x: _pbX, y: _pbY, w: _pbW, h: _pbH };
   }
-
-  // Phase 104 — TOP-RIGHT Score Block + TOP-CENTER mode chip (helpers).
-  // Score Block consolidates the standalone MP line + big score + K/D/T
-  // into one cream card; mode chip is the slimmer pill replacing the old
-  // wide view banner.
-  const _scoreW = _narrow ? 200 : 294;
-  const _scoreH = _narrow ? 100 : 132;
-  _hud_drawScoreBlock(W() - 16 - _scoreW, 16, _scoreW, _scoreH);
-  _hud_drawModeChip();
 
   // Respawn countdown overlay — when player is dead in NN mode and waiting
   // for the 5-second respawn timer to elapse. Big "重生中 N" text + ring.
@@ -10872,22 +10866,10 @@ function renderHUD() {
     ctx.fillStyle = COLORS.black;
     ctx.font = 'bold 18px sans-serif';
     ctx.fillText(`${player.ammo}/${player.reserve}`, _bX + 12 + _hpw + 20, _bY + 36);
-  } else {
-    // Vitals card: under the squad strip; height adapts to chassis (heavy
-    // adds an ARMOR bar). NN-mode adds a SEED INTEGRITY bar.
-    const _hasArmor = player._chassis === 'heavy' && player.maxArmor > 0;
-    const _vRows    = 1 + (_hasArmor ? 1 : 0) + (game._nnMode ? 1 : 0);
-    const _vCardH   = 30 + _vRows * 28 + 24;
-    const _vCardW   = 414;
-    _hud_drawVitalsCard(16, H() - _vCardH - 12, _vCardW, _vCardH);
-    // Action bar — fills the gap between vitals card and minimap (~280 wide
-    // pinned to right). Clamp min width so the 6 cells stay legible.
-    const _aX = 16 + _vCardW + 12;
-    const _aMinimapPad = 280;
-    const _aW = Math.max(420, W() - _aX - _aMinimapPad);
-    const _aH = 98;
-    _hud_drawActionBar(_aX, H() - _aH - 12, _aW, _aH);
   }
+  // Phase 105 — desktop branch: vitals card + action bar are now drawn
+  // inside _hudDrawCachedPanels() (called near the top of renderHUD) so
+  // they get the 10 Hz panel cache treatment. Nothing to do here.
 
   // FTUE: minimap reveal is driven by reveal.minimap on the current step
   // (set true on the 'place' step). Before that we still need to call
@@ -11556,6 +11538,100 @@ function drawHUDPanel(x, y, w, h, label) {
     ctx.fillText(label, x + 12, y + 18);
     ctx.fillRect(x + 12, y + 22, 28, 1);
   }
+}
+
+// ============ HUD: PANEL CACHE (Phase 105) ============
+// The six Phase-104 panels are heavy (~150 fillText/fillRect ops/frame).
+// Their data ticks slowly — HP/score/ammo all change at < 5 Hz of player
+// input. Cache the panels to an offscreen canvas every 6 ticks (10 Hz)
+// and blit on the in-between ticks. User: '這邊不用很高的刷新頻率對不對,
+// 我們可以省, 把高的 FPS 放在重點的部分就好'.
+//
+// What STAYS at full 60 Hz:
+//   game world / projectiles / units / animations / minimap markers /
+//   hit-flash / death recap / mp kill feed / mp scoreboard /
+//   pause-button hit rect / squad-chip click hit rects (rebuilt at 10 Hz
+//   though — chips don't move, only callsign/HP change).
+// What runs at 10 Hz (cached):
+//   mission status card, squad strip, mode chip, score block, vitals
+//   card, action bar.
+//
+// Strategy: on refresh tick render helpers onto MAIN canvas as normal,
+// then drawImage the 6 region rects FROM main canvas INTO an offscreen
+// cache. On non-refresh ticks, drawImage the cached regions back onto
+// main canvas (skipping all helper draws). Game world under the opaque
+// cream fills is hidden anyway, so the 10 Hz lag inside those rects is
+// invisible; outside them everything stays at 60 Hz.
+
+let _hudCacheCanvas = null;
+let _hudCacheCtx = null;
+let _hudPanelLastTick = -9999;
+const _HUD_PANEL_INTERVAL = 6;   // ticks (10 Hz at TICK_HZ=60)
+let _hudCacheRegions = [];
+
+function _hudComputeRegions() {
+  _hudCacheRegions = [
+    { x: 14,          y: 14,         w: 296,                       h: 136 },  // mission card
+    { x: 14,          y: 156,        w: 296,                       h: 214 },  // squad strip
+    { x: W()/2 - 112, y: 12,         w: 224,                       h: 32  },  // mode chip
+    { x: W() - 312,   y: 14,         w: 298,                       h: 136 },  // score block
+    { x: 14,          y: H() - 200,  w: 420,                       h: 192 },  // vitals card (generous box)
+    { x: 440,         y: H() - 124,  w: Math.max(420, W() - 730),  h: 116 },  // action bar
+  ];
+}
+
+function _hudInitCache() {
+  if (!_hudCacheCanvas) {
+    _hudCacheCanvas = document.createElement('canvas');
+    _hudCacheCtx = _hudCacheCanvas.getContext('2d');
+  }
+  if (_hudCacheCanvas.width !== W() || _hudCacheCanvas.height !== H()) {
+    _hudCacheCanvas.width = W();
+    _hudCacheCanvas.height = H();
+    _hudPanelLastTick = -9999;   // force fresh snapshot at new viewport size
+    _hudComputeRegions();
+  }
+}
+
+// Drives all six cached panels. Called from renderHUD on viewports
+// wide enough for the full layout (≥ 560 px). Returns true on refresh
+// ticks so callers know the helpers ran fresh (squad-chip click rects
+// were rebuilt this frame).
+function _hudDrawCachedPanels() {
+  _hudInitCache();
+  const tick = (typeof game !== 'undefined') ? game.time : 0;
+  // tick < lastTick → game.time was reset (new match). Force refresh so
+  // the cache doesn't stay stale until lastTick catches up again.
+  if (tick < _hudPanelLastTick) _hudPanelLastTick = -9999;
+  const refresh = (tick - _hudPanelLastTick) >= _HUD_PANEL_INTERVAL;
+  if (refresh) {
+    _hudPanelLastTick = tick;
+    // Fresh render onto MAIN canvas.
+    _hud_drawMissionCard(16, 16, 290, 132);
+    _hud_drawSquadStrip(16, 156, 290, 210);
+    _hud_drawModeChip();
+    _hud_drawScoreBlock(W() - 16 - 294, 16, 294, 132);
+    const _hasArmor = player._chassis === 'heavy' && player.maxArmor > 0;
+    const _vRows = 1 + (_hasArmor ? 1 : 0) + (game._nnMode ? 1 : 0);
+    const _vCardH = 30 + _vRows * 28 + 24;
+    _hud_drawVitalsCard(16, H() - _vCardH - 12, 414, _vCardH);
+    const _aX = 16 + 414 + 12;
+    const _aW = Math.max(420, W() - _aX - 280);
+    _hud_drawActionBar(_aX, H() - 98 - 12, _aW, 98);
+    // Snapshot the 6 regions from main canvas → offscreen cache.
+    _hudCacheCtx.clearRect(0, 0, _hudCacheCanvas.width, _hudCacheCanvas.height);
+    for (const r of _hudCacheRegions) {
+      if (r.w <= 0 || r.h <= 0) continue;
+      _hudCacheCtx.drawImage(canvas, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+    }
+  } else {
+    // Non-refresh tick — blit cached HUD region pixels back onto main.
+    for (const r of _hudCacheRegions) {
+      if (r.w <= 0 || r.h <= 0) continue;
+      ctx.drawImage(_hudCacheCanvas, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+    }
+  }
+  return refresh;
 }
 
 // ============ HUD: PHASE 104 REDESIGN ============
