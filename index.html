@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=136"></script>
-<script src="js/arena_recruitment.js?v=136"></script>
-<script src="js/dynamic_radio.js?v=136"></script>
-<script src="js/i18n.js?v=136"></script>
-<script src="js/touch_input.js?v=136"></script>
-<script src="js/key_bindings.js?v=136"></script>
-<script src="js/grenades.js?v=136"></script>
-<script src="js/squad_commands.js?v=136"></script>
-<script src="js/multiplayer.js?v=136"></script>
-<script src="js/leaderboard.js?v=136"></script>
-<script src="js/structures.js?v=136"></script>
-<script src="js/tod.js?v=136"></script>
-<script src="js/weapons.js?v=136"></script>
-<script src="js/chassis.js?v=136"></script>
-<script src="js/respawn_buff.js?v=136"></script>
-<script src="js/death_recap.js?v=136"></script>
-<script src="js/mote_affinity.js?v=136"></script>
-<script src="js/stage_hints.js?v=136"></script>
-<script src="js/pawn_swap.js?v=136"></script>
-<script src="js/global_stats.js?v=136"></script>
-<script src="js/progressive_unlock.js?v=136"></script>
-<script src="js/ad_stubs.js?v=136"></script>
+<script src="js/audio/sfx.js?v=137"></script>
+<script src="js/arena_recruitment.js?v=137"></script>
+<script src="js/dynamic_radio.js?v=137"></script>
+<script src="js/i18n.js?v=137"></script>
+<script src="js/touch_input.js?v=137"></script>
+<script src="js/key_bindings.js?v=137"></script>
+<script src="js/grenades.js?v=137"></script>
+<script src="js/squad_commands.js?v=137"></script>
+<script src="js/multiplayer.js?v=137"></script>
+<script src="js/leaderboard.js?v=137"></script>
+<script src="js/structures.js?v=137"></script>
+<script src="js/tod.js?v=137"></script>
+<script src="js/weapons.js?v=137"></script>
+<script src="js/chassis.js?v=137"></script>
+<script src="js/respawn_buff.js?v=137"></script>
+<script src="js/death_recap.js?v=137"></script>
+<script src="js/mote_affinity.js?v=137"></script>
+<script src="js/stage_hints.js?v=137"></script>
+<script src="js/pawn_swap.js?v=137"></script>
+<script src="js/global_stats.js?v=137"></script>
+<script src="js/progressive_unlock.js?v=137"></script>
+<script src="js/ad_stubs.js?v=137"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=136"></script>
+<script src="js/crazygames.js?v=137"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=136"></script>
+<script src="js/gamemonetize.js?v=137"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=136"></script>
-<script src="js/world_gen.js?v=136"></script>
-<script src="js/squad.js?v=136"></script>
-<script src="js/drone_fpv.js?v=136"></script>
-<script src="js/vision_raycast.js?v=136"></script>
-<script src="js/camera.js?v=136"></script>
-<script src="js/defense_build_ui.js?v=136"></script>
-<script src="js/pause.js?v=136"></script>
+<script src="js/missions/nn_deathmatch.js?v=137"></script>
+<script src="js/world_gen.js?v=137"></script>
+<script src="js/squad.js?v=137"></script>
+<script src="js/drone_fpv.js?v=137"></script>
+<script src="js/vision_raycast.js?v=137"></script>
+<script src="js/camera.js?v=137"></script>
+<script src="js/defense_build_ui.js?v=137"></script>
+<script src="js/pause.js?v=137"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -7688,8 +7688,14 @@ function updateBullets() {
 }
 
 function createExplosion(x, y, size) {
-  const radius = size === 'big' ? 90 : size === 'medium' ? 65 : 35;
-  const numParts = size === 'big' ? 24 : size === 'medium' ? 14 : 7;
+  // Phase 110d — added 'huge' tier for FPV kamikaze detonations. User:
+  // '自殺無人機的爆炸半徑更大, 範圍更廣, 傷害更強, 也可以摧毀建築物
+  // (我說的是我再加蓋的, 不要原本的)'. Radius 90 → 140, AOE 80 → 120,
+  // and 'huge' is the ONLY size that also damages user-built structures
+  // (game._structures). Stone arena walls + original-map terrain stay
+  // untouched per user.
+  const radius = size === 'huge' ? 140 : size === 'big' ? 90 : size === 'medium' ? 65 : 35;
+  const numParts = size === 'huge' ? 32 : size === 'big' ? 24 : size === 'medium' ? 14 : 7;
   // Phase 17: per-particle stable colour. Previously particles flickered
   // 50/50 between black and red on every frame — looked like a single
   // colour blur. Now each particle picks its colour once at birth from a
@@ -7716,10 +7722,11 @@ function createExplosion(x, y, size) {
     })),
   });
   if (size !== 'small') {
+    const aoeDmg = size === 'huge' ? 120 : size === 'big' ? 80 : 60;
     for (const e of enemies) {
       if (!e.alive) continue;
       if (Math.hypot(e.x-x, e.y-y) < radius) {
-        e.hp -= (size === 'big' ? 80 : 60);
+        e.hp -= aoeDmg;
         if (e.hp <= 0) {
           // Phase 18: first KO → stun + freeze, second KO → real death.
           if (typeof _tryStunOrKill === 'function' && _tryStunOrKill(e)) {
@@ -7734,8 +7741,20 @@ function createExplosion(x, y, size) {
     for (const d of enemyDrones) {
       if (!d.alive) continue;
       if (Math.hypot(d.x-x, d.y-y) < radius) {
-        d.hp -= (size === 'big' ? 80 : 60);
+        d.hp -= aoeDmg;
         if (d.hp <= 0) { d.alive = false; game.score += 150; game.killCount++; }
+      }
+    }
+    // Phase 110d — 'huge' tier (FPV kamikaze) also chews through any
+    // player-built structures inside the blast. 200 dmg per hit one-shots
+    // basic walls and 2-shots reinforced ones. Smaller sizes leave
+    // structures alone so a stray grenade doesn't trash someone's base.
+    if (size === 'huge' && typeof game !== 'undefined' && game._structures) {
+      for (const s of game._structures) {
+        if (!s || s.hp <= 0) continue;
+        if (Math.hypot(s.x - x, s.y - y) < radius) {
+          s.hp -= 200;
+        }
       }
     }
   }
@@ -8108,12 +8127,13 @@ function updateFPV() {
 // needing an impact condition).
 function _detonateFPV(manual) {
   if (!fpv.active) return;
-  // Phase 7 (user feedback '爆炸效果更強 更痛'):
-  // 'medium' → 'big' (radius 65→90, AoE dmg 60→80 to enemies + enemyDrones).
-  // Add camera shake + low-pitch boom for impact.
-  createExplosion(fpv.x, fpv.y, 'big');
-  if (typeof triggerShake === 'function') triggerShake(5);
-  if (typeof emitSound === 'function') emitSound(fpv.x, fpv.y, 360, false);
+  // Phase 110d — escalated from 'big' → 'huge' (140-radius blast,
+  // 120 AOE dmg, also vaporises any player-built structures inside the
+  // radius). User: '自殺無人機的爆炸半徑更大, 範圍更廣, 傷害更強, 也
+  // 可以摧毀建築物'.
+  createExplosion(fpv.x, fpv.y, 'huge');
+  if (typeof triggerShake === 'function') triggerShake(8);
+  if (typeof emitSound === 'function') emitSound(fpv.x, fpv.y, 1700, false);
   fpv.active = false;
   if (game.mode === 'fpv') game.mode = 'tactical';
   showMessage(T(`FPV ${manual ? '手動引爆' : '命中'} · 剩余 ${fpv.available}`,
