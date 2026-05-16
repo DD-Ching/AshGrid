@@ -403,7 +403,13 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           player._invulnUntil = game.time + 180;
           player._lastX = a.x; player._lastY = a.y;
           player._velX = 0; player._velY = 0;
-          mouse.down = false;
+          // R2 — clear trigger edge through Input so the new pilot needs
+          // a fresh click. Same contract as manual pawn-swap.
+          if (typeof Input !== 'undefined' && Input.releaseTrigger) {
+            Input.releaseTrigger();
+          } else if (typeof mouse !== 'undefined') {
+            mouse.down = false;
+          }
           applyWeaponToPlayer(a._weapon || WEAPONS.RIFLE);
           // Phase 102 — chain-takeover semantics. User: 'A區被殺掉 →
           // 接管B載具@B區 → B再被殺掉 → 接管C載具@C區 → 最後來不及

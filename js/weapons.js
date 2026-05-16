@@ -174,7 +174,13 @@ function swapPlayerWeapon() {
   //           = true && !false = true → ONE shot, then _wasDown=true at
   //           frame end so the next semi shot needs a release+reclick
   //           (which is correct semi-auto behaviour anyway).
-  if (typeof mouse !== 'undefined') {
+  // R2 — go through Input. resetTriggerEdge keeps mouse.down (auto guns
+  // keep firing across swap) but clears _wasDown so semi-auto sees a
+  // rising edge from the held trigger. Same contract Phase 111c shipped,
+  // just no longer poking globals directly.
+  if (typeof Input !== 'undefined' && Input.resetTriggerEdge) {
+    Input.resetTriggerEdge();
+  } else if (typeof mouse !== 'undefined') {
     mouse._wasDown = false;
   }
   player.fireCooldown = 0;

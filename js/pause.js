@@ -33,8 +33,14 @@ function togglePause() {
   if (game.state !== 'playing') return;
   if (_isMpMode()) return;
   game._paused = !game._paused;
-  // Drop any held mouse so we don't keep firing on resume
-  if (game._paused) mouse.down = false;
+  // R2 — drop any held trigger through Input so resume needs a fresh click
+  if (game._paused) {
+    if (typeof Input !== 'undefined' && Input.releaseTrigger) {
+      Input.releaseTrigger();
+    } else if (typeof mouse !== 'undefined') {
+      mouse.down = false;
+    }
+  }
   // Phase 100 — show/hide the right-side pause ad banner.
   // Display-toggle keeps the iframe alive (GM doesn't have to re-fetch
   // a fresh ad every pause); we just visually hide/show it.

@@ -160,7 +160,14 @@ function swapPlayerToAlly(idx) {
   player._lastX = targetX; player._lastY = targetY;
   player._velX = 0; player._velY = 0;
   player._lastDeathX = null; player._lastDeathY = null;
-  mouse.down = false;
+  // R2 — go through Input so trigger edge state stays consistent. The
+  // new pilot must press mouse fresh before firing (releaseTrigger
+  // clears both .down AND ._wasDown).
+  if (typeof Input !== 'undefined' && Input.releaseTrigger) {
+    Input.releaseTrigger();
+  } else if (typeof mouse !== 'undefined') {
+    mouse.down = false;
+  }
   applyWeaponToPlayer(targetWeapon);
   player.hp = targetHp;   // applyWeaponToPlayer doesn't touch HP — be explicit
   // Phase 4: SEED follows the body. Player inherits the target ally's SEED

@@ -45,49 +45,53 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=142"></script>
-<script src="js/arena_recruitment.js?v=142"></script>
-<script src="js/dynamic_radio.js?v=142"></script>
-<script src="js/i18n.js?v=142"></script>
-<script src="js/touch_input.js?v=142"></script>
-<script src="js/key_bindings.js?v=142"></script>
-<script src="js/grenades.js?v=142"></script>
-<script src="js/squad_commands.js?v=142"></script>
-<script src="js/multiplayer.js?v=142"></script>
-<script src="js/leaderboard.js?v=142"></script>
-<script src="js/structures.js?v=142"></script>
-<script src="js/tod.js?v=142"></script>
-<script src="js/weapons.js?v=142"></script>
-<script src="js/chassis.js?v=142"></script>
-<script src="js/respawn_buff.js?v=142"></script>
-<script src="js/death_recap.js?v=142"></script>
-<script src="js/mote_affinity.js?v=142"></script>
-<script src="js/stage_hints.js?v=142"></script>
-<script src="js/pawn_swap.js?v=142"></script>
-<script src="js/global_stats.js?v=142"></script>
-<script src="js/progressive_unlock.js?v=142"></script>
-<script src="js/ad_stubs.js?v=142"></script>
+<script src="js/audio/sfx.js?v=143"></script>
+<script src="js/arena_recruitment.js?v=143"></script>
+<script src="js/dynamic_radio.js?v=143"></script>
+<script src="js/i18n.js?v=143"></script>
+<script src="js/touch_input.js?v=143"></script>
+<script src="js/key_bindings.js?v=143"></script>
+<script src="js/grenades.js?v=143"></script>
+<script src="js/squad_commands.js?v=143"></script>
+<script src="js/multiplayer.js?v=143"></script>
+<script src="js/leaderboard.js?v=143"></script>
+<script src="js/structures.js?v=143"></script>
+<script src="js/tod.js?v=143"></script>
+<script src="js/weapons.js?v=143"></script>
+<script src="js/chassis.js?v=143"></script>
+<script src="js/respawn_buff.js?v=143"></script>
+<script src="js/death_recap.js?v=143"></script>
+<script src="js/mote_affinity.js?v=143"></script>
+<script src="js/stage_hints.js?v=143"></script>
+<script src="js/pawn_swap.js?v=143"></script>
+<script src="js/global_stats.js?v=143"></script>
+<script src="js/progressive_unlock.js?v=143"></script>
+<script src="js/ad_stubs.js?v=143"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=142"></script>
+<script src="js/crazygames.js?v=143"></script>
 <!-- R1 refactor — explicit ad-lifecycle state machine. MUST load before
      gamemonetize.js so its window.adState is defined when GM forwards
      SDK events. See js/ad_state.js header for the state diagram. -->
-<script src="js/ad_state.js?v=142"></script>
+<script src="js/ad_state.js?v=143"></script>
+<!-- R2 refactor — Input module. Owns ALL writes to the global `mouse`
+     state + canvas-inset coord translation. See js/input.js header
+     for the trigger-edge primitives. -->
+<script src="js/input.js?v=143"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=142"></script>
+<script src="js/gamemonetize.js?v=143"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=142"></script>
-<script src="js/world_gen.js?v=142"></script>
-<script src="js/squad.js?v=142"></script>
-<script src="js/drone_fpv.js?v=142"></script>
-<script src="js/vision_raycast.js?v=142"></script>
-<script src="js/camera.js?v=142"></script>
-<script src="js/defense_build_ui.js?v=142"></script>
-<script src="js/pause.js?v=142"></script>
+<script src="js/missions/nn_deathmatch.js?v=143"></script>
+<script src="js/world_gen.js?v=143"></script>
+<script src="js/squad.js?v=143"></script>
+<script src="js/drone_fpv.js?v=143"></script>
+<script src="js/vision_raycast.js?v=143"></script>
+<script src="js/camera.js?v=143"></script>
+<script src="js/defense_build_ui.js?v=143"></script>
+<script src="js/pause.js?v=143"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -3113,8 +3117,14 @@ window.addEventListener('mousemove', e => {
   // read in CANVAS coords by the reticle, screenToWorld, hit rects,
   // etc., so we subtract the offset once here and everything else
   // downstream just works.
-  mouse.x = e.clientX;
-  mouse.y = e.clientY - HUD_AD_TOP;
+  // R2 — Input owns the canvas-coord translation. Falls back to inline
+  // math if input.js failed to load (defensive).
+  if (typeof Input !== 'undefined' && Input.onMouseMove) {
+    Input.onMouseMove(e);
+  } else {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY - HUD_AD_TOP;
+  }
   if (buildMode.active && isWallKind(buildMode.kind) && buildMode._dragStart
       && game.state === 'playing' && !game._paused) {
     const wp = screenToWorld(mouse.x, mouse.y);
@@ -3298,12 +3308,16 @@ window.addEventListener('mousedown', e => {
     e.preventDefault();
     return;
   }
-  mouse.down = true;
+  // R2 — Input owns mouse.down lifecycle
+  if (typeof Input !== 'undefined' && Input.onMouseDown) Input.onMouseDown();
+  else mouse.down = true;
 });
 
 window.addEventListener('mouseup', e => {
   if (e.button !== 0) return;
-  mouse.down = false;
+  // R2 — Input owns mouse.down lifecycle
+  if (typeof Input !== 'undefined' && Input.onMouseUp) Input.onMouseUp();
+  else mouse.down = false;
   // Map editor drag-release: walk start → end as a Bresenham line of cells.
   // Single-click case (start === end) is a no-op here because mousedown
   // already placed the start cell. So this runs ONLY for actual drags,
@@ -6892,7 +6906,9 @@ function updatePlayer() {
   if (mouse.down && !mouse._wasDown && player.ammo === 0 && player.reserve === 0) {
     playSfx('empty_click');
   }
-  mouse._wasDown = mouse.down;
+  // R2 — Input owns the trigger edge snapshot
+  if (typeof Input !== 'undefined' && Input.tickFrameEnd) Input.tickFrameEnd();
+  else mouse._wasDown = mouse.down;
   if (player.ammo === 0 && player.reserve > 0 && !player.reloading) startReload();
 
   if (player.reloading) {
