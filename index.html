@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=126"></script>
-<script src="js/arena_recruitment.js?v=126"></script>
-<script src="js/dynamic_radio.js?v=126"></script>
-<script src="js/i18n.js?v=126"></script>
-<script src="js/touch_input.js?v=126"></script>
-<script src="js/key_bindings.js?v=126"></script>
-<script src="js/grenades.js?v=126"></script>
-<script src="js/squad_commands.js?v=126"></script>
-<script src="js/multiplayer.js?v=126"></script>
-<script src="js/leaderboard.js?v=126"></script>
-<script src="js/structures.js?v=126"></script>
-<script src="js/tod.js?v=126"></script>
-<script src="js/weapons.js?v=126"></script>
-<script src="js/chassis.js?v=126"></script>
-<script src="js/respawn_buff.js?v=126"></script>
-<script src="js/death_recap.js?v=126"></script>
-<script src="js/mote_affinity.js?v=126"></script>
-<script src="js/stage_hints.js?v=126"></script>
-<script src="js/pawn_swap.js?v=126"></script>
-<script src="js/global_stats.js?v=126"></script>
-<script src="js/progressive_unlock.js?v=126"></script>
-<script src="js/ad_stubs.js?v=126"></script>
+<script src="js/audio/sfx.js?v=127"></script>
+<script src="js/arena_recruitment.js?v=127"></script>
+<script src="js/dynamic_radio.js?v=127"></script>
+<script src="js/i18n.js?v=127"></script>
+<script src="js/touch_input.js?v=127"></script>
+<script src="js/key_bindings.js?v=127"></script>
+<script src="js/grenades.js?v=127"></script>
+<script src="js/squad_commands.js?v=127"></script>
+<script src="js/multiplayer.js?v=127"></script>
+<script src="js/leaderboard.js?v=127"></script>
+<script src="js/structures.js?v=127"></script>
+<script src="js/tod.js?v=127"></script>
+<script src="js/weapons.js?v=127"></script>
+<script src="js/chassis.js?v=127"></script>
+<script src="js/respawn_buff.js?v=127"></script>
+<script src="js/death_recap.js?v=127"></script>
+<script src="js/mote_affinity.js?v=127"></script>
+<script src="js/stage_hints.js?v=127"></script>
+<script src="js/pawn_swap.js?v=127"></script>
+<script src="js/global_stats.js?v=127"></script>
+<script src="js/progressive_unlock.js?v=127"></script>
+<script src="js/ad_stubs.js?v=127"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=126"></script>
+<script src="js/crazygames.js?v=127"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=126"></script>
+<script src="js/gamemonetize.js?v=127"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=126"></script>
-<script src="js/world_gen.js?v=126"></script>
-<script src="js/squad.js?v=126"></script>
-<script src="js/drone_fpv.js?v=126"></script>
-<script src="js/vision_raycast.js?v=126"></script>
-<script src="js/camera.js?v=126"></script>
-<script src="js/defense_build_ui.js?v=126"></script>
-<script src="js/pause.js?v=126"></script>
+<script src="js/missions/nn_deathmatch.js?v=127"></script>
+<script src="js/world_gen.js?v=127"></script>
+<script src="js/squad.js?v=127"></script>
+<script src="js/drone_fpv.js?v=127"></script>
+<script src="js/vision_raycast.js?v=127"></script>
+<script src="js/camera.js?v=127"></script>
+<script src="js/defense_build_ui.js?v=127"></script>
+<script src="js/pause.js?v=127"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -2763,19 +2763,18 @@ function _updateRespawnAdSlot() {
 let _sideAdLeftEl  = null;
 let _sideAdRightEl = null;
 function _updateSideAdSlots() {
+  // Phase 106 — side ad rails permanently disabled. User: '广告不要在
+  // 不该跳出的时候跳出'. The 160×600 wide skyscraper format is also a
+  // dead end with GameMonetize (their SDK only ships VIDEO interstitials,
+  // not static banner inventory), so the rails were only ever showing the
+  // 'AshGrid 160×600' placeholder which adds noise without revenue.
+  // Death-overlay ad slot + flanking 336×280 slots stay (gated on team
+  // wipe in _updateRespawnAdSlot); preroll + end-match GM video calls
+  // also stay. This just kills the in-play sideboards.
   if (!_sideAdLeftEl)  _sideAdLeftEl  = document.getElementById('sideAdLeft');
   if (!_sideAdRightEl) _sideAdRightEl = document.getElementById('sideAdRight');
-  if (!_sideAdLeftEl || !_sideAdRightEl) return;
-  const playing = (typeof game !== 'undefined') && game.state === 'playing';
-  const wideEnough = window.innerWidth >= 1280;
-  // Also need enough vertical room — 600px ad + ~30px label/padding.
-  // On 720px-tall windows the rail would clip; hide it then.
-  const tallEnough = window.innerHeight >= 700;
-  const isMobile = (typeof touchInput !== 'undefined') && touchInput.enabled;
-  const visible = playing && wideEnough && tallEnough && !isMobile;
-  const want = visible ? 'block' : 'none';
-  if (_sideAdLeftEl.style.display  !== want) _sideAdLeftEl.style.display  = want;
-  if (_sideAdRightEl.style.display !== want) _sideAdRightEl.style.display = want;
+  if (_sideAdLeftEl  && _sideAdLeftEl.style.display  !== 'none') _sideAdLeftEl.style.display  = 'none';
+  if (_sideAdRightEl && _sideAdRightEl.style.display !== 'none') _sideAdRightEl.style.display = 'none';
 }
 
 // Sprint tuning
@@ -10749,9 +10748,9 @@ function renderHUD() {
   // ammo bar at the bottom (drawn later); no caching for the narrow
   // path because there's only ~1 panel of work.
   const _narrow = W() < 560;
-  const _missionW = _narrow ? 200 : 290;
+  const _missionW = _narrow ? 180 : 232;
   if (_narrow) {
-    _hud_drawMissionCard(16, 16, _missionW, 100);
+    _hud_drawMissionCard(14, 14, _missionW, 92);
     game._squadChipRects = null;
   } else {
     _hudDrawCachedPanels();
@@ -10764,7 +10763,7 @@ function renderHUD() {
   if (_isMpModeForBtn) {
     game._pauseBtnRect = null;
   } else {
-    const _pbX = 16 + _missionW - 24, _pbY = 22, _pbW = 18, _pbH = 18;
+    const _pbX = 14 + _missionW - 22, _pbY = 18, _pbW = 16, _pbH = 16;
     ctx.fillStyle = 'rgba(200, 38, 28, 0.85)';
     ctx.fillRect(_pbX, _pbY, _pbW, _pbH);
     ctx.fillStyle = COLORS.cream;
@@ -11570,13 +11569,16 @@ const _HUD_PANEL_INTERVAL = 6;   // ticks (10 Hz at TICK_HZ=60)
 let _hudCacheRegions = [];
 
 function _hudComputeRegions() {
+  // Phase 106 — tighter / shorter rects matching the new dark compact
+  // sizes. Squad dots column moves outside the mission card so they
+  // don't share a region with it.
   _hudCacheRegions = [
-    { x: 14,          y: 14,         w: 296,                       h: 136 },  // mission card
-    { x: 14,          y: 156,        w: 296,                       h: 214 },  // squad strip
-    { x: W()/2 - 112, y: 12,         w: 224,                       h: 32  },  // mode chip
-    { x: W() - 312,   y: 14,         w: 298,                       h: 136 },  // score block
-    { x: 14,          y: H() - 200,  w: 420,                       h: 192 },  // vitals card (generous box)
-    { x: 440,         y: H() - 124,  w: Math.max(420, W() - 730),  h: 116 },  // action bar
+    { x: 12,          y: 12,         w: 236,                       h: 114 },  // mission card
+    { x: 12,          y: 132,        w: 32,                        h: 162 },  // squad dots column (5 × 26 + 4 × 6 = 154 tall)
+    { x: W()/2 - 102, y: 10,         w: 204,                       h: 28  },  // mode chip
+    { x: W() - 248,   y: 12,         w: 236,                       h: 114 },  // score block
+    { x: 12,          y: H() - 164,  w: 304,                       h: 152 },  // vitals card (generous box)
+    { x: 326,         y: H() - 100,  w: Math.max(420, W() - 600),  h: 86  },  // action bar
   ];
 }
 
@@ -11606,18 +11608,18 @@ function _hudDrawCachedPanels() {
   const refresh = (tick - _hudPanelLastTick) >= _HUD_PANEL_INTERVAL;
   if (refresh) {
     _hudPanelLastTick = tick;
-    // Fresh render onto MAIN canvas.
-    _hud_drawMissionCard(16, 16, 290, 132);
-    _hud_drawSquadStrip(16, 156, 290, 210);
+    // Phase 106 — fresh render onto MAIN canvas at the new compact sizes.
+    _hud_drawMissionCard(14, 14, 232, 110);
+    _hud_drawSquadDots(14, 134);                       // 5 × 26 + 4 × 6 = 154 tall
     _hud_drawModeChip();
-    _hud_drawScoreBlock(W() - 16 - 294, 16, 294, 132);
+    _hud_drawScoreBlock(W() - 14 - 232, 14, 232, 110);
     const _hasArmor = player._chassis === 'heavy' && player.maxArmor > 0;
     const _vRows = 1 + (_hasArmor ? 1 : 0) + (game._nnMode ? 1 : 0);
-    const _vCardH = 30 + _vRows * 28 + 24;
-    _hud_drawVitalsCard(16, H() - _vCardH - 12, 414, _vCardH);
-    const _aX = 16 + 414 + 12;
-    const _aW = Math.max(420, W() - _aX - 280);
-    _hud_drawActionBar(_aX, H() - 98 - 12, _aW, 98);
+    const _vCardH = 26 + _vRows * 21 + 20;             // header + bars + chip
+    _hud_drawVitalsCard(14, H() - _vCardH - 12, 300, _vCardH);
+    const _aX = 14 + 300 + 12;
+    const _aW = Math.max(420, W() - _aX - 270);
+    _hud_drawActionBar(_aX, H() - 86 - 12, _aW, 86);
     // Snapshot the 6 regions from main canvas → offscreen cache.
     _hudCacheCtx.clearRect(0, 0, _hudCacheCanvas.width, _hudCacheCanvas.height);
     for (const r of _hudCacheRegions) {
@@ -11634,227 +11636,226 @@ function _hudDrawCachedPanels() {
   return refresh;
 }
 
-// ============ HUD: PHASE 104 REDESIGN ============
-// Six-zone HUD redesign per user's GPT mockup. Each helper draws ONE
-// cream-card panel; renderHUD() composes them on a 0.5-second-read
-// layout:
-//   TL = Mission Status     TR = Score Block
-//   left strip = Squad      bottom-left = Vitals Card
-//   bottom-center = Action Bar (R F Q E B G)
-//   bottom-right = Minimap (+ legend underneath)
-// Style preserved (cream + red border + segmented bars). No neon, no
-// sci-fi gradients. Resolves the G/G ambiguity by adopting F as the
-// FRAG primary hotkey (G still falls through to throwGrenade() when no
-// recruit / mine target is in range — see key_bindings.js).
+// ============ HUD: PHASE 106 DARK COMPACT ============
+// Phase 104 introduced the 6-zone HUD with cream cards; Phase 106 swaps
+// them to a dark / charcoal palette (matching the V-07 sample card in
+// the user's mockup), tightens dimensions ~25%, and replaces the wide
+// Squad Status strip with five tiny HP-fill circles on the far left.
+// User: '能不能像图片这样用暗色系... 不要到处都很亮... 队友载具的槽位
+// 不用了那么大... 五颗球, 五个圈圈在最左侧'.
+//
+// Style: dark card body + red left stripe + slim red border, red /
+// cream headers, segmented bars unchanged. G/G ambiguity still resolved
+// the Phase-104 way (F = FRAG, G = RECRUIT).
+
+function _hud_drawCard(x, y, w, h) {
+  // Dark charcoal card with red left stripe + slim red border.
+  ctx.fillStyle = 'rgba(20, 22, 28, 0.94)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(200, 38, 28, 0.85)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.fillStyle = COLORS.red;
+  ctx.fillRect(x, y, 3, h);
+}
 
 function _hud_drawMissionCard(x, y, w, h) {
-  drawHUDPanel(x, y, w, h, null);
+  _hud_drawCard(x, y, w, h);
   // Header: MSN · <map name>
   ctx.fillStyle = COLORS.red;
-  ctx.font = 'bold 10px sans-serif';
-  ctx.fillText('MSN', x + 14, y + 22);
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 13px sans-serif';
-  const _mapNm = (typeof mapName === 'function') ? mapName(currentMap) : 'ARENA';
-  ctx.fillText(`· ${(_mapNm || 'ARENA').toUpperCase()}`, x + 40, y + 22);
-  // Stage
-  ctx.fillStyle = COLORS.black;
+  ctx.font = 'bold 9px sans-serif';
+  ctx.fillText('MSN', x + 12, y + 18);
+  ctx.fillStyle = COLORS.cream;
   ctx.font = 'bold 11px sans-serif';
-  ctx.fillText(`STAGE ${game.wave || 1}/${MISSIONS.length}`, x + 14, y + 44);
-  // Objective (NN arena = RECRUIT, fallback ELIMINATE)
+  const _mapNm = (typeof mapName === 'function') ? mapName(currentMap) : 'ARENA';
+  ctx.fillText(`· ${(_mapNm || 'ARENA').toUpperCase()}`, x + 36, y + 18);
+  // Stage
+  ctx.fillStyle = '#aaa';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillText(`STAGE ${game.wave || 1}/${MISSIONS.length}`, x + 12, y + 36);
+  // Objective
   const obj = game._nnMode ? 'RECRUIT' : 'ELIMINATE';
-  ctx.fillStyle = COLORS.black;
-  ctx.font = '11px sans-serif';
-  ctx.fillText(`OBJECTIVE: ${obj}`, x + 14, y + 64);
-  // Enemies + Squad on same row
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = '10px sans-serif';
+  ctx.fillText(`OBJECTIVE: ${obj}`, x + 12, y + 52);
+  // Enemies + Squad
   const _remaining = enemies.filter(e=>e.alive).length
                    + (typeof enemyDrones !== 'undefined' ? enemyDrones.filter(d=>d.alive).length : 0);
   const _sqAlive = allies.filter(a=>a.alive).length;
   ctx.fillStyle = COLORS.red;
-  ctx.font = 'bold 11px sans-serif';
-  ctx.fillText(`ENEMIES ${_remaining}`, x + 14, y + 88);
-  ctx.fillStyle = COLORS.black;
-  ctx.fillText(`SQUAD ${_sqAlive}/${allies.length}`, x + 14 + 112, y + 88);
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillText(`ENEMIES ${_remaining}`, x + 12, y + 72);
+  ctx.fillStyle = '#aaa';
+  ctx.fillText(`SQUAD ${_sqAlive}/${allies.length}`, x + 12 + 90, y + 72);
   // SEED GATE indicator + [G] chip when ready
   if (game._nnMode) {
     const sv = Math.floor(player._seed || 0);
     const over = sv > ARENA_SEED_GAP;
-    ctx.fillStyle = over ? '#1E9A4A' : COLORS.gray;
-    ctx.font = 'bold 11px sans-serif';
-    ctx.fillText(`SEED GATE: ${over ? 'READY' : 'LOCKED'}`, x + 14, y + 112);
+    ctx.fillStyle = over ? '#3CD46A' : '#777';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText(`SEED: ${over ? 'READY' : 'LOCKED'}`, x + 12, y + 92);
     if (over) {
-      const bx = x + 14 + 120;
+      const bx = x + 12 + 84;
       ctx.fillStyle = '#1E9A4A';
-      ctx.fillRect(bx, y + 100, 18, 16);
+      ctx.fillRect(bx, y + 82, 16, 14);
       ctx.fillStyle = COLORS.cream;
-      ctx.font = 'bold 11px monospace';
+      ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('G', bx + 9, y + 112);
+      ctx.fillText('G', bx + 8, y + 92);
       ctx.textAlign = 'left';
     }
   }
 }
 
-function _hud_drawSquadStrip(x, y, w, h) {
-  drawHUDPanel(x, y, w, h, null);
-  ctx.fillStyle = COLORS.red;
-  ctx.font = 'bold 9px sans-serif';
-  ctx.fillText('SQUAD STATUS  [1-5 TO SWITCH]', x + 14, y + 16);
+function _hud_drawSquadDots(x, y) {
+  // 5 small HP-fill circles, vertical column. Each: dark backing disc +
+  // red bottom-up fill = ally HP%, red ring outline when alive (grey
+  // when dead/empty), slot number centered. Self (slot 1) is non-
+  // clickable; slots 2-5 push click rects for pawn-swap input.
   game._squadChipRects = [];
-  const headerH = 24;
-  const rowH = (h - headerH - 8) / 5;
+  const d = 26, gap = 6;
   const _touchPad = (typeof touchInput !== 'undefined' && touchInput.enabled) ? 6 : 0;
-  // Build 5 rows: 0 = YOU, 1-4 = allies (or MP team-0 bots)
   const rows = [{
-    label: 'YOU', alive: player.alive,
-    hp: Math.max(0, Math.floor(player.hp)),
-    maxHp: player.maxHp, isSelf: true
+    label: '1', alive: player.alive,
+    hp: Math.max(0, Math.floor(player.hp)), maxHp: player.maxHp, isSelf: true,
   }];
   for (let i = 0; i < 4; i++) {
     const a = allies[i];
-    if (a) {
-      rows.push({
-        label: (a.callsign || '?').toString().slice(0, 4),
-        alive: a.alive,
-        hp: a.alive ? Math.max(0, Math.floor(a.hp)) : 0,
-        maxHp: a.maxHp || 100,
-        allyIdx: i,
-      });
-    } else {
-      rows.push({ label: '——', alive: false, hp: 0, maxHp: 100, empty: true });
-    }
+    rows.push(a ? {
+      label: `${i+2}`, alive: a.alive,
+      hp: a.alive ? Math.max(0, Math.floor(a.hp)) : 0,
+      maxHp: a.maxHp || 100, allyIdx: i,
+    } : { label: `${i+2}`, alive: false, hp: 0, maxHp: 100, empty: true });
   }
   for (let r = 0; r < 5; r++) {
     const row = rows[r];
-    const ry = y + headerH + r * rowH;
-    const aliveCol = row.alive ? COLORS.black : COLORS.gray;
-    // [N] number badge
-    ctx.fillStyle = row.alive ? COLORS.red : COLORS.lightGray;
-    ctx.fillRect(x + 12, ry + 4, 22, rowH - 8);
-    ctx.fillStyle = row.alive ? COLORS.cream : '#666';
-    ctx.font = 'bold 13px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`${r+1}`, x + 23, ry + rowH/2 + 5);
-    ctx.textAlign = 'left';
-    // Label
-    ctx.fillStyle = aliveCol;
-    ctx.font = 'bold 11px sans-serif';
-    ctx.fillText(row.label, x + 42, ry + rowH/2);
-    // HP value (right-aligned)
-    ctx.fillStyle = row.alive ? COLORS.gray : COLORS.lightGray;
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(row.alive ? `HP ${row.hp}` : '——', x + w - 14, ry + rowH/2);
-    ctx.textAlign = 'left';
-    // HP bar
-    const bx = x + 42, by = ry + rowH/2 + 6, bw = w - 56 - 4, bh = 4;
-    ctx.fillStyle = COLORS.creamDark;
-    ctx.fillRect(bx, by, bw, bh);
-    if (row.alive && row.maxHp > 0) {
-      ctx.fillStyle = (row.hp / row.maxHp > 0.3) ? '#C8261C' : '#7A2A22';
-      ctx.fillRect(bx, by, bw * (row.hp / row.maxHp), bh);
+    const cx = x + d/2;
+    const cy = y + r * (d + gap) + d/2;
+    const hpFrac = row.alive && row.maxHp > 0 ? row.hp / row.maxHp : 0;
+    // Dark backing disc
+    ctx.fillStyle = 'rgba(20, 22, 28, 0.92)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, d/2, 0, Math.PI*2);
+    ctx.fill();
+    // HP fill — clipped to inner disc, fills bottom-up
+    if (row.alive && hpFrac > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, d/2 - 2, 0, Math.PI*2);
+      ctx.clip();
+      const fillH = (d - 4) * hpFrac;
+      ctx.fillStyle = hpFrac > 0.3 ? '#C8261C' : '#7A2A22';
+      ctx.fillRect(cx - d/2, cy + d/2 - fillH - 2, d, fillH);
+      ctx.restore();
     }
-    // Click rect (skip self)
+    // Ring outline
+    ctx.strokeStyle = row.alive ? COLORS.red : '#555';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, d/2, 0, Math.PI*2);
+    ctx.stroke();
+    // Number
+    ctx.fillStyle = row.alive ? COLORS.cream : '#777';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(row.label, cx, cy + 4);
+    ctx.textAlign = 'left';
+    // Click rect (not self, not empty)
     if (!row.empty && !row.isSelf) {
       game._squadChipRects.push({
-        x: x + 8 - _touchPad, y: ry - _touchPad,
-        w: w - 16 + _touchPad * 2, h: rowH + _touchPad * 2,
-        allyIdx: row.allyIdx, alive: row.alive
+        x: cx - d/2 - _touchPad, y: cy - d/2 - _touchPad,
+        w: d + _touchPad*2, h: d + _touchPad*2,
+        allyIdx: row.allyIdx, alive: row.alive,
       });
     }
   }
 }
 
 function _hud_drawModeChip() {
-  if (W() < 560) return;   // hide on narrow
+  if (W() < 560) return;
   const lbl = getModeLabel() || 'TACTICAL';
-  const cw = 220, ch = 26;
-  const cx = W()/2 - cw/2, cy = 14;
+  const cw = 200, ch = 22;
+  const cx = W()/2 - cw/2, cy = 12;
   ctx.fillStyle = COLORS.red;
-  ctx.fillRect(cx, cy, cw, 2);
-  ctx.fillStyle = 'rgba(232, 228, 216, 0.96)';
+  ctx.fillRect(cx, cy, cw, 1.5);
+  ctx.fillStyle = 'rgba(20, 22, 28, 0.92)';
   ctx.fillRect(cx, cy + 2, cw, ch);
-  ctx.strokeStyle = COLORS.black;
+  ctx.strokeStyle = 'rgba(200, 38, 28, 0.8)';
   ctx.lineWidth = 1;
-  ctx.strokeRect(cx, cy + 2, cw, ch);
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 11px sans-serif';
+  ctx.strokeRect(cx + 0.5, cy + 2.5, cw - 1, ch - 1);
+  ctx.fillStyle = COLORS.cream;
+  ctx.font = 'bold 10px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(lbl.toUpperCase(), W()/2, cy + 20);
+  ctx.fillText(lbl.toUpperCase(), W()/2, cy + 17);
   ctx.textAlign = 'left';
 }
 
 function _hud_drawScoreBlock(x, y, w, h) {
-  drawHUDPanel(x, y, w, h, null);
+  _hud_drawCard(x, y, w, h);
   ctx.fillStyle = COLORS.red;
-  ctx.font = 'bold 10px sans-serif';
-  ctx.fillText('SCORE', x + 14, y + 22);
+  ctx.font = 'bold 9px sans-serif';
+  ctx.fillText('SCORE', x + 12, y + 18);
   const sShown = (game._scoreDisplay != null)
     ? Math.floor(game._scoreDisplay)
     : (game.score || 0);
   ctx.fillStyle = COLORS.red;
-  ctx.font = 'bold 34px sans-serif';
-  ctx.fillText(`${sShown}`, x + 14, y + 60);
-  // K / D / T row
+  ctx.font = 'bold 28px sans-serif';
+  ctx.fillText(`${sShown}`, x + 12, y + 50);
   const kills = game.killCount || 0;
   const deaths = game.deaths || 0;
   const mins = Math.floor((game.time || 0) / 3600);
   const secs = Math.floor(((game.time || 0) / 60) % 60);
   const tStr = `${mins}:${secs < 10 ? '0' + secs : secs}`;
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 10px monospace';
-  ctx.fillText(`KILLS ${kills}   DEATHS ${deaths}   TIME ${tStr}`, x + 14, y + 92);
-  // MP line
-  ctx.font = 'bold 10px monospace';
-  ctx.fillStyle = COLORS.gray;
+  ctx.fillStyle = '#aaa';
+  ctx.font = 'bold 9px monospace';
+  ctx.fillText(`K ${kills}   D ${deaths}   T ${tStr}`, x + 12, y + 72);
+  ctx.fillStyle = '#777';
+  ctx.font = '9px monospace';
   let mpStr;
   if (typeof _mpIsActive === 'function' && _mpIsActive()) {
     const visible = _mpState ? _mpState.remotePlayers.size + 1 : 1;
     const peers = (_mpState && _mpState.room && _mpState.room.getPeers)
       ? Object.keys(_mpState.room.getPeers()).length + 1
       : visible;
-    const roomLbl = (_mpState && _mpState.roomName) ? _mpState.roomName.slice(0, 14) : 'room';
-    mpStr = `MP · ${peers} PEER · ${roomLbl.toUpperCase()}`;
+    const roomLbl = (_mpState && _mpState.roomName) ? _mpState.roomName.slice(0, 12) : 'room';
+    mpStr = `MP · ${peers} · ${roomLbl.toUpperCase()}`;
   } else {
     mpStr = 'SOLO · NN ARENA';
   }
-  ctx.fillText(mpStr, x + 14, y + h - 14);
+  ctx.fillText(mpStr, x + 12, y + h - 10);
 }
 
 function _hud_drawVitalsCard(x, y, w, h) {
-  drawHUDPanel(x, y, w, h, null);
+  _hud_drawCard(x, y, w, h);
   // Header
   ctx.fillStyle = COLORS.red;
-  ctx.font = 'bold 11px sans-serif';
+  ctx.font = 'bold 10px sans-serif';
   const chassisLbl = (player._chassis || 'humanoid').toUpperCase();
-  ctx.fillText(`V-07 · ${chassisLbl} UNIT`, x + 14, y + 22);
-  const barX = x + 14, barW = w - 28, barH = 14;
-  let by = y + 42;
+  ctx.fillText(`V-07 · ${chassisLbl}`, x + 12, y + 18);
+  const barX = x + 12, barW = w - 24, barH = 11;
+  let by = y + 34;
   // ARMOR (heavy only)
   if (player._chassis === 'heavy' && player.maxArmor > 0) {
-    ctx.fillStyle = COLORS.black;
-    ctx.font = 'bold 9px monospace';
-    ctx.fillText('ARMOR', barX, by - 2);
+    ctx.fillStyle = '#aaa';
+    ctx.font = 'bold 8px monospace';
+    ctx.fillText('ARMOR', barX, by - 1);
     ctx.textAlign = 'right';
-    ctx.fillText(`${Math.floor(player.armor)}/${player.maxArmor}`, barX + barW, by - 2);
+    ctx.fillText(`${Math.floor(player.armor)}/${player.maxArmor}`, barX + barW, by - 1);
     ctx.textAlign = 'left';
-    ctx.fillStyle = COLORS.creamDark;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(barX, by, barW, barH);
     ctx.fillStyle = '#42B7E8';
     ctx.fillRect(barX, by, barW * Math.max(0, player.armor) / player.maxArmor, barH);
-    ctx.strokeStyle = COLORS.black;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(barX, by, barW, barH);
-    by += barH + 14;
+    by += barH + 10;
   }
   // HP (with damage trail)
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 9px monospace';
-  ctx.fillText('HP', barX, by - 2);
+  ctx.fillStyle = '#aaa';
+  ctx.font = 'bold 8px monospace';
+  ctx.fillText('HP', barX, by - 1);
   ctx.textAlign = 'right';
-  ctx.fillText(`${Math.max(0, Math.floor(player.hp))}/${player.maxHp}`, barX + barW, by - 2);
+  ctx.fillText(`${Math.max(0, Math.floor(player.hp))}/${player.maxHp}`, barX + barW, by - 1);
   ctx.textAlign = 'left';
-  ctx.fillStyle = COLORS.creamDark;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(barX, by, barW, barH);
   const _hpTrail = (player._hpTrail != null) ? player._hpTrail : player.hp;
   if (_hpTrail > player.hp + 0.5) {
@@ -11863,140 +11864,130 @@ function _hud_drawVitalsCard(x, y, w, h) {
   }
   ctx.fillStyle = player.hp > player.maxHp * 0.3 ? '#C8261C' : '#7A1A14';
   ctx.fillRect(barX, by, barW * Math.max(0, player.hp) / player.maxHp, barH);
-  ctx.strokeStyle = COLORS.black;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(barX, by, barW, barH);
-  by += barH + 14;
+  by += barH + 10;
   // SEED INTEGRITY
   if (game._nnMode) {
     const sv = Math.floor(player._seed || 0);
     const sFrac = Math.max(0, Math.min(1, sv / ARENA_SEED_MAX));
     const over = sv > ARENA_SEED_GAP;
-    ctx.fillStyle = COLORS.black;
-    ctx.font = 'bold 9px monospace';
-    ctx.fillText('SEED INTEGRITY', barX, by - 2);
+    ctx.fillStyle = '#aaa';
+    ctx.font = 'bold 8px monospace';
+    ctx.fillText('SEED', barX, by - 1);
     ctx.textAlign = 'right';
-    ctx.fillText(`${sv}/${ARENA_SEED_MAX}`, barX + barW, by - 2);
+    ctx.fillText(`${sv}/${ARENA_SEED_MAX}`, barX + barW, by - 1);
     ctx.textAlign = 'left';
-    ctx.fillStyle = COLORS.creamDark;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(barX, by, barW, barH);
     const gateFrac = Math.min(1, ARENA_SEED_GAP / ARENA_SEED_MAX);
     ctx.fillStyle = 'rgba(200, 38, 28, 0.55)';
     ctx.fillRect(barX + barW * gateFrac - 1, by - 2, 2, barH + 4);
     ctx.fillStyle = over ? '#E67A2C' : '#A8682E';
     ctx.fillRect(barX, by, barW * sFrac, barH);
-    ctx.strokeStyle = COLORS.black;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(barX, by, barW, barH);
-    by += barH + 14;
+    by += barH + 10;
   }
-  // AIM ASSIST chip row (bottom)
-  const chipY = y + h - 16;
-  ctx.fillStyle = COLORS.gray;
-  ctx.font = 'bold 9px sans-serif';
+  // AIM ASSIST chip
+  const chipY = y + h - 12;
+  ctx.fillStyle = '#888';
+  ctx.font = 'bold 8px sans-serif';
   ctx.fillText('AIM ASSIST', barX, chipY);
-  ctx.fillStyle = player._aimAssist ? '#1E9A4A' : COLORS.lightGray;
+  ctx.fillStyle = player._aimAssist ? '#3CD46A' : '#444';
   ctx.beginPath();
-  ctx.arc(barX + 80, chipY - 3, 4, 0, Math.PI*2);
+  ctx.arc(barX + 68, chipY - 3, 3.5, 0, Math.PI*2);
   ctx.fill();
-  ctx.fillStyle = COLORS.black;
-  ctx.font = 'bold 9px sans-serif';
-  ctx.fillText(player._aimAssist ? 'ON' : 'OFF', barX + 90, chipY);
-  ctx.fillStyle = COLORS.gray;
-  ctx.font = '9px monospace';
-  ctx.fillText('(V) TOGGLE', barX + 120, chipY);
+  ctx.fillStyle = player._aimAssist ? '#3CD46A' : '#777';
+  ctx.font = 'bold 8px sans-serif';
+  ctx.fillText(player._aimAssist ? 'ON' : 'OFF', barX + 78, chipY);
+  ctx.fillStyle = '#666';
+  ctx.font = '8px monospace';
+  ctx.fillText('(V)', barX + 104, chipY);
 }
 
 function _hud_drawActionBar(x, y, w, h) {
-  // 6 cells: R / F / Q / E / B / G
+  // 6 dark cells: R / F / Q / E / B / G
   const cellW = Math.floor(w / 6);
   const _gOver = game._nnMode && (player._seed || 0) > ARENA_SEED_GAP;
   const cells = [
-    { hk: 'R', name: 'RELOAD',  big: `${player.ammo}`, sub: `/${player.reserve}` },
-    { hk: 'F', name: 'FRAG',    big: `${player.grenades}`, sub: `/${player.maxGrenades}` },
+    { hk: 'R', name: 'RELOAD',  big: `${player.ammo}`,         sub: `/${player.reserve}` },
+    { hk: 'F', name: 'FRAG',    big: `${player.grenades}`,     sub: `/${player.maxGrenades}` },
     { hk: 'Q', name: 'UAV',     big: `${drone.battery.toFixed(0)}`, sub: '%' },
-    { hk: 'E', name: 'FPV',     big: `${fpv.available}`, sub: `/${fpv.max}` },
+    { hk: 'E', name: 'FPV',     big: `${fpv.available}`,       sub: `/${fpv.max}` },
     { hk: 'B', name: 'BUILD',   big: 'READY', sub: null },
     { hk: 'G', name: 'RECRUIT', big: _gOver ? 'READY' : 'LOCK', sub: null },
   ];
-  // Panel
-  ctx.fillStyle = 'rgba(232, 228, 216, 0.94)';
+  // Dark panel
+  ctx.fillStyle = 'rgba(20, 22, 28, 0.94)';
   ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = COLORS.black;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(200, 38, 28, 0.85)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
   ctx.fillStyle = COLORS.red;
-  ctx.fillRect(x, y, 4, h);
+  ctx.fillRect(x, y, 3, h);
   for (let i = 0; i < 6; i++) {
     const cx = x + i * cellW;
     if (i > 0) {
-      ctx.fillStyle = COLORS.creamDark;
-      ctx.fillRect(cx, y + 8, 1, h - 16);
+      ctx.fillStyle = 'rgba(200, 38, 28, 0.25)';
+      ctx.fillRect(cx, y + 6, 1, h - 12);
     }
     const c = cells[i];
-    // Hotkey badge
-    ctx.fillStyle = COLORS.black;
-    ctx.fillRect(cx + 12, y + 10, 18, 18);
+    // Hotkey badge (red)
+    ctx.fillStyle = COLORS.red;
+    ctx.fillRect(cx + 10, y + 8, 16, 16);
     ctx.fillStyle = COLORS.cream;
-    ctx.font = 'bold 12px monospace';
+    ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(c.hk, cx + 21, y + 23);
+    ctx.fillText(c.hk, cx + 18, y + 20);
     ctx.textAlign = 'left';
     // Name
-    ctx.fillStyle = COLORS.black;
-    ctx.font = 'bold 10px sans-serif';
-    ctx.fillText(c.name, cx + 36, y + 23);
+    ctx.fillStyle = '#aaa';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText(c.name, cx + 30, y + 20);
     // Big value
     if (c.big === 'READY' || c.big === 'LOCK' || c.big === 'LOCKED') {
-      ctx.fillStyle = (c.big === 'READY') ? '#1E9A4A' : COLORS.gray;
-      ctx.font = 'bold 14px sans-serif';
-      ctx.fillText(c.big, cx + 14, y + 52);
+      ctx.fillStyle = (c.big === 'READY') ? '#3CD46A' : '#666';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText(c.big, cx + 12, y + 44);
     } else {
-      ctx.fillStyle = COLORS.black;
-      ctx.font = 'bold 22px sans-serif';
-      ctx.fillText(c.big, cx + 14, y + 56);
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText(c.big, cx + 12, y + 48);
       if (c.sub) {
-        ctx.fillStyle = COLORS.gray;
-        ctx.font = 'bold 11px monospace';
+        ctx.fillStyle = '#888';
+        ctx.font = 'bold 9px monospace';
         const _bw = ctx.measureText(c.big).width;
-        ctx.fillText(c.sub, cx + 18 + _bw, y + 56);
+        ctx.fillText(c.sub, cx + 16 + _bw, y + 48);
       }
     }
     // Per-cell extras
     if (i === 0) {
-      // Reload progress / hint
       if (player.reloading) {
         const _rt = (player.reloadTime || 0) / 80;
         const _rtEase = 1 - _rt * _rt;
         ctx.fillStyle = COLORS.red;
-        ctx.fillRect(cx + 14, y + h - 14, (cellW - 28) * _rtEase, 3);
+        ctx.fillRect(cx + 12, y + h - 10, (cellW - 24) * _rtEase, 2);
       } else {
-        ctx.fillStyle = COLORS.gray;
-        ctx.font = '9px monospace';
-        ctx.fillText('MAG', cx + 14, y + h - 8);
+        ctx.fillStyle = '#666';
+        ctx.font = '8px monospace';
+        ctx.fillText('MAG', cx + 12, y + h - 6);
       }
     }
     if (i === 1) {
-      // FRAG pips
       for (let g = 0; g < (player.maxGrenades || 0); g++) {
-        ctx.fillStyle = g < player.grenades ? COLORS.black : COLORS.lightGray;
+        ctx.fillStyle = g < player.grenades ? COLORS.red : '#444';
         ctx.beginPath();
-        ctx.arc(cx + 18 + g * 10, y + h - 12, 3, 0, Math.PI*2);
+        ctx.arc(cx + 16 + g * 9, y + h - 8, 2.5, 0, Math.PI*2);
         ctx.fill();
       }
     }
     if (i === 2) {
-      // UAV battery sliver
-      ctx.fillStyle = COLORS.creamDark;
-      ctx.fillRect(cx + 14, y + h - 14, cellW - 28, 4);
-      ctx.fillStyle = drone.battery > 30 ? COLORS.black : COLORS.red;
-      ctx.fillRect(cx + 14, y + h - 14, (cellW - 28) * (drone.battery / drone.maxBattery), 4);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(cx + 12, y + h - 10, cellW - 24, 3);
+      ctx.fillStyle = drone.battery > 30 ? '#C8261C' : '#7A2A22';
+      ctx.fillRect(cx + 12, y + h - 10, (cellW - 24) * (drone.battery / drone.maxBattery), 3);
     }
     if (i === 3) {
-      // FPV pip squares
       for (let f = 0; f < fpv.max; f++) {
-        ctx.fillStyle = f < fpv.available ? '#C8261C' : COLORS.lightGray;
-        ctx.fillRect(cx + 14 + f * 12, y + h - 14, 9, 8);
+        ctx.fillStyle = f < fpv.available ? '#C8261C' : '#444';
+        ctx.fillRect(cx + 12 + f * 10, y + h - 10, 7, 6);
       }
     }
   }
@@ -12004,24 +11995,23 @@ function _hud_drawActionBar(x, y, w, h) {
 
 function _hud_drawMinimapLegend(mx, my, mw, mh) {
   const ly = my + mh + 2;
-  if (ly + 16 > H()) return;   // no room below
-  // ● YOU · ENEMY ○ ALLY □ OBJ
+  if (ly + 14 > H()) return;
   ctx.font = 'bold 8px monospace';
   ctx.fillStyle = '#C8261C';
-  ctx.beginPath(); ctx.arc(mx + 12, ly + 8, 3, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = COLORS.black;
-  ctx.fillText('YOU', mx + 20, ly + 11);
-  ctx.fillStyle = COLORS.gray;
-  ctx.beginPath(); ctx.arc(mx + 52, ly + 8, 2, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = COLORS.black;
-  ctx.fillText('ENEMY', mx + 58, ly + 11);
-  ctx.strokeStyle = COLORS.black;
+  ctx.beginPath(); ctx.arc(mx + 12, ly + 7, 2.5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('YOU', mx + 20, ly + 10);
+  ctx.fillStyle = '#777';
+  ctx.beginPath(); ctx.arc(mx + 52, ly + 7, 2, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('ENEMY', mx + 58, ly + 10);
+  ctx.strokeStyle = '#aaa';
   ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(mx + 96, ly + 8, 3, 0, Math.PI*2); ctx.stroke();
-  ctx.fillStyle = COLORS.black;
-  ctx.fillText('ALLY', mx + 103, ly + 11);
-  ctx.strokeRect(mx + 130, ly + 5, 6, 6);
-  ctx.fillText('OBJ', mx + 140, ly + 11);
+  ctx.beginPath(); ctx.arc(mx + 96, ly + 7, 2.5, 0, Math.PI*2); ctx.stroke();
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('ALLY', mx + 103, ly + 10);
+  ctx.strokeRect(mx + 130, ly + 4, 6, 6);
+  ctx.fillText('OBJ', mx + 140, ly + 10);
 }
 
 function renderFPVOverlay() {
