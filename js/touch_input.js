@@ -84,26 +84,34 @@ if (touchInput.enabled) {
   document.body.style.touchAction = 'none';
 
   const onStart = (e) => {
+    // Phase 108b — canvas is CSS-offset HUD_AD_TOP px from window top
+    // (outer ad-frame reserve). Translate every touch.clientY to canvas
+    // Y once at the top so every downstream _hitRect against canvas-
+    // coord rects (pause / squad / build / revive / share) hits cleanly.
+    // Without this every canvas-drawn button on mobile misses by 60 px.
+    const _adTop = (typeof HUD_AD_TOP !== 'undefined') ? HUD_AD_TOP : 0;
     for (const t of e.changedTouches) {
+      const _tx = t.clientX;
+      const _ty = t.clientY - _adTop;
       // 1) Action buttons (top-right)
-      const btn = _touchHitButton(t.clientX, t.clientY);
+      const btn = _touchHitButton(_tx, _ty);
       if (btn) { _touchTriggerAction(btn); continue; }
       // 2) Pause overlay buttons (when paused)
       if (game._paused) {
-        if (_hitRect(game._pauseResumeRect, t.clientX, t.clientY)) togglePause();
-        else if (_hitRect(game._pauseMuteRect, t.clientX, t.clientY)) setAudioMuted(!AUDIO.muted);
-        else if (_hitRect(game._pauseExitRect, t.clientX, t.clientY)) exitMatchToMenu();
+        if (_hitRect(game._pauseResumeRect, _tx, _ty)) togglePause();
+        else if (_hitRect(game._pauseMuteRect, _tx, _ty)) setAudioMuted(!AUDIO.muted);
+        else if (_hitRect(game._pauseExitRect, _tx, _ty)) exitMatchToMenu();
         continue;
       }
       // 3) HUD pause button (top-left)
-      if (_hitRect(game._pauseBtnRect, t.clientX, t.clientY)) {
+      if (_hitRect(game._pauseBtnRect, _tx, _ty)) {
         togglePause(); continue;
       }
       // 4) Squad chip swap
       if (game._squadChipRects) {
         let hit = false;
         for (const c of game._squadChipRects) {
-          if (c.alive && _hitRect(c, t.clientX, t.clientY)) {
+          if (c.alive && _hitRect(c, _tx, _ty)) {
             swapPlayerToAlly(c.allyIdx);
             hit = true; break;
           }
@@ -118,7 +126,7 @@ if (touchInput.enabled) {
       // player could never reach the sub-items.
       if (_canBuildPlace() && buildMode.radialOpen) {
         const pick = (typeof _radialPickAt === 'function')
-          ? _radialPickAt(t.clientX, t.clientY)
+          ? _radialPickAt(_tx, _ty)
           : null;
         if (pick && pick.type === 'kind') {
           buildMode.kind = pick.id;
@@ -138,7 +146,7 @@ if (touchInput.enabled) {
       }
       // 4a2) Defense placing-mode tap — single helper does snap + reach.
       if (_canBuildPlace() && !buildMode.radialOpen) {
-        const cell = _snapAndCheckPlace(t.clientX, t.clientY, true);
+        const cell = _snapAndCheckPlace(_tx, _ty, true);
         if (cell) {
           const { gx, gy } = cell;
           if (isWallKind(buildMode.kind)) {
@@ -151,24 +159,24 @@ if (touchInput.enabled) {
         continue;
       }
       // 4b) Survival revive CTA — rewarded-ad on tap
-      if (_hitRect(game._reviveBtnRect, t.clientX, t.clientY)) {
+      if (_hitRect(game._reviveBtnRect, _tx, _ty)) {
         if (mission && typeof mission.tryRevive === 'function') mission.tryRevive();
         continue;
       }
       // 4b2) Survival share-run on tap
-      if (_hitRect(game._shareRunBtnRect, t.clientX, t.clientY)) {
+      if (_hitRect(game._shareRunBtnRect, _tx, _ty)) {
         if (mission && typeof mission.getRunSummary === 'function') {
           shareSurvivalRun(mission.getRunSummary());
         }
         continue;
       }
       // 4c2) Build-phase skip-wave button
-      if (_hitRect(game._skipWaveAdRect, t.clientX, t.clientY)) {
+      if (_hitRect(game._skipWaveAdRect, _tx, _ty)) {
         if (mission && typeof mission.trySkipWave === 'function') mission.trySkipWave();
         continue;
       }
       // 4c) Build-phase ad-extend button
-      if (_hitRect(game._buildPhaseAdRect, t.clientX, t.clientY)) {
+      if (_hitRect(game._buildPhaseAdRect, _tx, _ty)) {
         if (game._buildPhase && !game._buildPhase._adExtended) {
           game._buildPhase._adExtended = true;
           requestRewardedAd('build_phase_extend', (ok) => {
@@ -186,7 +194,7 @@ if (touchInput.enabled) {
       }
       // 5a) BUILD PHASE: between-wave cover placement takes precedence
       if (game._buildPhase && game._buildPhase.active && game._buildPhase.left > 0) {
-        placeBuildBlock(t.clientX, t.clientY);
+        placeBuildBlock(_tx, _ty);
         continue;
       }
       // 5b) Otherwise: stick assignment by screen half
@@ -219,7 +227,9 @@ if (touchInput.enabled) {
         && !buildMode.radialOpen && game.state === 'playing' && !game._paused) {
       const t = e.changedTouches[0];
       if (t) {
-        const wp = screenToWorld(t.clientX, t.clientY);
+        // Phase 108b — translate touch Y to canvas coord before screenToWorld
+        const _adTop = (typeof HUD_AD_TOP !== 'undefined') ? HUD_AD_TOP : 0;
+        const wp = screenToWorld(t.clientX, t.clientY - _adTop);
         const SNAP = 30;
         const gx = Math.round(wp.x / SNAP) * SNAP;
         const gy = Math.round(wp.y / SNAP) * SNAP;

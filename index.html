@@ -45,45 +45,45 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=130"></script>
-<script src="js/arena_recruitment.js?v=130"></script>
-<script src="js/dynamic_radio.js?v=130"></script>
-<script src="js/i18n.js?v=130"></script>
-<script src="js/touch_input.js?v=130"></script>
-<script src="js/key_bindings.js?v=130"></script>
-<script src="js/grenades.js?v=130"></script>
-<script src="js/squad_commands.js?v=130"></script>
-<script src="js/multiplayer.js?v=130"></script>
-<script src="js/leaderboard.js?v=130"></script>
-<script src="js/structures.js?v=130"></script>
-<script src="js/tod.js?v=130"></script>
-<script src="js/weapons.js?v=130"></script>
-<script src="js/chassis.js?v=130"></script>
-<script src="js/respawn_buff.js?v=130"></script>
-<script src="js/death_recap.js?v=130"></script>
-<script src="js/mote_affinity.js?v=130"></script>
-<script src="js/stage_hints.js?v=130"></script>
-<script src="js/pawn_swap.js?v=130"></script>
-<script src="js/global_stats.js?v=130"></script>
-<script src="js/progressive_unlock.js?v=130"></script>
-<script src="js/ad_stubs.js?v=130"></script>
+<script src="js/audio/sfx.js?v=131"></script>
+<script src="js/arena_recruitment.js?v=131"></script>
+<script src="js/dynamic_radio.js?v=131"></script>
+<script src="js/i18n.js?v=131"></script>
+<script src="js/touch_input.js?v=131"></script>
+<script src="js/key_bindings.js?v=131"></script>
+<script src="js/grenades.js?v=131"></script>
+<script src="js/squad_commands.js?v=131"></script>
+<script src="js/multiplayer.js?v=131"></script>
+<script src="js/leaderboard.js?v=131"></script>
+<script src="js/structures.js?v=131"></script>
+<script src="js/tod.js?v=131"></script>
+<script src="js/weapons.js?v=131"></script>
+<script src="js/chassis.js?v=131"></script>
+<script src="js/respawn_buff.js?v=131"></script>
+<script src="js/death_recap.js?v=131"></script>
+<script src="js/mote_affinity.js?v=131"></script>
+<script src="js/stage_hints.js?v=131"></script>
+<script src="js/pawn_swap.js?v=131"></script>
+<script src="js/global_stats.js?v=131"></script>
+<script src="js/progressive_unlock.js?v=131"></script>
+<script src="js/ad_stubs.js?v=131"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=130"></script>
+<script src="js/crazygames.js?v=131"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=130"></script>
+<script src="js/gamemonetize.js?v=131"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=130"></script>
-<script src="js/world_gen.js?v=130"></script>
-<script src="js/squad.js?v=130"></script>
-<script src="js/drone_fpv.js?v=130"></script>
-<script src="js/vision_raycast.js?v=130"></script>
-<script src="js/camera.js?v=130"></script>
-<script src="js/defense_build_ui.js?v=130"></script>
-<script src="js/pause.js?v=130"></script>
+<script src="js/missions/nn_deathmatch.js?v=131"></script>
+<script src="js/world_gen.js?v=131"></script>
+<script src="js/squad.js?v=131"></script>
+<script src="js/drone_fpv.js?v=131"></script>
+<script src="js/vision_raycast.js?v=131"></script>
+<script src="js/camera.js?v=131"></script>
+<script src="js/defense_build_ui.js?v=131"></script>
+<script src="js/pause.js?v=131"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -3105,21 +3105,23 @@ const editor = { _dragStart: null, _dragEnd: null, tool: null, spawn: { blue: []
 //   - left-click did nothing → can't shoot, can't dismiss modals
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 window.addEventListener('mousemove', e => {
-  mouse.x = e.clientX; mouse.y = e.clientY;
-  // Defense-mode wall drag: while the LMB is held with a wall anchor, track
-  // the snapped end cell so renderBuildPreview can ghost the full line.
+  // Phase 108b — canvas is CSS-offset HUD_AD_TOP px down. mouse.y is
+  // read in CANVAS coords by the reticle, screenToWorld, hit rects,
+  // etc., so we subtract the offset once here and everything else
+  // downstream just works.
+  mouse.x = e.clientX;
+  mouse.y = e.clientY - HUD_AD_TOP;
   if (buildMode.active && isWallKind(buildMode.kind) && buildMode._dragStart
       && game.state === 'playing' && !game._paused) {
-    const wp = screenToWorld(e.clientX, e.clientY);
+    const wp = screenToWorld(mouse.x, mouse.y);
     const SNAP = 30;
     const gx = Math.round(wp.x / SNAP) * SNAP;
     const gy = Math.round(wp.y / SNAP) * SNAP;
     buildMode._dragEnd = { gx, gy };
   }
-  // Map editor drag preview — only when editor mode is wired (arena-mp drops it).
   if (game.state === 'editor' && typeof editor !== 'undefined' && editor._dragStart
       && typeof _editorCellAtScreen === 'function') {
-    const c = _editorCellAtScreen(e.clientX, e.clientY);
+    const c = _editorCellAtScreen(mouse.x, mouse.y);
     if (c) editor._dragEnd = { gx: c.gx, gy: c.gy };
   }
 });
@@ -3128,10 +3130,19 @@ function _hitRect(r, x, y) {
 }
 window.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
+  // Phase 108b — the canvas is now CSS-positioned at top: HUD_AD_TOP px
+  // and its height is innerHeight - HUD_AD_TOP - HUD_AD_BOTTOM, so a
+  // click's e.clientY needs the HUD_AD_TOP offset subtracted before it
+  // gets compared against any canvas-coord hit rect. Without this every
+  // canvas-drawn button (the green WATCH AD button, pause btn, minimap
+  // toggle, squad chips, etc.) misses by exactly 60 px and looks dead.
+  // Bug report: '綠色按鈕失效了, 按下去不會進廣告或者什麼頁面'.
+  const _mx = e.clientX;
+  const _my = e.clientY - HUD_AD_TOP;
   // Click on the watch-ad button first (mid-screen during recap). If it
   // matches we consume the click — don't fall through to dismiss / fire.
   if (_deathRecap.active && typeof tryDeathRecapAdClick === 'function'
-      && tryDeathRecapAdClick(e.clientX, e.clientY)) {
+      && tryDeathRecapAdClick(_mx, _my)) {
     e.preventDefault();
     return;
   }
@@ -3149,14 +3160,14 @@ window.addEventListener('mousedown', e => {
   }
   // While paused: click resume bar = unpause; click exit bar = back to menu.
   if (game._paused) {
-    if (_hitRect(game._pauseResumeRect, e.clientX, e.clientY)) togglePause();
-    else if (_hitRect(game._pauseMuteRect, e.clientX, e.clientY)) setAudioMuted(!AUDIO.muted);
-    else if (_hitRect(game._pauseExitRect, e.clientX, e.clientY)) exitMatchToMenu();
+    if (_hitRect(game._pauseResumeRect, _mx, _my)) togglePause();
+    else if (_hitRect(game._pauseMuteRect, _mx, _my)) setAudioMuted(!AUDIO.muted);
+    else if (_hitRect(game._pauseExitRect, _mx, _my)) exitMatchToMenu();
     e.preventDefault();
     return;
   }
   // Pause button (top-left)
-  if (_hitRect(game._pauseBtnRect, e.clientX, e.clientY)) {
+  if (_hitRect(game._pauseBtnRect, _mx, _my)) {
     togglePause();
     e.preventDefault();
     return;
@@ -3164,7 +3175,7 @@ window.addEventListener('mousedown', e => {
   // Squad chip click → pawn-swap to that ally
   if (game._squadChipRects) {
     for (const chip of game._squadChipRects) {
-      if (chip.alive && _hitRect(chip, e.clientX, e.clientY)) {
+      if (chip.alive && _hitRect(chip, _mx, _my)) {
         swapPlayerToAlly(chip.allyIdx);
         e.preventDefault();
         return;
@@ -3172,7 +3183,7 @@ window.addEventListener('mousedown', e => {
     }
   }
   // Minimap collapse/expand toggle
-  if (_hitRect(game._minimapToggleRect, e.clientX, e.clientY)) {
+  if (_hitRect(game._minimapToggleRect, _mx, _my)) {
     game._minimapCollapsed = !game._minimapCollapsed;
     try { localStorage.setItem('ag.minimapCollapsed', game._minimapCollapsed ? '1' : '0'); }
     catch (err) {}
@@ -3180,13 +3191,13 @@ window.addEventListener('mousedown', e => {
     return;
   }
   // Survival "watch ad to revive"
-  if (_hitRect(game._reviveBtnRect, e.clientX, e.clientY)) {
+  if (_hitRect(game._reviveBtnRect, _mx, _my)) {
     if (mission && typeof mission.tryRevive === 'function') mission.tryRevive();
     e.preventDefault();
     return;
   }
   // Survival "share run"
-  if (_hitRect(game._shareRunBtnRect, e.clientX, e.clientY)) {
+  if (_hitRect(game._shareRunBtnRect, _mx, _my)) {
     if (mission && typeof mission.getRunSummary === 'function'
         && typeof shareSurvivalRun === 'function') {
       shareSurvivalRun(mission.getRunSummary());
@@ -3195,12 +3206,12 @@ window.addEventListener('mousedown', e => {
     return;
   }
   // Build-phase skip-wave + ad-extend buttons (defense)
-  if (_hitRect(game._skipWaveAdRect, e.clientX, e.clientY)) {
+  if (_hitRect(game._skipWaveAdRect, _mx, _my)) {
     if (mission && typeof mission.trySkipWave === 'function') mission.trySkipWave();
     e.preventDefault();
     return;
   }
-  if (_hitRect(game._buildPhaseAdRect, e.clientX, e.clientY)) {
+  if (_hitRect(game._buildPhaseAdRect, _mx, _my)) {
     if (game._buildPhase && !game._buildPhase._adExtended
         && typeof requestRewardedAd === 'function') {
       game._buildPhase._adExtended = true;
@@ -3221,7 +3232,7 @@ window.addEventListener('mousedown', e => {
   // BUILD PHASE: between-wave cover placement
   if (game._buildPhase && game._buildPhase.active && game._buildPhase.left > 0
       && typeof placeBuildBlock === 'function') {
-    placeBuildBlock(e.clientX, e.clientY);
+    placeBuildBlock(_mx, _my);
     e.preventDefault();
     return;
   }
@@ -3229,7 +3240,7 @@ window.addEventListener('mousedown', e => {
   if (game.state === 'editor' && typeof editor !== 'undefined'
       && typeof _editorCellAtScreen === 'function'
       && typeof _editorPlaceCell === 'function') {
-    const c = _editorCellAtScreen(e.clientX, e.clientY);
+    const c = _editorCellAtScreen(_mx, _my);
     if (c) {
       editor._dragStart = { gx: c.gx, gy: c.gy };
       editor._dragEnd   = { gx: c.gx, gy: c.gy };
@@ -3247,7 +3258,7 @@ window.addEventListener('mousedown', e => {
       // kind clicks select the structure and close the menu. Off-radial
       // clicks close without selecting (same as before).
       const pick = (typeof _radialPickAt === 'function')
-        ? _radialPickAt(e.clientX, e.clientY)
+        ? _radialPickAt(_mx, _my)
         : null;
       if (pick && pick.type === 'kind') {
         buildMode.kind = pick.id;
@@ -3264,7 +3275,7 @@ window.addEventListener('mousedown', e => {
       return;
     }
     // Placing mode — single helper does snap + reach + toast on fail.
-    const cell = _snapAndCheckPlace(e.clientX, e.clientY, true);
+    const cell = _snapAndCheckPlace(_mx, _my, true);
     if (cell) {
       const { gx, gy } = cell;
       if (isWallKind(buildMode.kind)) {
@@ -3278,7 +3289,7 @@ window.addEventListener('mousedown', e => {
   }
   // Defense: shift+click anywhere = call airstrike (if terminal ready)
   if (e.shiftKey && game._nnGameMode === 'defense' && typeof callAirstrike === 'function') {
-    const wp = screenToWorld(e.clientX, e.clientY);
+    const wp = screenToWorld(_mx, _my);
     callAirstrike(wp.x, wp.y);
     e.preventDefault();
     return;
