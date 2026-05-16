@@ -39,12 +39,28 @@ function playPositionalSound(sx, sy, intensity, kind = 'shot', isSelf = false, p
     vol = 0.7 * volMul;
   } else {
     if (dist > maxDist) return;
-    vol = (Math.max(0, 1 - dist / maxDist) ** 1.4) * volMul;
+    // Phase 110 — linear falloff with a punchy close-range boost. The old
+    // ^1.4 curve dropped to ~38 % at half-distance, which made ambushes
+    // from the next room feel inaudible. Linear + a +0.45 boost inside
+    // 250 u gives close shots an actual 'jolt' feel while far ones still
+    // taper to zero. User: '武器近的時候很大聲, 遠的時候很小聲'.
+    vol = Math.max(0, 1 - dist / maxDist) * volMul;
+    vol += Math.max(0, 1 - dist / 250) * 0.45 * volMul;
+    vol = Math.min(1.2, vol);
     if (vol < 0.005) return;
   }
 
-  // Stereo pan: rotate offset into player's local frame, map left/right to [-1, 1].
-  const va = (player.viewAngle != null) ? player.viewAngle : (player.angle || 0);
+  // Stereo pan: rotate offset into the LISTENER'S local frame. Pan must
+  // line up with what's on screen, so we use camera.rotation (which is 0
+  // in tactical top-down and tracks the pilot in FPV / drone modes). The
+  // earlier code read `player.viewAngle` (never assigned, so always
+  // undefined) and fell back to `player.angle` — so the pan rotated with
+  // the player's body even in top-down. A player facing north with an
+  // ambush from screen-east got rotated to a centre/inverted pan, exactly
+  // the 'right side shot, no right-ear sound' the user reported.
+  const va = (typeof camera !== 'undefined' && camera.rotation != null)
+    ? camera.rotation
+    : 0;
   const localX = dx * Math.cos(-va) - dy * Math.sin(-va);
   const pan = isSelf ? 0 : Math.max(-1, Math.min(1, localX / 350));
   const closeness = isSelf ? 1 : Math.max(0, 1 - dist / maxDist);
