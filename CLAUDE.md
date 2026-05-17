@@ -15,11 +15,14 @@
 
 | 熱點 | 已抽? | 模組 |
 |---|---|---|
-| Input(`mouse.*`, `keys[]`, hit-rect, 觸控)| ✅ | `js/input.js` |
-| Weapon state(swap / fire / reload / cd)| ✅ | `js/weapon_state.js` |
-| Ad lifecycle(reward gate, overlay timer)| ✅ | `js/ad_state.js` |
+| Input(`mouse.*`, `keys[]`, hit-rect, 觸控)| ✅ R2 | `js/input.js` |
+| Weapon state(swap / fire / reload / cd)| ✅ R3 | `js/weapon_state.js` |
+| Ad lifecycle(reward gate, overlay timer)| ✅ R1 | `js/ad_state.js` |
+| Pawn-swap state(manual + auto-on-death)| ✅ R4 | `js/pawn_swap.js`(整合完) |
+| Bullet update + collision | ✅ R5 | `js/bullets.js` |
+| World render(renderWorld / lowCovers / overheads / footprints)| ✅ R6 | `js/world_render.js` |
 | HUD render driver(cache region, canvas inset offset)| ⚠️ | helpers 已抽,driver 還在 index |
-| Pawn-swap state(`_consumed` / `_useNN` / `_humanPiloted` / `_respawnAt`)| ⚠️ | 部分在 `js/pawn_swap.js`,auto swap 在 mission |
+| World GENERATION(addBuilding / addLowCover / MAPS table)| ⚠️ | 還在 index,但目前沒 bug |
 
 ### 紀律
 
