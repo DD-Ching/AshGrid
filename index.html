@@ -45,84 +45,84 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=154"></script>
-<script src="js/arena_recruitment.js?v=154"></script>
-<script src="js/dynamic_radio.js?v=154"></script>
-<script src="js/i18n.js?v=154"></script>
-<script src="js/touch_input.js?v=154"></script>
-<script src="js/key_bindings.js?v=154"></script>
-<script src="js/grenades.js?v=154"></script>
-<script src="js/squad_commands.js?v=154"></script>
-<script src="js/multiplayer.js?v=154"></script>
-<script src="js/leaderboard.js?v=154"></script>
-<script src="js/structures.js?v=154"></script>
-<script src="js/tod.js?v=154"></script>
-<script src="js/weapons.js?v=154"></script>
-<script src="js/chassis.js?v=154"></script>
-<script src="js/respawn_buff.js?v=154"></script>
-<script src="js/death_recap.js?v=154"></script>
-<script src="js/mote_affinity.js?v=154"></script>
-<script src="js/stage_hints.js?v=154"></script>
-<script src="js/pawn_swap.js?v=154"></script>
-<script src="js/global_stats.js?v=154"></script>
-<script src="js/progressive_unlock.js?v=154"></script>
-<script src="js/ad_stubs.js?v=154"></script>
+<script src="js/audio/sfx.js?v=155"></script>
+<script src="js/arena_recruitment.js?v=155"></script>
+<script src="js/dynamic_radio.js?v=155"></script>
+<script src="js/i18n.js?v=155"></script>
+<script src="js/touch_input.js?v=155"></script>
+<script src="js/key_bindings.js?v=155"></script>
+<script src="js/grenades.js?v=155"></script>
+<script src="js/squad_commands.js?v=155"></script>
+<script src="js/multiplayer.js?v=155"></script>
+<script src="js/leaderboard.js?v=155"></script>
+<script src="js/structures.js?v=155"></script>
+<script src="js/tod.js?v=155"></script>
+<script src="js/weapons.js?v=155"></script>
+<script src="js/chassis.js?v=155"></script>
+<script src="js/respawn_buff.js?v=155"></script>
+<script src="js/death_recap.js?v=155"></script>
+<script src="js/mote_affinity.js?v=155"></script>
+<script src="js/stage_hints.js?v=155"></script>
+<script src="js/pawn_swap.js?v=155"></script>
+<script src="js/global_stats.js?v=155"></script>
+<script src="js/progressive_unlock.js?v=155"></script>
+<script src="js/ad_stubs.js?v=155"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=154"></script>
+<script src="js/crazygames.js?v=155"></script>
 <!-- R1 refactor — explicit ad-lifecycle state machine. MUST load before
      gamemonetize.js so its window.adState is defined when GM forwards
      SDK events. See js/ad_state.js header for the state diagram. -->
-<script src="js/ad_state.js?v=154"></script>
+<script src="js/ad_state.js?v=155"></script>
 <!-- R2 refactor — Input module. Owns ALL writes to the global `mouse`
      state + canvas-inset coord translation. See js/input.js header
      for the trigger-edge primitives. -->
-<script src="js/input.js?v=154"></script>
+<script src="js/input.js?v=155"></script>
 <!-- R3 refactor — WeaponState module. Owns every weapon-state write on
      `player` (ammo / reload / fireCooldown / swap / equip). Loads
      AFTER js/weapons.js (above) — weapons.js installs the
      window.__setPlayerWeapon setter shim at top-level so WeaponState
      can mutate `playerWeapon` even though it's a `let` in another
      classic-script file. See js/weapon_state.js header. -->
-<script src="js/weapon_state.js?v=154"></script>
+<script src="js/weapon_state.js?v=155"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=154"></script>
+<script src="js/gamemonetize.js?v=155"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=154"></script>
-<script src="js/world_gen.js?v=154"></script>
-<script src="js/squad.js?v=154"></script>
-<script src="js/drone_fpv.js?v=154"></script>
-<script src="js/vision_raycast.js?v=154"></script>
-<script src="js/camera.js?v=154"></script>
-<script src="js/defense_build_ui.js?v=154"></script>
-<script src="js/pause.js?v=154"></script>
+<script src="js/missions/nn_deathmatch.js?v=155"></script>
+<script src="js/world_gen.js?v=155"></script>
+<script src="js/squad.js?v=155"></script>
+<script src="js/drone_fpv.js?v=155"></script>
+<script src="js/vision_raycast.js?v=155"></script>
+<script src="js/camera.js?v=155"></script>
+<script src="js/defense_build_ui.js?v=155"></script>
+<script src="js/pause.js?v=155"></script>
 <!-- R5 refactor — bullet update + collision (player + enemy loops,
      fire(), detonateRocket()). Pulled out of the 12 000-line inline
      script. Functions resolve dependencies (player, enemies, etc.) at
      call time via classic-script globals, so this file MUST load
      before the main inline script declares those globals — which is
      fine, the functions aren't called until tickPlayerCombat runs. -->
-<script src="js/bullets.js?v=154"></script>
+<script src="js/bullets.js?v=155"></script>
 <!-- R6 refactor — world render (renderFootprints, renderWorld,
      drawLowCovers, drawOverheads). Same load-time-decoupled pattern
      as bullets.js; functions resolve their globals at call time. -->
-<script src="js/world_render.js?v=154"></script>
+<script src="js/world_render.js?v=155"></script>
 <!-- R8 refactor — HUD: renderHUD + renderHUDOverlays + drawMinimapPanel
      + drawHUDPanel + getModeLabel + panel cache + 6-zone card draw
      helpers. ~1300 lines from the inline script. -->
-<script src="js/hud.js?v=154"></script>
+<script src="js/hud.js?v=155"></script>
 <!-- R9 refactor — enemy AI + NN runtime: nnTick / nnBuildObs /
      nnApplyAction / patrol state machine / heat map / team vision /
      updateEnemies. 1145 lines from the inline script. -->
-<script src="js/enemy_ai.js?v=154"></script>
+<script src="js/enemy_ai.js?v=155"></script>
 <!-- R10 refactor — overlay render: renderStructures + the various
      world/screen overlays (build preview, editor, themes, routes,
      landmarks, vision fog, sound indicators, unit sprites, FPV/UAV/
      command overlays). ~2200 lines from the inline script. -->
-<script src="js/render_overlays.js?v=154"></script>
+<script src="js/render_overlays.js?v=155"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -2451,7 +2451,16 @@ function _wireIntro() {
 // Radio toast — small in-match story callout. Stacks at bottom-left,
 // auto-dismisses after `ttl` ms. Used during first match for narrative
 // beats: "they fall faster when you flank", "the NN reads your trail", etc.
+// Phase 117 — radio toasts globally muted. User: '左下角有時候會跳這種
+// 通知, 我現在已經不需要這種通知了 ... 都會有一個叮咚很難聽的聲音'.
+// Both the bottom-left DOM toast AND its 2-tone 'ding-dong' beep are
+// driven by this single function — flipping the flag here silences
+// every call site (squad KIA / ally-hurt / build hints / mission
+// callouts / etc) without touching any caller. To re-enable later,
+// set RADIO_TOASTS_ENABLED = true; no other changes needed.
+const RADIO_TOASTS_ENABLED = false;
 function showRadioToast(label, text, ttl = 5500) {
+  if (!RADIO_TOASTS_ENABLED) return;
   const el = document.createElement('div');
   el.className = 'radio-toast';
   el.innerHTML = `<span class="label">${label}</span>${text}`;
@@ -5375,7 +5384,15 @@ function kamikazeExplode(d) {
   if (typeof triggerShake === 'function') triggerShake(4.5);
   emitSound(d.x, d.y, 380, false);
   // Damage friendlies in radius
-  if (player.alive) {
+  // Phase 117 — respect 3s spawn invuln. User reported '復活之後瞬間就
+  // 死掉的體驗' — an enemy kamikaze drone in mid-flight at the moment
+  // they died would still be airborne when their respawn invuln
+  // started, then explode on them inside the 3s window and bypass the
+  // shield because this damage path never checked invuln. Bullets (in
+  // bullets.js:456) and rocket AOE both gate on invuln; this drone-
+  // splash path was the odd one out.
+  const pInvuln = player._invulnUntil != null && game.time < player._invulnUntil;
+  if (player.alive && !pInvuln) {
     const pd = Math.hypot(player.x - d.x, player.y - d.y);
     if (pd < d.explodeRadius) {
       const dmg = Math.round(d.explodeDamage * (1 - pd / d.explodeRadius));
