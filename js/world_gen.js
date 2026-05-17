@@ -252,3 +252,53 @@ function spawnDroneEnemy(cfg) {
   });
 }
 
+
+// ============ WORLD GEN HELPERS (R7 refactor) ============
+// 9 add* helpers moved here from index.html (4559-4627) where they
+// were intermingled with rendering, HUD, and combat code. Each helper
+// just pushes one entry onto a corresponding state array declared in
+// index.html (buildings / lowCovers / overheads / routes / landmarks /
+// themeShapes / decorations / networkNodes / wallLines). Resolution
+// happens at call time via classic-script globals, so this file can
+// load before those arrays exist as long as the helpers aren't
+// CALLED until after the main inline script runs (which is when
+// generateWorld() → currentMap.build() fires).
+//
+// HP fallback comes from COVER_HP_BY_KIND, declared in index.html at
+// ~line 4549 (right before where these helpers used to live). Same
+// call-time-resolution rule applies.
+
+function addBuilding(x, y, w, h, color, opts={}) {
+  const baseHp = COVER_HP_BY_KIND[opts.kind || 'building'] || 220;
+  const hp = opts.hp != null ? opts.hp : baseHp;
+  buildings.push({ x, y, w, h, color: color || COLORS.gray, shadow: opts.shadow !== false, accent: !!opts.accent, kind: opts.kind || 'building', hp, maxHp: hp });
+}
+function addWallLine(x1, y1, x2, y2, opts={}) {
+  const thickness = opts.thickness != null ? opts.thickness : 18;
+  const baseHp    = COVER_HP_BY_KIND[opts.kind || 'building'] || 220;
+  const hp        = opts.hp != null ? opts.hp : baseHp;
+  wallLines.push({
+    x1, y1, x2, y2, thickness,
+    kind: opts.kind || 'building',
+    color: opts.color || COLORS.gray,
+    hp, maxHp: hp,
+    blocksLOS: opts.blocksLOS !== false,
+  });
+}
+function addLowCover(x, y, w, h, color, opts={}) {
+  const baseHp = COVER_HP_BY_KIND[opts.kind || 'cover'] || 100;
+  const hp = opts.hp != null ? opts.hp : baseHp;
+  lowCovers.push({ x, y, w, h, color: color || COLORS.lightGray, kind: opts.kind || 'cover', canopy: !!opts.canopy, hp, maxHp: hp });
+}
+function addOverhead(x, y, w, h, color, opts={}) {
+  overheads.push({ x, y, w, h, color: color || COLORS.black, kind: opts.kind || 'catwalk' });
+}
+function addRoute(x, y, w, h, type, opts={}) {
+  routes.push({ x, y, w, h, angle: opts.angle || 0, type, style: opts.style || 'solid', label: opts.label || '' });
+}
+function addLandmark(obj) { landmarks.push(obj); }
+function addTheme(shape) { themeShapes.push(shape); }
+function addDecoration(x, y, type, size, color, opacity, angle) {
+  decorations.push({ x, y, type, size, color, opacity, angle });
+}
+function addNode(x, y) { networkNodes.push({ x, y, pulse: Math.random()*Math.PI*2 }); }

@@ -45,71 +45,71 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=148"></script>
-<script src="js/arena_recruitment.js?v=148"></script>
-<script src="js/dynamic_radio.js?v=148"></script>
-<script src="js/i18n.js?v=148"></script>
-<script src="js/touch_input.js?v=148"></script>
-<script src="js/key_bindings.js?v=148"></script>
-<script src="js/grenades.js?v=148"></script>
-<script src="js/squad_commands.js?v=148"></script>
-<script src="js/multiplayer.js?v=148"></script>
-<script src="js/leaderboard.js?v=148"></script>
-<script src="js/structures.js?v=148"></script>
-<script src="js/tod.js?v=148"></script>
-<script src="js/weapons.js?v=148"></script>
-<script src="js/chassis.js?v=148"></script>
-<script src="js/respawn_buff.js?v=148"></script>
-<script src="js/death_recap.js?v=148"></script>
-<script src="js/mote_affinity.js?v=148"></script>
-<script src="js/stage_hints.js?v=148"></script>
-<script src="js/pawn_swap.js?v=148"></script>
-<script src="js/global_stats.js?v=148"></script>
-<script src="js/progressive_unlock.js?v=148"></script>
-<script src="js/ad_stubs.js?v=148"></script>
+<script src="js/audio/sfx.js?v=149"></script>
+<script src="js/arena_recruitment.js?v=149"></script>
+<script src="js/dynamic_radio.js?v=149"></script>
+<script src="js/i18n.js?v=149"></script>
+<script src="js/touch_input.js?v=149"></script>
+<script src="js/key_bindings.js?v=149"></script>
+<script src="js/grenades.js?v=149"></script>
+<script src="js/squad_commands.js?v=149"></script>
+<script src="js/multiplayer.js?v=149"></script>
+<script src="js/leaderboard.js?v=149"></script>
+<script src="js/structures.js?v=149"></script>
+<script src="js/tod.js?v=149"></script>
+<script src="js/weapons.js?v=149"></script>
+<script src="js/chassis.js?v=149"></script>
+<script src="js/respawn_buff.js?v=149"></script>
+<script src="js/death_recap.js?v=149"></script>
+<script src="js/mote_affinity.js?v=149"></script>
+<script src="js/stage_hints.js?v=149"></script>
+<script src="js/pawn_swap.js?v=149"></script>
+<script src="js/global_stats.js?v=149"></script>
+<script src="js/progressive_unlock.js?v=149"></script>
+<script src="js/ad_stubs.js?v=149"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=148"></script>
+<script src="js/crazygames.js?v=149"></script>
 <!-- R1 refactor — explicit ad-lifecycle state machine. MUST load before
      gamemonetize.js so its window.adState is defined when GM forwards
      SDK events. See js/ad_state.js header for the state diagram. -->
-<script src="js/ad_state.js?v=148"></script>
+<script src="js/ad_state.js?v=149"></script>
 <!-- R2 refactor — Input module. Owns ALL writes to the global `mouse`
      state + canvas-inset coord translation. See js/input.js header
      for the trigger-edge primitives. -->
-<script src="js/input.js?v=148"></script>
+<script src="js/input.js?v=149"></script>
 <!-- R3 refactor — WeaponState module. Owns every weapon-state write on
      `player` (ammo / reload / fireCooldown / swap / equip). Loads
      AFTER js/weapons.js (above) — weapons.js installs the
      window.__setPlayerWeapon setter shim at top-level so WeaponState
      can mutate `playerWeapon` even though it's a `let` in another
      classic-script file. See js/weapon_state.js header. -->
-<script src="js/weapon_state.js?v=148"></script>
+<script src="js/weapon_state.js?v=149"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=148"></script>
+<script src="js/gamemonetize.js?v=149"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=148"></script>
-<script src="js/world_gen.js?v=148"></script>
-<script src="js/squad.js?v=148"></script>
-<script src="js/drone_fpv.js?v=148"></script>
-<script src="js/vision_raycast.js?v=148"></script>
-<script src="js/camera.js?v=148"></script>
-<script src="js/defense_build_ui.js?v=148"></script>
-<script src="js/pause.js?v=148"></script>
+<script src="js/missions/nn_deathmatch.js?v=149"></script>
+<script src="js/world_gen.js?v=149"></script>
+<script src="js/squad.js?v=149"></script>
+<script src="js/drone_fpv.js?v=149"></script>
+<script src="js/vision_raycast.js?v=149"></script>
+<script src="js/camera.js?v=149"></script>
+<script src="js/defense_build_ui.js?v=149"></script>
+<script src="js/pause.js?v=149"></script>
 <!-- R5 refactor — bullet update + collision (player + enemy loops,
      fire(), detonateRocket()). Pulled out of the 12 000-line inline
      script. Functions resolve dependencies (player, enemies, etc.) at
      call time via classic-script globals, so this file MUST load
      before the main inline script declares those globals — which is
      fine, the functions aren't called until tickPlayerCombat runs. -->
-<script src="js/bullets.js?v=148"></script>
+<script src="js/bullets.js?v=149"></script>
 <!-- R6 refactor — world render (renderFootprints, renderWorld,
      drawLowCovers, drawOverheads). Same load-time-decoupled pattern
      as bullets.js; functions resolve their globals at call time. -->
-<script src="js/world_render.js?v=148"></script>
+<script src="js/world_render.js?v=149"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -4556,11 +4556,6 @@ const COVER_HP_BY_KIND = {
   bunker: 420, wall: 460, concrete: 600,
   building: 460,
 };
-function addBuilding(x, y, w, h, color, opts={}) {
-  const baseHp = COVER_HP_BY_KIND[opts.kind || 'building'] || 220;
-  const hp = opts.hp != null ? opts.hp : baseHp;
-  buildings.push({ x, y, w, h, color: color || COLORS.gray, shadow: opts.shadow !== false, accent: !!opts.accent, kind: opts.kind || 'building', hp, maxHp: hp });
-}
 
 // ============ WALL LINES (true vector geometry) ============
 // Walls placed via point-A → point-B drag are stored as line segments,
@@ -4570,18 +4565,6 @@ function addBuilding(x, y, w, h, color, opts={}) {
 // in-game build-mode both produce these; legacy 60u FIXED_MAPS rooms
 // still use the rectangular `buildings` table unchanged.
 const wallLines = [];
-function addWallLine(x1, y1, x2, y2, opts={}) {
-  const thickness = opts.thickness != null ? opts.thickness : 18;
-  const baseHp    = COVER_HP_BY_KIND[opts.kind || 'building'] || 220;
-  const hp        = opts.hp != null ? opts.hp : baseHp;
-  wallLines.push({
-    x1, y1, x2, y2, thickness,
-    kind: opts.kind || 'building',
-    color: opts.color || COLORS.gray,
-    hp, maxHp: hp,
-    blocksLOS: opts.blocksLOS !== false,
-  });
-}
 function _segPointDist(px, py, x1, y1, x2, y2) {
   // Returns closest distance + the projected point on the segment (clamped
   // 0..1). Used by collision (entity vs wall) and bullet hits.
@@ -4608,23 +4591,6 @@ function _pointInCapsule(px, py, x1, y1, x2, y2, pad) {
   const r = _segPointDist(px, py, x1, y1, x2, y2);
   return r.dist <= pad;
 }
-function addLowCover(x, y, w, h, color, opts={}) {
-  const baseHp = COVER_HP_BY_KIND[opts.kind || 'cover'] || 100;
-  const hp = opts.hp != null ? opts.hp : baseHp;
-  lowCovers.push({ x, y, w, h, color: color || COLORS.lightGray, kind: opts.kind || 'cover', canopy: !!opts.canopy, hp, maxHp: hp });
-}
-function addOverhead(x, y, w, h, color, opts={}) {
-  overheads.push({ x, y, w, h, color: color || COLORS.black, kind: opts.kind || 'catwalk' });
-}
-function addRoute(x, y, w, h, type, opts={}) {
-  routes.push({ x, y, w, h, angle: opts.angle || 0, type, style: opts.style || 'solid', label: opts.label || '' });
-}
-function addLandmark(obj) { landmarks.push(obj); }
-function addTheme(shape) { themeShapes.push(shape); }
-function addDecoration(x, y, type, size, color, opacity, angle) {
-  decorations.push({ x, y, type, size, color, opacity, angle });
-}
-function addNode(x, y) { networkNodes.push({ x, y, pulse: Math.random()*Math.PI*2 }); }
 
 function isInsideRect(x, y, r) {
   return x > r.x && x < r.x+r.w && y > r.y && y < r.y+r.h;

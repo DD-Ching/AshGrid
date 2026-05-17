@@ -21,8 +21,9 @@
 | Pawn-swap state(manual + auto-on-death)| ✅ R4 | `js/pawn_swap.js`(整合完) |
 | Bullet update + collision | ✅ R5 | `js/bullets.js` |
 | World render(renderWorld / lowCovers / overheads / footprints)| ✅ R6 | `js/world_render.js` |
+| World GENERATION helpers(addBuilding / addLowCover / addWallLine / ...)| ✅ R7 | `js/world_gen.js`(整合完) |
 | HUD render driver(cache region, canvas inset offset)| ⚠️ | helpers 已抽,driver 還在 index |
-| World GENERATION(addBuilding / addLowCover / MAPS table)| ⚠️ | 還在 index,但目前沒 bug |
+| MAPS table + theme constants | ⚠️ | 還在 index 跟 js/maps.js,沒明顯耦合問題 |
 
 ### 紀律
 
