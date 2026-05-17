@@ -275,11 +275,18 @@ function _mpHandleMessage(data) {
       _mpState.serverTick = data.tick || 0;
       _mpState.enabled   = true;
       console.log('[mp] welcomed as', _mpState.myId, '· tick:', _mpState.serverTick);
-      // Phase 43: rehydrate built structures from server's authoritative
-      // snapshot. Wipe any stale local entries first — anything we built
-      // before reconnecting should be re-broadcast through 'structureAdd'.
+      // Phase 43 — rehydrate built structures from server's authoritative
+      // snapshot. Wipe local PLAYER-BUILT entries first (anything with a
+      // sid — those mirror server state and will re-broadcast through
+      // structureAdd) but PRESERVE NN-mode-only fixtures (factory,
+      // spawn-relay) that the server doesn't track. Earlier we wiped the
+      // whole array, which on MP welcome silently destroyed the factory
+      // the user expected to see at arena centre. Bug: '工廠不見了'.
       if (Array.isArray(data.structures) && typeof game !== 'undefined') {
-        game._structures = [];
+        const localOnly = (game._structures || []).filter(s =>
+          s && (s._isFactory || s._isSpawnRelay)
+        );
+        game._structures = localOnly;
         for (const s of data.structures) _mpAdoptStructure(s);
       }
       // Phase 54 — tell CrazyGames Instant Multiplayer about our room so
