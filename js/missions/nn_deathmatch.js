@@ -425,73 +425,17 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
 
       // Set respawn timers for newly-dead units. In NN mode, instead of
       // sending the operator to spawn for 5 seconds, auto-jump into the
-      // CLOSEST alive ally (the operator never sits out — that's the whole
-      // point of pawn-swap). If no alive allies, fall back to normal respawn.
+      // closest alive ally. R4 — delegate to pawn_swap.js's canonical
+      // tryAutoSwapToClosestAlly() so manual swap (key 2-5) and this
+      // auto path share one code path. Previously the inline duplicate
+      // drifted out of sync (didn't set _mpIgnoreReconcileUntil,
+      // didn't broadcast _mpBroadcastSwap → 0.5 s post-swap teleport
+      // in MP). If no alive allies → start the normal respawn timer.
       if (!player.alive && player._respawnAt == null && !blueWiped) {
-        let bestIdx = -1, bestD = Infinity;
-        for (let i = 0; i < allies.length; i++) {
-          const ax = allies[i];
-          if (!ax || !ax.alive) continue;
-          const d = Math.hypot(ax.x - player.x, ax.y - player.y);
-          if (d < bestD) { bestD = d; bestIdx = i; }
-        }
-        if (bestIdx >= 0) {
-          const a = allies[bestIdx];
-          // Operator inherits the ally's body in-place
-          player.alive = true;
-          player.x = a.x; player.y = a.y;
-          player.angle = a.angle;
-          player.gunAngle = a.gunAngle || a.angle;
-          player.gunRecoil = (a.gunRecoil || 0) * 0.4;
-          player.hp = a.hp; player.maxHp = a.maxHp;
-          // Phase 102 — 3s spawn protection on chain-takeover (was 60 = 1s).
-          // Must match server INVULN_TICKS so the player can't be insta-
-          // sniped the frame after auto-swap, restarting the death loop.
-          player._invulnUntil = game.time + 180;
-          player._lastX = a.x; player._lastY = a.y;
-          player._velX = 0; player._velY = 0;
-          // R2 — clear trigger edge through Input so the new pilot needs
-          // a fresh click. Same contract as manual pawn-swap.
-          if (typeof Input !== 'undefined' && Input.releaseTrigger) {
-            Input.releaseTrigger();
-          } else if (typeof mouse !== 'undefined') {
-            mouse.down = false;
-          }
-          applyWeaponToPlayer(a._weapon || WEAPONS.RIFLE);
-          // Phase 102 — chain-takeover semantics. User: 'A區被殺掉 →
-          // 接管B載具@B區 → B再被殺掉 → 接管C載具@C區 → 最後來不及
-          // 復活才是全軍覆沒進入廣告'.
-          //
-          // The slot we just took over represents the PLAYER'S old body,
-          // which lies at the death spot (A) as a corpse. Critically:
-          //   • a.x / a.y → player's _lastDeathX/Y (corpse stays at A,
-          //     never teleports to spawn — earlier Phase 96 relocation
-          //     was the 'B vehicle teleported to spawn' the user flagged)
-          //   • a._respawnAt = null + a._consumed = true → the slot
-          //     NEVER respawns. The team count permanently drops by one
-          //     per chain-takeover. When the player has chained through
-          //     every teammate and dies one more time, the team-wipe
-          //     path (no alive teammates) triggers the bulk respawn at
-          //     SPAWN + the ad.
-          a.alive = false;
-          a.x = player._lastDeathX != null ? player._lastDeathX : a.x;
-          a.y = player._lastDeathY != null ? player._lastDeathY : a.y;
-          a.callsign = T('前操作员', 'EX-OPERATOR');
-          a._respawnAt = null;
-          a._consumed  = true;
-          a._useNN = true;
-          a._nnDifficulty = a._nnDifficulty || NN.difficulty || 'evolved';
-          // Instant camera cut so the user doesn't see the camera 'pan'
-          // from A to B — that lerp was the source of the perceptual
-          // 'something is sliding toward me' confusion.
-          if (typeof camera !== 'undefined') {
-            camera.x = player.x;
-            camera.y = player.y;
-          }
-          const killerInfo = player._killer ? ` · ${T('死於', 'killed by')} ${player._killer.callsign || T('敌方', 'enemy')}` : '';
-          showSwapToast(`${T('接管', 'SWAP')} ${(a.callsign === '前操作员' || a.callsign === 'EX-OPERATOR') ? T('隊友', 'ALLY') : a.callsign}${killerInfo}`);
-          playSfx('countdown', { freq: 1320, vol: 0.45 });
-        } else {
+        const swapped = (typeof tryAutoSwapToClosestAlly === 'function')
+          ? tryAutoSwapToClosestAlly()
+          : false;
+        if (!swapped) {
           player._respawnAt = game.time + playerTicks;
         }
       }

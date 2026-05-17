@@ -202,6 +202,32 @@ function swapPlayerToAlly(idx) {
   playSfx('countdown', { freq: 1320, vol: 0.45 });
 }
 
+// R4 — auto-swap-on-death entry. Finds the closest alive ally and
+// delegates to swapPlayerToAlly. Used by the NN_DEATHMATCH respawn
+// loop in place of its previous ~70 lines of inlined logic (which
+// silently diverged from swapPlayerToAlly — e.g. didn't set
+// _mpIgnoreReconcileUntil and didn't call _mpBroadcastSwap, so MP
+// peers saw a 0.5 s teleport back to the death spot after every
+// auto-swap. Consolidating fixes that latent MP bug for free).
+//
+// Returns true if a swap happened; caller falls back to a normal
+// respawn timer when false.
+function tryAutoSwapToClosestAlly() {
+  if (typeof game === 'undefined' || !game._nnMode) return false;
+  if (typeof allies === 'undefined' || !allies) return false;
+  if (typeof player === 'undefined' || !player) return false;
+  let bestIdx = -1, bestD = Infinity;
+  for (let i = 0; i < allies.length; i++) {
+    const ax = allies[i];
+    if (!ax || !ax.alive) continue;
+    const d = Math.hypot(ax.x - player.x, ax.y - player.y);
+    if (d < bestD) { bestD = d; bestIdx = i; }
+  }
+  if (bestIdx < 0) return false;
+  swapPlayerToAlly(bestIdx);
+  return true;
+}
+
 // Small top-center toast for pawn-swap feedback — replaces the full-width
 // "接管 BRAVO" center banner that used to block view of the action while
 // the player was rapid-switching between bodies.
