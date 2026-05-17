@@ -45,60 +45,60 @@
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=145"></script>
-<script src="js/arena_recruitment.js?v=145"></script>
-<script src="js/dynamic_radio.js?v=145"></script>
-<script src="js/i18n.js?v=145"></script>
-<script src="js/touch_input.js?v=145"></script>
-<script src="js/key_bindings.js?v=145"></script>
-<script src="js/grenades.js?v=145"></script>
-<script src="js/squad_commands.js?v=145"></script>
-<script src="js/multiplayer.js?v=145"></script>
-<script src="js/leaderboard.js?v=145"></script>
-<script src="js/structures.js?v=145"></script>
-<script src="js/tod.js?v=145"></script>
-<script src="js/weapons.js?v=145"></script>
-<script src="js/chassis.js?v=145"></script>
-<script src="js/respawn_buff.js?v=145"></script>
-<script src="js/death_recap.js?v=145"></script>
-<script src="js/mote_affinity.js?v=145"></script>
-<script src="js/stage_hints.js?v=145"></script>
-<script src="js/pawn_swap.js?v=145"></script>
-<script src="js/global_stats.js?v=145"></script>
-<script src="js/progressive_unlock.js?v=145"></script>
-<script src="js/ad_stubs.js?v=145"></script>
+<script src="js/audio/sfx.js?v=146"></script>
+<script src="js/arena_recruitment.js?v=146"></script>
+<script src="js/dynamic_radio.js?v=146"></script>
+<script src="js/i18n.js?v=146"></script>
+<script src="js/touch_input.js?v=146"></script>
+<script src="js/key_bindings.js?v=146"></script>
+<script src="js/grenades.js?v=146"></script>
+<script src="js/squad_commands.js?v=146"></script>
+<script src="js/multiplayer.js?v=146"></script>
+<script src="js/leaderboard.js?v=146"></script>
+<script src="js/structures.js?v=146"></script>
+<script src="js/tod.js?v=146"></script>
+<script src="js/weapons.js?v=146"></script>
+<script src="js/chassis.js?v=146"></script>
+<script src="js/respawn_buff.js?v=146"></script>
+<script src="js/death_recap.js?v=146"></script>
+<script src="js/mote_affinity.js?v=146"></script>
+<script src="js/stage_hints.js?v=146"></script>
+<script src="js/pawn_swap.js?v=146"></script>
+<script src="js/global_stats.js?v=146"></script>
+<script src="js/progressive_unlock.js?v=146"></script>
+<script src="js/ad_stubs.js?v=146"></script>
 <!-- Crazy Games SDK wiring — must load AFTER ad_stubs.js since it overrides
      requestRewardedAd. In local dev SDK shows a dev-mode overlay; on the
      portal it serves real ads. -->
-<script src="js/crazygames.js?v=145"></script>
+<script src="js/crazygames.js?v=146"></script>
 <!-- R1 refactor — explicit ad-lifecycle state machine. MUST load before
      gamemonetize.js so its window.adState is defined when GM forwards
      SDK events. See js/ad_state.js header for the state diagram. -->
-<script src="js/ad_state.js?v=145"></script>
+<script src="js/ad_state.js?v=146"></script>
 <!-- R2 refactor — Input module. Owns ALL writes to the global `mouse`
      state + canvas-inset coord translation. See js/input.js header
      for the trigger-edge primitives. -->
-<script src="js/input.js?v=145"></script>
+<script src="js/input.js?v=146"></script>
 <!-- R3 refactor — WeaponState module. Owns every weapon-state write on
      `player` (ammo / reload / fireCooldown / swap / equip). Loads
      AFTER js/weapons.js (above) — weapons.js installs the
      window.__setPlayerWeapon setter shim at top-level so WeaponState
      can mutate `playerWeapon` even though it's a `let` in another
      classic-script file. See js/weapon_state.js header. -->
-<script src="js/weapon_state.js?v=145"></script>
+<script src="js/weapon_state.js?v=146"></script>
 <!-- GameMonetize SDK — Phase 73 self-hosted ad path. Only active when
      NOT on crazygames.com (handled by hostname check inside). Loads
      AFTER crazygames.js so its overrides win on ashgrid.io / dev. -->
-<script src="js/gamemonetize.js?v=145"></script>
+<script src="js/gamemonetize.js?v=146"></script>
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=145"></script>
-<script src="js/world_gen.js?v=145"></script>
-<script src="js/squad.js?v=145"></script>
-<script src="js/drone_fpv.js?v=145"></script>
-<script src="js/vision_raycast.js?v=145"></script>
-<script src="js/camera.js?v=145"></script>
-<script src="js/defense_build_ui.js?v=145"></script>
-<script src="js/pause.js?v=145"></script>
+<script src="js/missions/nn_deathmatch.js?v=146"></script>
+<script src="js/world_gen.js?v=146"></script>
+<script src="js/squad.js?v=146"></script>
+<script src="js/drone_fpv.js?v=146"></script>
+<script src="js/vision_raycast.js?v=146"></script>
+<script src="js/camera.js?v=146"></script>
+<script src="js/defense_build_ui.js?v=146"></script>
+<script src="js/pause.js?v=146"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -7508,6 +7508,23 @@ function updateBullets() {
     if (!hit) for (let li = 0; li < lowCovers.length; li++) {
       const lc = lowCovers[li];
       if (b.x > lc.x && b.x < lc.x+lc.w && b.y > lc.y && b.y < lc.y+lc.h) {
+        // Phase 114 — pass-through when the shooter is INSIDE this same
+        // lowCover. User: '如果我今天在這一個方塊裡面, 然後敵人也進這個
+        // 方塊, 敵人是射得到我的, 這樣才公平'.
+        // Two effects of the same rule:
+        //   • Fire OUT of your own cover — bullets aren't eaten on spawn
+        //     the moment they leave your waist; they exit normally.
+        //   • Same-cover firefight — if you AND the enemy both stand in
+        //     the same lowCover bbox, neither cover-blocks the other's
+        //     shots, and damage registers normally.
+        // Bullets coming IN from outside still die at the cover (that's
+        // the whole point of cover for the person inside).
+        const fu = b.fromUnit;
+        if (fu && fu.alive
+            && fu.x > lc.x && fu.x < lc.x+lc.w
+            && fu.y > lc.y && fu.y < lc.y+lc.h) {
+          continue;     // shooter is inside this cover — let bullet pass
+        }
         if (game._nnGameMode === 'defense' && lc.hp != null) {
           lc.hp -= b.damage || 12;
           if (lc.hp <= 0) {
@@ -7700,6 +7717,17 @@ function updateBullets() {
     if (!hit) for (let li = 0; li < lowCovers.length; li++) {
       const lc = lowCovers[li];
       if (b.x > lc.x && b.x < lc.x+lc.w && b.y > lc.y && b.y < lc.y+lc.h) {
+        // Phase 114 — same pass-through rule as player bullets (above):
+        // if the enemy shooter is also inside this lowCover (same bbox
+        // firefight), let the bullet pass so a player crouched in the
+        // cover can be hit fairly. See header comment in the player
+        // bullet branch for the full rationale.
+        const fu = b.fromUnit;
+        if (fu && fu.alive
+            && fu.x > lc.x && fu.x < lc.x+lc.w
+            && fu.y > lc.y && fu.y < lc.y+lc.h) {
+          continue;
+        }
         if (game._nnGameMode === 'defense' && lc.hp != null) {
           lc.hp -= b.damage || 12;
           if (lc.hp <= 0) {
