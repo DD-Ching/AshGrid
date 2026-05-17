@@ -49,6 +49,12 @@ function nearestVisibleEnemy(ax, ay, fromAngle, range) {
   let best = null, bestD = Infinity;
   for (const e of enemies) {
     if (!e.alive) continue;
+    // Phase 116 — auto-targeting (rule-based ally fire) skips KO-stunned
+    // enemies. They render white and the player is meant to walk over and
+    // press G to recruit them. User: '我不希望我的隊友把這個變成白色的
+    // 這個敵人殺掉'. Manual player fire still lands; this only gates the
+    // auto-pick.
+    if (e._koStunned) continue;
     const dx = e.x - ax, dy = e.y - ay;
     const d = Math.hypot(dx, dy);
     if (d < range && angleInCone(fromAngle, effectiveArc(d), ax, ay, e.x, e.y) && lineOfSight(ax, ay, e.x, e.y)) {

@@ -436,6 +436,9 @@ function updateStructures() {
         let best = null, bestD = def.range;
         for (const e of enemies) {
           if (!e.alive) continue;
+          // Phase 116 — turrets skip KO-stunned (white) enemies too —
+          // they're the recruit-via-G target, not for auto-fire.
+          if (e._koStunned) continue;
           const d = Math.hypot(e.x - s.x, e.y - s.y);
           if (d < bestD && lineOfSight(s.x, s.y, e.x, e.y)) { best = e; bestD = d; }
         }

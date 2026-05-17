@@ -86,7 +86,13 @@ function nnBuildObs(me, friendlies, enemies, outBuf, flipX = false) {
   obs[i++] = me.alive ? 1 : 0;
 
   // --- Visible enemies × 3 (6 each = 18) ---
-  const enemySorted = enemies.filter(e => e.alive).slice().sort((a, b) => {
+  // Phase 116 — exclude KO-stunned (white-rendered, recruit-target)
+  // units from the obs entirely. Even though nnNearestVisibleEnemy
+  // already filters them at lookup time, leaving them in the obs
+  // would let the PPO model still 'see' a stunned silhouette at the
+  // wrong slot and decide to fire toward it. Single filter here keeps
+  // the trained behaviour aligned with the no-friendly-fire intent.
+  const enemySorted = enemies.filter(e => e.alive && !e._koStunned).slice().sort((a, b) => {
     const va = nnIsVisible(me, a) ? 1 : 0;
     const vb = nnIsVisible(me, b) ? 1 : 0;
     if (va !== vb) return vb - va;
@@ -417,6 +423,13 @@ function nnNearestVisibleEnemy(me, enemies) {
   let best = null, bestD2 = Infinity;
   for (const e of enemies) {
     if (!e.alive || e === me) continue;
+    // Phase 116 — NN-driven units (allies AND enemies) skip KO-stunned
+    // candidates as a target. _koStunned is only ever set on red-team
+    // enemies (arena_recruitment.js), so for enemy bots looking at the
+    // blue side this is a no-op; for ally bots looking at reds, it
+    // prevents auto-fire on the white 'press G to recruit' enemy.
+    // User: '我不希望我的載具, 其他的自動攻擊會這樣'.
+    if (e._koStunned) continue;
     if (!nnIsVisible(me, e)) continue;
     const d2 = (e.x - me.x)**2 + (e.y - me.y)**2;
     if (d2 < bestD2) { best = e; bestD2 = d2; }
