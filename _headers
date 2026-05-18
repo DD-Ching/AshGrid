@@ -3,9 +3,14 @@
 
 # HTML — never cache at edge, force browser to revalidate.
 # (Service-worker handles offline. Edge-cache HTML breaks instant updates.)
+#
+# NOTE: previously had `X-Frame-Options: ALLOWALL` here. That value is NOT in
+# the HTTP spec (valid values: DENY / SAMEORIGIN only; ALLOW-FROM deprecated).
+# Removed because CF Pages' header validator may reject invalid values and
+# that's a candidate cause for the /-path 500s we saw on 2026-05-18.
+# If we ever need to allow embedding in iframes, use CSP `frame-ancestors`.
 /
   Cache-Control: no-cache, must-revalidate
-  X-Frame-Options: ALLOWALL
   X-Content-Type-Options: nosniff
 
 /index.html
