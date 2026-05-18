@@ -959,16 +959,13 @@ function _hudDrawCachedPanels() {
   return refresh;
 }
 
-// Phase 108 — second-pass: HUD_AD_TOP / BOTTOM are now the OUTER FRAME
-// THICKNESS. The canvas itself is resized (in resize() above) so its
-// top sits at y = HUD_AD_TOP px and its bottom at y = innerHeight -
-// HUD_AD_BOTTOM, leaving the 60 px strips completely empty. The
-// #frameAdTop / #frameAdBottom DOM divs sit in those empty zones; if
-// no ad is loaded the body's dark #0A0A0E shows through. HUD draws
-// no longer offset by these — y = 0 inside the canvas is already
-// below the top strip. (Forward-declared here as a duplicate so the
-// early-init resize() can read them; the actual canonical defs sit
-// in the HUD helpers section further down.)
+// Phase 108 / 124 — HUD_AD_TOP is the OUTER FRAME THICKNESS at the top
+// (HUD_AD_BOTTOM = 0 since Phase 124 collapsed bottom into top). The
+// canvas itself is resized (in resize() above) so its top sits at
+// y = HUD_AD_TOP px, leaving the strip completely empty above it.
+// The #frameAdTop DOM div sits in that empty zone; if no ad is loaded,
+// the body's dark #0A0A0E shows through. HUD draws no longer offset by
+// these — y = 0 inside the canvas is already below the top strip.
 
 // Tracks game.mode across cached frames so a TAB-press (tactical ↔
 // command etc.) invalidates the cache instantly instead of waiting up
