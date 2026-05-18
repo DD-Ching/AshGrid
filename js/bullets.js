@@ -476,16 +476,19 @@ function updateBullets() {
         const srcX = b.x - b.vx, srcY = b.y - b.vy;
         player._hurtAngle = Math.atan2(srcY - player.y, srcX - player.x);
         player._hurtIntensity = Math.min(1, (player._hurtIntensity || 0) + 0.6);
-        if (player.hp <= 0) {
-          player.hp = 0;
-          player.alive = false;
-          if (typeof _lbBumpDeath === 'function') _lbBumpDeath();
-          player._lastDeathX = player.x; player._lastDeathY = player.y;
+        if (player.hp <= 0 && player.alive) {
+          // Bullet-specific telemetry — recorded BEFORE the state transition
+          // so the death-recap UI can read the killer / weapon next frame.
           player._killer = b.fromUnit || null;
           player._killerWeapon = b.weaponName || '';
           // Streak ends with you
           player._killStreak = 0;
           player._killStreakFlashUntil = 0;
+          // R12 — canonical state transition: alive=false, hp=0,
+          // _lbBumpDeath, _lastDeathX/Y, _respawnAt, _killedAtTime.
+          if (typeof PlayerLifecycle !== 'undefined') {
+            PlayerLifecycle.killPlayer({ x: player.x, y: player.y });
+          }
           createExplosion(player.x, player.y, 'big');
           playSfx('death');
           // Crazy Games — count the death for the midgame-ad cadence.

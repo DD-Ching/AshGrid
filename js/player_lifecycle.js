@@ -32,25 +32,43 @@
   }
 
   // ─── Transition: kill ──────────────────────────────────────────────
-  // Sets alive=false, hp=0, records death marker, schedules respawn.
+  // Marks player dead. Sets alive=false, hp=0, records the death marker.
   // Idempotent — calling on an already-dead player no-ops (returns false).
-  // Caller is responsible for creating explosion / playing audio / spawning
-  // particles; this API only owns the state-fields.
+  //
+  // IMPORTANT: does NOT set _respawnAt — caller decides timing because
+  // respawn scheduling differs by context:
+  //   • SP NN mode tries auto-swap-to-closest-ally first; if that
+  //     succeeds, no respawn timer needed (player is alive again via
+  //     the swap). nn_deathmatch.js gates on `!alive && _respawnAt == null`
+  //     to trigger the swap, so killPlayer must leave _respawnAt null.
+  //   • MP uses the server's authoritative _respawnFrames from the kill
+  //     event — caller pairs with scheduleRespawn(_respawnFrames).
+  //   • Kamikaze / campaign mission failure relies on onMissionFailed
+  //     for retry flow — no per-player timer at all.
+  //
+  // Caller is responsible for creating explosion / playing audio /
+  // spawning particles / triggering death recap; this API only owns
+  // the canonical state-fields.
   function killPlayer(opts) {
     opts = opts || {};
     if (typeof player === 'undefined' || !player.alive) return false;
     const _gt = _gameTime();
-    const respawnSec = (typeof getRespawnSeconds === 'function')
-      ? getRespawnSeconds() : 15;
     player.alive = false;
     player.hp = 0;
     player._lastDeathX = (opts.x != null) ? opts.x : player.x;
     player._lastDeathY = (opts.y != null) ? opts.y : player.y;
     player._killedAtTime = _gt;
-    // Ticks-per-second is 60 (matches Phase 21 "180 ticks = 3 s").
-    player._respawnAt = _gt + Math.round(respawnSec * 60);
     if (typeof _lbBumpDeath === 'function') _lbBumpDeath();
     return true;
+  }
+
+  // ─── Transition: schedule respawn timer ────────────────────────────
+  // Sets _respawnAt = now + ticksFromNow. Used by callers AFTER killPlayer
+  // when they're ready to start the countdown (SP auto-swap-failed path,
+  // MP server kill event handler, MP synthesized-kill fallback).
+  function scheduleRespawn(ticksFromNow) {
+    if (typeof player === 'undefined') return;
+    player._respawnAt = _gameTime() + ticksFromNow;
   }
 
   // ─── Transition: revive ────────────────────────────────────────────
@@ -76,6 +94,10 @@
     player.ammo = player.maxAmmo || player.ammo || 0;
     player.reserve = Math.max(player.reserve || 0, 120);
     player.reloading = false;
+    // Restore armor (heavy chassis only; humanoid has maxArmor=0).
+    if (player.maxArmor > 0) player.armor = player.maxArmor;
+    // Settle gun recoil so the first shot after respawn isn't a flailing one.
+    player.gunRecoil = 0;
     // Explicit grant (no Math.max). The dead-state Infinity from MP
     // snapshot must NOT stick onto the live-state shield — Phase 122
     // root cause.
@@ -118,6 +140,7 @@
 
   window.PlayerLifecycle = {
     killPlayer,
+    scheduleRespawn,
     reviveAtSpawn,
     extendInvuln,
     isPlayerAlive,

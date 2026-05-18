@@ -182,17 +182,14 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
     const state = game._teamWipe.blue;
     if (state) { state.wipedSince = null; state.respawnAt = null; }
     if (!player) return;
-    player.alive = true;
-    player.hp = player.maxHp;
-    if (player.maxArmor > 0) player.armor = player.maxArmor;
-    player._respawnAt = null;
-    // Phase 102 — 3s spawn protection (was 120 = 2s). See _reviveTeam.
-    player._invulnUntil = game.time + 180;
-    // Pop the player back to the blue spawn anchor (their last death spot
-    // is probably surrounded by red — give them breathing room).
-    if (game._nnSpawnBlue) {
-      player.x = game._nnSpawnBlue.x;
-      player.y = game._nnSpawnBlue.y;
+    // R12 — alive=true, hp=max, armor=max, _respawnAt=null, _invulnUntil=+180
+    // all go through PlayerLifecycle.reviveAtSpawn. Position pops back to the
+    // blue spawn anchor (their last death spot is probably surrounded by red
+    // — give them breathing room).
+    if (typeof PlayerLifecycle === 'undefined') return;
+    const sp = game._nnSpawnBlue;
+    PlayerLifecycle.reviveAtSpawn(sp ? { x: sp.x, y: sp.y } : {});
+    if (sp) {
       player._lastX = player.x; player._lastY = player.y;
       player._velX = 0; player._velY = 0;
     }
@@ -436,7 +433,13 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           ? tryAutoSwapToClosestAlly()
           : false;
         if (!swapped) {
-          player._respawnAt = game.time + playerTicks;
+          // R12 — schedule timer via PlayerLifecycle so _respawnAt write
+          // goes through the central state owner.
+          if (typeof PlayerLifecycle !== 'undefined') {
+            PlayerLifecycle.scheduleRespawn(playerTicks);
+          } else {
+            player._respawnAt = game.time + playerTicks;
+          }
         }
       }
       for (const a of allies) {
@@ -489,21 +492,24 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         return sp;
       };
       if (!player.alive && player._respawnAt != null && game.time >= player._respawnAt) {
-        player.alive = true;
-        player.hp = player.maxHp;
+        // R12 — canonical revive transition (alive=true, hp=max, armor=max,
+        // gunRecoil=0, reloading=false, _invulnUntil=+SPAWN_INVULN_TICKS,
+        // _lastRespawnAt=now, _respawnAt=null, _killedAtTime=0).
+        const psp = _nextBlueSpawn();
+        if (typeof PlayerLifecycle !== 'undefined') {
+          PlayerLifecycle.reviveAtSpawn({
+            x: _spX(psp.x),
+            y: _spY(psp.y + (Math.random() - 0.5) * 60),
+            invulnTicks: SPAWN_INVULN_TICKS,
+          });
+        }
+        // SP-NN weapon-specific ammo override (reviveAtSpawn defaults to
+        // maxAmmo; here we want playerWeapon.magSize + reserveStart from
+        // the actual weapon definition).
         if (playerWeapon) {
           player.ammo = playerWeapon.magSize;
           player.reserve = playerWeapon.reserveStart;
-        } else {
-          player.ammo = player.maxAmmo;
         }
-        const psp = _nextBlueSpawn();
-        player.x = _spX(psp.x);
-        player.y = _spY(psp.y + (Math.random() - 0.5) * 60);
-        player._respawnAt = null;
-        player.gunRecoil = 0;
-        player.reloading = false;
-        player._invulnUntil = game.time + SPAWN_INVULN_TICKS;
         playSfx('respawn');
       }
       for (const a of allies) {

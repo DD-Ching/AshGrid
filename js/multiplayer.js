@@ -472,16 +472,23 @@ function _mpHandleSnapshot(snap) {
       // recap UI still works; killer name shows as '?' since we never
       // got the kill event.
       if (typeof player !== 'undefined' && player.alive && _mpState.serverSelfAlive === false) {
-        const _gt = (typeof game !== 'undefined' && game.time) ? game.time : 0;
         const _respawnFrames = (typeof getRespawnSeconds === 'function')
           ? getRespawnSeconds() * 60 : 180;
-        player.alive = false;
-        player._killedAtTime = _gt;
-        player._respawnAt = _gt + _respawnFrames;
+        // Synthesize minimal kill metadata for the death-recap UI before
+        // the state transition — killer shows as '?' since we never got
+        // the kill event.
         if (!player._killer) player._killer = { callsign: '?' };
+        // R12 — canonical dead transition + schedule respawn timer.
+        // alive=false, hp=0, _killedAtTime, _lastDeathX/Y, _lbBumpDeath
+        // all flow through PlayerLifecycle.killPlayer; the respawn
+        // countdown is scheduled separately so SP NN's auto-swap path
+        // can still skip it for itself (irrelevant here in MP).
+        if (typeof PlayerLifecycle !== 'undefined') {
+          PlayerLifecycle.killPlayer({ x: player.x, y: player.y });
+          PlayerLifecycle.scheduleRespawn(_respawnFrames);
+        }
         if (typeof triggerShake === 'function') triggerShake(8, 18);
         if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
-        if (typeof _lbBumpDeath === 'function') _lbBumpDeath();
         console.log('[mp] alive→dead via snapshot (kill event was lost)');
       }
       // Drop inputs the server has already processed. lastInputSeq is

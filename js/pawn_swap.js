@@ -152,11 +152,20 @@ function swapPlayerToAlly(idx) {
     fpv.max = newFpvMax;
     fpv.available = newFpvMax;
   }
-  // Phase 102 — 3 s spawn protection on pawn-swap (matches server INVULN_TICKS
-  // = 3 * TICK_HZ and respawn invuln). Was 60 ticks (1 s) which let the
-  // player get insta-killed the instant after switching to a body —
-  // restarting the kill→respawn loop the user explicitly complained about.
-  player._invulnUntil = game.time + 180;
+  // Phase 102 / R12 — 3 s spawn protection on pawn-swap (matches server
+  // INVULN_TICKS = 3 * TICK_HZ and respawn invuln). Was 60 ticks (1 s)
+  // which let the player get insta-killed the instant after switching to
+  // a body — restarting the kill→respawn loop the user explicitly
+  // complained about. R12: grant via PlayerLifecycle so the 180-tick
+  // snapshot-protection window also engages — solo-MP pawn-swap into a
+  // hot zone otherwise has stale "you're dead" packets stripping the
+  // shield within ms (same race shape as the respawn bug Phase 125 fixed).
+  if (typeof PlayerLifecycle !== 'undefined') {
+    PlayerLifecycle.extendInvuln(180);
+  } else {
+    player._invulnUntil = game.time + 180;
+  }
+  player._lastRespawnAt = game.time;
   player._lastX = targetX; player._lastY = targetY;
   player._velX = 0; player._velY = 0;
   player._lastDeathX = null; player._lastDeathY = null;

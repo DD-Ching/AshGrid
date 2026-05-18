@@ -54,12 +54,13 @@ function _adRevivePlayer() {
     } else if (typeof game._arenaReviveTeam === 'function') {
       game._arenaReviveTeam('blue');
     } else if (player) {
-      player.alive = true;
-      player.hp = player.maxHp;
-      player._respawnAt = null;
-      // Phase 21: ad-revive invuln 90 → 180 ticks (3 s) to match the
-      // rest of the spawn-shield set after user '無敵時間需增長'.
-      player._invulnUntil = (game.time || 0) + 180;
+      // R12 — defensive fallback when neither game._arenaRevivePlayerOnly
+      // nor _arenaReviveTeam are wired (older mission factory). Canonical
+      // revive transition handled by PlayerLifecycle: alive=true, hp=max,
+      // armor=max, _invulnUntil=+180, _respawnAt=null, _lastRespawnAt=now.
+      if (typeof PlayerLifecycle !== 'undefined') {
+        PlayerLifecycle.reviveAtSpawn();
+      }
     }
     // Phase 60: bundle the 30-minute fast-respawn buff with the revive.
     // One ad watch = both benefits → higher perceived ad value, more
