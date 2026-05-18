@@ -25,8 +25,10 @@
 //   ARENA_SEED_MAX · ARENA_SEED_GAP · CHASSIS · CHASSIS_FPV_COUNT ·
 //   T · mapName · getOperatorName · touchInput · _mpIsActive · _mpState ·
 //   _mpRenderHUD · _hud_canvasInsetFrame · drawDefenseShop · renderDeath-
-//   Recap · _mpRenderNetDebug · _updateRespawnAdSlot · _updateSideAd-
-//   Slots · _updateFrameAdSlots · drawObjectiveCompass · etc.
+//   Recap · _mpRenderNetDebug · drawObjectiveCompass · etc.
+//   (_updateRespawnAdSlot / _updateSideAdSlots / _updateFrameAdSlots
+//   moved to js/ad_slots.js in R11 Step 3; renderHUD still calls them
+//   by name — they're globals across the classic-script load.)
 
 function renderHUD() {
   // Full HUD: HP / ammo / minimap / mission / energy all visible.
