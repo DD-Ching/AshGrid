@@ -848,27 +848,24 @@ function _mpHandleKill(data) {
     // broadcasts (catch-up after lag, AOE explosion echoes) can still arrive.
     // Drop them here so the death/respawn cycle stays clean.
     if (!player.alive) return;
-    if (typeof _lbBumpDeath === 'function') _lbBumpDeath();
-    player.alive = false;
+    // Bullet-specific telemetry — set BEFORE the state transition so the
+    // death-recap UI reads the right killer / weapon next frame.
     player._killer = { callsign: shooterName };
     player._killerWeapon = data.weapon;
-    // Phase 59: set _respawnAt + _killedAtTime so (a) the dead-state
-    // countdown overlay at index.html:9546 actually renders (was checking
-    // player._respawnAt != null and that was never set on MP death → user
-    // saw 'instant respawn' because no UI marked the 3s window), and (b)
-    // the snapshot dead→alive transition above has a death-time anchor
-    // to gate against insta-flip races.
-    //
-    // Phase 60: respawn duration is buffable via 'watch ad' rewarded video.
-    // Default 15s, buff active 5s (÷3, 30 min duration). Server-side
-    // RESPAWN_TICKS bumped to match (see server/party/server.js). Both
-    // sides must agree or dead→alive transition will stall.
-    const _gt = (typeof game !== 'undefined' && game.time) ? game.time : 0;
+    // R12 — canonical death transition via PlayerLifecycle. killPlayer
+    // owns alive=false, hp=0, _killedAtTime, _lastDeathX/Y, _lbBumpDeath.
+    // scheduleRespawn is separate (Phase 59/60: respawn duration is
+    // buffable via 'watch ad' rewarded video; default 15s, buffed 5s.
+    // Server-side RESPAWN_TICKS bumped to match — see
+    // server/party/server.js). Both sides must agree or the dead→alive
+    // transition will stall.
     const _respawnFrames = (typeof getRespawnSeconds === 'function')
       ? getRespawnSeconds() * 60
       : 180;
-    player._respawnAt = _gt + _respawnFrames;
-    player._killedAtTime = _gt;
+    if (typeof PlayerLifecycle !== 'undefined') {
+      PlayerLifecycle.killPlayer({ x: player.x, y: player.y });
+      PlayerLifecycle.scheduleRespawn(_respawnFrames);
+    }
     if (typeof triggerShake === 'function') triggerShake(8, 18);
     if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
       game._teamWipe.blue.wipedSince = game.time;

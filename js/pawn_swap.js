@@ -124,15 +124,11 @@ function swapPlayerToAlly(idx) {
   // Move operator into target body — and ALWAYS clear any pending respawn.
   // This is the rule: a successful takeover cancels the respawn countdown.
   const wasResurrected = !player.alive;
-  player.alive = true;
-  player._respawnAt = null;
   player._lastBeepSec = -1;
-  player.x = targetX; player.y = targetY;
-  player.angle = targetAngle;
-  player.gunAngle = targetGun;
-  player.gunRecoil = targetGunRecoil * 0.4;
-  player.hp = targetHp; player.maxHp = targetMaxHp;
-  // Inherit the ally's chassis (speed / radius / silhouette) on pawn-swap
+  // Set CHASSIS first so reviveAtSpawn's defaults (player.maxHp,
+  // player.maxArmor checks) see the new chassis's values. The chassis
+  // assignment is pawn-swap's load-bearing concern, so it stays inline.
+  player.maxHp = targetMaxHp;
   player._chassis = targetChassis || player._chassis || 'humanoid';
   const _cdef = CHASSIS[player._chassis] || CHASSIS.humanoid;
   player.speed  = 2.8 * _cdef.speedMul;
@@ -140,13 +136,9 @@ function swapPlayerToAlly(idx) {
   // it up. See chassis.js applyChassisToUnit for rationale.
   player._chassisSpeedMul = _cdef.speedMul;
   player.radius = Math.round(14 * _cdef.radiusMul);
-  // Phase 127 — armor buffer for the new chassis. Pre-Phase-127 pawn-swap
-  // forgot to transfer maxArmor/armor from the new chassis, so any swap
-  // INTO a heavy body left maxArmor=0 (inherited from the prior non-heavy
-  // chassis) and the HUD armor-bar gate `player.maxArmor > 0` failed →
-  // armor bar invisible despite being in a heavy body. User:
-  // '操作重裝載具時護盾bar從介面中消失了 失效了?'.
-  // Mirror the same init chassis.js:107 does at match-start.
+  // Phase 127 — armor buffer for the new chassis. Mirror chassis.js:107.
+  // Set BEFORE reviveAtSpawn so its `if (maxArmor>0) armor=maxArmor`
+  // branch uses the new chassis's value.
   if (_cdef.armor != null) {
     player.maxArmor = _cdef.armor;
     player.armor = _cdef.armor;
@@ -157,9 +149,7 @@ function swapPlayerToAlly(idx) {
   }
   // Phase 102 — entering a new chassis refills the kamikaze loadout to
   // that chassis's fixed count (wolf 2, humanoid 3, heavy 4). User:
-  // '自殺式人機, 每一個載具都要有三台或兩台或四台'. Implicit policy:
-  // each vehicle carries its own drones, taking it over hands you what
-  // it had on the rack — not what your previous body had left over.
+  // '自殺式人機, 每一個載具都要有三台或兩台或四台'.
   if (typeof CHASSIS_FPV_COUNT !== 'undefined' && typeof fpv !== 'undefined') {
     const newFpvMax = CHASSIS_FPV_COUNT[player._chassis] != null
       ? CHASSIS_FPV_COUNT[player._chassis]
@@ -167,20 +157,35 @@ function swapPlayerToAlly(idx) {
     fpv.max = newFpvMax;
     fpv.available = newFpvMax;
   }
-  // Phase 102 / R12 — 3 s spawn protection on pawn-swap (matches server
-  // INVULN_TICKS = 3 * TICK_HZ and respawn invuln). Was 60 ticks (1 s)
-  // which let the player get insta-killed the instant after switching to
-  // a body — restarting the kill→respawn loop the user explicitly
-  // complained about. R12: grant via PlayerLifecycle so the 180-tick
-  // snapshot-protection window also engages — solo-MP pawn-swap into a
-  // hot zone otherwise has stale "you're dead" packets stripping the
-  // shield within ms (same race shape as the respawn bug Phase 125 fixed).
+  // R12 — canonical alive transition. reviveAtSpawn owns:
+  //   alive=true, hp=targetHp, x/y=target spot, _invulnUntil=+180,
+  //   _lastRespawnAt=now, _respawnAt=null, _killedAtTime=0,
+  //   _mpIgnoreReconcileUntil=0, ammo=max (overridden by
+  //   applyWeaponToPlayer below), reloading=false, dismissDeathRecap.
+  // Phase 102: 180-tick invuln (was 60 = 1 s) so the body switch isn't
+  // instant-killed in a hot zone. Phase 125: also engages the 180-tick
+  // snapshot protection window so stale "you're dead" packets can't
+  // strip the shield.
   if (typeof PlayerLifecycle !== 'undefined') {
-    PlayerLifecycle.extendInvuln(180);
+    PlayerLifecycle.reviveAtSpawn({
+      x: targetX, y: targetY,
+      hp: targetHp,
+      invulnTicks: 180,
+    });
   } else {
+    // Defensive fallback if PlayerLifecycle didn't load.
+    player.alive = true;
+    player._respawnAt = null;
+    player.x = targetX; player.y = targetY;
+    player.hp = targetHp;
     player._invulnUntil = game.time + 180;
+    player._lastRespawnAt = game.time;
+    player._killedAtTime = 0;
   }
-  player._lastRespawnAt = game.time;
+  // Pawn-swap-specific overrides AFTER reviveAtSpawn defaults:
+  player.angle = targetAngle;
+  player.gunAngle = targetGun;
+  player.gunRecoil = targetGunRecoil * 0.4;   // override the gunRecoil=0 reset
   player._lastX = targetX; player._lastY = targetY;
   player._velX = 0; player._velY = 0;
   player._lastDeathX = null; player._lastDeathY = null;

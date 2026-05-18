@@ -35,7 +35,16 @@ function _recallToSpawn() {
   }
   player.x = sx; player.y = sy;
   player._velX = 0; player._velY = 0;
-  player._invulnUntil = game.time + 60;
+  // R12 — grant 60-tick (1 s) invuln via PlayerLifecycle so future
+  // refactors of the invuln gate don't miss this path. Short shield
+  // (vs the standard 180) is intentional — recall is a quick teleport,
+  // not a death/respawn, so we just need a frame or two of "you didn't
+  // get hit while teleporting" cover.
+  if (typeof PlayerLifecycle !== 'undefined') {
+    PlayerLifecycle.extendInvuln(60);
+  } else {
+    player._invulnUntil = game.time + 60;
+  }
   if (typeof showSwapToast === 'function') {
     showSwapToast(T('▶ 回到出生點', '▶ RECALL TO SPAWN'));
   }
