@@ -743,7 +743,12 @@ function _nnRunPatrol(unit, friendly, hostile) {
 }
 
 // Per-frame batch dispatcher: collect all NN-controlled units, run one inference, apply actions.
-const _nnObsBuf = new Float32Array(NN.OBS_DIM * 16); // up to 16 units
+// LAZY-INIT: `NN` is defined inline in index.html body (line ~4728), AFTER all
+// js/*.js modules in <head> have already parsed. Doing `new Float32Array(NN.OBS_DIM * 16)`
+// at MODULE level throws `ReferenceError: NN is not defined` and aborts the rest of
+// enemy_ai.js — wiping nnTick + updateEnemies definitions below. Surfaced after SW
+// v122→v123 invalidated the cached pre-R9 inline copy of these functions.
+let _nnObsBuf = null;
 // Mirror an action across the vertical axis (E↔W, NE↔NW, SE↔SW; N/S/idle unchanged).
 // Built from action = move_dir * 2 + fire, where move_dirs 1..8 are
 // [N, NE, E, SE, S, SW, W, NW]. Mirroring across X swaps E↔W → swaps move_dirs
@@ -791,6 +796,9 @@ let _nnInferring = false;
 async function nnTick() {
   if (!NN.loaded || _nnInferring) return;
   if (game.state !== 'playing') return;
+  // Lazy-init the observation buffer (NN is defined inline in index.html body,
+  // after enemy_ai.js parses in <head> — see note above _nnObsBuf declaration).
+  if (_nnObsBuf === null) _nnObsBuf = new Float32Array(NN.OBS_DIM * 16);
   // Run NN dispatcher in campaign too if any unit has _useNN flagged. The
   // skirmish path sets game._nnMode and pre-flags every unit; the campaign
   // path now opts individual enemies in (spawnSoldier + spawnDroneEnemy
