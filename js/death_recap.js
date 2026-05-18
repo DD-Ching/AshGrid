@@ -71,12 +71,12 @@ function _adRevivePlayer() {
                        '▶ AD WATCHED · REVIVE + 30 MIN BUFF'));
     }
   };
-  if (typeof crazyAd_rewarded === 'function') {
-    crazyAd_rewarded((ok) => { if (ok) doRevive(); else _deathRecap.adReviveUsed = false; });
-  } else if (typeof requestRewardedAd === 'function') {
+  // R11 Step 1: single dispatch via ad_dispatch.js — handles SDK priority
+  // (crazygames > gamemonetize > stub) internally, no if/else needed here.
+  if (typeof requestRewardedAd === 'function') {
     requestRewardedAd('revive', (ok) => { if (ok) doRevive(); else _deathRecap.adReviveUsed = false; });
   } else {
-    doRevive();   // dev fallback
+    doRevive();   // dev fallback (ad_dispatch.js failed to load)
   }
 }
 
@@ -98,12 +98,12 @@ function _adGrantRespawnBuff(onDone) {
     }
     if (typeof onDone === 'function') onDone(!!ok);
   };
-  if (typeof crazyAd_rewarded === 'function') {
-    crazyAd_rewarded(finish);
-  } else if (typeof requestRewardedAd === 'function') {
+  // R11 Step 1: single dispatch via ad_dispatch.js (see _adReviveAndBuff
+  // above for the same pattern).
+  if (typeof requestRewardedAd === 'function') {
     requestRewardedAd('respawn_buff', finish);
   } else {
-    finish(true);   // dev fallback
+    finish(true);   // dev fallback (ad_dispatch.js failed to load)
   }
 }
 

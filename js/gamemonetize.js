@@ -30,10 +30,14 @@
 //
 // Classic-script. Declares globally (window-level so death_recap.js +
 // index.html see them):
-//   crazyAd_midgame  · crazyAd_rewarded · crazyNoteDeath
+//   crazyAd_midgame  · crazyNoteDeath
 //   crazyEvent_gameplayStart · crazyEvent_gameplayStop · crazyEvent_happytime
 //   crazyEvent_loadingStop · isCrazyReady · gmPreroll · gmEndMatch
 //   (and crazyMp_* shims that no-op outside the CG portal)
+//
+// R11 Step 1: rewarded ads go through window.requestRewardedAd
+// (owned by js/ad_dispatch.js). This module registers itself with the
+// dispatch as the 'gamemonetize' provider on SDK_READY.
 //
 // External deps: location · game · console · window.adState
 
@@ -92,24 +96,10 @@
                 window.sdk.preloadAd('rewarded');
               }
             } catch (e) {}
-            // Override the ad_stubs.js `requestRewardedAd` stub (which
-            // just simulates 500 ms + always succeeds) with the real GM
-            // showAd(rewarded) path. This wires the green 'WATCH AD ·
-            // REVIVE' button in death_recap.js to an actual sdk.show-
-            // Banner() call via showAd → adState.requestRewarded.
-            try {
-              if (typeof window.requestRewardedAd === 'function'
-                  && !window._requestRewardedAd_gm_wired) {
-                window._requestRewardedAd_stub = window.requestRewardedAd;
-                window.requestRewardedAd = function(rewardId, cb) {
-                  showAd(function(ok) {
-                    if (cb) try { cb(ok, { rewardId, amount: 1 }); } catch (e) {}
-                  }, { rewarded: true });
-                };
-                window._requestRewardedAd_gm_wired = true;
-                console.log('[gamemonetize] requestRewardedAd → adState wired');
-              }
-            } catch (e) {}
+            // R11 Step 1 — registration now happens unconditionally at the
+            // bottom of this IIFE; showAd itself routes dev vs production.
+            // This case keeps just the GM preload + log so the SDK_READY
+            // event still does its inventory warm-up work.
             break;
           case 'SDK_GAME_PAUSE':
             // GM signals: real ad iframe is about to / has started playing.
@@ -201,7 +191,8 @@
   // respawn banner). Rewarded is the ONLY fullscreen path; only fires
   // when player clicks 'Watch Ad' → 30-min respawn buff in return.
   window.crazyAd_midgame   = ()   => { /* no-op: no fullscreen passive */ };
-  window.crazyAd_rewarded  = (cb) => showAd(cb, { rewarded: true });
+  // R11 Step 1: crazyAd_rewarded removed — rewarded path goes through
+  // window.requestRewardedAd (ad_dispatch.js → 'gamemonetize' provider).
 
   // Phase 102 — GM-specific exports.
   //
@@ -256,7 +247,8 @@
   // fullscreen video ads. User '不是全螢幕的, 視窗那種靜態的, 全螢幕是
   // 主動要看的話'. Passive impressions come from the 300x250 respawn
   // banner (Phase 82). Fullscreen video is gated entirely on the player
-  // clicking 'Watch Ad' (rewarded path via crazyAd_rewarded).
+  // clicking 'Watch Ad' (R11: rewarded path via window.requestRewardedAd
+  // → ad_dispatch.js → 'gamemonetize' provider → showAd).
   window.crazyNoteDeath = () => { _deathCount++; };
 
   // Event functions become no-ops outside the CG portal. They're called
@@ -275,4 +267,15 @@
   window.crazyMp_inviteLink    = () => null;
 
   window.isCrazyReady = () => _ready;
+
+  // R11 Step 1 — register UNCONDITIONALLY (dev / SDK-ready / SDK-failed
+  // all go through showAd, which branches internally on _devMode + _ready).
+  // Registering here instead of inside SDK_READY means the dispatch sees
+  // a provider the moment this script parses, so first-click WATCH AD in
+  // local dev gets the 1.5s simulated reward without timing out.
+  try {
+    if (typeof window.registerAdProvider === 'function') {
+      window.registerAdProvider('gamemonetize', showAd);
+    }
+  } catch (e) {}
 })();

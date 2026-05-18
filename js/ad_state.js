@@ -49,7 +49,13 @@
 (function() {
   'use strict';
 
-  const MIN_REWARD_PLAY_MS    = 12 * 1000;
+  // Phase 121 — lowered 12s → 8s. Real GM ads commonly run 10-15s; smoke
+  // test on localhost showed a fully-played Google video ad clocking at
+  // 11.8s (FIRST_QUARTILE→COMPLETE), tripped 12s gate, earned=false, no
+  // buff. The gate's purpose is to deny ACTIVE SKIPS (user closes ad
+  // overlay early), and 8s is enough to ensure the player saw a real ad
+  // start playing rather than the SDK-close happening on a no-fill race.
+  const MIN_REWARD_PLAY_MS    = 8 * 1000;
   const LOAD_TIMEOUT_MS       = 4 * 1000;
   const PLACEHOLDER_DURATION  = 15;        // seconds
 

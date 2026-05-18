@@ -7,12 +7,12 @@
 //
 // Classic-script. Declares globally:
 //   crazyEvent_gameplayStart() · crazyEvent_gameplayStop() ·
-//   crazyEvent_happytime() · crazyAd_midgame() · crazyAd_rewarded(cb) ·
-//   crazyNoteDeath() · isCrazyReady()
+//   crazyEvent_happytime() · crazyAd_midgame() · crazyNoteDeath() ·
+//   isCrazyReady()
 //
-// We also OVERRIDE the existing requestRewardedAd() stub (defined in
-// ad_stubs.js) once the SDK loads, so any existing rewarded-ad callsite
-// in the codebase upgrades automatically when shipped on the portal.
+// R11 Step 1: rewarded ads go through window.requestRewardedAd
+// (owned by js/ad_dispatch.js). This module registers itself with the
+// dispatch as the 'crazygames' provider on SDK_READY.
 //
 // External deps: showSwapToast (optional, for dev-mode feedback)
 //
@@ -87,14 +87,12 @@
       // up. Real SDK method is `loadingStart()` (Phase 52 used the wrong
       // name `sdkGameLoadingStart` — silently no-op'd through the try).
       try { _sdk.game.loadingStart(); } catch (e) {}
-      // Override the local stub with the real rewarded-ad path once we're
-      // wired. Any existing caller using requestRewardedAd() now gets a
-      // real ad on the portal, dev-mode overlay locally.
-      if (typeof window.requestRewardedAd === 'function') {
-        window._requestRewardedAd_stub = window.requestRewardedAd;
-        window.requestRewardedAd = function(rewardId, cb) {
-          crazyAd_rewarded((ok) => cb && cb(ok, { rewardId, amount: 1 }));
-        };
+      // R11 Step 1 — register as an ad provider instead of overwriting
+      // window.requestRewardedAd. Dispatch + priority lives in
+      // js/ad_dispatch.js; CG sits at the top of the priority table so
+      // it wins on the CrazyGames portal automatically.
+      if (typeof window.registerAdProvider === 'function') {
+        window.registerAdProvider('crazygames', rewarded);
       }
       // If the page already signaled "fully loaded" before our async init
       // resolved, fire loadingStop now so we don't get stuck on the
@@ -185,16 +183,13 @@
     } catch (e) {}
   }
   // Rewarded — pass `cb(true)` on completion, `cb(false)` on dismiss / no fill.
-  // Used by `requestRewardedAd` override above. Reward semantics decided by
-  // caller (revive, etc).
+  // R11 Step 1: this is the function REGISTERED with ad_dispatch as the
+  // 'crazygames' provider. Reward semantics decided by caller (revive, etc).
   function rewarded(cb) {
     if (!_ready) {
-      // No SDK yet — fall through to whatever stub was previously installed.
-      if (typeof window._requestRewardedAd_stub === 'function') {
-        window._requestRewardedAd_stub('rewarded', cb);
-      } else {
-        setTimeout(() => cb && cb(true), 500);
-      }
+      // SDK never finished init (CG portal unreachable). Fail-open so the
+      // dispatch's caller still gets a reward — matches Phase 120 intent.
+      setTimeout(() => cb && cb(true), 500);
       return;
     }
     try {
@@ -262,7 +257,8 @@
   window.crazyMp_inviteLink       = getInviteLink;
   window.crazyEvent_happytime     = happytime;
   window.crazyAd_midgame          = midgame;
-  window.crazyAd_rewarded         = rewarded;
+  // R11 Step 1: crazyAd_rewarded removed — rewarded path goes through
+  // window.requestRewardedAd (ad_dispatch.js → 'crazygames' provider).
   window.crazyNoteDeath           = noteDeath;
   window.isCrazyReady             = () => _ready;
 

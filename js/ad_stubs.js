@@ -5,29 +5,21 @@
 // during dev / itch.io demo days.
 //
 // Classic-script. Declares globally:
-//   requestRewardedAd(rewardId, cb) · uploadScore(...) ·
-//   fetchLeaderboard(...) · shareSurvivalRun · uploadSurvivalRun ·
-//   getSurvivalScores · getDefenseScores · bumpSurvivalWave (etc.)
+//   uploadScore(...) · fetchLeaderboard(...) · shareSurvivalRun ·
+//   uploadSurvivalRun · getSurvivalScores · getDefenseScores ·
+//   bumpSurvivalWave (etc.)
 //
 // External deps: localStorage · navigator.clipboard · T · showSwapToast
+//
+// R11 Step 1: requestRewardedAd stub MOVED to js/ad_dispatch.js (single
+// owner of the global). SDK adapters (gamemonetize.js / crazygames.js)
+// register via window.registerAdProvider instead of override war.
 
-// These wrap the lifecycle that the real AdMob / Firebase integrations will
+// These wrap the lifecycle that the real Firebase / AdMob integrations will
 // plug into. Today they're local-only stubs — saving + loading come from
-// localStorage and "rewarded ad" just simulates a 0.5s wait then resolves
-// successfully. When the user authenticates AdMob / Firebase, drop the real
+// localStorage. When the user authenticates Firebase, drop the real
 // SDK into the marked spots — every callsite on the rest of the codebase
 // stays unchanged.
-
-// Rewarded ad — call requestRewardedAd(rewardId, cb). cb(true) on success,
-// cb(false) on user-dismiss or no-fill. Triggers below: revive on survival
-// loss, unlock cosmetic, etc.
-function requestRewardedAd(rewardId, cb) {
-  // STUB: just simulate a 500ms ad watch + always succeed.
-  // Real impl (AdMob / Google Mobile Ads SDK):
-  //   admob.rewarded.show(rewardId, (ok, reward) => cb(ok, reward));
-  console.log('[ad-stub]', rewardId, 'requested');
-  setTimeout(() => cb && cb(true, { rewardId, amount: 1 }), 500);
-}
 
 // Share-run helper — called from the survival end card. Builds a one-line
 // brag text + the page URL, then prefers Web Share API (mobile native
