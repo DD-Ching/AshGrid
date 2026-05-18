@@ -124,21 +124,29 @@
   }
 
   // ─── Audio mute (GM requires no game audio during ads) ──────────
+  // R14 — was inline `setAudioMuted(true)` + a `_audioMutedByAd` flag to
+  // remember whether to restore. The flag-based design got confused if
+  // the user toggled their persistent mute preference during an ad (the
+  // flag went stale → ad-end unmute either erased the user's preference
+  // OR left audio unmuted while user wanted it off). AudioMute's
+  // user-pref + transient-stack split makes the user preference and the
+  // ad's transient request independent.
   function _muteForAd() {
-    try {
-      if (typeof AUDIO !== 'undefined' && typeof setAudioMuted === 'function') {
-        _audioMutedByAd = !AUDIO.muted;     // only flag for restore if WE muted
-        setAudioMuted(true);
-      }
-    } catch (e) {}
+    if (typeof AudioMute !== 'undefined') {
+      AudioMute.requestMute('ad');
+    } else if (typeof setAudioMuted === 'function') {
+      // Fallback if R14 didn't load — old behaviour
+      _audioMutedByAd = (typeof AUDIO !== 'undefined') && !AUDIO.muted;
+      if (_audioMutedByAd) setAudioMuted(true);
+    }
   }
   function _unmuteAfterAd() {
-    try {
-      if (_audioMutedByAd && typeof setAudioMuted === 'function') {
-        setAudioMuted(false);
-      }
+    if (typeof AudioMute !== 'undefined') {
+      AudioMute.releaseMute('ad');
+    } else if (_audioMutedByAd && typeof setAudioMuted === 'function') {
+      setAudioMuted(false);
       _audioMutedByAd = false;
-    } catch (e) {}
+    }
   }
 
   // ─── Reward finalisation — single exit path ─────────────────────

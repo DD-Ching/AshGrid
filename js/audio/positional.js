@@ -29,6 +29,14 @@ function audioInit() {
   } catch (e) { AUDIO.enabled = false; }
 }
 function setAudioMuted(m) {
+  // R14 — delegate to AudioMute's user-preference path when loaded so
+  // existing callsites (pause-menu button, legacy code) automatically
+  // get the stack-aware mute logic. Direct AUDIO writes are kept as a
+  // fallback in case audio_mute.js failed to load.
+  if (typeof AudioMute !== 'undefined') {
+    AudioMute.setUserMuted(!!m);
+    return;
+  }
   AUDIO.muted = !!m;
   if (AUDIO.master) AUDIO.master.gain.value = AUDIO.muted ? 0 : AUDIO.volume;
   try { localStorage.setItem('ag.muted', AUDIO.muted ? '1' : '0'); } catch (e) {}

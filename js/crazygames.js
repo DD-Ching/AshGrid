@@ -109,7 +109,13 @@
           sdk.game.addSettingsChangeListener((settings) => {
             const audioOn = (settings && typeof settings.audio === 'boolean')
               ? settings.audio : true;
-            if (typeof window.setAudioMuted === 'function') {
+            // R14 — CG portal mute toggle is a USER-driven preference
+            // change, not a transient mute. Route through AudioMute's
+            // user-pref path so it persists to localStorage and coexists
+            // cleanly with any in-flight transient mutes (e.g. ad).
+            if (typeof AudioMute !== 'undefined') {
+              AudioMute.setUserMuted(!audioOn);
+            } else if (typeof window.setAudioMuted === 'function') {
               window.setAudioMuted(!audioOn);
             }
           });
