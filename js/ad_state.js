@@ -23,7 +23,7 @@
 //     ▼
 //   COUNTDOWN ─ onSdkPause()    ──► PLAYING   (rare: late fill)
 //     │
-//     │ (countdownExpire, 15 s)      → finalize(false, '暫無廣告')
+//     │ (countdownExpire, 15 s)      → finalize(TRUE) — Phase 120 lenient
 //     │ onSdkStart() (no fill)       → finalize(false, '暫無廣告')
 //     ▼
 //   PLAYING ── onSdkStart()     ──► check elapsed vs MIN_REWARD_PLAY_MS
@@ -176,8 +176,29 @@
       _countdownExpiry = setTimeout(() => {
         _countdownExpiry = null;
         if (_state === S.COUNTDOWN) {
-          _log('countdown expired with no fill — denying reward');
-          _finalize(false, '▶ 暫無廣告 · 再試一次');
+          // Phase 120 — placeholder-only path now grants the reward.
+          //
+          // Old behaviour (Phase 112 strict gate): no GM fill in the 4 s
+          // load window → COUNTDOWN → 15 s placeholder → finalize(false)
+          // with "暫無廣告 · 再試一次" toast. Designed to prevent freebies
+          // when no real ad served.
+          //
+          // Reality on ashgrid.io: GM rarely has inventory preloaded by
+          // the FIRST death of a session (preloadAd('rewarded') fires on
+          // SDK_READY but ashgrid.io got 0/1 fill rate during the first
+          // ~30 s of a fresh load). So every player's first WATCH AD
+          // click hit this branch and lost their respawn buff. User:
+          // '第一次看完廣告並不會有直接這個獎勵,並沒有發放復活5秒鐘的獎勵'.
+          //
+          // New contract: the visible 15 s ad-mode IS the deal. If the
+          // player sat through it (couldn't dismiss — no skip button),
+          // grant the reward whether or not a real ad served. No fraud
+          // window: 15 s wait per click, buff lasts 30 min, so spam-
+          // clicking just re-extends an already-active buff. Real-ad
+          // path (onSdkStart, line below) keeps its 12 s MIN_REWARD_PLAY
+          // gate to discourage real-ad skips.
+          _log('countdown expired with no fill — granting reward (Phase 120 lenient)');
+          _finalize(true);
         }
       }, PLACEHOLDER_DURATION * 1000);
     }, LOAD_TIMEOUT_MS);
