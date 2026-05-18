@@ -146,6 +146,18 @@ function applyChassisToUnit(u, chassisId, baseSpeed, baseHp, baseRadius) {
 //   Non-heavy: full damage to HP (legacy behaviour).
 function _applyDamageToUnit(u, dmg) {
   if (!u || !u.alive || !(dmg > 0)) return;
+  // Phase 122 — centralised invuln gate. Every per-caller gate (Phase 117
+  // kamikaze splash, bullets.js:456, grenades.js:102 …) was a fragile
+  // belt-and-suspenders pattern: when a new damage type ships, the dev
+  // can forget to add the check and the spawn shield bypasses again
+  // (which is exactly how the Phase 117 regression happened). Centralising
+  // here means the shield ALWAYS holds; per-caller gates become defensive
+  // double-checks but no longer load-bearing.
+  if (u._invulnUntil != null
+      && typeof game !== 'undefined'
+      && game.time < u._invulnUntil) {
+    return;
+  }
   const c = CHASSIS[u._chassis];
   if (c && c.armor != null) {
     u._armorLastHurtAt = (typeof game !== 'undefined') ? game.time : 0;

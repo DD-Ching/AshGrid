@@ -1432,8 +1432,17 @@ function _mpRespawnLocalPlayer() {
   // live client-only would otherwise be able to one-shot the freshly-spawned
   // player before the snapshot syncs. User: '我就是完全離開了這個地方,
   // 時間到的時候我才回來' — coming back must feel safe, not pre-killed.
+  //
+  // Phase 122 — was `Math.max(player._invulnUntil || 0, _gt + 180)` which
+  // looked defensive but had a race: while dead, snapshot handler sets
+  // _invulnUntil = Infinity (sp.invuln === true). Math.max(Infinity, _gt+180)
+  // = Infinity, sticking the "while dead" pin onto the live player. Server
+  // then sends sp.invuln === false to drop the pin → snapshot handler
+  // clears _invulnUntil to 0 → spawn shield is GONE the same tick respawn
+  // completed. User: '15s 倒數內莫名提前進場 倒致計時結束馬上死亡'.
+  // Explicit grant: ignore prior state, give EXACTLY 3 s from now.
   const _gt = (typeof game !== 'undefined' && game.time) ? game.time : 0;
-  player._invulnUntil = Math.max(player._invulnUntil || 0, _gt + 180);
+  player._invulnUntil = _gt + 180;
   // Phase 59: clear the per-player death markers so the dead-state overlay
   // (index.html:9546) hides + the snapshot dead→alive check no longer fires
   // until the next kill.
