@@ -1,17 +1,41 @@
 // ============ GLOBAL PLAYER STATS ============
 // Persistent across sessions — shown on the start screen footer + used by
-// the main menu to motivate return visits.
+// the main menu to motivate return visits. Also owns the player's
+// operator callsign (R11 Step 2: moved from js/ad_stubs.js, where the
+// header had falsely claimed this module owned it since Phase ~30).
 //
 // Classic-script. Declares globally:
-//   STATS_KEY · getGlobalStats() · setGlobalStats(s) · bumpMatchPlayed(...)
-//   bumpKillsAggregate(k) · bumpSurvivalWaveAggregate(w) ·
-//   getOperatorName() · setOperatorName(name) · refreshOperatorNameUI()
+//   STATS_KEY · getGlobalStats() · saveGlobalStats(s) · bumpMatchPlayed(...)
+//   bumpSurvivalWave(w) · refreshStartStatsLine() ·
+//   OPERATOR_NAME_KEY · getOperatorName() · setOperatorName(name)
 //
-// External deps: localStorage · document · T · getLang
+// External deps: localStorage · document · T · getLang ·
+//   refreshStartStatsLine (self) · playUnlockChord · unlockAchievement ·
+//   showStageHint · bumpDayNum · bumpCycleNum · applyUnlockGating
 
 // Persistent across sessions — shown on the start screen footer + used by
 // the main menu to motivate return visits.
 const STATS_KEY = 'ag.stats';
+
+// ─── Operator callsign (R11 Step 2) ──────────────────────────────────
+// Player's chosen display name, persisted across reloads. Used by the
+// global leaderboard (js/leaderboard.js _lbCurrentName), MP nameplates
+// (js/multiplayer.js), share-run brag text (js/run_history.js), the
+// dossier panel (js/achievements.js), and the lobby callsign input.
+// Stays here because it's a core player-identity concern — independent of
+// runs, ads, MP. Default '0451' matches the UNIT 0451 narrative tag.
+const OPERATOR_NAME_KEY = 'ag.operatorName';
+function getOperatorName() {
+  try { return (localStorage.getItem(OPERATOR_NAME_KEY) || '0451').slice(0, 12); }
+  catch (e) { return '0451'; }
+}
+function setOperatorName(name) {
+  const clean = String(name || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 12);
+  if (!clean) return getOperatorName();
+  try { localStorage.setItem(OPERATOR_NAME_KEY, clean); } catch (e) {}
+  return clean;
+}
+
 function getGlobalStats() {
   try {
     const s = JSON.parse(localStorage.getItem(STATS_KEY) || 'null');
