@@ -182,6 +182,19 @@ function swapPlayerToAlly(idx) {
     player._lastRespawnAt = game.time;
     player._killedAtTime = 0;
   }
+  // Phase 129 — reviveAtSpawn clears _mpIgnoreReconcileUntil to 0
+  // (correct for normal respawn — new spawn position, server agrees,
+  // reconcile should resume immediately). But pawn-swap needs the
+  // suppression set up at line 34 (= Infinity) to PERSIST until the
+  // server's swap-echo arrives (multiplayer.js _mpHandleMessage line
+  // ~321 clears it on the echo). Without this re-set, every snapshot
+  // after pawn-swap pulls the player back to the OLD pre-swap server
+  // position — exactly the '走路會卡住拖的感覺' bug the user reported.
+  if (typeof _mpIsActive === 'function' && _mpIsActive()) {
+    if (typeof game !== 'undefined' && typeof player !== 'undefined') {
+      player._mpIgnoreReconcileUntil = Infinity;
+    }
+  }
   // Pawn-swap-specific overrides AFTER reviveAtSpawn defaults:
   player.angle = targetAngle;
   player.gunAngle = targetGun;
