@@ -106,6 +106,29 @@
   function tickFrameEnd() {
     const m = _resolveMouse();
     if (!m) return;
+    // Phase 126 — preserve the rising-edge for semi-auto across the
+    // post-spawn invuln window. Without this guard, canFire() returns
+    // false during invuln (Phase 21 no-spawn-camp rule) but tickFrameEnd
+    // still snapshots `_wasDown = mouse.down = true`. When invuln expires,
+    // semi-auto's rising-edge check `(mouse.down && !mouse._wasDown)` is
+    // already false (the held trigger was "consumed" by the gate) and
+    // the player can't fire until they release + re-click.
+    //
+    // Showed up loud after Phase 125 because that fix made the invuln
+    // window a reliable 3 s where it used to race down to <1 s.
+    // User: '武器有機率切換之後無法發射!'
+    //
+    // Skipping the snapshot while invuln means _wasDown stays at whatever
+    // value it had when invuln started — typically false right after
+    // swap (Input.resetTriggerEdge cleared it). When invuln expires the
+    // first fire sees `(true && !false) = true` → semi-auto fires once,
+    // tickFrameEnd then runs normally and the next-frame _wasDown=true
+    // gates the held trigger as expected.
+    if (typeof PlayerLifecycle !== 'undefined'
+        && PlayerLifecycle.isPlayerInvuln
+        && PlayerLifecycle.isPlayerInvuln()) {
+      return;
+    }
     m._wasDown = m.down;
   }
 
