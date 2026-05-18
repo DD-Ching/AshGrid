@@ -472,24 +472,43 @@ function _mpHandleSnapshot(snap) {
       // recap UI still works; killer name shows as '?' since we never
       // got the kill event.
       if (typeof player !== 'undefined' && player.alive && _mpState.serverSelfAlive === false) {
-        const _respawnFrames = (typeof getRespawnSeconds === 'function')
-          ? getRespawnSeconds() * 60 : 180;
-        // Synthesize minimal kill metadata for the death-recap UI before
-        // the state transition — killer shows as '?' since we never got
-        // the kill event.
-        if (!player._killer) player._killer = { callsign: '?' };
-        // R12 — canonical dead transition + schedule respawn timer.
-        // alive=false, hp=0, _killedAtTime, _lastDeathX/Y, _lbBumpDeath
-        // all flow through PlayerLifecycle.killPlayer; the respawn
-        // countdown is scheduled separately so SP NN's auto-swap path
-        // can still skip it for itself (irrelevant here in MP).
-        if (typeof PlayerLifecycle !== 'undefined') {
-          PlayerLifecycle.killPlayer({ x: player.x, y: player.y });
-          PlayerLifecycle.scheduleRespawn(_respawnFrames);
+        // Phase 128 — post-respawn protection. Phase 125 made
+        // _mpRespawnLocalPlayer client-authoritative (force alive=true
+        // when client UI countdown ends), but the snapshot's "you're
+        // dead" packets from the server's gap-state are still in flight.
+        // Without this guard the synth-kill below kills the freshly-
+        // respawned player, the respawn timer restarts, the UI counts
+        // down again, respawn fires, another stale packet arrives,
+        // re-kill — infinite die/respawn loop the user just hit.
+        // Same 180-tick window the hp/invuln sync uses below.
+        const _justRespawnedSafe = (typeof PlayerLifecycle !== 'undefined')
+                                    && PlayerLifecycle.justRespawned(180);
+        if (_justRespawnedSafe) {
+          // Inside the protection window — server is still catching up
+          // to our client-side respawn. Ignore the stale "dead" packet
+          // for now; once the window closes (~3 s post-respawn) and the
+          // server STILL says dead, the next snapshot will fire the
+          // synth-kill normally.
+        } else {
+          const _respawnFrames = (typeof getRespawnSeconds === 'function')
+            ? getRespawnSeconds() * 60 : 180;
+          // Synthesize minimal kill metadata for the death-recap UI before
+          // the state transition — killer shows as '?' since we never got
+          // the kill event.
+          if (!player._killer) player._killer = { callsign: '?' };
+          // R12 — canonical dead transition + schedule respawn timer.
+          // alive=false, hp=0, _killedAtTime, _lastDeathX/Y, _lbBumpDeath
+          // all flow through PlayerLifecycle.killPlayer; the respawn
+          // countdown is scheduled separately so SP NN's auto-swap path
+          // can still skip it for itself (irrelevant here in MP).
+          if (typeof PlayerLifecycle !== 'undefined') {
+            PlayerLifecycle.killPlayer({ x: player.x, y: player.y });
+            PlayerLifecycle.scheduleRespawn(_respawnFrames);
+          }
+          if (typeof triggerShake === 'function') triggerShake(8, 18);
+          if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
+          console.log('[mp] alive→dead via snapshot (kill event was lost)');
         }
-        if (typeof triggerShake === 'function') triggerShake(8, 18);
-        if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
-        console.log('[mp] alive→dead via snapshot (kill event was lost)');
       }
       // Drop inputs the server has already processed. lastInputSeq is
       // ALWAYS in every snapshot (never delta-omitted) since it changes
