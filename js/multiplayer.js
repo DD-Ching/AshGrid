@@ -552,16 +552,15 @@ function _mpHandleSnapshot(snap) {
           // Spread-error reconcile (Phase 80).
           player._reconcileErr = { dx, dy };
         }
-        // Phase 125 — post-respawn protection window. After
+        // Phase 125 / R12 — post-respawn protection window. After
         // _mpRespawnLocalPlayer fires, server can still send stale
         // packets from the gap-damage period (server respawned earlier
         // than client UI countdown, server-side player took damage in
         // the gap, "you're dead" / "hp=0" packets are still in flight).
         // Block those rewrites for 180 ticks so the freshly-respawned
         // player keeps alive=true + hp=max + invuln shield intact.
-        const _now = (typeof game !== 'undefined' && game.time) ? game.time : 0;
-        const _justRespawned = (player._lastRespawnAt != null)
-                               && (_now - player._lastRespawnAt < 180);
+        const _justRespawned = (typeof PlayerLifecycle !== 'undefined')
+                               && PlayerLifecycle.justRespawned(180);
         // HP has TWO writers because NN bots live client-only (see fire()
         // ghost-bullet note in index.html). min(local, server) picks the
         // lower of:
@@ -1433,34 +1432,18 @@ function _mpBroadcastSwap(x, y, botId) {
 // snapshot's alive flag.
 function _mpRespawnLocalPlayer() {
   if (typeof player === 'undefined') return;
-  // Phase 125 — client-authoritative respawn correctness.
-  //
-  // Phase 122 fixed the Math.max-stuck-Infinity race for the invuln pin
-  // but left a deeper one: this function used to mirror serverSelfAlive
-  // + serverSelfHp blindly. Server's RESPAWN_TICKS can fire EARLIER than
-  // the client UI countdown (server doesn't always know the client's
-  // buff state at the right moment, plus delta latency). The freshly-
-  // respawned-on-server player can then take damage during the gap
-  // while the client UI is still showing "RESPAWN IN Xs". When the
-  // client UI countdown finally reaches 0 and _mpRespawnLocalPlayer
-  // ran, serverSelfAlive could already be FALSE again (server killed
-  // them a second time) and serverSelfHp could be 0 — instant re-death
-  // on respawn, no shield, exactly the user-reported regression:
-  // '連續死亡的bug仍在回歸 必續 3sec無敵!'.
-  //
-  // Fix: FORCE alive=true + hp=max. Take server's position (it's the
-  // spawn point — server is authoritative for where) but NOT its
-  // alive/hp (the gap-damage is a server-side artifact the client
-  // shouldn't inherit). Pair this with a 180-tick snapshot protection
-  // window (see _lastRespawnAt check in the snapshot handler upstream)
-  // so server's stale "dead" packets don't flip alive back to false.
-  player.alive = true;
-  player.hp = player.maxHp || 100;
-  player.x = _mpState.serverSelfX;
-  player.y = _mpState.serverSelfY;
-  player.ammo = player.maxAmmo;
-  player.reserve = Math.max(player.reserve || 0, 120);
-  player.reloading = false;
+  // R12 — delegate the canonical respawn state writes to PlayerLifecycle.
+  // It handles alive/hp/ammo/invuln/_lastRespawnAt/_respawnAt/_killedAtTime/
+  // _mpIgnoreReconcileUntil + dismissDeathRecap atomically. Phase 125
+  // semantics preserved: client-authoritative alive=true + hp=max (we
+  // pass NO hp opt so reviveAtSpawn defaults to maxHp), server-authoritative
+  // x/y (spawn point); 3 s shield + 180-tick snapshot protection window
+  // start now. See js/player_lifecycle.js header for the contract.
+  if (typeof PlayerLifecycle === 'undefined') return;
+  PlayerLifecycle.reviveAtSpawn({
+    x: _mpState.serverSelfX,
+    y: _mpState.serverSelfY,
+  });
   // Phase X — locally enforce 3 s spawn protection. Server already grants
   // INVULN_TICKS = 3s and stamps sp.invuln=true on the snapshot, but delta
   // compression can omit it on subsequent ticks, and the NN-bot bullets that
@@ -1476,28 +1459,14 @@ function _mpRespawnLocalPlayer() {
   // clears _invulnUntil to 0 → spawn shield is GONE the same tick respawn
   // completed. User: '15s 倒數內莫名提前進場 倒致計時結束馬上死亡'.
   // Explicit grant: ignore prior state, give EXACTLY 3 s from now.
-  const _gt = (typeof game !== 'undefined' && game.time) ? game.time : 0;
-  player._invulnUntil = _gt + 180;
-  // Phase 125 — mark when we just respawned. Snapshot handler uses this
-  // to ignore stale "you're dead" / "hp=0" / "invuln cleared" packets
-  // for the next 180 ticks (3s). Without this guard the server's
-  // gap-damage from the pre-respawn window leaks back into client state.
-  player._lastRespawnAt = _gt;
-  // Phase 59: clear the per-player death markers so the dead-state overlay
-  // (index.html:9546) hides + the snapshot dead→alive check no longer fires
-  // until the next kill.
-  player._respawnAt = null;
-  player._killedAtTime = 0;
-  // Phase 102 — also clear any swap-time reconcile suppression so the
-  // server's authoritative position is honoured normally after respawn.
-  // pawn_swap.js sets this to Infinity to keep a solo-MP swap permanent;
-  // respawn ends that window.
-  player._mpIgnoreReconcileUntil = 0;
+  // Team-wipe state is non-player-specific (whole squad's countdown) so
+  // it stays inline here — PlayerLifecycle is single-unit scope. Clearing
+  // these mirrors what the dead→alive transition expects: the team-wipe
+  // overlay dismisses + future kill events can re-arm wipedSince fresh.
   if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
     game._teamWipe.blue.wipedSince = null;
     game._teamWipe.blue.respawnAt = null;
   }
-  if (typeof dismissDeathRecap === 'function') dismissDeathRecap();
 }
 
 // ─── Emotes + pings ─────────────────────────────────────────────────
