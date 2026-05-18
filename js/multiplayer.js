@@ -404,6 +404,221 @@ function _mpHandleMessage(data) {
 // Apply a snapshot. The local player's position gets reconciled —
 // we snap to the server's authoritative position, then re-apply every
 // input we sent that hasn't been acknowledged yet (seq > lastInputSeq).
+// ============ SNAPSHOT HANDLER (R13 — split into named helpers) ===========
+// Was a 300+ LOC monolith covering 6 distinct concerns for the self-player
+// alone. Phase 117 / 122 / 125 / 128 each had to find ONE branch and add
+// a guard. R13 splits each concern into its own helper so:
+//   • new snapshot fields → add a new helper, don't grow the giant if
+//   • post-respawn guards live next to the writes they protect
+//   • call order is visible in _mpHandleSelfSnapshot, not buried in 250 lines
+//
+// Helper order (matches _mpHandleSelfSnapshot below):
+//   _mpUpdateRtt              · ping calc + EMA
+//   _mpMergeServerSelfFields  · serverSelf{X,Y,Angle,Hp,Alive,Invuln} (delta-aware)
+//   _mpTryRespawnLocal        · dead→alive transition (calls _mpRespawnLocalPlayer)
+//   _mpTrySynthKill           · alive→dead safety net (lost kill event, guarded)
+//   _mpDropProcessedInputs    · drop inputs server already acked
+//   _mpReconcileSelfPosition  · spread-error reconcile vs serverSelfX/Y
+//   _mpSyncSelfHpAndInvuln    · hp + invuln sync (guarded by justRespawned)
+//
+// Performance note: snapshot fires at 20-30 Hz. 7 inline function calls per
+// snapshot = ~210 calls/sec. Modern JIT inlines hot paths anyway; the
+// function-call overhead vs the pre-R13 monolith is unmeasurable (<10 ns
+// per snapshot tick). Framerate impact: 0.
+
+function _mpUpdateRtt(sp, nowMs) {
+  // RTT (ping). sp.t is the freshest input timestamp the server has
+  // received from us; round-trip = now - that. EMA-smooth at 0.2 so a
+  // single packet hiccup doesn't strobe the quality dot.
+  if (typeof sp.t === 'number' && sp.t > 0) {
+    const rtt = Math.max(0, nowMs - sp.t);
+    _mpState.rttMs = rtt;
+    _mpState.rttSmoothed = _mpState.rttSmoothed === 0
+      ? rtt
+      : _mpState.rttSmoothed * 0.8 + rtt * 0.2;
+  }
+}
+
+function _mpMergeServerSelfFields(sp) {
+  // Phase 5 — delta compression: only-overwrite when defined.
+  // Missing field = "server says no change, keep last value."
+  if (sp.x      !== undefined) _mpState.serverSelfX      = sp.x;
+  if (sp.y      !== undefined) _mpState.serverSelfY      = sp.y;
+  if (sp.angle  !== undefined) _mpState.serverSelfAngle  = sp.angle;
+  if (sp.hp     !== undefined) _mpState.serverSelfHp     = sp.hp;
+  if (sp.alive  !== undefined) _mpState.serverSelfAlive  = sp.alive;
+  if (sp.invuln !== undefined) _mpState.serverSelfInvuln = !!sp.invuln;
+}
+
+function _mpTryRespawnLocal() {
+  // Phase 59: dead→alive transition. _mpRespawnLocalPlayer() was defined
+  // but had NO caller until this hook — nothing connected the server's
+  // respawn snapshot back to player.alive=true, which was the user's
+  // '死掉瞬間復活的bug' (actually opposite — visually felt 'instant'
+  // because no UI marked the dead window).
+  // Guard: only fire if (1) locally dead AND server says alive AND
+  // (2) actually died via kill handler (_killedAtTime set) AND
+  // (3) the buff/default respawn window elapsed (Phase 60: client gate
+  // tied to getRespawnSeconds() so the UI countdown's full duration is
+  // honored before respawn fires).
+  if (typeof player === 'undefined') return;
+  if (player.alive || !_mpState.serverSelfAlive) return;
+  if (!player._killedAtTime) return;
+  const _t = (typeof game !== 'undefined' && game.time) ? game.time : 0;
+  const _minDeadFrames = (typeof getRespawnSeconds === 'function')
+    ? getRespawnSeconds() * 60
+    : 90;
+  if ((_t - player._killedAtTime) >= _minDeadFrames) {
+    _mpRespawnLocalPlayer();
+  }
+}
+
+function _mpTrySynthKill() {
+  // Phase X — alive→dead safety net. User '有時候被幹掉我就會變成
+  // 停在原地不能動,然後就動了會回去': the 'kill' event got lost in
+  // transit so _mpHandleKill never fired; client kept player.alive=true
+  // while server-side they were dead, reconcile snapped them back every
+  // snapshot = stuck-in-place. Now the snapshot itself drives the dead
+  // transition when the event was missed.
+  if (typeof player === 'undefined') return;
+  if (!player.alive || _mpState.serverSelfAlive !== false) return;
+  // Phase 128 — post-respawn protection. Phase 125 made
+  // _mpRespawnLocalPlayer client-authoritative (force alive=true when
+  // client UI countdown ends), but the snapshot's "you're dead" packets
+  // from the server's gap-state are still in flight. Without this guard
+  // this block kills the freshly-respawned player → respawn timer
+  // restarts → infinite die/respawn loop. Same 180-tick window the
+  // hp/invuln sync uses.
+  if (typeof PlayerLifecycle !== 'undefined' && PlayerLifecycle.justRespawned(180)) {
+    return;   // server still catching up; ignore stale "dead" packet
+  }
+  const _respawnFrames = (typeof getRespawnSeconds === 'function')
+    ? getRespawnSeconds() * 60 : 180;
+  // Killer telemetry default ('?') before the state transition so the
+  // death-recap UI has something to render.
+  if (!player._killer) player._killer = { callsign: '?' };
+  // R12 — canonical death transition + scheduled respawn.
+  if (typeof PlayerLifecycle !== 'undefined') {
+    PlayerLifecycle.killPlayer({ x: player.x, y: player.y });
+    PlayerLifecycle.scheduleRespawn(_respawnFrames);
+  }
+  if (typeof triggerShake === 'function') triggerShake(8, 18);
+  if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
+  console.log('[mp] alive→dead via snapshot (kill event was lost)');
+}
+
+function _mpDropProcessedInputs(sp) {
+  // Drop inputs the server has already processed. lastInputSeq is
+  // ALWAYS in every snapshot (never delta-omitted) since it changes
+  // every tick — but guard anyway.
+  if (sp.lastInputSeq != null) {
+    _mpState.pendingInputs = _mpState.pendingInputs.filter(i => i.seq > sp.lastInputSeq);
+  }
+}
+
+function _mpReconcileSelfPosition() {
+  // Replay remaining inputs from the server's confirmed position. Use
+  // the merged serverSelf coords so delta snapshots (no x/y this tick)
+  // replay against last-known authoritative position.
+  //
+  // Phase X — apply the SAME per-input multipliers as the server's
+  // tick math: sprint × weapon × chassis. Without this, wolf sprint
+  // (1.5 × 1.65 = 2.475×) replay was using flat 5.6 px/input while
+  // the server moved 5.6 × 2.475 ≈ 13.86 px/input → predX behind truth
+  // by ~8 px per pending input → reconcile pulled client back at every
+  // 33 Hz snapshot = the visible "走路忽快忽慢" tug.
+  if (typeof player === 'undefined') return;
+  let predX = _mpState.serverSelfX, predY = _mpState.serverSelfY;
+  for (const inp of _mpState.pendingInputs) {
+    let dx = inp.dx, dy = inp.dy;
+    const mag = Math.hypot(dx, dy);
+    if (mag > 1) { dx /= mag; dy /= mag; }
+    const sprintMul = inp.sprint ? 1.65 : 1.0;       // matches SPRINT_SPEED_MUL
+    const wpnMul    = (typeof inp.wMul === 'number') ? inp.wMul : 1.0;
+    const chsMul    = (typeof inp.cMul === 'number') ? inp.cMul : 1.0;
+    const mul = sprintMul * wpnMul * chsMul;
+    predX += dx * MP_PLAYER_SPEED * mul;
+    predY += dy * MP_PLAYER_SPEED * mul;
+  }
+  // Phase 80 spread-error reconcile. User '權威必須存在! 聯機不能本地!
+  // 想辦法在遊玩時不跳針'. Server authority is preserved; we just
+  // dribble the position error out over multiple frames instead of
+  // snapping per snapshot:
+  //   • big errors (>150u: teleport/respawn/lag) snap instantly
+  //   • <3 px dead zone silent
+  //   • else accumulate into player._reconcileErr (8 %/frame in update)
+  const dx = predX - player.x, dy = predY - player.y;
+  const dist = Math.hypot(dx, dy);
+  // Phase 83 — honour _mpIgnoreReconcileUntil. Pawn-swap sets it to
+  // game.time + 90 ticks; during that window we skip ALL position
+  // reconciliation so the swap actually sticks visually.
+  const _ignoreReconcile = (game?.time || 0) < (player._mpIgnoreReconcileUntil || 0);
+  if (_ignoreReconcile) {
+    player._reconcileErr = null;
+  } else if (dist > 150) {
+    player.x = predX; player.y = predY;
+    player._reconcileErr = null;
+  } else if (dist < 3) {
+    // Inside dead zone — server agrees with us, nothing to do.
+  } else {
+    player._reconcileErr = { dx, dy };
+  }
+}
+
+function _mpSyncSelfHpAndInvuln(sp) {
+  if (typeof player === 'undefined') return;
+  // Phase 125 / R12 — post-respawn protection window. After
+  // _mpRespawnLocalPlayer fires, server can still send stale packets
+  // from the gap-damage period (server respawned earlier than client
+  // UI countdown, server-side player took damage in the gap, "you're
+  // dead" / "hp=0" packets still in flight). Block those rewrites for
+  // 180 ticks so the freshly-respawned player keeps alive=true +
+  // hp=max + invuln shield intact.
+  const _justRespawned = (typeof PlayerLifecycle !== 'undefined')
+                         && PlayerLifecycle.justRespawned(180);
+  // HP has TWO writers because NN bots live client-only (see fire()
+  // ghost-bullet note in index.html). min(local, server) picks the
+  // lower of:
+  //   • local hp (NN bullet just hit us — server doesn't know)
+  //   • server hp (MP bullet hit us — server is authoritative)
+  // Both kinds of damage stay durable across snapshots. Respawn — where
+  // server hp jumps low→max — is handled by _mpRespawnLocalPlayer which
+  // snaps local hp explicitly, bypassing this min().
+  if (typeof sp.hp === 'number' && !_justRespawned) {
+    player.hp = Math.min(
+      (typeof player.hp === 'number') ? player.hp : sp.hp,
+      sp.hp
+    );
+  }
+  // Invuln pin: server is authoritative for spawn protection.
+  // Phase 5: only act when sp.invuln is EXPLICITLY in the snapshot —
+  // undefined means delta has no change, leave _invulnUntil alone.
+  // Phase 125: also skip during the post-respawn window — server's
+  // "invuln expired" packet from the gap shouldn't reset the freshly-
+  // granted client-side shield.
+  if (!_justRespawned) {
+    if (sp.invuln === true) {
+      player._invulnUntil = Infinity;
+    } else if (sp.invuln === false && player._invulnUntil === Infinity) {
+      player._invulnUntil = 0;
+    }
+  }
+}
+
+function _mpHandleSelfSnapshot(sp, nowMs) {
+  // Order matters: RTT before everything (timing), merge serverSelf
+  // before reconcile (reconcile reads serverSelfX/Y), trigger dead→alive
+  // and synth-kill BEFORE hp/invuln sync (the latter is guarded by
+  // justRespawned, which the former sets up).
+  _mpUpdateRtt(sp, nowMs);
+  _mpMergeServerSelfFields(sp);
+  _mpTryRespawnLocal();
+  _mpTrySynthKill();
+  _mpDropProcessedInputs(sp);
+  _mpReconcileSelfPosition();
+  _mpSyncSelfHpAndInvuln(sp);
+}
+
 function _mpHandleSnapshot(snap) {
   _mpState.serverTick = snap.tick;
   // Phase 39: track snapshot receive times for the debug HUD's tick-rate readout.
@@ -421,207 +636,7 @@ function _mpHandleSnapshot(snap) {
   for (const sp of snap.players) {
     seenIds.add(sp.id);
     if (sp.id === _mpState.myId) {
-      // RTT (ping). sp.t is the freshest input timestamp the server has
-      // received from us; round-trip = now - that. EMA-smooth at 0.2 so a
-      // single packet hiccup doesn't strobe the quality dot.
-      if (typeof sp.t === 'number' && sp.t > 0) {
-        const rtt = Math.max(0, nowMs - sp.t);
-        _mpState.rttMs = rtt;
-        _mpState.rttSmoothed = _mpState.rttSmoothed === 0
-          ? rtt
-          : _mpState.rttSmoothed * 0.8 + rtt * 0.2;
-      }
-      // Phase 5 — delta compression: only-overwrite when defined.
-      // Missing field = "server says no change, keep last value."
-      if (sp.x      !== undefined) _mpState.serverSelfX      = sp.x;
-      if (sp.y      !== undefined) _mpState.serverSelfY      = sp.y;
-      if (sp.angle  !== undefined) _mpState.serverSelfAngle  = sp.angle;
-      if (sp.hp     !== undefined) _mpState.serverSelfHp     = sp.hp;
-      if (sp.alive  !== undefined) _mpState.serverSelfAlive  = sp.alive;
-      if (sp.invuln !== undefined) _mpState.serverSelfInvuln = !!sp.invuln;
-      // Phase 59: dead→alive transition. _mpRespawnLocalPlayer() was defined
-      // but had NO caller — nothing connected the server's respawn snapshot
-      // back to player.alive=true, which was the user's '死掉瞬間復活的bug'
-      // (actually opposite — visually felt 'instant' because no UI marked
-      //  the dead window, then state ended up resyncing some other path).
-      // Guard: only fire if (1) we were locally dead AND server says alive
-      // AND (2) we actually died via the kill handler (_killedAtTime set)
-      // AND (3) the buff/default respawn window elapsed — Phase 60 wires
-      // the client gate to getRespawnSeconds() so the UI countdown's full
-      // duration is honored before respawn fires (server also bumped to
-      // match so this doesn't stall waiting for a late server snapshot).
-      // Use the (potentially-just-updated) serverSelfAlive so a delta-only
-      // snapshot that omits `alive` still works.
-      if (typeof player !== 'undefined' && !player.alive && _mpState.serverSelfAlive) {
-        const _t = (typeof game !== 'undefined' && game.time) ? game.time : 0;
-        const _minDeadFrames = (typeof getRespawnSeconds === 'function')
-          ? getRespawnSeconds() * 60
-          : 90;
-        if (player._killedAtTime && (_t - player._killedAtTime) >= _minDeadFrames) {
-          _mpRespawnLocalPlayer();
-        }
-      }
-      // Phase X — alive→dead safety net. User '有時候被幹掉我就會變成
-      // 停在原地不能動,然後就動了會回去': the 'kill' event got lost in
-      // transit so _mpHandleKill never fired; client kept player.alive=
-      // true while server-side they were dead, server rejected their
-      // movement inputs, client per-frame integration pushed them ahead,
-      // reconcile snapped them back every snapshot = stuck-in-place.
-      // Now the snapshot itself drives the dead transition when the
-      // event was missed. Synthesize minimal kill metadata so the death
-      // recap UI still works; killer name shows as '?' since we never
-      // got the kill event.
-      if (typeof player !== 'undefined' && player.alive && _mpState.serverSelfAlive === false) {
-        // Phase 128 — post-respawn protection. Phase 125 made
-        // _mpRespawnLocalPlayer client-authoritative (force alive=true
-        // when client UI countdown ends), but the snapshot's "you're
-        // dead" packets from the server's gap-state are still in flight.
-        // Without this guard the synth-kill below kills the freshly-
-        // respawned player, the respawn timer restarts, the UI counts
-        // down again, respawn fires, another stale packet arrives,
-        // re-kill — infinite die/respawn loop the user just hit.
-        // Same 180-tick window the hp/invuln sync uses below.
-        const _justRespawnedSafe = (typeof PlayerLifecycle !== 'undefined')
-                                    && PlayerLifecycle.justRespawned(180);
-        if (_justRespawnedSafe) {
-          // Inside the protection window — server is still catching up
-          // to our client-side respawn. Ignore the stale "dead" packet
-          // for now; once the window closes (~3 s post-respawn) and the
-          // server STILL says dead, the next snapshot will fire the
-          // synth-kill normally.
-        } else {
-          const _respawnFrames = (typeof getRespawnSeconds === 'function')
-            ? getRespawnSeconds() * 60 : 180;
-          // Synthesize minimal kill metadata for the death-recap UI before
-          // the state transition — killer shows as '?' since we never got
-          // the kill event.
-          if (!player._killer) player._killer = { callsign: '?' };
-          // R12 — canonical dead transition + schedule respawn timer.
-          // alive=false, hp=0, _killedAtTime, _lastDeathX/Y, _lbBumpDeath
-          // all flow through PlayerLifecycle.killPlayer; the respawn
-          // countdown is scheduled separately so SP NN's auto-swap path
-          // can still skip it for itself (irrelevant here in MP).
-          if (typeof PlayerLifecycle !== 'undefined') {
-            PlayerLifecycle.killPlayer({ x: player.x, y: player.y });
-            PlayerLifecycle.scheduleRespawn(_respawnFrames);
-          }
-          if (typeof triggerShake === 'function') triggerShake(8, 18);
-          if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
-          console.log('[mp] alive→dead via snapshot (kill event was lost)');
-        }
-      }
-      // Drop inputs the server has already processed. lastInputSeq is
-      // ALWAYS in every snapshot (never delta-omitted) since it changes
-      // every tick — but guard anyway.
-      if (sp.lastInputSeq != null) {
-        _mpState.pendingInputs = _mpState.pendingInputs.filter(i => i.seq > sp.lastInputSeq);
-      }
-      // Replay remaining inputs from the server's confirmed position.
-      // Use the merged serverSelf coords so delta snapshots (no x/y this
-      // tick) replay against last-known authoritative position.
-      //
-      // Phase X — apply the SAME per-input multipliers as the server's
-      // tick math: sprint × weapon × chassis. Without this, wolf sprint
-      // (1.5 × 1.65 = 2.475×) replay was using flat 5.6 px/input while
-      // the server moved 5.6 × 2.475 ≈ 13.86 px/input → predX behind
-      // truth by ~8 px per pending input → reconcile pulled client
-      // back at every 33 Hz snapshot = the visible "走路忽快忽慢" tug.
-      // Now replay matches server step exactly; reconcile dist stays
-      // sub-pixel in steady state.
-      let predX = _mpState.serverSelfX, predY = _mpState.serverSelfY;
-      for (const inp of _mpState.pendingInputs) {
-        let dx = inp.dx, dy = inp.dy;
-        const mag = Math.hypot(dx, dy);
-        if (mag > 1) { dx /= mag; dy /= mag; }
-        const sprintMul = inp.sprint ? 1.65 : 1.0;       // matches SPRINT_SPEED_MUL
-        const wpnMul    = (typeof inp.wMul === 'number') ? inp.wMul : 1.0;
-        const chsMul    = (typeof inp.cMul === 'number') ? inp.cMul : 1.0;
-        const mul = sprintMul * wpnMul * chsMul;
-        predX += dx * MP_PLAYER_SPEED * mul;
-        predY += dy * MP_PLAYER_SPEED * mul;
-      }
-      // Push to local player object — Phase 80 spread-error reconcile.
-      // User '權威必須存在! 聯機不能本地! 想辦法在遊玩時不跳針'. Phase 78's
-      // "skip reconcile if alone" was wrong: server authority must stay.
-      //
-      // Real fix: instead of applying the position correction as a 30%-per-
-      // snapshot lerp (visibly snaps the player ~10 times per second), we
-      // accumulate the error into player._reconcileErr and DRIBBLE it out
-      // over many frames in the main update loop. 8%/frame at 60 fps =
-      // error halves every 8 frames (~130 ms) — well below the human
-      // perception threshold for position drift.
-      //
-      // Server still wins authority:
-      //   • all corrections move us TOWARD server position
-      //   • big errors (>150u: teleport, respawn, lag spike) snap instantly
-      //   • cheating impossible since server owns hit detection + damage
-      //
-      // Dead zone (<3px) silenced entirely so 1-2px snapshot noise never
-      // triggers any visible jitter.
-      if (typeof player !== 'undefined') {
-        const dx = predX - player.x, dy = predY - player.y;
-        const dist = Math.hypot(dx, dy);
-        // Phase 83 — honour _mpIgnoreReconcileUntil. Pawn-swap sets it
-        // to game.time + 90 ticks; during that window we skip ALL
-        // position reconciliation so the swap actually sticks visually
-        // until client inputs catch the server up.
-        const _ignoreReconcile = (game?.time || 0) < (player._mpIgnoreReconcileUntil || 0);
-        if (_ignoreReconcile) {
-          player._reconcileErr = null;
-        } else if (dist > 150) {
-          // Big snap — teleport / respawn / lag spike.
-          player.x = predX; player.y = predY;
-          player._reconcileErr = null;
-        } else if (dist < 3) {
-          // Inside dead zone — server agrees with us, nothing to do.
-        } else {
-          // Spread-error reconcile (Phase 80).
-          player._reconcileErr = { dx, dy };
-        }
-        // Phase 125 / R12 — post-respawn protection window. After
-        // _mpRespawnLocalPlayer fires, server can still send stale
-        // packets from the gap-damage period (server respawned earlier
-        // than client UI countdown, server-side player took damage in
-        // the gap, "you're dead" / "hp=0" packets are still in flight).
-        // Block those rewrites for 180 ticks so the freshly-respawned
-        // player keeps alive=true + hp=max + invuln shield intact.
-        const _justRespawned = (typeof PlayerLifecycle !== 'undefined')
-                               && PlayerLifecycle.justRespawned(180);
-        // HP has TWO writers because NN bots live client-only (see fire()
-        // ghost-bullet note in index.html). min(local, server) picks the
-        // lower of:
-        //   • local hp (NN bullet just hit us — server doesn't know)
-        //   • server hp (MP bullet hit us — server is authoritative)
-        // Both kinds of damage stay durable across snapshots. Respawn —
-        // where server hp jumps low→max — is handled by
-        // _mpRespawnLocalPlayer which snaps local hp explicitly, bypassing
-        // this min(). The trade-off this loses: simultaneous NN+MP damage
-        // in the same tick collapses to whichever is lower. Acceptable
-        // for casual .io play; would need delta-based reconciliation if
-        // we ever moved NN inference server-side.
-        if (typeof sp.hp === 'number' && !_justRespawned) {
-          player.hp = Math.min(
-            (typeof player.hp === 'number') ? player.hp : sp.hp,
-            sp.hp
-          );
-        }
-        // alive is more nuanced — we let the local death-recap state
-        // machine drive 'alive' to keep its UI sequence intact. We just
-        // sync the kill/respawn signals via 'kill' events below.
-        // Invuln pin: server is authoritative for spawn protection.
-        // Phase 5: only act when sp.invuln is EXPLICITLY in the snapshot
-        // — undefined means delta has no change, leave _invulnUntil alone.
-        // Phase 125: also skip during the post-respawn window — server's
-        // "invuln expired" packet from the gap shouldn't reset the
-        // freshly-granted client-side shield.
-        if (!_justRespawned) {
-          if (sp.invuln === true) {
-            player._invulnUntil = Infinity;
-          } else if (sp.invuln === false && player._invulnUntil === Infinity) {
-            player._invulnUntil = 0;
-          }
-        }
-      }
+      _mpHandleSelfSnapshot(sp, nowMs);
     } else {
       // Remote player — push this sample into a timestamped buffer so the
       // renderer can interpolate between past samples instead of easing
