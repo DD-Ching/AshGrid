@@ -140,6 +140,21 @@ function swapPlayerToAlly(idx) {
   // it up. See chassis.js applyChassisToUnit for rationale.
   player._chassisSpeedMul = _cdef.speedMul;
   player.radius = Math.round(14 * _cdef.radiusMul);
+  // Phase 127 — armor buffer for the new chassis. Pre-Phase-127 pawn-swap
+  // forgot to transfer maxArmor/armor from the new chassis, so any swap
+  // INTO a heavy body left maxArmor=0 (inherited from the prior non-heavy
+  // chassis) and the HUD armor-bar gate `player.maxArmor > 0` failed →
+  // armor bar invisible despite being in a heavy body. User:
+  // '操作重裝載具時護盾bar從介面中消失了 失效了?'.
+  // Mirror the same init chassis.js:107 does at match-start.
+  if (_cdef.armor != null) {
+    player.maxArmor = _cdef.armor;
+    player.armor = _cdef.armor;
+    player._armorLastHurtAt = (typeof game !== 'undefined') ? -9999 : 0;
+  } else {
+    player.maxArmor = 0;
+    player.armor = 0;
+  }
   // Phase 102 — entering a new chassis refills the kamikaze loadout to
   // that chassis's fixed count (wolf 2, humanoid 3, heavy 4). User:
   // '自殺式人機, 每一個載具都要有三台或兩台或四台'. Implicit policy:
