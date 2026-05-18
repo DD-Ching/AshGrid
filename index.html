@@ -1264,11 +1264,21 @@ body.lang-en .lang-toggle .on { color: var(--black); }
        border:1px solid #444;
        display:flex; align-items:center; justify-content:center;
        flex-direction:column;
-       color:#888;">
-    <!-- Replace with GameMonetize banner ad-tag:
-         <ins data-ad-key="YOUR_PAUSE_300x250_KEY"></ins> -->
-    <div style="font-size:28px; font-weight:900; color:#C8261C; opacity:0.55;">AshGrid</div>
-    <div style="font-size:10px; color:#666; margin-top:8px; letter-spacing:2px;">300 × 250 PAUSE</div>
+       color:#888;
+       pointer-events:auto;">
+    <!-- Adsterra Banner 300×250 — pause overlay. Parent #pauseAdSlot uses
+         pointer-events:none so clicks pass through to the canvas; the ad
+         box re-enables pointer-events so the iframe is clickable. -->
+    <script>
+      atOptions = {
+        'key' : '107851402169484dc8331518526346d2',
+        'format' : 'iframe',
+        'height' : 250,
+        'width' : 300,
+        'params' : {}
+      };
+    </script>
+    <script src="https://www.highperformanceformat.com/107851402169484dc8331518526346d2/invoke.js"></script>
   </div>
 </div>
 
@@ -1328,12 +1338,21 @@ body.lang-en .lang-toggle .on { color: var(--black); }
        border:1px solid #444;
        display:flex; align-items:center; justify-content:center;
        flex-direction:column;
-       color:#888;">
-    <!-- Replace this block with a GameMonetize banner ad-tag once you
-         create one in their dashboard:
-         <ins data-ad-key="YOUR_336x280_KEY"></ins> -->
-    <div style="font-size:32px; font-weight:900; color:#C8261C; opacity:0.6;">AshGrid</div>
-    <div style="font-size:10px; color:#666; margin-top:8px; letter-spacing:2px;">336 × 280 LARGE RECT</div>
+       color:#888;
+       pointer-events:auto;">
+    <!-- Adsterra Banner 300×250 (centered inside the 336×280 wrapper —
+         Adsterra doesn't carry the IAB 336×280 Large Rect size; 300×250 is
+         the closest match and sits centered with ~18px padding each side). -->
+    <script>
+      atOptions = {
+        'key' : '107851402169484dc8331518526346d2',
+        'format' : 'iframe',
+        'height' : 250,
+        'width' : 300,
+        'params' : {}
+      };
+    </script>
+    <script src="https://www.highperformanceformat.com/107851402169484dc8331518526346d2/invoke.js"></script>
   </div>
   <!-- Phase 101 — secondary Billboard (970×250) directly below. Replaces
        Phase 100's 728×90 Leaderboard so the second slot is both wider
@@ -1353,10 +1372,14 @@ body.lang-en .lang-toggle .on { color: var(--black); }
          background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
          border:1px solid #444;
          display:flex; align-items:center; justify-content:center;
-         color:#888;">
-      <!-- Replace with a GameMonetize 970×250 banner ad-tag:
-           <ins data-ad-key="YOUR_970x250_KEY"></ins> -->
-      <div style="font-size:11px; color:#666; letter-spacing:3px;">970 × 250 BILLBOARD</div>
+         color:#888;
+         pointer-events:auto;">
+      <!-- Adsterra Native Banner (4-in-a-row auto-fill) — Adsterra doesn't
+           carry the 970×250 IAB Billboard size, but Native auto-sizes to
+           fill wide containers so it's a better visual fit than a 728×90
+           sitting in a 970×250 frame with empty padding. -->
+      <script async="async" data-cfasync="false" src="https://pl29480238.effectivecpmnetwork.com/45fadbc4546c366bbfac041b3fd55d7a/invoke.js"></script>
+      <div id="container-45fadbc4546c366bbfac041b3fd55d7a" style="width:100%;"></div>
     </div>
   </div>
 </div>
@@ -1386,11 +1409,20 @@ body.lang-en .lang-toggle .on { color: var(--black); }
        background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
        border:1px solid #444;
        display:flex; align-items:center; justify-content:center;
-       flex-direction:column; color:#888;">
-    <!-- Replace with a GameMonetize 336×280 banner:
-         <ins data-ad-key="YOUR_336x280_LEFT_KEY"></ins> -->
-    <div style="font-size:26px; font-weight:900; color:#C8261C; opacity:0.5;">AshGrid</div>
-    <div style="font-size:10px; color:#666; margin-top:8px; letter-spacing:2px;">336 × 280</div>
+       flex-direction:column; color:#888;
+       pointer-events:auto;">
+    <!-- Adsterra Banner 300×250 — death-overlay LEFT flank. 336×280 wrapper,
+         300×250 ad sits centered (Adsterra has no 336×280 size). -->
+    <script>
+      atOptions = {
+        'key' : '107851402169484dc8331518526346d2',
+        'format' : 'iframe',
+        'height' : 250,
+        'width' : 300,
+        'params' : {}
+      };
+    </script>
+    <script src="https://www.highperformanceformat.com/107851402169484dc8331518526346d2/invoke.js"></script>
   </div>
 </div>
 <div id="respawnAdRightFlank" style="
@@ -1409,11 +1441,20 @@ body.lang-en .lang-toggle .on { color: var(--black); }
        background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
        border:1px solid #444;
        display:flex; align-items:center; justify-content:center;
-       flex-direction:column; color:#888;">
-    <!-- Replace with a GameMonetize 336×280 banner:
-         <ins data-ad-key="YOUR_336x280_RIGHT_KEY"></ins> -->
-    <div style="font-size:26px; font-weight:900; color:#C8261C; opacity:0.5;">AshGrid</div>
-    <div style="font-size:10px; color:#666; margin-top:8px; letter-spacing:2px;">336 × 280</div>
+       flex-direction:column; color:#888;
+       pointer-events:auto;">
+    <!-- Adsterra Banner 300×250 — death-overlay RIGHT flank. 336×280 wrapper,
+         300×250 ad sits centered (Adsterra has no 336×280 size). -->
+    <script>
+      atOptions = {
+        'key' : '107851402169484dc8331518526346d2',
+        'format' : 'iframe',
+        'height' : 250,
+        'width' : 300,
+        'params' : {}
+      };
+    </script>
+    <script src="https://www.highperformanceformat.com/107851402169484dc8331518526346d2/invoke.js"></script>
   </div>
 </div>
 
@@ -1440,11 +1481,19 @@ body.lang-en .lang-toggle .on { color: var(--black); }
        border:1px solid #444;
        display:flex; align-items:center; justify-content:center;
        flex-direction:column;
-       color:#888;">
-    <!-- Replace with GameMonetize 160×600 banner:
-         <ins data-ad-key="YOUR_160x600_LEFT_KEY"></ins> -->
-    <div style="font-size:20px; font-weight:900; color:#C8261C; opacity:0.5;">AshGrid</div>
-    <div style="font-size:9px; color:#666; margin-top:12px; letter-spacing:2px;">160 × 600</div>
+       color:#888;
+       pointer-events:auto;">
+    <!-- Adsterra Banner 160×600 — in-game left sidebar (Wide Skyscraper). -->
+    <script>
+      atOptions = {
+        'key' : '1db192088f1abb0d04f0d169e510cb77',
+        'format' : 'iframe',
+        'height' : 600,
+        'width' : 160,
+        'params' : {}
+      };
+    </script>
+    <script src="https://www.highperformanceformat.com/1db192088f1abb0d04f0d169e510cb77/invoke.js"></script>
   </div>
 </div>
 <div id="sideAdRight" style="
@@ -1462,11 +1511,19 @@ body.lang-en .lang-toggle .on { color: var(--black); }
        border:1px solid #444;
        display:flex; align-items:center; justify-content:center;
        flex-direction:column;
-       color:#888;">
-    <!-- Replace with GameMonetize 160×600 banner:
-         <ins data-ad-key="YOUR_160x600_RIGHT_KEY"></ins> -->
-    <div style="font-size:20px; font-weight:900; color:#C8261C; opacity:0.5;">AshGrid</div>
-    <div style="font-size:9px; color:#666; margin-top:12px; letter-spacing:2px;">160 × 600</div>
+       color:#888;
+       pointer-events:auto;">
+    <!-- Adsterra Banner 160×600 — in-game right sidebar (Wide Skyscraper). -->
+    <script>
+      atOptions = {
+        'key' : '1db192088f1abb0d04f0d169e510cb77',
+        'format' : 'iframe',
+        'height' : 600,
+        'width' : 160,
+        'params' : {}
+      };
+    </script>
+    <script src="https://www.highperformanceformat.com/1db192088f1abb0d04f0d169e510cb77/invoke.js"></script>
   </div>
 </div>
 
@@ -1486,9 +1543,24 @@ body.lang-en .lang-toggle .on { color: var(--black); }
      pointer-events:none;
      font-family: 'Helvetica Neue', sans-serif;
      align-items: center; justify-content: center;">
-  <!-- Replace with a GameMonetize 728×90 or 970×90 banner ad-tag once
-       provisioned: <ins data-ad-key="YOUR_LEADERBOARD_KEY"></ins> -->
-  <div style="color:#666; font-size:9px; letter-spacing:3px;">ADVERTISEMENT</div>
+  <!-- Adsterra Banner 468×60 — top frame strip (60px tall, 728×90 won't fit
+       at this height so we use the 468 size; ad sits centered in the
+       full-width bar with empty wings). Inner wrapper re-enables
+       pointer-events because #frameAdTop is pointer-events:none. -->
+  <div style="display:flex; align-items:center; justify-content:center;
+              width:468px; height:60px; margin:0 auto;
+              pointer-events:auto;">
+    <script>
+      atOptions = {
+        'key' : '554cea6d19cbb32b942afd1974547687',
+        'format' : 'iframe',
+        'height' : 60,
+        'width' : 468,
+        'params' : {}
+      };
+    </script>
+    <script src="https://www.highperformanceformat.com/554cea6d19cbb32b942afd1974547687/invoke.js"></script>
+  </div>
 </div>
 <div id="frameAdBottom" style="
      display:none;
@@ -1604,9 +1676,19 @@ body.lang-en .lang-toggle .on { color: var(--black); }
            border:1px solid rgba(232,228,216,0.25);
            display:flex; align-items:center; justify-content:center;
            color:#888;">
-        <!-- Replace with GameMonetize banner ad-tag:
-             <ins data-ad-key="YOUR_LOBBY_728x90_KEY"></ins> -->
-        <div style="font-size:11px; color:#777; letter-spacing:3px;">728 × 90 LOBBY</div>
+        <!-- Adsterra Banner 728×90 — lobby leaderboard. Highest-ROI slot:
+             every page load shows this while the player picks SOLO/MULTI +
+             enters callsign + hits ENTER ARENA. -->
+        <script>
+          atOptions = {
+            'key' : '4cd97e0858a82a41e5b48a8ea54d15e7',
+            'format' : 'iframe',
+            'height' : 90,
+            'width' : 728,
+            'params' : {}
+          };
+        </script>
+        <script src="https://www.highperformanceformat.com/4cd97e0858a82a41e5b48a8ea54d15e7/invoke.js"></script>
       </div>
     </div>
 
@@ -2009,9 +2091,18 @@ body.lang-en .lang-toggle .on { color: var(--black); }
          border:1px solid #444;
          display:flex; align-items:center; justify-content:center;
          color:#888; font-size:10px; letter-spacing:3px;">
-      <!-- Replace with GameMonetize banner ad-tag:
-           <ins data-ad-key="YOUR_LOADING_320x50_KEY"></ins> -->
-      320 × 50 LOADING
+      <!-- Adsterra Banner 320×50 — loading-screen mobile banner. Fires
+           on every match entry (0.5-2s impression window). -->
+      <script>
+        atOptions = {
+          'key' : 'f76b62324d942485f33145c719f199c6',
+          'format' : 'iframe',
+          'height' : 50,
+          'width' : 320,
+          'params' : {}
+        };
+      </script>
+      <script src="https://www.highperformanceformat.com/f76b62324d942485f33145c719f199c6/invoke.js"></script>
     </div>
   </div>
 </div>
