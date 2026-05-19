@@ -32,6 +32,15 @@
   // its own minimum but we don't want to spam if a player dies in bursts).
   const MIDGAME_MIN_INTERVAL_MS = 90 * 1000;
   let _lastMidgameAt = 0;
+  // Phase 130 — pending-call stash. Phase 54 MP integration fires
+  // updateRoom / inviteLink on the welcome packet, which can arrive
+  // BEFORE sdk.init() resolves (`_ready === false`) → silent no-op,
+  // CG QA panel never sees the call, "Update multiplayer room" /
+  // "Invite Link" requirement gates stay un-lit. Stash the last set
+  // of args here and drain after _ready flips so the SDK sees them
+  // exactly once when it's ready to listen.
+  let _pendingRoomUpdate = null;   // {roomName, maxPlayers, hasFreeSlot}
+  let _pendingInviteLink = null;   // roomName string
 
   // -------- Loader --------
   function loadSDK() {
@@ -98,6 +107,26 @@
       // resolved, fire loadingStop now so we don't get stuck on the
       // CrazyGames loader.
       if (window._crazyGameReady) loadingStop();
+      // Phase 130 — drain any Phase 54 MP-side calls that arrived before
+      // _ready flipped. Without this drain, an MP welcome that beats the
+      // SDK init promise leaves updateRoom + inviteLink unexecuted for
+      // the lifetime of the session, breaking CG QA's MP requirement.
+      if (_pendingRoomUpdate) {
+        const p = _pendingRoomUpdate;
+        _pendingRoomUpdate = null;
+        try {
+          _sdk.game.updateRoom({
+            roomName: String(p.roomName || ''),
+            maxPlayers: Number(p.maxPlayers) || 20,
+            hasFreeSlot: !!p.hasFreeSlot,
+          });
+        } catch (e) {}
+      }
+      if (_pendingInviteLink) {
+        const rn = _pendingInviteLink;
+        _pendingInviteLink = null;
+        try { _sdk.game.inviteLink({ roomName: String(rn) }); } catch (e) {}
+      }
       // Phase 53 — wire SDK audio-mute events into our setAudioMuted().
       // The CrazyGames portal header has a mute toggle that posts a
       // settings-change event into the iframe whenever the user flips it.
@@ -229,7 +258,13 @@
   // surface 'join friend' affordances and refresh invite links. Call
   // after the MP welcome arrives + on every peer-join / peer-leave.
   function updateMpRoom(roomName, maxPlayers, hasFreeSlot) {
-    if (!_ready) return;
+    if (!_ready) {
+      // Phase 130 — stash for init() drain. Overwrite any prior pending
+      // entry (only the LATEST room state matters; intermediate joins are
+      // already obsolete by the time the SDK is ready).
+      _pendingRoomUpdate = { roomName, maxPlayers, hasFreeSlot };
+      return;
+    }
     try {
       _sdk.game.updateRoom({
         roomName: String(roomName || ''),
@@ -248,7 +283,15 @@
   // synchronously (SDK builds it from the host frame). Null if SDK isn't
   // ready or the call throws.
   function getInviteLink(roomName) {
-    if (!_ready) return null;
+    if (!_ready) {
+      // Phase 130 — stash for init() drain. Caller can't synchronously
+      // get a URL pre-_ready (the SDK is what builds it from host frame),
+      // but the call itself is what CG QA tracks for the "Invite Link"
+      // requirement gate — so deferring the SDK invocation still earns
+      // the green dot once init resolves.
+      _pendingInviteLink = String(roomName || '');
+      return null;
+    }
     try { return _sdk.game.inviteLink({ roomName: String(roomName) }); }
     catch (e) { return null; }
   }

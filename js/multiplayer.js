@@ -181,6 +181,15 @@ function _mpReportRoomToCrazy() {
   const filled = _mpState.remotePlayers.size;     // includes self
   const hasFreeSlot = filled < _MP_ROOM_CAP;
   crazyMp_updateRoom(_mpState.roomName, _MP_ROOM_CAP, hasFreeSlot);
+  // Phase 130 — also exercise inviteLink so CG QA's "Invite Link"
+  // requirement gate lights up. The CG portal renders the green
+  // "Invite friends" button itself; we just need to have called
+  // _sdk.game.inviteLink(...) at least once with the current room so
+  // the portal has the correct URL cached when the user clicks it.
+  // Return value is discarded (the URL is consumed inside CG's iframe).
+  if (typeof crazyMp_inviteLink === 'function') {
+    try { crazyMp_inviteLink(_mpState.roomName); } catch (e) {}
+  }
 }
 
 async function _mpConnect() {
