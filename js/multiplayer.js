@@ -492,15 +492,18 @@ function _mpTrySynthKill() {
   if (typeof PlayerLifecycle !== 'undefined' && PlayerLifecycle.justRespawned(180)) {
     return;   // server still catching up; ignore stale "dead" packet
   }
-  const _respawnFrames = (typeof getRespawnSeconds === 'function')
-    ? getRespawnSeconds() * 60 : 180;
   // Killer telemetry default ('?') before the state transition so the
   // death-recap UI has something to render.
   if (!player._killer) player._killer = { callsign: '?' };
-  // R12 — canonical death transition + scheduled respawn.
-  if (typeof PlayerLifecycle !== 'undefined') {
-    PlayerLifecycle.killPlayer({ x: player.x, y: player.y });
-    PlayerLifecycle.scheduleRespawn(_respawnFrames);
+  // Phase 129c — delegate to canonical handleLocalDeath (pawn_swap.js).
+  // Same rule as the kill-event path above: try auto-swap into a live
+  // squad ally first; only schedule respawn + mark wipedSince when
+  // squad is wiped. Previously this snapshot-fallback path always
+  // scheduled respawn (without marking wipedSince), so the death
+  // recap UI would show a generic countdown without the team-wipe
+  // visuals — confusing and inconsistent with the kill-event path.
+  if (typeof handleLocalDeath === 'function') {
+    handleLocalDeath({ x: player.x, y: player.y });
   }
   if (typeof triggerShake === 'function') triggerShake(8, 18);
   if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
@@ -867,25 +870,27 @@ function _mpHandleKill(data) {
     // death-recap UI reads the right killer / weapon next frame.
     player._killer = { callsign: shooterName };
     player._killerWeapon = data.weapon;
-    // R12 — canonical death transition via PlayerLifecycle. killPlayer
-    // owns alive=false, hp=0, _killedAtTime, _lastDeathX/Y, _lbBumpDeath.
-    // scheduleRespawn is separate (Phase 59/60: respawn duration is
-    // buffable via 'watch ad' rewarded video; default 15s, buffed 5s.
-    // Server-side RESPAWN_TICKS bumped to match — see
-    // server/party/server.js). Both sides must agree or the dead→alive
-    // transition will stall.
-    const _respawnFrames = (typeof getRespawnSeconds === 'function')
-      ? getRespawnSeconds() * 60
-      : 180;
-    if (typeof PlayerLifecycle !== 'undefined') {
-      PlayerLifecycle.killPlayer({ x: player.x, y: player.y });
-      PlayerLifecycle.scheduleRespawn(_respawnFrames);
+    // Phase 129c — delegate to canonical handleLocalDeath (pawn_swap.js).
+    // It owns: killPlayer + (try-auto-swap-first / scheduleRespawn + mark
+    // wipedSince). Same rule as SP NN-mode now: if any squad ally alive,
+    // auto-swap into their body (no countdown, no team-wipe, no ad CTA);
+    // otherwise schedule respawn + mark wipedSince → death recap shows
+    // the full WIPED countdown + REVIVE-AD button.
+    //
+    // Pre-Phase-129c MP path ALWAYS scheduled respawn + ALWAYS set
+    // wipedSince, breaking the user's rule "if a teammate is alive, no
+    // respawn countdown + no ad CTA". The bug was hidden because the SP
+    // auto-swap path (nn_deathmatch.js) is gated on `_respawnAt == null
+    // && !blueWiped` — both of which MP had already set, so SP's path
+    // was skipped on every MP solo death.
+    //
+    // MP-specific side-effects (camera shake, recap overlay trigger)
+    // stay here — they're independent of the swap-or-respawn decision
+    // (kill-cam runs ~2.5s even on auto-swap per death_recap.js intent).
+    if (typeof handleLocalDeath === 'function') {
+      handleLocalDeath({ x: player.x, y: player.y });
     }
     if (typeof triggerShake === 'function') triggerShake(8, 18);
-    if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
-      game._teamWipe.blue.wipedSince = game.time;
-      game._teamWipe.blue.respawnAt  = game.time + _respawnFrames;
-    }
     if (typeof triggerDeathRecap === 'function') triggerDeathRecap();
   }
   // Local player got the kill? Fattest hitmarker variant + confirm tone +

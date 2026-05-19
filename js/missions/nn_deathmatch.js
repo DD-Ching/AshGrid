@@ -422,24 +422,14 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
 
       // Set respawn timers for newly-dead units. In NN mode, instead of
       // sending the operator to spawn for 5 seconds, auto-jump into the
-      // closest alive ally. R4 — delegate to pawn_swap.js's canonical
-      // tryAutoSwapToClosestAlly() so manual swap (key 2-5) and this
-      // auto path share one code path. Previously the inline duplicate
-      // drifted out of sync (didn't set _mpIgnoreReconcileUntil,
-      // didn't broadcast _mpBroadcastSwap → 0.5 s post-swap teleport
-      // in MP). If no alive allies → start the normal respawn timer.
+      // closest alive ally. Phase 129c — delegate to pawn_swap.js's
+      // canonical handleLocalDeath() so the SP and MP paths share one
+      // decision site (try-auto-swap-first, fall back to countdown +
+      // team-wipe). Previously the SP and MP paths diverged: MP always
+      // scheduled respawn + always set wipedSince, ignoring live allies.
       if (!player.alive && player._respawnAt == null && !blueWiped) {
-        const swapped = (typeof tryAutoSwapToClosestAlly === 'function')
-          ? tryAutoSwapToClosestAlly()
-          : false;
-        if (!swapped) {
-          // R12 — schedule timer via PlayerLifecycle so _respawnAt write
-          // goes through the central state owner.
-          if (typeof PlayerLifecycle !== 'undefined') {
-            PlayerLifecycle.scheduleRespawn(playerTicks);
-          } else {
-            player._respawnAt = game.time + playerTicks;
-          }
+        if (typeof handleLocalDeath === 'function') {
+          handleLocalDeath({ x: player.x, y: player.y });
         }
       }
       for (const a of allies) {

@@ -276,3 +276,51 @@ function tryAutoSwapToClosestAlly() {
 function showSwapToast(text) {
   game._swapToast = { text, ttl: 75 };   // 1.25s
 }
+
+// Phase 129c — canonical local-player death handler. Single decision
+// site for the rule: "if any alive teammate exists, auto-swap into
+// their slot (no countdown, no ad CTA); otherwise schedule respawn
+// timer + mark team-wipe (drives the death-recap countdown + ad CTA)."
+//
+// Before this consolidation:
+//   · SP NN-mode  (nn_deathmatch.js)   followed the rule correctly.
+//   · MP path     (multiplayer.js:880) ALWAYS scheduled respawn +
+//     ALWAYS set wipedSince → MP solo death = false team-wipe screen
+//     with countdown + ad CTA, even when squad bots were alive.
+//
+// User rule (memory: feedback_death_recap_no_countdown_when_swap_available):
+//   "if a teammate is alive, no respawn countdown + no ad CTA —
+//    only auto-swap hint." This violated rule in MP since Phase 35-ish.
+//
+// Idempotent — safe to call per-frame (killPlayer no-ops once alive=false,
+// the auto-swap path early-returns when no allies, the schedule-respawn
+// path sets _respawnAt which gates re-entry from the SP per-frame loop).
+//
+// Returns 'swapped' (auto-swap succeeded) or 'wiped' (countdown started).
+// Caller can use for sfx / telemetry selection if needed.
+function handleLocalDeath(deathPos) {
+  if (typeof PlayerLifecycle !== 'undefined') {
+    PlayerLifecycle.killPlayer(deathPos);
+  }
+
+  // Rule: try auto-swap to closest alive ally first. If a swap happens,
+  // player.alive flips to true via reviveAtSpawn inside swapPlayerToAlly,
+  // and no countdown / wipedSince mark is needed.
+  if (typeof tryAutoSwapToClosestAlly === 'function'
+      && tryAutoSwapToClosestAlly()) {
+    return 'swapped';
+  }
+
+  // No alive allies → full team-wipe path: countdown + ad CTA.
+  const respawnSec = (typeof getRespawnSeconds === 'function')
+    ? getRespawnSeconds() : 3;
+  const ticks = Math.round(respawnSec * 60);
+  if (typeof PlayerLifecycle !== 'undefined') {
+    PlayerLifecycle.scheduleRespawn(ticks);
+  }
+  if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
+    game._teamWipe.blue.wipedSince = game.time;
+    game._teamWipe.blue.respawnAt  = game.time + ticks;
+  }
+  return 'wiped';
+}
