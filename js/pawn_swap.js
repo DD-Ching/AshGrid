@@ -20,7 +20,18 @@ function swapPlayerToAlly(idx) {
   if (!game._nnMode) return;
   if (idx < 0 || idx >= allies.length) return;
   const a = allies[idx];
-  if (!a || !a.alive) return;
+  if (!a) { console.warn('[pawn-swap] target idx', idx, 'is null — refused'); return; }
+  if (!a.alive) {
+    // Phase 129c — explicit defence: should never reach here since both
+    // callers (tryAutoSwapToClosestAlly + manual 1-4 keys) pre-filter on
+    // alive. Logging the refusal so a future regression surfaces fast.
+    console.warn('[pawn-swap] refused swap to dead target idx', idx,
+                 { _consumed: !!a._consumed, _respawnAt: a._respawnAt });
+    if (typeof showSwapToast === 'function') {
+      showSwapToast(T('目标已阵亡', 'TARGET DOWN'));
+    }
+    return;
+  }
   // Phase 102 (server-side support shipped) — Phase 83's peers-present
   // block is REMOVED. The server now has a 'swap' message handler that
   // accepts an authoritative position update + clears lag-comp history +
@@ -266,6 +277,13 @@ function tryAutoSwapToClosestAlly() {
   for (let i = 0; i < allies.length; i++) {
     const ax = allies[i];
     if (!ax || !ax.alive) continue;
+    // Phase 129c — defence-in-depth: explicitly reject anything marked
+    // dead by any other flag. Redundant against the alive check above
+    // (_consumed slots always have alive: false; _respawnAt != null
+    // implies alive: false) but spells out the user's rule:
+    //   "緊急切換絕不能切到之前死亡的載具，否則一切會出問題"
+    if (ax._consumed) continue;
+    if (ax._respawnAt != null) continue;
     const d = Math.hypot(ax.x - player.x, ax.y - player.y);
     if (d < bestD) { bestD = d; bestIdx = i; }
   }
@@ -307,12 +325,37 @@ function handleLocalDeath(deathPos) {
     PlayerLifecycle.killPlayer(deathPos);
   }
 
-  // Rule: try auto-swap to closest alive ally first. If a swap happens,
-  // player.alive flips to true via reviveAtSpawn inside swapPlayerToAlly,
-  // and no countdown / wipedSince mark is needed.
-  if (typeof tryAutoSwapToClosestAlly === 'function'
+  // Phase 129c-rev (urgent rollback) — auto-swap only in SP NN-mode.
+  // The first Phase 129c also fired auto-swap on MP death events, but
+  // server is authoritative for MP respawn — server-side never agreed
+  // to client-initiated post-death swap, so every reconcile re-set
+  // player to dead, triggering the snapshot-fallback handler, which
+  // fired handleLocalDeath again, which auto-swapped AGAIN. Result
+  // the user reported: '剛開始還單獨載具時被幹掉, 莫名其妙接管不
+  // 知哪來的載具, 且無法動彈被再度擊殺, 在莫名其妙接管' — chain
+  // of mis-swaps + position desync freezing the client.
+  //
+  // SP path is unchanged (auto-swap was already the rule there).
+  const _isMP = (typeof _mpIsActive === 'function' && _mpIsActive());
+  if (!_isMP
+      && typeof tryAutoSwapToClosestAlly === 'function'
       && tryAutoSwapToClosestAlly()) {
     return 'swapped';
+  }
+
+  // UI rule (memory: feedback_death_recap_no_countdown_when_swap_available):
+  // 'if a teammate is alive, no respawn countdown + no ad CTA — only
+  // auto-swap hint.' In MP we honour this by NOT marking wipedSince
+  // when at least one ally is alive locally — death-recap then renders
+  // the auto-swap hint branch (`▼ AUTO-SWAP TO NEAREST ALLY ▼`) instead
+  // of the WIPED countdown. Server still drives the actual revive.
+  if (_isMP) {
+    const _anyAllyAlive = (typeof allies !== 'undefined' && allies)
+      ? allies.some(a => a && a.alive)
+      : false;
+    if (_anyAllyAlive) {
+      return 'mp-ally-alive';   // skip countdown + wipedSince; server respawns us
+    }
   }
 
   // No alive allies → full team-wipe path: countdown + ad CTA.
