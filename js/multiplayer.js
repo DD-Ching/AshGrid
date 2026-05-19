@@ -991,6 +991,11 @@ function _mpSendInput() {
     ? playerWeapon.speedMul : 1.0;
   const cMul = (typeof player !== 'undefined' && typeof player._chassisSpeedMul === 'number')
     ? player._chassisSpeedMul : 1.0;
+  // Phase 129d — chassis radius mul. Server uses this to size collision /
+  // push-out / bullet hit detection per-chassis. Without it, wolf (0.78)
+  // got pushed-out at humanoid 14px → continuous drag-back near walls.
+  const rMul = (typeof player !== 'undefined' && typeof player._chassisRadiusMul === 'number')
+    ? player._chassisRadiusMul : 1.0;
   let wId = 'RIFLE';
   if (typeof WEAPONS !== 'undefined' && typeof playerWeapon !== 'undefined' && playerWeapon) {
     if (playerWeapon === WEAPONS.RIFLE)        wId = 'RIFLE';
@@ -1026,7 +1031,7 @@ function _mpSendInput() {
     buffActive: (typeof isRespawnBuffed === 'function') ? isRespawnBuffed() : false,
     // Per-tick loadout (see big comment above).
     sprint: sprint ? 1 : 0,
-    wMul, cMul, wId,
+    wMul, cMul, wId, rMul,
   };
   _mpSendRaw(input);
 
@@ -1039,7 +1044,7 @@ function _mpSendInput() {
   // Phase 38 prediction — index.html's per-frame WASD code IS our
   // prediction. We just record the input here so reconciliation can
   // replay any unacked inputs from the server's confirmed position.
-  _mpState.pendingInputs.push({ seq, dx, dy, angle, fire, sprint, wMul, cMul });
+  _mpState.pendingInputs.push({ seq, dx, dy, angle, fire, sprint, wMul, cMul, rMul });
 
   // Cap the pendingInputs queue so it doesn't grow forever during net loss
   if (_mpState.pendingInputs.length > 120) {

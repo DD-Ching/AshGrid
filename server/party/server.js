@@ -728,7 +728,14 @@ export default class AshGridRoom {
       respawnBuffActive: false,
       // input applied next tick. vT = view tick (latest snapshot tick the
       // client has rendered). Used by lag-comp to rewind targets.
-      input: { dx: 0, dy: 0, angle: 0, fire: false, seq: 0, vT: 0 },
+      // Phase 129d — sprint/wMul/cMul/wId/rMul now persisted from each
+      // input (previously they were ignored: per-tick read fell back to
+      // 1.0 / 'RIFLE' defaults, breaking chassis speed + sprint + heavy/
+      // wolf radius scaling on the server side. Wolf-chassis users felt
+      // continuous drag-back because client moved at 2.48× while server
+      // moved at 1.0×).
+      input: { dx: 0, dy: 0, angle: 0, fire: false, seq: 0, vT: 0,
+               sprint: 0, wMul: 1.0, cMul: 1.0, rMul: 1.0, wId: 'RIFLE' },
       lastInputSeq: 0,
       // Echoed back in snapshot so client can compute RTT.
       lastInputT: 0,
@@ -775,6 +782,18 @@ export default class AshGridRoom {
       p.input.angle = num(data.angle);
       p.input.fire  = !!data.fire;
       p.input.seq   = num(data.seq) | 0;
+      // Phase 129d — per-input loadout. These were sent by the client
+      // since the v2 input refactor but NEVER persisted server-side —
+      // per-tick reads (simStepPerTickV2 args + fire dispatch) saw
+      // `inp.wMul === undefined` and silently fell back to 1.0 / 'RIFLE'.
+      // Net effect: server moved everyone at humanoid speed regardless
+      // of chassis / sprint / weapon — wolf chassis felt "dragged back"
+      // because client ran at 1.5× and server reconciled to 1.0×.
+      if (typeof data.sprint !== 'undefined') p.input.sprint = data.sprint ? 1 : 0;
+      if (typeof data.wMul === 'number')      p.input.wMul   = data.wMul;
+      if (typeof data.cMul === 'number')      p.input.cMul   = data.cMul;
+      if (typeof data.rMul === 'number')      p.input.rMul   = data.rMul;
+      if (typeof data.wId  === 'string')      p.input.wId    = data.wId;
       // Server-side NN bots — spawned lazily on the FIRST input from any
       // player in the room. Bots persist until the room empties (matches
       // single-room shared-arena semantics).
@@ -983,9 +1002,14 @@ export default class AshGridRoom {
       // server-side (user '穿牆') and bullets stopped on walls one-sided.
       p.x = clamp(nx, ARENA_PAD, ARENA_W - ARENA_PAD);
       p.y = clamp(ny, ARENA_PAD, ARENA_H - ARENA_PAD);
-      _pushOutOfWalls(p, PLAYER_RADIUS);
+      // Phase 129d — chassis-aware collision radius. Wolf (rMul 0.78 →
+      // 11px) was being pushed out at humanoid 14px → continuous tug
+      // back from walls. Heavy (rMul 1.20 → 17px) was clipping into
+      // walls on client because server used the smaller 14px push-out.
+      const _pRadius = Math.round(PLAYER_RADIUS * (p.input.rMul || 1.0));
+      _pushOutOfWalls(p, _pRadius);
       for (const s of this.structures.values()) {
-        _pushOutOfStructure(p, PLAYER_RADIUS, s);
+        _pushOutOfStructure(p, _pRadius, s);
       }
       p.angle = inp.angle;
       // Phase 40: record this tick's position into the per-player history
@@ -1087,10 +1111,16 @@ export default class AshGridRoom {
       const prevX = b.x - b.vx, prevY = b.y - b.vy;
       const sx = b.x - prevX, sy = b.y - prevY;        // segment vector
       const segLen2 = sx * sx + sy * sy;                // |seg|²
-      const r2 = PLAYER_RADIUS * PLAYER_RADIUS;
       for (const p of this.players.values()) {
         if (!p.alive || p.id === b.shooterId) continue;
         if (this.tickCount < p.invulnUntil) continue;
+        // Phase 129d — per-target chassis radius. Wolf (rMul 0.78) was
+        // hit using humanoid 14px → wolves took bullets that visually
+        // missed by 3px on the client side. Heavy (rMul 1.20) was the
+        // reverse — bullets visually striking the body sometimes missed
+        // server-side because the hit circle was undersized.
+        const _tR = PLAYER_RADIUS * (p.input.rMul || 1.0);
+        const r2 = _tR * _tR;
         // Project player position onto the bullet segment, clamp to [0,1].
         let t = 0;
         if (segLen2 > 0) {
@@ -1297,7 +1327,6 @@ export default class AshGridRoom {
     const ay = Math.sin(shooter.angle);
     const bx0 = shooter.x + ax * BULLET_OFFSET;
     const by0 = shooter.y + ay * BULLET_OFFSET;
-    const r2  = PLAYER_RADIUS * PLAYER_RADIUS;
 
     let bestVictim = null;
     let bestStep   = Infinity;
@@ -1306,6 +1335,9 @@ export default class AshGridRoom {
       if (target.id === shooter.id) continue;
       if (!target.alive) continue;
       if (this.tickCount < target.invulnUntil) continue;
+      // Phase 129d — per-target chassis radius (see r2 site above).
+      const _tR = PLAYER_RADIUS * (target.input.rMul || 1.0);
+      const r2 = _tR * _tR;
 
       const hist = this._historicalPos(target, targetTick);
       if (!hist) continue;

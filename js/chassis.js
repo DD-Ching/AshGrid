@@ -102,6 +102,12 @@ function applyChassisToUnit(u, chassisId, baseSpeed, baseHp, baseRadius) {
   u.maxHp   = Math.round(baseHp * c.hpMul);
   u.hp      = u.maxHp;
   u.radius  = Math.round(baseRadius * c.radiusMul);
+  // Phase 129d — also store raw radius multiplier so MP server can size
+  // collision / push-out / bullet hit detection per-chassis. Without this
+  // server hardcoded PLAYER_RADIUS=14 → wolf (0.78 → 11px on client) got
+  // pushed out to 14px every tick → continuous reconcile drag-back near
+  // walls. See server/party/server.js _pushOutOfWalls + bullet collision.
+  u._chassisRadiusMul = c.radiusMul;
   // Heavy chassis armor buffer. Initialised here so respawn / pawn-swap
   // both pick up the field. Non-heavy chassis don't get the property.
   if (c.armor != null) {

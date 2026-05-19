@@ -136,6 +136,10 @@ function swapPlayerToAlly(idx) {
   // it up. See chassis.js applyChassisToUnit for rationale.
   player._chassisSpeedMul = _cdef.speedMul;
   player.radius = Math.round(14 * _cdef.radiusMul);
+  // Phase 129d — radius multiplier carried alongside speed so the MP
+  // server can size collision per-chassis (see js/chassis.js for the
+  // companion setter + server/party/server.js for the read site).
+  player._chassisRadiusMul = _cdef.radiusMul;
   // Phase 127 — armor buffer for the new chassis. Mirror chassis.js:107.
   // Set BEFORE reviveAtSpawn so its `if (maxArmor>0) armor=maxArmor`
   // branch uses the new chassis's value.
