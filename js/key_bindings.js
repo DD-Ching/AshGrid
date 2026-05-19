@@ -201,11 +201,21 @@ window.addEventListener('keydown', e => {
   // (togglePause itself bails on MP, but eating the key here keeps the
   // event from leaking to other handlers).
   if ((e.key === 'Escape' || k === 'p') && game.state === 'playing') {
-    // Phase 35: gate on URL `?mp=1` flag so pre-welcome state still
-    // blocks pause (matches user intent "我選了 MULTI 為什麼 Esc 還會
-    // 暫停?"). _mpIsActive() only flips after the server's welcome
-    // message arrives; the flag is set from the moment the page loads.
-    try { if (new URLSearchParams(location.search).get('mp') === '1') return; } catch (e) {}
+    // Phase 35→Phase 129b (CG build): MP can't meaningfully pause
+    // (server keeps ticking, opponents keep moving). Previously we
+    // silently swallowed ESC in MP per user feedback "我選了 MULTI
+    // 為什麼 Esc 還會暫停?". But silent-swallow fails the CG reviewer
+    // expectation that ESC always does SOMETHING — they treat a dead
+    // ESC key as a UX bug.
+    //
+    // New behaviour: in MP, ESC routes to exitMatchToMenu() (leave the
+    // match cleanly). In SP, ESC still toggles pause as before.
+    try {
+      if (new URLSearchParams(location.search).get('mp') === '1') {
+        if (typeof exitMatchToMenu === 'function') exitMatchToMenu();
+        return;
+      }
+    } catch (e) {}
     togglePause();
     return;
   }

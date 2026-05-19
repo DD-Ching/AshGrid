@@ -141,4 +141,24 @@
     resetTriggerEdge,
     tickFrameEnd,
   };
+
+  // ============ iframe focus grab (CG-iframe-aware) ============
+  // When this game runs inside the CrazyGames iframe, clicking ANYTHING
+  // outside the iframe (CG's Like / Rating / QA panel / requirements list)
+  // moves focus to the parent window — keyboard events stop reaching us.
+  // The only way the player notices is "my WASD / R / ESC just died".
+  //
+  // Fix: on any mousedown / touchstart / pointerdown that lands inside
+  // the iframe, force window.focus(). Capture phase so it runs before
+  // any other handler (canvas onmousedown, pause overlay click, etc.);
+  // passive so it never blocks the gesture.
+  //
+  // Outside an iframe this is a harmless no-op — window.focus() on the
+  // top-level window doesn't change anything when the page already has
+  // focus.
+  ['mousedown', 'touchstart', 'pointerdown'].forEach(function(evt) {
+    document.addEventListener(evt, function() {
+      try { window.focus(); } catch (e) {}
+    }, { passive: true, capture: true });
+  });
 })();
