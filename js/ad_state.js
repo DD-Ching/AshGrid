@@ -1,7 +1,7 @@
 // ============ AD LIFECYCLE STATE MACHINE (R1 refactor) ============
 // Explicit FSM for the rewarded-ad reward flow.
 //
-// Previous design: gamemonetize.js held 5 boolean / timestamp flags
+// Previous design: the SDK adapter held 5 boolean / timestamp flags
 // (_pendingAdCb, _didReallyPause, _adReallyPlaying, _adPlayStartedAt,
 // _audioMutedByAd) plus two timers (load + placeholder countdown). Every
 // SDK event handler mutated them inline and every fix had to consider
@@ -9,8 +9,9 @@
 // was the third bug fix in that file in a single week.
 //
 // New design (R1): all reward logic lives here as a five-state FSM. The
-// SDK adapter (gamemonetize.js) just forwards events and observes state.
-// death_recap.js calls requestRewarded() and waits for cb(earned).
+// SDK adapter (crazygames.js post-Phase 131; previously also
+// gamemonetize.js which was removed) just forwards events and observes
+// state. death_recap.js calls requestRewarded() and waits for cb(earned).
 //
 // States + transitions:
 //
@@ -262,7 +263,7 @@
   function getState()   { return _state; }
   function isAdActive() { return _state !== S.IDLE; }
 
-  // Expose globally for SDK adapter (gamemonetize.js) and callers.
+  // Expose globally for the SDK adapter (crazygames.js) and callers.
   window.adState = {
     requestRewarded,
     onSdkPause,

@@ -16,7 +16,7 @@
 // network-first /js/* to avoid the cache-first staleness that bit users
 // during Phase 4–10 (player console showed `ARENA_SEED_MAX is not
 // defined` because cached arena_recruitment.js predated the SEED block).
-const CACHE = 'ashgrid-v147-retry-clear-residue-2026-05-19';
+const CACHE = 'ashgrid-v148-remove-gamemonetize-2026-05-19';
 const ASSETS = [
   './manifest.webmanifest',
   './icons/icon-192.png',

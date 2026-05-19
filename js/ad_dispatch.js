@@ -5,21 +5,22 @@
 // Replaces the Phase ≤120 "override war":
 //   ad_stubs.js     defined  window.requestRewardedAd
 //   crazygames.js   overwrote it once SDK_READY fired
-//   gamemonetize.js overwrote it AGAIN once SDK_READY fired
 //   → last-loaded-with-ready-SDK wins, depending on load order + SDK race.
 //
-// Made bugs like Phase 120 (first-watch no-fill) a nightmare to trace —
-// caller couldn't tell which layer actually fired its callback.
+// Phase 131 — GameMonetize provider REMOVED. GM rejected the game citing
+// "AI-generated" (after we honestly disclosed in the upload form), so we
+// cut the dependency entirely. On non-CG hosts the dispatch now falls
+// straight through to the built-in fail-open stub.
 //
 // New design:
 //   1. THIS file owns window.requestRewardedAd. Nothing else writes to it.
-//   2. SDK adapters (gamemonetize.js, crazygames.js) call registerAdProvider
-//      once their SDK confirms ready, instead of overriding the global.
+//   2. The CrazyGames SDK adapter (crazygames.js) calls registerAdProvider
+//      once its SDK confirms ready, instead of overriding the global.
 //   3. requestRewardedAd dispatches by FIXED PRIORITY (independent of load
-//      order or SDK race): crazygames > gamemonetize > built-in stub.
-//   4. Built-in stub grants the reward after 500 ms — used in dev or when
-//      no SDK loads (Cloudflare Pages cold start, local file://, SDK
-//      blocked by adblocker, etc.). Matches the Phase 120 intent
+//      order or SDK race): crazygames > built-in stub.
+//   4. Built-in stub grants the reward after 500 ms — used outside the CG
+//      portal (ashgrid.io, dev.ashgrid.pages.dev), in dev, or when the
+//      CG SDK is blocked by adblocker. Matches the Phase 120 intent
 //      ("don't punish player for our network problems").
 //
 // Classic-script. Declares globally:
@@ -35,10 +36,10 @@
   const _providers = {};
 
   // Fixed dispatch priority — does NOT depend on load order. CrazyGames
-  // historically pays higher CPM where it's the host platform; on
-  // ashgrid.io (Cloudflare Pages) CG never registers, GM takes over.
-  // Built-in stub is the last-resort fallback (no SDK loaded at all).
-  const PROVIDER_PRIORITY = ['crazygames', 'gamemonetize'];
+  // is the only ad provider; on non-CG hosts it never registers and the
+  // built-in stub fail-opens the reward.
+  // Phase 131 — 'gamemonetize' removed (vendor declined our submission).
+  const PROVIDER_PRIORITY = ['crazygames'];
 
   function _log(msg) { try { console.log('[ad_dispatch]', msg); } catch (e) {} }
 

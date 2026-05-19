@@ -74,14 +74,13 @@
   async function init() {
     // Phase 73: hostname gate. Only init the CG SDK when we're actually
     // running inside CrazyGames (or testing with ?crazyGames=1). On
-    // self-hosted builds (ashgrid.io, dev.ashgrid.pages.dev) the
-    // GameMonetize SDK takes over via js/gamemonetize.js. Without this
-    // gate the CG SDK would still attempt to fetch their CDN even though
-    // ads can't be served outside their portal.
+    // self-hosted builds (ashgrid.io, dev.ashgrid.pages.dev) the ad
+    // dispatch falls through to the built-in fail-open stub.
+    // Phase 131 — GameMonetize fallback removed; no fallback SDK exists.
     const onCG = /crazygames\.com$/.test(location.hostname)
               || /[?&]crazyGames=1\b/.test(location.search);
     if (!onCG) {
-      console.log('[crazygames] not on CG portal — skipping SDK init (gamemonetize.js handles ads)');
+      console.log('[crazygames] not on CG portal — skipping SDK init (rewarded ads fail-open via dispatch stub)');
       return;
     }
     const sdk = await loadSDK();
