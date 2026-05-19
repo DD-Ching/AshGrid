@@ -97,10 +97,15 @@
      See js/ad_state.js header for the state diagram.
      Phase 131 — gamemonetize.js consumer removed. -->
 <script src="js/ad_state.js?v=180"></script>
+<!-- Phase 131b — Adsterra banner hostname-gate. Sets window.__onCrazyGames
+     + __loadAdsterra / __loadAdsterraNative helpers used inline by the ad
+     slot scripts in <body>. MUST load before those slots are parsed. -->
+<script src="js/banner_gate.js?v=181"></script>
 <!-- R11 Step 3 — ad slot DOM toggling. Centralises _updateRespawnAdSlot /
-     _updateSideAdSlots / _updateFrameAdSlots + their cached element refs.
-     Called per-frame by js/hud.js renderHUD. -->
-<script src="js/ad_slots.js?v=180"></script>
+     _updateFrameAdSlots + their cached element refs. Called per-frame by
+     js/hud.js renderHUD. Phase 131b — side-rail toggler removed (rails
+     were force-hidden every frame since Phase 106; DOM now deleted). -->
+<script src="js/ad_slots.js?v=181"></script>
 <!-- Phase 123 — anti-adblock notice. Detects (browser adblock vs network
      firewall) and shows a polite bottom-of-screen toast. Self-suppresses
      for 7 days on dismiss. Detection runs on window.load + 5 s settle. -->
@@ -143,7 +148,7 @@
 <!-- R8 refactor — HUD: renderHUD + renderHUDOverlays + drawMinimapPanel
      + drawHUDPanel + getModeLabel + panel cache + 6-zone card draw
      helpers. ~1300 lines from the inline script. -->
-<script src="js/hud.js?v=180"></script>
+<script src="js/hud.js?v=181"></script>
 <!-- R9 refactor — enemy AI + NN runtime: nnTick / nnBuildObs /
      nnApplyAction / patrol state machine / heat map / team vision /
      updateEnemies. 1145 lines from the inline script. -->
@@ -180,6 +185,19 @@
   #mobileBlock { display: flex !important; }
   #start, #nnLobby, #nnEndCard, #entryCountdown, canvas { display: none !important; }
 }
+/* Phase 131b — CrazyGames hostname gate. CG basic-launch policy prohibits
+   third-party banner ads. js/banner_gate.js sets .on-crazygames on <html>
+   when running on crazygames.com (or ?crazyGames=1). The helpers in that
+   file already skip script-tag injection, so this rule just hides the
+   placeholder chrome (gradient boxes + "Advertisement" labels) so the
+   reserved slot space doesn't render either. */
+.on-crazygames #pauseAdSlot,
+.on-crazygames #respawnAdSlot,
+.on-crazygames #respawnAdLeftFlank,
+.on-crazygames #respawnAdRightFlank,
+.on-crazygames #frameAdTop,
+.on-crazygames #lobbyAdSlot,
+.on-crazygames #loadingAdSlot { display: none !important; }
 :root {
   --red: #C8261C;
   --red-bright: #E63329;
@@ -1298,17 +1316,10 @@ body.lang-en .lang-toggle .on { color: var(--black); }
        pointer-events:auto;">
     <!-- Adsterra Banner 300×250 — pause overlay. Parent #pauseAdSlot uses
          pointer-events:none so clicks pass through to the canvas; the ad
-         box re-enables pointer-events so the iframe is clickable. -->
-    <script>
-      atOptions = {
-        'key' : '107851402169484dc8331518526346d2',
-        'format' : 'iframe',
-        'height' : 250,
-        'width' : 300,
-        'params' : {}
-      };
-    </script>
-    <script src="https://www.highperformanceformat.com/107851402169484dc8331518526346d2/invoke.js"></script>
+         box re-enables pointer-events so the iframe is clickable.
+         Phase 131b — Adsterra invoke routed through __loadAdsterra so it
+         no-ops on CrazyGames (CG basic launch bans third-party banners). -->
+    <script>__loadAdsterra('107851402169484dc8331518526346d2', 250, 300);</script>
   </div>
 </div>
 
@@ -1316,11 +1327,11 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 <!-- Fullscreen 'ad-playing' UX shown for a fixed 15-second minimum when
      the player clicks Watch Ad. Pauses gameplay so the player is OFF
      THE FIELD while the ad runs. User: '進入幾秒鐘的廣告模式 那個時候
-     你不會在場上'. If GameMonetize actually serves a real ad during the
-     window, it overlays on top (their iframe sits above this z-index).
-     If GM serves nothing (e.g. publisher site not yet approved), this
-     overlay carries the entire ad experience so the reward UX still
-     feels honest. -->
+     你不會在場上'. If a real rewarded ad (CrazyGames SDK) actually plays
+     during the window, its iframe overlays on top of this card. If the
+     provider serves nothing (dev mode / no-SDK / adblock), this overlay
+     carries the entire 15-second ad experience so the reward UX still
+     feels honest. Phase 131b — GameMonetize fallback removed Phase 131. -->
 <div id="adPlayOverlay" style="
      display:none;
      position:fixed; inset:0; z-index:9000;
@@ -1336,11 +1347,10 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 
 <!-- ============ Phase 82/100 — STATIC RESPAWN AD SLOT ============ -->
 <!-- Shown automatically during the respawn countdown window (the 5s
-     buffed / 15s default wait after dying). Stays HTML so it can later
-     host real GameMonetize banner ad tags — each needs an ad-key from
-     the GM dashboard, separate from the gameId. Until then the slots
-     render as clearly-labeled placeholders so the layout + timing are
-     testable.
+     buffed / 15s default wait after dying). Phase 118 wired Adsterra
+     creatives in via the inline __loadAdsterra helper; the gradient
+     placeholder boxes underneath still render so the slot has visible
+     chrome if the network call fails or is blocked.
      Phase 100 — main banner upgraded 300×250 → 336×280 (25% more
      inventory, standard 'Large Rectangle' format) and a 728×90
      Leaderboard added below it. Two slots per death = double passive
@@ -1373,23 +1383,14 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     <!-- Adsterra Banner 300×250 (centered inside the 336×280 wrapper —
          Adsterra doesn't carry the IAB 336×280 Large Rect size; 300×250 is
          the closest match and sits centered with ~18px padding each side). -->
-    <script>
-      atOptions = {
-        'key' : '107851402169484dc8331518526346d2',
-        'format' : 'iframe',
-        'height' : 250,
-        'width' : 300,
-        'params' : {}
-      };
-    </script>
-    <script src="https://www.highperformanceformat.com/107851402169484dc8331518526346d2/invoke.js"></script>
+    <script>__loadAdsterra('107851402169484dc8331518526346d2', 250, 300);</script>
   </div>
   <!-- Phase 101 — secondary Billboard (970×250) directly below. Replaces
        Phase 100's 728×90 Leaderboard so the second slot is both wider
        AND taller, more inventory for the same passive attention window.
        Phase 102 (6/x) — wrapper #respawnAdSecondary so the billboard +
-       its label can be hidden as ONE unit on short viewports
-       (GameMonetize iframe is ~1280×720, where the 572 px-tall full
+       its label can be hidden as ONE unit on short viewports (portal
+       embed iframes are typically ~1280×720, where the 572 px-tall full
        stack pushes the revive button off-screen — user '綠按鈕被徹底
        擋住了'). Toggled by _updateRespawnAdSlot in JS. -->
   <div id="respawnAdSecondary">
@@ -1408,7 +1409,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
            carry the 970×250 IAB Billboard size, but Native auto-sizes to
            fill wide containers so it's a better visual fit than a 728×90
            sitting in a 970×250 frame with empty padding. -->
-      <script async="async" data-cfasync="false" src="https://pl29480238.effectivecpmnetwork.com/45fadbc4546c366bbfac041b3fd55d7a/invoke.js"></script>
+      <script>__loadAdsterraNative('pl29480238.effectivecpmnetwork.com', '45fadbc4546c366bbfac041b3fd55d7a');</script>
       <div id="container-45fadbc4546c366bbfac041b3fd55d7a" style="width:100%;"></div>
     </div>
   </div>
@@ -1421,8 +1422,8 @@ body.lang-en .lang-toggle .on { color: var(--black); }
      放廣告呀'. Each flank is its own position:fixed wrapper, anchored
      by the left:50% + margin-left trick so it lives at viewport-center
      ±(485 + gap + 336/2). Toggled with the main slot in _updateRespawnAdSlot
-     and gated on viewport width ≥ 1720 px (anything narrower — GameMonetize
-     iframe at 1280, tablets, portrait — falls back to just the center). -->
+     and gated on viewport width ≥ 1720 px (anything narrower — portal
+     embeds at 1280, tablets, portrait — falls back to just the center). -->
 <div id="respawnAdLeftFlank" style="
      display:none;
      position:fixed; left:50%; top:50%;
@@ -1443,16 +1444,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
        pointer-events:auto;">
     <!-- Adsterra Banner 300×250 — death-overlay LEFT flank. 336×280 wrapper,
          300×250 ad sits centered (Adsterra has no 336×280 size). -->
-    <script>
-      atOptions = {
-        'key' : '107851402169484dc8331518526346d2',
-        'format' : 'iframe',
-        'height' : 250,
-        'width' : 300,
-        'params' : {}
-      };
-    </script>
-    <script src="https://www.highperformanceformat.com/107851402169484dc8331518526346d2/invoke.js"></script>
+    <script>__loadAdsterra('107851402169484dc8331518526346d2', 250, 300);</script>
   </div>
 </div>
 <div id="respawnAdRightFlank" style="
@@ -1475,87 +1467,15 @@ body.lang-en .lang-toggle .on { color: var(--black); }
        pointer-events:auto;">
     <!-- Adsterra Banner 300×250 — death-overlay RIGHT flank. 336×280 wrapper,
          300×250 ad sits centered (Adsterra has no 336×280 size). -->
-    <script>
-      atOptions = {
-        'key' : '107851402169484dc8331518526346d2',
-        'format' : 'iframe',
-        'height' : 250,
-        'width' : 300,
-        'params' : {}
-      };
-    </script>
-    <script src="https://www.highperformanceformat.com/107851402169484dc8331518526346d2/invoke.js"></script>
+    <script>__loadAdsterra('107851402169484dc8331518526346d2', 250, 300);</script>
   </div>
 </div>
 
-<!-- Phase 101 — in-game side ad rails. Two 160×600 Wide Skyscraper slots
-     pinned to viewport edges, vertically centered. Shown ONLY during
-     active play (game.state === 'playing'). Hidden on narrow viewports
-     (< 1280px) so they never crowd the HUD on tablets / portrait.
-     z-index 8 = above the canvas, below modals (start/lobby/end-card
-     all use z-index ≥ 30). pointer-events:none so a stray edge-click
-     doesn't get swallowed. User: '側邊也有一些欄位 你也可以把它佈局
-     一些廣告 就是不要跟其他UI擋到就好'. -->
-<div id="sideAdLeft" style="
-     display:none;
-     position:fixed; left:8px; top:50%;
-     transform: translateY(-50%);
-     z-index:8;
-     pointer-events:none;
-     font-family: 'Helvetica Neue', sans-serif;
-     text-align:center;">
-  <div style="font-size:8px; color:#888; letter-spacing:2px; margin-bottom:3px; text-transform:uppercase;">Ad</div>
-  <div id="sideAdLeftContent" style="
-       width:160px; height:600px;
-       background: linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%);
-       border:1px solid #444;
-       display:flex; align-items:center; justify-content:center;
-       flex-direction:column;
-       color:#888;
-       pointer-events:auto;">
-    <!-- Adsterra Banner 160×600 — in-game left sidebar (Wide Skyscraper). -->
-    <script>
-      atOptions = {
-        'key' : '1db192088f1abb0d04f0d169e510cb77',
-        'format' : 'iframe',
-        'height' : 600,
-        'width' : 160,
-        'params' : {}
-      };
-    </script>
-    <script src="https://www.highperformanceformat.com/1db192088f1abb0d04f0d169e510cb77/invoke.js"></script>
-  </div>
-</div>
-<div id="sideAdRight" style="
-     display:none;
-     position:fixed; right:8px; top:50%;
-     transform: translateY(-50%);
-     z-index:8;
-     pointer-events:none;
-     font-family: 'Helvetica Neue', sans-serif;
-     text-align:center;">
-  <div style="font-size:8px; color:#888; letter-spacing:2px; margin-bottom:3px; text-transform:uppercase;">Ad</div>
-  <div id="sideAdRightContent" style="
-       width:160px; height:600px;
-       background: linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%);
-       border:1px solid #444;
-       display:flex; align-items:center; justify-content:center;
-       flex-direction:column;
-       color:#888;
-       pointer-events:auto;">
-    <!-- Adsterra Banner 160×600 — in-game right sidebar (Wide Skyscraper). -->
-    <script>
-      atOptions = {
-        'key' : '1db192088f1abb0d04f0d169e510cb77',
-        'format' : 'iframe',
-        'height' : 600,
-        'width' : 160,
-        'params' : {}
-      };
-    </script>
-    <script src="https://www.highperformanceformat.com/1db192088f1abb0d04f0d169e510cb77/invoke.js"></script>
-  </div>
-</div>
+<!-- Phase 131b — Side ad rails (#sideAdLeft / #sideAdRight, 160×600 Wide
+     Skyscraper, Phase 101) DELETED. Force-hidden every frame since Phase
+     106 swapped them out for the top outer ad-frame strip — pure dead
+     inventory that was still firing the Adsterra invoke.js on page load
+     (network + impression cost for an ad nobody could ever see). -->
 
 <!-- Phase 107 → Phase 124 — permanent OUTER AD FRAME, top-only edition.
      ONE 90-px horizontal strip at the top. Phase 107 originally split a
@@ -1582,46 +1502,19 @@ body.lang-en .lang-toggle .on { color: var(--black); }
        pointer-events because #frameAdTop is pointer-events:none. -->
   <div class="frame-ad-side" style="display:flex; align-items:center; justify-content:center;
               width:468px; height:60px; pointer-events:auto;">
-    <script>
-      atOptions = {
-        'key' : '554cea6d19cbb32b942afd1974547687',
-        'format' : 'iframe',
-        'height' : 60,
-        'width' : 468,
-        'params' : {}
-      };
-    </script>
-    <script src="https://www.highperformanceformat.com/554cea6d19cbb32b942afd1974547687/invoke.js"></script>
+    <script>__loadAdsterra('554cea6d19cbb32b942afd1974547687', 60, 468);</script>
   </div>
   <!-- CENTER — 728×90 leaderboard. Always shown (fits 1280-px viewports
        and up). Same key as the lobby leaderboard — Adsterra rotates
        creatives per impression, so two slots ≠ two identical ads. -->
   <div style="display:flex; align-items:center; justify-content:center;
               width:728px; height:90px; pointer-events:auto;">
-    <script>
-      atOptions = {
-        'key' : '4cd97e0858a82a41e5b48a8ea54d15e7',
-        'format' : 'iframe',
-        'height' : 90,
-        'width' : 728,
-        'params' : {}
-      };
-    </script>
-    <script src="https://www.highperformanceformat.com/4cd97e0858a82a41e5b48a8ea54d15e7/invoke.js"></script>
+    <script>__loadAdsterra('4cd97e0858a82a41e5b48a8ea54d15e7', 90, 728);</script>
   </div>
   <!-- RIGHT WING — 468×60 (same key as LEFT, different impression). -->
   <div class="frame-ad-side" style="display:flex; align-items:center; justify-content:center;
               width:468px; height:60px; pointer-events:auto;">
-    <script>
-      atOptions = {
-        'key' : '554cea6d19cbb32b942afd1974547687',
-        'format' : 'iframe',
-        'height' : 60,
-        'width' : 468,
-        'params' : {}
-      };
-    </script>
-    <script src="https://www.highperformanceformat.com/554cea6d19cbb32b942afd1974547687/invoke.js"></script>
+    <script>__loadAdsterra('554cea6d19cbb32b942afd1974547687', 60, 468);</script>
   </div>
 </div>
 <style>
@@ -1738,16 +1631,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
         <!-- Adsterra Banner 728×90 — lobby leaderboard. Highest-ROI slot:
              every page load shows this while the player picks SOLO/MULTI +
              enters callsign + hits ENTER ARENA. -->
-        <script>
-          atOptions = {
-            'key' : '4cd97e0858a82a41e5b48a8ea54d15e7',
-            'format' : 'iframe',
-            'height' : 90,
-            'width' : 728,
-            'params' : {}
-          };
-        </script>
-        <script src="https://www.highperformanceformat.com/4cd97e0858a82a41e5b48a8ea54d15e7/invoke.js"></script>
+        <script>__loadAdsterra('4cd97e0858a82a41e5b48a8ea54d15e7', 90, 728);</script>
       </div>
     </div>
 
@@ -2152,16 +2036,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
          color:#888; font-size:10px; letter-spacing:3px;">
       <!-- Adsterra Banner 320×50 — loading-screen mobile banner. Fires
            on every match entry (0.5-2s impression window). -->
-      <script>
-        atOptions = {
-          'key' : 'f76b62324d942485f33145c719f199c6',
-          'format' : 'iframe',
-          'height' : 50,
-          'width' : 320,
-          'params' : {}
-        };
-      </script>
-      <script src="https://www.highperformanceformat.com/f76b62324d942485f33145c719f199c6/invoke.js"></script>
+      <script>__loadAdsterra('f76b62324d942485f33145c719f199c6', 50, 320);</script>
     </div>
   </div>
 </div>
@@ -2958,9 +2833,8 @@ try {
 // Phase 82 — static respawn ad slot visibility. Shows the #respawnAdSlot
 // HTML element during the respawn countdown (5s buffed / 15s default).
 // Idempotent + runs every render frame; cost is one cached property
-// read + one style assignment. The 300×250 slot inside the element is
-// currently a placeholder; can be swapped for a real GameMonetize
-// Banner ad-tag later.
+// read + one style assignment. Adsterra creatives wired via the
+// __loadAdsterra helper (Phase 118 / Phase 131b).
 //
 // Cached refs for the two #1/#2 hot DOM lookups in the audit —
 // each was hit 60 times/sec for a static node that never gets
@@ -2969,8 +2843,10 @@ try {
 // R11 Step 3 — ad slot DOM toggling extracted to js/ad_slots.js.
 // Declares globally (now in ad_slots.js):
 //   _respawnAdSlotEl · _respawnAdLeftFlankEl · _respawnAdRightFlankEl
-//   _sideAdLeftEl · _sideAdRightEl · _frameAdTopEl
-//   _updateRespawnAdSlot() · _updateSideAdSlots() · _updateFrameAdSlots()
+//   _frameAdTopEl
+//   _updateRespawnAdSlot() · _updateFrameAdSlots()
+// Phase 131b — _updateSideAdSlots / _sideAdLeftEl / _sideAdRightEl removed
+// alongside the deleted #sideAdLeft / #sideAdRight DOM.
 //
 // _nnEndCardEl stays here — it's the NN end card (not an ad slot),
 // cached by both hud.js and the inline renderer that follows below.

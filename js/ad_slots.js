@@ -14,14 +14,19 @@
 //
 // Classic-script. Declares globally:
 //   _respawnAdSlotEl · _respawnAdLeftFlankEl · _respawnAdRightFlankEl
-//   _sideAdLeftEl · _sideAdRightEl · _frameAdTopEl
-//   _updateRespawnAdSlot() · _updateSideAdSlots() · _updateFrameAdSlots()
+//   _frameAdTopEl
+//   _updateRespawnAdSlot() · _updateFrameAdSlots()
 //
 // External deps (resolved at call time):
 //   document · game (game._nnMode / _teamWipe.blue.wipedSince / state) ·
 //   touchInput.enabled · window.innerWidth/innerHeight
 //
-// Callers: js/hud.js renderHUD (lines ~140-145) calls all three per frame.
+// Callers: js/hud.js renderHUD calls both per frame.
+//
+// Phase 131b — _updateSideAdSlots() removed alongside the underlying
+// #sideAdLeft / #sideAdRight DOM. Those rails had been force-hidden every
+// frame since Phase 106; the DOM nodes (with their Adsterra script tags)
+// are now deleted entirely so the network impressions stop firing too.
 
 // ─── Death-overlay respawn ad slot ─────────────────────────────────────
 //
@@ -49,7 +54,7 @@ function _updateRespawnAdSlot() {
   const isMobile = (typeof touchInput !== 'undefined') && touchInput.enabled;
   slot.style.display = (teamWiped && !isMobile) ? 'block' : 'none';
   // Phase 102 (6/x) — gate the secondary 970×250 billboard on viewport
-  // height. GameMonetize iframe is typically 1280×720; the full stack
+  // height. A portal-embed iframe is typically 1280×720; the full stack
   // (336×280 + 970×250 + labels + gaps ≈ 572 px) plus top/bottom strips
   // leaves no room for the green REVIVE button — user '綠按鈕被徹底
   // 擋住了'. Below 850 px tall we drop the billboard and keep just
@@ -62,33 +67,13 @@ function _updateRespawnAdSlot() {
   // Phase 103 — flanking 336×280 slots beside the center rect. Gated on
   // viewport ≥ 1720 px wide (each flank lives at center ± [515..851] px,
   // so anything narrower would clip them into the HUD or off-screen).
-  // GameMonetize iframe 1280-wide → falls back to just the center slot.
+  // Portal-embed iframes ~1280 wide → fall back to just the center slot.
   if (!_respawnAdLeftFlankEl)  _respawnAdLeftFlankEl  = document.getElementById('respawnAdLeftFlank');
   if (!_respawnAdRightFlankEl) _respawnAdRightFlankEl = document.getElementById('respawnAdRightFlank');
   const wideEnough = window.innerWidth >= 1720;
   const flankWant = (teamWiped && !isMobile && wideEnough) ? 'block' : 'none';
   if (_respawnAdLeftFlankEl  && _respawnAdLeftFlankEl.style.display  !== flankWant) _respawnAdLeftFlankEl.style.display  = flankWant;
   if (_respawnAdRightFlankEl && _respawnAdRightFlankEl.style.display !== flankWant) _respawnAdRightFlankEl.style.display = flankWant;
-}
-
-// ─── Side ad rails (legacy, permanently off since Phase 106) ────────────
-//
-// Phase 101 introduced #sideAdLeft / #sideAdRight as 160×600 wide-skyscraper
-// rails in the gutter. Phase 106 swapped them out for the top/bottom outer
-// ad frame (see _updateFrameAdSlots) because the side rails kept fighting
-// HUD elements for space.
-//
-// This function stays only to FORCE display:none every frame in case any
-// future code path tries to surface them. The DOM nodes still exist (with
-// Adsterra 160×600 script tags inside) so a future Phase could re-enable
-// them by replacing the unconditional 'none' with a gated condition.
-let _sideAdLeftEl  = null;
-let _sideAdRightEl = null;
-function _updateSideAdSlots() {
-  if (!_sideAdLeftEl)  _sideAdLeftEl  = document.getElementById('sideAdLeft');
-  if (!_sideAdRightEl) _sideAdRightEl = document.getElementById('sideAdRight');
-  if (_sideAdLeftEl  && _sideAdLeftEl.style.display  !== 'none') _sideAdLeftEl.style.display  = 'none';
-  if (_sideAdRightEl && _sideAdRightEl.style.display !== 'none') _sideAdRightEl.style.display = 'none';
 }
 
 // ─── Outer ad frame (top strip only since Phase 124) ────────────────────

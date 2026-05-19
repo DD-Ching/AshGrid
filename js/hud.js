@@ -26,9 +26,10 @@
 //   T · mapName · getOperatorName · touchInput · _mpIsActive · _mpState ·
 //   _mpRenderHUD · _hud_canvasInsetFrame · drawDefenseShop · renderDeath-
 //   Recap · _mpRenderNetDebug · drawObjectiveCompass · etc.
-//   (_updateRespawnAdSlot / _updateSideAdSlots / _updateFrameAdSlots
-//   moved to js/ad_slots.js in R11 Step 3; renderHUD still calls them
-//   by name — they're globals across the classic-script load.)
+//   (_updateRespawnAdSlot / _updateFrameAdSlots moved to js/ad_slots.js
+//   in R11 Step 3; renderHUD still calls them by name — they're globals
+//   across the classic-script load. _updateSideAdSlots removed Phase 131b
+//   alongside the deleted #sideAdLeft / #sideAdRight DOM.)
 
 function renderHUD() {
   // Full HUD: HP / ammo / minimap / mission / energy all visible.
@@ -140,9 +141,6 @@ function renderHUD() {
   // 60 ad-revive) is still gated on the Watch Ad button click; this slot
   // is the PASSIVE static display that always runs during the wait.
   if (typeof _updateRespawnAdSlot === 'function') _updateRespawnAdSlot();
-  // Phase 101 — also tick the side ad rails so they appear/disappear with
-  // game state in the same render frame.
-  if (typeof _updateSideAdSlots === 'function') _updateSideAdSlots();
   // Phase 107 — top/bottom outer ad-frame strips
   if (typeof _updateFrameAdSlots === 'function') _updateFrameAdSlots();
 
