@@ -114,11 +114,12 @@
       if (_pendingRoomUpdate) {
         const p = _pendingRoomUpdate;
         _pendingRoomUpdate = null;
+        // Phase 130b — CG SDK v3 key names: roomId / isJoinable / inviteParams
         try {
           _sdk.game.updateRoom({
-            roomName: String(p.roomName || ''),
-            maxPlayers: Number(p.maxPlayers) || 20,
-            hasFreeSlot: !!p.hasFreeSlot,
+            roomId: String(p.roomName || ''),
+            isJoinable: !!p.hasFreeSlot,
+            inviteParams: { roomName: String(p.roomName || '') },
           });
         } catch (e) {}
       }
@@ -265,11 +266,22 @@
       _pendingRoomUpdate = { roomName, maxPlayers, hasFreeSlot };
       return;
     }
+    // Phase 130b — CG SDK v3 contract:
+    //   updateRoom({ roomId, isJoinable, inviteParams })
+    // Phase 54 originally used the WRONG keys (roomName, maxPlayers,
+    // hasFreeSlot — confused with our internal naming), so the SDK threw
+    // and our try/catch silently swallowed it. CG QA never saw a valid
+    // call → "Update multiplayer room" gate never lit. Verified against
+    // https://docs.crazygames.com/sdk/game/ — `roomId` is opaque to CG
+    // (we reuse our roomName, that's fine), `isJoinable` is the bool,
+    // and `inviteParams` is what the SDK feeds back via getInviteParam
+    // when a friend opens the invite link. maxPlayers is dropped — not
+    // a CG SDK field; our internal callers still pass it but we ignore.
     try {
       _sdk.game.updateRoom({
-        roomName: String(roomName || ''),
-        maxPlayers: Number(maxPlayers) || 20,
-        hasFreeSlot: !!hasFreeSlot,
+        roomId: String(roomName || ''),
+        isJoinable: !!hasFreeSlot,
+        inviteParams: { roomName: String(roomName || '') },
       });
     } catch (e) {}
   }
