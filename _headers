@@ -1,5 +1,10 @@
 # Cloudflare Pages — per-path cache + security headers
 # https://developers.cloudflare.com/pages/configuration/headers/
+# CF-pipeline probe 2026-05-19: real (non-empty) byte change to force a
+# fresh deployment artifact. b447e34 (empty commit) still 500'd; this
+# adds 1 actual byte of repo content to test whether the build/upload
+# pipeline now produces a healthy artifact, or whether the issue
+# persists across non-trivial changes.
 
 # HTML — never cache at edge, force browser to revalidate.
 # (Service-worker handles offline. Edge-cache HTML breaks instant updates.)
