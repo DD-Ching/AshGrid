@@ -62,26 +62,38 @@
       PlayerLifecycle.killPlayer(deathPos);
     }
 
-    // Phase 133.3 — MP auto-swap RE-ENABLED with chain-loop guard.
-    // The Phase 129c-rev unconditional disable made MP solo deaths
-    // ALWAYS show the WIPED countdown even when squad bots were alive,
-    // violating the user rule: "if a teammate is alive, no respawn
-    // countdown + no ad CTA — only auto-swap into their slot".
+    // Phase 134 (rollback) — restore Phase 129c-rev semantics.
+    // The brief Phase 133.3 re-enable of MP auto-swap caused a ghost-
+    // vehicle drag-back regression — user took control of an ally body
+    // but the server didn't agree (NN-driven bots are server-side, the
+    // client can't authoritatively claim one), so reconcile kept
+    // dragging the player back to the original dead slot's last position.
     //
-    // The chain-loop bug Phase 129c-rev was trying to avoid is now
-    // handled at the multiplayer.js snapshot-fallback caller via
-    // shouldSkipSnapshotFallback(). First death event → auto-swap +
-    // stamp timestamp. Subsequent snapshot-fallback re-entries within
-    // AUTOSWAP_GUARD_TICKS are filtered at the caller, breaking the
-    // loop without needing server-side changes.
-    if (typeof tryAutoSwapToClosestAlly === 'function'
+    // SP NN-mode auto-swap stays — works fine there since there's no
+    // authoritative server. MP path falls through to the recap-with-
+    // alive-allies branch below, which the death recap UI renders
+    // as a swap-hint instead of a countdown.
+    const _isMP = (typeof _mpIsActive === 'function' && _mpIsActive());
+    if (!_isMP
+        && typeof tryAutoSwapToClosestAlly === 'function'
         && tryAutoSwapToClosestAlly()) {
       _lastAutoSwapAt = _now();
       return 'swapped';
     }
 
-    // No swap target — fall through to the team-wipe / countdown path.
-    // Both SP and MP land here when no ally is alive locally.
+    // MP + at least one alive ally → skip countdown / wipedSince so
+    // the death-recap renders the AUTO-SWAP HINT branch instead of
+    // the WIPED countdown + ad CTA. Player presses 1-5 manually to
+    // swap; server still drives respawn at the original slot if they
+    // don't act.
+    if (_isMP) {
+      const _anyAllyAlive = (typeof allies !== 'undefined' && allies)
+        ? allies.some(a => a && a.alive)
+        : false;
+      if (_anyAllyAlive) return 'mp-ally-alive';
+    }
+
+    // No swap target → full team-wipe path.
     const respawnSec = (typeof getRespawnSeconds === 'function')
       ? getRespawnSeconds() : 3;
     const ticks = Math.round(respawnSec * 60);

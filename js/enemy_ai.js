@@ -334,15 +334,7 @@ function nnApplyAction(unit, action, friendlies, enemies) {
       let d = desired - unit.angle;
       while (d > Math.PI) d -= Math.PI*2;
       while (d < -Math.PI) d += Math.PI*2;
-      // Phase 132 — faster pre-fire aim slew. When the unit is in combat
-      // mode AND on fire cooldown (just shot and is reloading the trigger),
-      // rotate toward the target 1.7× faster so the moment the cooldown
-      // lifts the unit is already on target. The "perceived reaction time"
-      // drops without changing fire-rate or NN policy. AIM_LERP is left
-      // alone for non-combat / non-cooldown paths so PPO-trained behavior
-      // isn't perturbed in its normal regime.
-      const _lerpBoost = (unit._aiMode === 'combat' && unit._nnFireCd > 0) ? 1.7 : 1.0;
-      unit.angle += d * NN.AIM_LERP * _lerpBoost;
+      unit.angle += d * NN.AIM_LERP;
     }
   }
 
@@ -384,15 +376,7 @@ function nnApplyAction(unit, action, friendlies, enemies) {
       const tvx = tgt._velX || 0, tvy = tgt._velY || 0;
       const leadX = tgt.x + tvx * flightTime;
       const leadY = tgt.y + tvy * flightTime;
-      // Phase 132 — wounded-target aim bonus. Healthy target uses baseline
-      // 0.05 rad spread (~2.86°). As target HP drops below ~50%, spread
-      // tightens linearly down to 0.025 rad (~1.43°) at 0% HP. Creates the
-      // "circling shark" feel: once a player is bleeding, the bots finish
-      // them more cleanly. Capped at 0.5× — never below ~1.43° so it's
-      // still not a one-shot-snap. Healthy player encounters are unchanged.
-      const _hpFrac = (tgt.maxHp > 0) ? Math.max(0, Math.min(1, tgt.hp / tgt.maxHp)) : 1;
-      const _aimMul = 0.5 + 0.5 * _hpFrac;   // 0.5 (dead) → 1.0 (full HP)
-      const aimSpread = 0.05 * _aimMul;
+      const aimSpread = 0.05;
       const aim = Math.atan2(leadY - unit.y, leadX - unit.x) + (Math.random() - 0.5) * aimSpread;
       unit.angle = aim;
       // Use team to pick the right bullet pool. unit.team 0 = friendly, 1 = hostile.
@@ -429,44 +413,6 @@ function nnApplyAction(unit, action, friendlies, enemies) {
       unit._nnLastSeenX = tgt.x;
       unit._nnLastSeenY = tgt.y;
       unit._nnLastSeenTick = game.time;
-      NN.lastSound = { x: unit.x, y: unit.y, tick: game.time, team: unit.team || 0 };
-      emitSound(unit.x, unit.y, w.soundIntensity || 1300, isPlayer || isAlly, false, w.soundProfile);
-    } else if (unit._nnLastSeenTick != null
-               && (game.time - unit._nnLastSeenTick) < 30
-               && unit._nnLastSeenX != null
-               && unit._nnLastSeenY != null) {
-      // Phase 132 — suppression fire on lost LOS. NN decided to fire but
-      // either (a) no visible enemy this tick, or (b) the chosen target
-      // hid behind cover. If the last-seen intel is fresh (<30 ticks =
-      // 0.5s), fire toward that point with 2× spread to keep pressure on
-      // the player. Cooldown is bumped 1.5× so suppression fires don't
-      // double the unit's effective rate-of-fire.
-      const w = unit._weapon || WEAPONS.RIFLE;
-      const sx = unit._nnLastSeenX, sy = unit._nnLastSeenY;
-      const supSpread = 0.10;   // 2× normal — suppressing, not sniping
-      const aim = Math.atan2(sy - unit.y, sx - unit.x) + (Math.random() - 0.5) * supSpread;
-      unit.angle = aim;
-      const isFriendlyTeam = unit.team === 0 || unit === player;
-      const isAlly = isFriendlyTeam && unit !== player;
-      const isPlayer = unit === player;
-      const bulletList = isFriendlyTeam ? bullets : enemyBullets;
-      const pellets = w.pellets || 1;
-      for (let i = 0; i < pellets; i++) {
-        const a = (pellets > 1) ? aim + (Math.random() - 0.5) * w.spread : aim;
-        bulletList.push({
-          x: unit.x + Math.cos(a) * 16,
-          y: unit.y + Math.sin(a) * 16,
-          vx: Math.cos(a) * w.bulletSpeed,
-          vy: Math.sin(a) * w.bulletSpeed,
-          life: w.bulletLife,
-          damage: w.damage,
-          fromAlly: isAlly,
-          fromUnit: unit,
-          weaponName: w.name,
-        });
-      }
-      muzzleFlashes.push({ x: unit.x + Math.cos(aim)*22, y: unit.y + Math.sin(aim)*22, angle: aim, life: 5 });
-      unit._nnFireCd = Math.round(w.fireCd * 1.5);   // self-throttle
       NN.lastSound = { x: unit.x, y: unit.y, tick: game.time, team: unit.team || 0 };
       emitSound(unit.x, unit.y, w.soundIntensity || 1300, isPlayer || isAlly, false, w.soundProfile);
     }
@@ -591,15 +537,6 @@ function _nnNoteHit(unit, bullet) {
   unit._nnRecentDmg = 90;           // 1.5s 'under fire' flag (ONNX obs dim 5)
   unit._patrolPauseUntil = 0;
   unit.angle = Math.atan2(srcY - unit.y, srcX - unit.x);
-  // Phase 132 — instant fire-ready on hit. Zero out the fire cooldown so
-  // the unit can shoot back THIS frame instead of burning the leftover
-  // idle cooldown. Combined with the squad-awareness ripple below, a
-  // single bullet from the player simultaneously (1) snaps the unit's
-  // aim toward the shooter via the unit.angle assignment above, (2) wakes
-  // it into combat mode, (3) makes it ready to fire on the next nnTick.
-  // Result: the bot returns fire reflexively instead of taking 1-2 idle
-  // cooldown periods to ramp up.
-  unit._nnFireCd = 0;
 
   // Phase 98 — squad-awareness ripple. Same-team NN units within 200u
   // (within shouting distance) flip into combat with the same shooter
@@ -616,12 +553,6 @@ function _nnNoteHit(unit, bullet) {
     m._aiMode = 'combat';
     m._combatLastActiveAt = game.time;
     m._patrolPauseUntil = 0;
-    // Phase 132 — squad mates also get instant fire-ready. The buddy who
-    // got hit returns fire same-frame; nearby teammates within 200u snap
-    // their cooldown too so the volley is closer to simultaneous instead
-    // of a stragglered chain. Caps at 0 — doesn't BOOST fire rate, just
-    // removes the leftover idle delay.
-    if (m._nnFireCd > 0) m._nnFireCd = 0;
     const stale = m._nnLastSeenTick == null
                || m._nnLastSeenTick < game.time - 60;
     if (stale) {
