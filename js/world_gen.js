@@ -71,12 +71,53 @@ function peekOffset(cp, threatX, threatY) {
   return { x: cp.x + Math.cos(a)*18, y: cp.y + Math.sin(a)*18 };
 }
 
+// Phase 135.2 — staggered spawn queue. In NN Arena bias the spawns get
+// queued with fireAt timestamps so they trickle in over SPAWN_WINDOW
+// instead of dumping the whole wave on a single frame. tickPendingNNSpawns
+// (called from the nn_deathmatch mission tick) drains the queue. For
+// non-NN biases (campaign etc.) we still spawn immediately — the visual
+// problem ("一堆從同樣地方走出來") was specific to nnArena spawn pattern.
+const SPAWN_WINDOW_TICKS = 5 * 60;   // 5 s of staggered arrivals
 function spawnWave(n) {
   const cfg = currentMap.spawn;
   const numSoldiers = cfg.soldierBase + (n - 1) * cfg.soldierPerWave;
   const numDrones   = cfg.droneBase   + (n - 1) * cfg.dronePerWave;
-  for (let i = 0; i < numSoldiers; i++) spawnSoldier(cfg);
-  for (let i = 0; i < numDrones; i++) spawnDroneEnemy(cfg);
+  const stagger = (cfg.bias === 'nnArena');
+  if (!stagger) {
+    for (let i = 0; i < numSoldiers; i++) spawnSoldier(cfg);
+    for (let i = 0; i < numDrones; i++) spawnDroneEnemy(cfg);
+    return;
+  }
+  // NN Arena: enqueue with per-unit delays so the spawn feels like a
+  // multi-direction skirmish rather than a single batch dropping in.
+  if (!game._pendingNNSpawns) game._pendingNNSpawns = [];
+  const total = numSoldiers + numDrones;
+  const now = (typeof game !== 'undefined' && game.time != null) ? game.time : 0;
+  for (let i = 0; i < numSoldiers; i++) {
+    const delay = (total > 1 ? (i / Math.max(1, total - 1)) : 0) * SPAWN_WINDOW_TICKS;
+    game._pendingNNSpawns.push({ type: 'soldier', fireAt: now + delay, cfg });
+  }
+  for (let i = 0; i < numDrones; i++) {
+    const delay = ((numSoldiers + i) / Math.max(1, total - 1)) * SPAWN_WINDOW_TICKS;
+    game._pendingNNSpawns.push({ type: 'drone', fireAt: now + delay, cfg });
+  }
+}
+
+// Drain ready-to-fire spawns from the queue. Called from
+// js/missions/nn_deathmatch.js per-tick. Safe no-op when queue empty.
+function tickPendingNNSpawns() {
+  const q = game._pendingNNSpawns;
+  if (!q || q.length === 0) return;
+  const now = game.time;
+  // Walk backwards so splice doesn't shift unprocessed entries.
+  for (let i = q.length - 1; i >= 0; i--) {
+    const p = q[i];
+    if (now >= p.fireAt) {
+      if (p.type === 'soldier') spawnSoldier(p.cfg);
+      else if (p.type === 'drone') spawnDroneEnemy(p.cfg);
+      q.splice(i, 1);
+    }
+  }
 }
 
 function pickBiasedSpawn(bias) {
@@ -126,12 +167,44 @@ function pickBiasedSpawn(bias) {
       return { x: player.x + Math.cos(a)*d, y: player.y + Math.sin(a)*d };
     }
     case 'nnArena': {
-      // Spawn enemy team on the right side of the NN arena, evenly spread
-      const idx = enemies.length;
-      return {
-        x: NN_ARENA.x0 + NN_ARENA.w - 200,
-        y: NN_ARENA.y0 + 250 + (idx % 4) * 200,
-      };
+      // Phase 135.1 — distribute enemy spawns across all 4 arena edges.
+      // Was: every enemy stacked on the right edge at 4 fixed y-positions
+      // → user report '一堆從同樣的地方走出來,走向同一個地方'. Now each
+      // enemy goes to a different edge round-robin (N→E→S→W→N...) with a
+      // random position along that edge. Position inset from corners so
+      // squads don't converge on the same diagonal approach line, and
+      // inset from edge so they're inside the NN_ARENA clamp (visible
+      // from frame 1, no "stuck on edge" clamp tug).
+      const INSET_FROM_CORNER = 220;
+      const INSET_FROM_EDGE   = 40;
+      // Combined count (live + pending) so the round-robin index keeps
+      // incrementing even while Phase 135.2's queued spawns are pending.
+      const pendingN = (typeof game !== 'undefined' && game._pendingNNSpawns)
+        ? game._pendingNNSpawns.length : 0;
+      const idx  = enemies.length + pendingN;
+      const edge = idx % 4;                // 0=N, 1=E, 2=S, 3=W
+      const t    = r();
+      const aw = NN_ARENA.w, ah = NN_ARENA.h;
+      const x0 = NN_ARENA.x0, y0 = NN_ARENA.y0;
+      let x, y;
+      switch (edge) {
+        case 0:   // North
+          x = x0 + INSET_FROM_CORNER + t * (aw - 2 * INSET_FROM_CORNER);
+          y = y0 + INSET_FROM_EDGE;
+          break;
+        case 1:   // East
+          x = x0 + aw - INSET_FROM_EDGE;
+          y = y0 + INSET_FROM_CORNER + t * (ah - 2 * INSET_FROM_CORNER);
+          break;
+        case 2:   // South
+          x = x0 + INSET_FROM_CORNER + t * (aw - 2 * INSET_FROM_CORNER);
+          y = y0 + ah - INSET_FROM_EDGE;
+          break;
+        default:  // West
+          x = x0 + INSET_FROM_EDGE;
+          y = y0 + INSET_FROM_CORNER + t * (ah - 2 * INSET_FROM_CORNER);
+      }
+      return { x, y };
     }
   }
   // Default: ring around player

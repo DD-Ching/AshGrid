@@ -114,10 +114,14 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
     if (alive >= ENEMY_HARD_CAP) return;
     const room = ENEMY_HARD_CAP - alive;
     const n = Math.min(_waveSize(_waveNum), room);
-    const list = game._nnSpawnRedList || [game._nnSpawnRed];
+    // Phase 135.1 — instead of cycling _nnSpawnRedList (typically 1-2
+    // anchors all on the right side, which produced the user's '一堆
+    // 從同樣地方走出來,走向同一個地方' complaint), use the same 4-edge
+    // round-robin as the initial spawn via pickBiasedSpawn('nnArena').
+    // Each call increments the round-robin index via enemies.length so
+    // subsequent spawns within this wave naturally rotate N→E→S→W.
     for (let i = 0; i < n; i++) {
-      const sp = list[(game._nnSpawnRedIdx || 0) % list.length];
-      game._nnSpawnRedIdx = ((game._nnSpawnRedIdx || 0) + 1) % list.length;
+      const sp = pickBiasedSpawn('nnArena');
       _arenaSpawnFactoryBot('red', sp.x, sp.y);
     }
     _waveNum++;
@@ -319,6 +323,15 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
 
     update() {
       const elapsed = game.time - startTick;
+
+      // Phase 135.2 — drain the staggered NN-arena spawn queue. spawnWave
+      // enqueues entries with fireAt timestamps so a 3-8 unit reinforcement
+      // wave trickles in over SPAWN_WINDOW_TICKS instead of dumping all on
+      // a single frame. Each drained entry calls spawnSoldier/spawnDroneEnemy
+      // → pickBiasedSpawn('nnArena') → 4-edge distribution. Result: enemies
+      // arrive from N/E/S/W edges at staggered times, addressing user's
+      // '一堆從同樣地方走出來' + '不是從一個點一次生成一堆' feedback.
+      if (typeof tickPendingNNSpawns === 'function') tickPendingNNSpawns();
 
       // Detect team deaths this tick (alive count went down) → credit kills to opposing team
       const blueAlive = (player.alive ? 1 : 0) + allies.filter(a => a.alive).length;
