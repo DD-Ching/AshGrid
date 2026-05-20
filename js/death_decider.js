@@ -62,35 +62,38 @@
       PlayerLifecycle.killPlayer(deathPos);
     }
 
-    // Phase 134 (rollback) — restore Phase 129c-rev semantics.
-    // The brief Phase 133.3 re-enable of MP auto-swap caused a ghost-
-    // vehicle drag-back regression — user took control of an ally body
-    // but the server didn't agree (NN-driven bots are server-side, the
-    // client can't authoritatively claim one), so reconcile kept
-    // dragging the player back to the original dead slot's last position.
+    // Phase 137 — MP auto-swap RE-ENABLED, now safe.
     //
-    // SP NN-mode auto-swap stays — works fine there since there's no
-    // authoritative server. MP path falls through to the recap-with-
-    // alive-allies branch below, which the death recap UI renders
-    // as a swap-hint instead of a countdown.
+    // Why this works after Phase 133.3 failed:
+    // Phase 133.3's chain-loop guard (shouldSkipSnapshotFallback) wasn't
+    // the actual problem. The real problem was that reconcile in
+    // multiplayer.js cleared its ignore window on server ACK (line 337
+    // pre-Phase-136). After client auto-swap → broadcast → server
+    // disagreed (server-side bots aren't player-owned) → ACK arrived →
+    // ignore window cleared → reconcile yanked player back to original
+    // dead spot. That's the "ghost vehicle drag" the user reported.
+    //
+    // Phase 136 introduced MpReconcile.setForcedIgnoreWindow(ticks) — a
+    // HARD ignore window the ACK path explicitly cannot clear. Setting
+    // 60 ticks here means reconcile is locked off for 1 full second
+    // post-swap, long enough for either (a) server to converge or (b)
+    // the player to manually press 1-5 if they don't like the auto-pick.
+    //
+    // SP NN-mode unchanged — auto-swap was always the rule there since
+    // there's no authoritative server.
     const _isMP = (typeof _mpIsActive === 'function' && _mpIsActive());
-    if (!_isMP
-        && typeof tryAutoSwapToClosestAlly === 'function'
+    if (typeof tryAutoSwapToClosestAlly === 'function'
         && tryAutoSwapToClosestAlly()) {
       _lastAutoSwapAt = _now();
+      if (_isMP && typeof MpReconcile !== 'undefined') {
+        // Hard window: reconcile disabled for 60 ticks regardless of
+        // server ACK. Soft window is also set by swapPlayerToAlly →
+        // MpReconcile.setIgnoreWindow(Infinity), but that one gets
+        // cleared by the ACK path; this forced window is the durable
+        // safety net.
+        MpReconcile.setForcedIgnoreWindow(60);
+      }
       return 'swapped';
-    }
-
-    // MP + at least one alive ally → skip countdown / wipedSince so
-    // the death-recap renders the AUTO-SWAP HINT branch instead of
-    // the WIPED countdown + ad CTA. Player presses 1-5 manually to
-    // swap; server still drives respawn at the original slot if they
-    // don't act.
-    if (_isMP) {
-      const _anyAllyAlive = (typeof allies !== 'undefined' && allies)
-        ? allies.some(a => a && a.alive)
-        : false;
-      if (_anyAllyAlive) return 'mp-ally-alive';
     }
 
     // No swap target → full team-wipe path.
