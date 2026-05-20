@@ -299,75 +299,8 @@ function showSwapToast(text) {
   game._swapToast = { text, ttl: 75 };   // 1.25s
 }
 
-// Phase 129c — canonical local-player death handler. Single decision
-// site for the rule: "if any alive teammate exists, auto-swap into
-// their slot (no countdown, no ad CTA); otherwise schedule respawn
-// timer + mark team-wipe (drives the death-recap countdown + ad CTA)."
-//
-// Before this consolidation:
-//   · SP NN-mode  (nn_deathmatch.js)   followed the rule correctly.
-//   · MP path     (multiplayer.js:880) ALWAYS scheduled respawn +
-//     ALWAYS set wipedSince → MP solo death = false team-wipe screen
-//     with countdown + ad CTA, even when squad bots were alive.
-//
-// User rule (memory: feedback_death_recap_no_countdown_when_swap_available):
-//   "if a teammate is alive, no respawn countdown + no ad CTA —
-//    only auto-swap hint." This violated rule in MP since Phase 35-ish.
-//
-// Idempotent — safe to call per-frame (killPlayer no-ops once alive=false,
-// the auto-swap path early-returns when no allies, the schedule-respawn
-// path sets _respawnAt which gates re-entry from the SP per-frame loop).
-//
-// Returns 'swapped' (auto-swap succeeded) or 'wiped' (countdown started).
-// Caller can use for sfx / telemetry selection if needed.
-function handleLocalDeath(deathPos) {
-  if (typeof PlayerLifecycle !== 'undefined') {
-    PlayerLifecycle.killPlayer(deathPos);
-  }
-
-  // Phase 129c-rev (urgent rollback) — auto-swap only in SP NN-mode.
-  // The first Phase 129c also fired auto-swap on MP death events, but
-  // server is authoritative for MP respawn — server-side never agreed
-  // to client-initiated post-death swap, so every reconcile re-set
-  // player to dead, triggering the snapshot-fallback handler, which
-  // fired handleLocalDeath again, which auto-swapped AGAIN. Result
-  // the user reported: '剛開始還單獨載具時被幹掉, 莫名其妙接管不
-  // 知哪來的載具, 且無法動彈被再度擊殺, 在莫名其妙接管' — chain
-  // of mis-swaps + position desync freezing the client.
-  //
-  // SP path is unchanged (auto-swap was already the rule there).
-  const _isMP = (typeof _mpIsActive === 'function' && _mpIsActive());
-  if (!_isMP
-      && typeof tryAutoSwapToClosestAlly === 'function'
-      && tryAutoSwapToClosestAlly()) {
-    return 'swapped';
-  }
-
-  // UI rule (memory: feedback_death_recap_no_countdown_when_swap_available):
-  // 'if a teammate is alive, no respawn countdown + no ad CTA — only
-  // auto-swap hint.' In MP we honour this by NOT marking wipedSince
-  // when at least one ally is alive locally — death-recap then renders
-  // the auto-swap hint branch (`▼ AUTO-SWAP TO NEAREST ALLY ▼`) instead
-  // of the WIPED countdown. Server still drives the actual revive.
-  if (_isMP) {
-    const _anyAllyAlive = (typeof allies !== 'undefined' && allies)
-      ? allies.some(a => a && a.alive)
-      : false;
-    if (_anyAllyAlive) {
-      return 'mp-ally-alive';   // skip countdown + wipedSince; server respawns us
-    }
-  }
-
-  // No alive allies → full team-wipe path: countdown + ad CTA.
-  const respawnSec = (typeof getRespawnSeconds === 'function')
-    ? getRespawnSeconds() : 3;
-  const ticks = Math.round(respawnSec * 60);
-  if (typeof PlayerLifecycle !== 'undefined') {
-    PlayerLifecycle.scheduleRespawn(ticks);
-  }
-  if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
-    game._teamWipe.blue.wipedSince = game.time;
-    game._teamWipe.blue.respawnAt  = game.time + ticks;
-  }
-  return 'wiped';
-}
+// Phase 133.3 — handleLocalDeath moved to js/death_decider.js.
+// The death-decision logic owns its own state now (lastAutoSwapAt
+// timestamp for chain-loop guard), so MP auto-swap can be re-enabled
+// safely. See death_decider.js for the new home + the rationale for
+// the Phase 129c → 129c-rev → 133.3 evolution.

@@ -161,4 +161,36 @@
       try { window.focus(); } catch (e) {}
     }, { passive: true, capture: true });
   });
+
+  // ─── Phase 133.1 — disable browser zoom shortcuts ─────────────────
+  // User report: '按 Cmd 加 / 減的時候子彈的射程或者是手榴彈的距離會
+  // 改變'. Root cause: Cmd+/- changes window.innerWidth → canvas
+  // resizes → viewport-aware camera modes (mpDead, editor) scale
+  // change → game-world area visible changes → perception of
+  // 'bullet range shorter'. Game-coord bullet range is constant
+  // (bulletSpeed × bulletLife per frame), but visual perception of
+  // range shifts when canvas dimensions change.
+  //
+  // Fix: intercept all standard zoom shortcuts at capture phase so
+  // viewport never reflows from user input. Doesn't disable F11
+  // fullscreen, which is the preferred way to immerse anyway.
+  // Mobile pinch-zoom already handled by the viewport meta in <head>.
+  document.addEventListener('keydown', function(e) {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    // Cmd/Ctrl + (=, -, +, 0) are the browser zoom shortcuts. We also
+    // catch the bare '+/-' on the main keyboard. Don't block Cmd+1..9
+    // because the pawn-swap slots bind to those keys.
+    if (e.key === '=' || e.key === '-' || e.key === '+' || e.key === '0') {
+      e.preventDefault();
+    }
+  }, { capture: true });
+
+  // Trackpad pinch-zoom on desktop browsers delivers a wheel event
+  // with ctrlKey=true. Block it so the visible game area stays stable
+  // when the player uses a 2-finger gesture.
+  document.addEventListener('wheel', function(e) {
+    if (e.ctrlKey) {
+      e.preventDefault();
+    }
+  }, { capture: true, passive: false });
 })();

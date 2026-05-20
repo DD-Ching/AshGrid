@@ -504,13 +504,24 @@ function _mpTrySynthKill() {
   // Killer telemetry default ('?') before the state transition so the
   // death-recap UI has something to render.
   if (!player._killer) player._killer = { callsign: '?' };
-  // Phase 129c — delegate to canonical handleLocalDeath (pawn_swap.js).
-  // Same rule as the kill-event path above: try auto-swap into a live
-  // squad ally first; only schedule respawn + mark wipedSince when
-  // squad is wiped. Previously this snapshot-fallback path always
-  // scheduled respawn (without marking wipedSince), so the death
-  // recap UI would show a generic countdown without the team-wipe
-  // visuals — confusing and inconsistent with the kill-event path.
+  // Phase 129c → Phase 133.3 — delegate to handleLocalDeath
+  // (now lives in js/death_decider.js).
+  //
+  // CHAIN-LOOP GUARD: this snapshot-fallback fires every tick the
+  // server still thinks we're dead. If we already auto-swapped to an
+  // ally locally, the server doesn't know yet (server is authoritative
+  // for the original player slot's respawn) — so a re-entry here would
+  // chain-swap to ANOTHER ally on top of our existing swap. The Phase
+  // 129c bug ("莫名其妙接管不知哪來的載具") was exactly this loop.
+  //
+  // Ask death_decider whether we just auto-swapped; if yes, skip. The
+  // kill-event path above doesn't need this guard (each kill message
+  // is a fresh discrete death; snapshot is the periodic re-check).
+  if (typeof shouldSkipSnapshotFallback === 'function'
+      && shouldSkipSnapshotFallback()) {
+    console.log('[mp] snapshot-fallback skipped — recent auto-swap (chain-loop guard)');
+    return;
+  }
   if (typeof handleLocalDeath === 'function') {
     handleLocalDeath({ x: player.x, y: player.y });
   }

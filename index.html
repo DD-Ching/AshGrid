@@ -54,7 +54,7 @@
 <script src="js/arena_recruitment.js?v=180"></script>
 <script src="js/dynamic_radio.js?v=180"></script>
 <script src="js/i18n.js?v=180"></script>
-<script src="js/touch_input.js?v=180"></script>
+<script src="js/touch_input.js?v=183"></script>
 <script src="js/key_bindings.js?v=180"></script>
 <script src="js/grenades.js?v=180"></script>
 <script src="js/squad_commands.js?v=180"></script>
@@ -63,7 +63,7 @@
      _lastRespawnAt. MUST load before multiplayer.js / death_recap.js /
      pawn_swap.js / missions/* since they all call into PlayerLifecycle.* -->
 <script src="js/player_lifecycle.js?v=180"></script>
-<script src="js/multiplayer.js?v=180"></script>
+<script src="js/multiplayer.js?v=183"></script>
 <script src="js/leaderboard.js?v=180"></script>
 <script src="js/structures.js?v=180"></script>
 <script src="js/tod.js?v=180"></script>
@@ -73,7 +73,12 @@
 <script src="js/death_recap.js?v=180"></script>
 <script src="js/mote_affinity.js?v=180"></script>
 <script src="js/stage_hints.js?v=180"></script>
-<script src="js/pawn_swap.js?v=180"></script>
+<script src="js/pawn_swap.js?v=183"></script>
+<!-- Phase 133.3 — death_decider.js extracts the death-decision logic
+     out of pawn_swap.js so the auto-swap timestamp state is explicit.
+     Loads AFTER pawn_swap.js so tryAutoSwapToClosestAlly is defined
+     when death_decider.handleLocalDeath looks for it at call time. -->
+<script src="js/death_decider.js?v=183"></script>
 <script src="js/global_stats.js?v=180"></script>
 <script src="js/progressive_unlock.js?v=180"></script>
 <!-- R11 Step 1 — ad dispatch registry. MUST load before the SDK adapter
@@ -113,7 +118,7 @@
 <!-- R2 refactor — Input module. Owns ALL writes to the global `mouse`
      state + canvas-inset coord translation. See js/input.js header
      for the trigger-edge primitives. -->
-<script src="js/input.js?v=180"></script>
+<script src="js/input.js?v=183"></script>
 <!-- R3 refactor — WeaponState module. Owns every weapon-state write on
      `player` (ammo / reload / fireCooldown / swap / equip). Loads
      AFTER js/weapons.js (above) — weapons.js installs the
