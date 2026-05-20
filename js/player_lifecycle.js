@@ -105,7 +105,14 @@
     player._lastRespawnAt = _gt;
     player._respawnAt = null;
     player._killedAtTime = 0;
-    player._mpIgnoreReconcileUntil = 0;
+    // Phase 136 — route through MpReconcile single-owner. Both windows
+    // (soft + forced) clear on a fresh body. Caller (pawn_swap) can
+    // re-set IF this revive is part of a swap (line 213 in pawn_swap.js).
+    if (typeof MpReconcile !== 'undefined') {
+      MpReconcile.clearAll();
+    } else {
+      player._mpIgnoreReconcileUntil = 0;
+    }
     if (typeof dismissDeathRecap === 'function') dismissDeathRecap();
     return true;
   }

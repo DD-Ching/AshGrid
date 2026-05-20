@@ -333,9 +333,10 @@ function _mpHandleMessage(data) {
       // the swap looks instant on every screen (instead of a 0.5 s slide
       // while the snapshot buffer catches up).
       if (data.id === _mpState.myId) {
-        if (typeof player !== 'undefined') {
-          player._mpIgnoreReconcileUntil = 0;     // server now agrees with us
-        }
+        // Phase 136 — route ACK through the reconcile module so the
+        // hard-forced window (set by Phase 137 safe MP auto-swap) can
+        // refuse premature clearing. Soft window still clears here.
+        if (typeof MpReconcile !== 'undefined') MpReconcile.onServerAck();
       } else {
         const rp = _mpState.remotePlayers.get(data.id);
         if (rp) {
@@ -540,51 +541,12 @@ function _mpDropProcessedInputs(sp) {
 }
 
 function _mpReconcileSelfPosition() {
-  // Replay remaining inputs from the server's confirmed position. Use
-  // the merged serverSelf coords so delta snapshots (no x/y this tick)
-  // replay against last-known authoritative position.
-  //
-  // Phase X — apply the SAME per-input multipliers as the server's
-  // tick math: sprint × weapon × chassis. Without this, wolf sprint
-  // (1.5 × 1.65 = 2.475×) replay was using flat 5.6 px/input while
-  // the server moved 5.6 × 2.475 ≈ 13.86 px/input → predX behind truth
-  // by ~8 px per pending input → reconcile pulled client back at every
-  // 33 Hz snapshot = the visible "走路忽快忽慢" tug.
-  if (typeof player === 'undefined') return;
-  let predX = _mpState.serverSelfX, predY = _mpState.serverSelfY;
-  for (const inp of _mpState.pendingInputs) {
-    let dx = inp.dx, dy = inp.dy;
-    const mag = Math.hypot(dx, dy);
-    if (mag > 1) { dx /= mag; dy /= mag; }
-    const sprintMul = inp.sprint ? 1.65 : 1.0;       // matches SPRINT_SPEED_MUL
-    const wpnMul    = (typeof inp.wMul === 'number') ? inp.wMul : 1.0;
-    const chsMul    = (typeof inp.cMul === 'number') ? inp.cMul : 1.0;
-    const mul = sprintMul * wpnMul * chsMul;
-    predX += dx * MP_PLAYER_SPEED * mul;
-    predY += dy * MP_PLAYER_SPEED * mul;
-  }
-  // Phase 80 spread-error reconcile. User '權威必須存在! 聯機不能本地!
-  // 想辦法在遊玩時不跳針'. Server authority is preserved; we just
-  // dribble the position error out over multiple frames instead of
-  // snapping per snapshot:
-  //   • big errors (>150u: teleport/respawn/lag) snap instantly
-  //   • <3 px dead zone silent
-  //   • else accumulate into player._reconcileErr (8 %/frame in update)
-  const dx = predX - player.x, dy = predY - player.y;
-  const dist = Math.hypot(dx, dy);
-  // Phase 83 — honour _mpIgnoreReconcileUntil. Pawn-swap sets it to
-  // game.time + 90 ticks; during that window we skip ALL position
-  // reconciliation so the swap actually sticks visually.
-  const _ignoreReconcile = (game?.time || 0) < (player._mpIgnoreReconcileUntil || 0);
-  if (_ignoreReconcile) {
-    player._reconcileErr = null;
-  } else if (dist > 150) {
-    player.x = predX; player.y = predY;
-    player._reconcileErr = null;
-  } else if (dist < 3) {
-    // Inside dead zone — server agrees with us, nothing to do.
-  } else {
-    player._reconcileErr = { dx, dy };
+  // Phase 136 — body extracted into js/mp_reconcile.js (MpReconcile module
+  // is the single owner of reconcile state + decision logic). This wrapper
+  // remains because _mpHandleSelfSnapshot calls it positionally in the R13
+  // ordered helper chain. Keep the wrapper so the chain stays self-documenting.
+  if (typeof MpReconcile !== 'undefined') {
+    MpReconcile.reconcilePosition(MP_PLAYER_SPEED);
   }
 }
 
@@ -1072,26 +1034,12 @@ function _mpSendInput() {
   }
 }
 
-// Phase 80 — per-frame error-spread reconcile. Bleeds player._reconcileErr
-// out at 8%/frame so the position drift from snapshot reconciliation is
-// invisible (~130ms half-life) but server-truth is still authoritative.
-// Called from the main update loop in index.html.
+// Phase 80 / Phase 136 — per-frame error-spread reconcile. Now delegates
+// to MpReconcile.tickSpreadError(). Called from the main update loop in
+// index.html. Kept as a thin wrapper so existing call site doesn't change.
 function _mpTickReconcile() {
   if (!_mpState.enabled || typeof player === 'undefined') return;
-  const err = player._reconcileErr;
-  if (!err) return;
-  const RATE = 0.08;
-  const stepX = err.dx * RATE;
-  const stepY = err.dy * RATE;
-  player.x += stepX;
-  player.y += stepY;
-  err.dx -= stepX;
-  err.dy -= stepY;
-  // Snap to clean when error is well under 1px so we don't sit on the
-  // ledger forever doing arithmetic on dust.
-  if (Math.abs(err.dx) < 0.15 && Math.abs(err.dy) < 0.15) {
-    player._reconcileErr = null;
-  }
+  if (typeof MpReconcile !== 'undefined') MpReconcile.tickSpreadError();
 }
 
 // Phase 39 — per-frame remote interpolation from the timestamped buffer.

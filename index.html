@@ -62,8 +62,14 @@
      _respawnAt / _invulnUntil / _killedAtTime / _lastDeathX/Y /
      _lastRespawnAt. MUST load before multiplayer.js / death_recap.js /
      pawn_swap.js / missions/* since they all call into PlayerLifecycle.* -->
-<script src="js/player_lifecycle.js?v=180"></script>
-<script src="js/multiplayer.js?v=183"></script>
+<script src="js/player_lifecycle.js?v=186"></script>
+<!-- Phase 136 — MP reconcile single-owner state machine. MUST load
+     BEFORE multiplayer.js + pawn_swap.js because both modules look up
+     window.MpReconcile at call time but the lookup happens during
+     gameplay (not load), so this could technically load later too —
+     keeping it here for visual ordering. -->
+<script src="js/mp_reconcile.js?v=186"></script>
+<script src="js/multiplayer.js?v=186"></script>
 <script src="js/leaderboard.js?v=180"></script>
 <script src="js/structures.js?v=180"></script>
 <script src="js/tod.js?v=180"></script>
@@ -73,7 +79,7 @@
 <script src="js/death_recap.js?v=180"></script>
 <script src="js/mote_affinity.js?v=180"></script>
 <script src="js/stage_hints.js?v=180"></script>
-<script src="js/pawn_swap.js?v=183"></script>
+<script src="js/pawn_swap.js?v=186"></script>
 <!-- Phase 133.3 — death_decider.js extracts the death-decision logic
      out of pawn_swap.js so the auto-swap timestamp state is explicit.
      Loads AFTER pawn_swap.js so tryAutoSwapToClosestAlly is defined

@@ -41,8 +41,13 @@ function swapPlayerToAlly(idx) {
   // snapshot — the server's 'swap' echo (handled in multiplayer.js)
   // will clear it as soon as it round-trips.
   if (typeof _mpIsActive === 'function' && _mpIsActive()) {
-    if (typeof game !== 'undefined' && typeof player !== 'undefined') {
-      player._mpIgnoreReconcileUntil = Infinity;
+    // Phase 136 — route ignore-window writes through MpReconcile so the
+    // single-owner contract holds. Was a direct property write that any
+    // other module could (and did) silently clobber.
+    if (typeof MpReconcile !== 'undefined') {
+      MpReconcile.setIgnoreWindow(Infinity);
+    } else if (typeof game !== 'undefined' && typeof player !== 'undefined') {
+      player._mpIgnoreReconcileUntil = Infinity;   // fallback (module not loaded)
     }
   }
   // Pawn-swap auto-dismisses the death recap — player wants to see the
@@ -206,7 +211,12 @@ function swapPlayerToAlly(idx) {
   // after pawn-swap pulls the player back to the OLD pre-swap server
   // position — exactly the '走路會卡住拖的感覺' bug the user reported.
   if (typeof _mpIsActive === 'function' && _mpIsActive()) {
-    if (typeof game !== 'undefined' && typeof player !== 'undefined') {
+    // Phase 136 — same routing as line 43. reviveAtSpawn just cleared
+    // the ignore window; re-set it through MpReconcile so the swap-
+    // suppression persists until server-echo round-trips.
+    if (typeof MpReconcile !== 'undefined') {
+      MpReconcile.setIgnoreWindow(Infinity);
+    } else if (typeof game !== 'undefined' && typeof player !== 'undefined') {
       player._mpIgnoreReconcileUntil = Infinity;
     }
   }
