@@ -151,6 +151,9 @@ function _arenaConvertEnemyToAlly(e) {
                     '▸ RECRUITED · ' + (e.callsign || 'UNIT')));
   }
   if (typeof playRadioStatic === 'function') playRadioStatic(0.55, 0.45);
+  // Phase 148 — celebrate the core-loop beat: green call-out + new SQUAD ×N
+  // + a rising sting (see js/recruit_fx.js).
+  if (typeof triggerRecruitFx === 'function') triggerRecruitFx(e.callsign || 'UNIT');
   return true;
 }
 
