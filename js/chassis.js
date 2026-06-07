@@ -164,6 +164,10 @@ function _applyDamageToUnit(u, dmg) {
       && game.time < u._invulnUntil) {
     return;
   }
+  // Phase 149 — brief white body hit-flash so every landed hit reads tactilely
+  // (world_render flashes the humanoid white while game.time < this). Set here,
+  // the one damage chokepoint, so it fires for bullets / AOE / melee alike.
+  u._hitFlashUntil = ((typeof game !== 'undefined') ? game.time : 0) + 5;
   const c = CHASSIS[u._chassis];
   if (c && c.armor != null) {
     u._armorLastHurtAt = (typeof game !== 'undefined') ? game.time : 0;

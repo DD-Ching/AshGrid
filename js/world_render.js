@@ -385,7 +385,9 @@ function renderWorld() {
     // 'live threat'. User: '他就變白色之類的'.
     const _stunPulse = e._koStunned ? (0.6 + 0.25 * Math.sin(game.time * 0.10)) : 1;
     if (e._koStunned) ctx.globalAlpha = alpha * _stunPulse;
-    const _bodyColor = e._koStunned ? COLORS.cream : COLORS.red;
+    // Phase 149 — flash the body white for a few frames when freshly hit.
+    const _eHit = (typeof game !== 'undefined') && game.time < (e._hitFlashUntil || 0);
+    const _bodyColor = _eHit ? '#FFFFFF' : (e._koStunned ? COLORS.cream : COLORS.red);
     drawHumanoid(e.x, e.y, e.angle, e.walkPhase, _bodyColor, true, e);
     // Phase 98 — "!" alert indicator. Visible above any NN unit currently
     // in ONNX combat state from a recent damage trigger (1.5s window).
@@ -500,7 +502,9 @@ function renderWorld() {
     // 0.7-1.0 so the spawn-protect flicker is still readable as "this
     // unit is invulnerable" while keeping the silhouette legible.
     if (aInvuln) ctx.globalAlpha = 0.7 + 0.3 * Math.abs(Math.sin(game.time * 0.25));
-    drawHumanoid(a.x, a.y, a.angle, a.walkPhase, COLORS.creamDark, false, a);
+    // Phase 149 — allies flash white on hit too (same tactile read).
+    const _aHit = (typeof game !== 'undefined') && game.time < (a._hitFlashUntil || 0);
+    drawHumanoid(a.x, a.y, a.angle, a.walkPhase, _aHit ? '#FFFFFF' : COLORS.creamDark, false, a);
     if (aInvuln) ctx.globalAlpha = 1;
     // Phase 98 — same "!" alert for friendly NN units. Same combat trigger,
     // same visual rule. Confirms ONNX-state on the team you actually
