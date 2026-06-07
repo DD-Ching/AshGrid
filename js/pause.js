@@ -96,7 +96,7 @@ function drawPauseOverlay() {
     ]],
     [T('装备 GEAR', 'GEAR'), [
       ['R',     T('装填弹药', 'Reload')],
-      ['X',     T('切换主/副武器', 'Swap weapon')],
+      [T('踩武器', 'Step on'), T('踩敌人掉落的枪换武器', 'Pick up dropped weapon')],
       ['G',     T('投掷手雷', 'Throw grenade')],
       ['Q',     T('UAV 无人机', 'UAV recon')],
       ['E',     T('FPV 自杀无人机', 'FPV kamikaze')],
