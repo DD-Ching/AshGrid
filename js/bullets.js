@@ -123,8 +123,7 @@ function detonateRocket(b) {
       if (typeof _tryStunOrKill === 'function' && _tryStunOrKill(e)) {
         // stunned, no score awarded yet
       } else {
-        e.alive = false; game.score += 100; game.killCount++;
-        if (typeof _lbBumpKill === 'function') _lbBumpKill();
+        killUnit(e, { source: 'bullet' });   // alive=false + score 100 + lb bump
         createExplosion(e.x, e.y, 'small');
       }
     }
@@ -249,8 +248,7 @@ function updateBullets() {
             spawnDamagePopup(e.x, e.y - 26, 'KO', true);
             hit = true; break;
           }
-          e.alive = false; game.score += 100; game.killCount++;
-          if (typeof _lbBumpKill === 'function') _lbBumpKill();
+          killUnit(e, { source: 'bullet' });   // alive=false + score 100 + lb bump
           // (arena-mp: _maybeTriggerFirstKillAudit call stripped — was the
           // FTUE Phase 4 auto-popup. Audit Console reachable via lobby button.)
           // Kill SFX + ally-kill radio callout BOTH removed on user request

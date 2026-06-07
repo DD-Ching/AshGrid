@@ -56,7 +56,7 @@
 <script src="js/i18n.js?v=180"></script>
 <script src="js/touch_input.js?v=190"></script>
 <script src="js/key_bindings.js?v=191"></script>
-<script src="js/grenades.js?v=180"></script>
+<script src="js/grenades.js?v=192"></script>
 <script src="js/squad_commands.js?v=180"></script>
 <!-- R12 — Player Lifecycle module. Single owner of player.alive /
      _respawnAt / _invulnUntil / _killedAtTime / _lastDeathX/Y /
@@ -71,7 +71,11 @@
 <script src="js/mp_reconcile.js?v=186"></script>
 <script src="js/multiplayer.js?v=191"></script>
 <script src="js/leaderboard.js?v=180"></script>
-<script src="js/structures.js?v=191"></script>
+<!-- Phase 141 — unit kill/death chokepoint. Loads before bullets/structures/
+     grenades (which call killUnit) and before weapon_drop.js (which subscribes
+     onUnitDeath at load). -->
+<script src="js/kill.js?v=192"></script>
+<script src="js/structures.js?v=192"></script>
 <script src="js/tod.js?v=180"></script>
 <script src="js/weapons.js?v=190"></script>
 <script src="js/chassis.js?v=180"></script>
@@ -159,7 +163,7 @@
      call time via classic-script globals, so this file MUST load
      before the main inline script declares those globals — which is
      fine, the functions aren't called until tickPlayerCombat runs. -->
-<script src="js/bullets.js?v=180"></script>
+<script src="js/bullets.js?v=192"></script>
 <!-- R6 refactor — world render (renderFootprints, renderWorld,
      drawLowCovers, drawOverheads). Same load-time-decoupled pattern
      as bullets.js; functions resolve their globals at call time. -->
@@ -6116,8 +6120,7 @@ function createExplosion(x, y, size) {
           if (typeof _tryStunOrKill === 'function' && _tryStunOrKill(e)) {
             // stunned, no kill credit yet
           } else {
-            e.alive = false; game.score += 100; game.killCount++;
-            if (typeof _lbBumpKill === 'function') _lbBumpKill();
+            killUnit(e, { source: 'aoe' });   // alive=false + score 100 + lb bump
           }
         }
       }

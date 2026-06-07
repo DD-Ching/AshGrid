@@ -112,7 +112,7 @@ function explodeGrenade(g) {
       playSfx('hit');
     }
     if (u.hp <= 0 && u.alive) {
-      u.hp = 0; u.alive = false;
+      killUnit(u, { credit: false, source: 'grenade' });
       createExplosion(u.x, u.y, 'small');
       if (u === player) playSfx('death');
     }

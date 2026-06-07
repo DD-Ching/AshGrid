@@ -485,7 +485,7 @@ function updateStructures() {
           if (d < def.blastR) {
             const dmg = Math.round(def.dmg * (1 - d / def.blastR));
             e.hp -= dmg;
-            if (e.hp <= 0) { e.alive = false; e.hp = 0; createExplosion(e.x, e.y, 'small'); }
+            if (e.hp <= 0) { killUnit(e, { credit: false, source: 'mine' }); createExplosion(e.x, e.y, 'small'); }
           }
         }
         s.hp = 0;     // mark for cleanup next tick
@@ -601,7 +601,7 @@ function updateStructures() {
           primary.hp -= teslaDmg;
           spawnDamagePopup(primary.x, primary.y - 14, teslaDmg, primary.hp <= 0);
           if (primary.hp <= 0 && primary.alive) {
-            primary.alive = false; game.score += 100; game.killCount++;
+            killUnit(primary, { lbBump: false, source: 'tesla' });
             createExplosion(primary.x, primary.y, 'small');
           }
           game._teslaBolts.push({ x1: s.x, y1: s.y, x2: primary.x, y2: primary.y, life: 14 });
@@ -620,7 +620,7 @@ function updateStructures() {
             next.hp -= dmg;
             spawnDamagePopup(next.x, next.y - 14, dmg, next.hp <= 0);
             if (next.hp <= 0 && next.alive) {
-              next.alive = false; game.score += 100; game.killCount++;
+              killUnit(next, { lbBump: false, source: 'tesla' });
               createExplosion(next.x, next.y, 'small');
             }
             game._teslaBolts.push({ x1: prev.x, y1: prev.y, x2: next.x, y2: next.y, life: 14 });
@@ -678,7 +678,7 @@ function updateStructures() {
               const dmg = Math.round(d.dmg * (1 - ed / d.blastR));
               e.hp -= dmg;
               if (e.hp <= 0 && e.alive) {
-                e.alive = false; game.score += 100; game.killCount++;
+                killUnit(e, { lbBump: false, source: 'drone' });
                 createExplosion(e.x, e.y, 'small');
               }
             }
@@ -779,7 +779,7 @@ function updateAirstrikes() {
           const d = Math.hypot(e.x - ex, e.y - ey);
           if (d < 130) {
             e.hp -= Math.round(70 * (1 - d / 130));
-            if (e.hp <= 0) { e.alive = false; e.hp = 0; createExplosion(e.x, e.y, 'small'); }
+            if (e.hp <= 0) { killUnit(e, { credit: false, source: 'airstrike' }); createExplosion(e.x, e.y, 'small'); }
           }
         }
       }
