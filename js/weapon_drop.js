@@ -1,4 +1,4 @@
-// ============ WEAPON DROP + PICKUP (Phase 140) ============
+// ============ WEAPON DROP + PICKUP (Phase 140 / 141) ============
 // Replaces manual mid-match weapon switching (the old X-swap). The new rule
 // the user asked for: ONE pawn = ONE weapon. You don't toggle between two
 // stashed guns any more — instead, when an enemy is KILLED its weapon drops
@@ -7,28 +7,26 @@
 //
 //   kill enemy → weapon drops at the body → stand on it ~1.5s → equip it
 //
-// ── Why a frame-scan instead of hooking the kill sites ──────────────────
-// Enemy death is set in ~10 scattered places (bullets.js, structures.js,
-// grenades.js, index.html) with no single chokepoint. Rather than edit all
-// of them (several are R5/bullets + structures hot spots), this module scans
-// `enemies` each frame:
-//   • A KILLED enemy stays in `enemies` with alive=false (it respawns later)
-//     → we see it, drop once, and flag it (_weaponDropped).
-//   • A RECRUITED enemy is spliced OUT of `enemies` while still alive=true
-//     (see arena_recruitment._arenaConvertEnemyToAlly) → it never trips the
-//     drop. Good: recruiting someone shouldn't litter their gun.
-//   • A KO-STUNNED enemy (recruit target) is alive=true + _koStunned → also
-//     skipped until it's actually killed.
-// On respawn (alive flips back true) we clear _weaponDropped so the next
-// death drops again.
+// ── How a drop is triggered (Phase 141) ─────────────────────────────────
+// KILL-DRIVEN, not frame-scanned. The unit kill/death chokepoint
+// (js/kill.js) fires onUnitDeath(unit, opts) the instant a unit dies, and
+// _onUnitKilledDrop spawns the loot right there. One hook covers every SOLO
+// kill path (bullet / mine / tesla / dronebay / grenade / AOE) — no per-frame
+// scan of `enemies`, no _weaponDropped bookkeeping. Correctly skips:
+//   • RECRUITED enemies — conversion never calls killUnit (they're not killed)
+//   • KO-STUNNED recruit targets — _koStunned guard
+//   • non-enemies (player / ally / drone) — `enemies.indexOf(unit) < 0` guard
+// MP kills arrive via a SEPARATE source (_mpHandleKill in multiplayer.js),
+// because MP opponents live in remotePlayers, not `enemies`.
 //
 // Classic-script. Declares globally:
 //   GROUND_WEAPONS · updateWeaponDrops() · renderWeaponDrops()
-// External deps (resolved at call-time): game · player · enemies ·
+// External deps (resolved at call-time): game · player · enemies · onUnitDeath ·
 //   playerWeapon · applyWeaponToPlayer · WeaponState · ctx · COLORS · T ·
 //   showSwapToast · playSfx
 // Wired in index.html: updateWeaponDrops() after updateBullets(),
 //   renderWeaponDrops() inside the world transform after renderAutoDrones().
+// kill.js MUST load before this file (we register onUnitDeath at load).
 
 const GROUND_WEAPONS = [];             // { x, y, weapon, life }
 const WEAPON_DROP_LIFE     = 30 * 60;  // 30s on the ground before it fades
@@ -56,20 +54,27 @@ function _spawnGroundWeapon(x, y, weapon) {
   GROUND_WEAPONS.push({ x, y, weapon, life: WEAPON_DROP_LIFE });
 }
 
-function updateWeaponDrops() {
-  // ── 1. Detect fresh kills → drop the dead enemy's weapon ──────────────
-  if (typeof enemies !== 'undefined' && Array.isArray(enemies)) {
-    for (const e of enemies) {
-      if (!e) continue;
-      if (e.alive) { e._weaponDropped = false; continue; }   // (re)spawned → re-arm
-      if (e._weaponDropped) continue;                         // already dropped this death
-      if (e._koStunned) continue;                             // recruit target, not a kill
-      if (e._weapon) _spawnGroundWeapon(e.x, e.y, e._weapon);
-      e._weaponDropped = true;                                // even with no weapon, don't re-check
-    }
-  }
+// Phase 141 — drops are now KILL-DRIVEN, not frame-scanned. The unit
+// kill/death chokepoint (js/kill.js) fires onUnitDeath the instant a unit
+// dies, so we drop right there instead of scanning `enemies` every frame for
+// alive===false. This catches every SOLO kill path (bullet / mine / tesla /
+// dronebay / grenade / AOE) through one hook, and correctly skips
+// recruit/KO-stun (those never call killUnit) + non-enemies (player/ally/
+// drone). MP kills come in via _mpHandleKill (multiplayer.js), a separate
+// source, since MP opponents aren't in `enemies`.
+function _onUnitKilledDrop(unit, opts) {
+  if (!unit || !unit._weapon) return;            // no gun to drop (drones, etc.)
+  if (unit._koStunned) return;                   // recruit / KO target — not a loot kill
+  // Enemies only — mirrors the old frame-scan's domain exactly (it iterated
+  // `enemies`). A killed enemy is still in the array at kill time; player /
+  // allies / drones are not, so they never drop.
+  if (typeof enemies === 'undefined' || enemies.indexOf(unit) < 0) return;
+  _spawnGroundWeapon(unit.x, unit.y, unit._weapon);
+}
+if (typeof onUnitDeath === 'function') onUnitDeath(_onUnitKilledDrop);
 
-  // ── 2. Age out old drops ──────────────────────────────────────────────
+function updateWeaponDrops() {
+  // ── 1. Age out old drops ──────────────────────────────────────────────
   for (let i = GROUND_WEAPONS.length - 1; i >= 0; i--) {
     if (--GROUND_WEAPONS[i].life <= 0) {
       if (GROUND_WEAPONS[i] === _wpPickupTarget) { _wpPickupTarget = null; _wpPickupProgress = 0; }
@@ -77,7 +82,7 @@ function updateWeaponDrops() {
     }
   }
 
-  // ── 3. Hold-to-pickup ─────────────────────────────────────────────────
+  // ── 2. Hold-to-pickup ─────────────────────────────────────────────────
   if (typeof player === 'undefined' || !player || !player.alive) {
     _wpPickupTarget = null; _wpPickupProgress = 0; return;
   }
