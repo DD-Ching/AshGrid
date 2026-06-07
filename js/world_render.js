@@ -440,17 +440,34 @@ function renderWorld() {
         const _liveReady = !e._koStunned && _gHp && _gRng && _gSeed;
         if (_stunReady || _liveReady) {
           const _pulse = 0.6 + 0.4 * Math.sin(game.time * 0.2);
-          ctx.fillStyle = `rgba(230, 51, 41, ${_pulse})`;
-          ctx.font = 'bold 11px monospace';
+          // Phase 150 — recruitable-in-range: tag with an inviting ally-teal
+          // ring + prompt (teal, NOT enemy-red, so the grab cue pops against
+          // the red mob). This is the gateway to the whole squad loop.
+          if (_stunReady) {
+            const _rr = (e.radius || 13) + 9 + 2 * Math.sin(game.time * 0.2);
+            ctx.strokeStyle = `rgba(95, 214, 160, ${0.55 + 0.4 * _pulse})`;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.arc(e.x, e.y, _rr, 0, Math.PI * 2); ctx.stroke();
+            ctx.fillStyle = `rgba(95, 214, 160, ${_pulse})`;
+          } else {
+            ctx.fillStyle = `rgba(230, 51, 41, ${_pulse})`;   // live-gate cue stays red
+          }
+          ctx.font = 'bold 12px monospace';
           ctx.textAlign = 'center';
-          ctx.fillText('▶ G', e.x, e.y - 48);
+          ctx.fillText(_stunReady ? T('▶ G 招降', '▶ G GRAB') : '▶ G', e.x, e.y - 48);
           ctx.textAlign = 'left';
         } else if (e._koStunned) {
-          // Stunned but out of touch range — softer hint to walk closer.
-          ctx.fillStyle = 'rgba(232, 228, 216, 0.75)';
+          // Stunned but out of touch range — a faint teal ring + hint pulls
+          // the player over (recruit opportunity visible from a distance).
+          const _p = 0.5 + 0.3 * Math.sin(game.time * 0.18);
+          const _rr = (e.radius || 13) + 7;
+          ctx.strokeStyle = `rgba(95, 214, 160, ${0.22 + 0.22 * _p})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(e.x, e.y, _rr, 0, Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = 'rgba(95, 214, 160, 0.82)';
           ctx.font = 'bold 10px monospace';
           ctx.textAlign = 'center';
-          ctx.fillText('NEUTRAL', e.x, e.y - 48);
+          ctx.fillText(T('招降目標', 'RECRUIT'), e.x, e.y - 48);
           ctx.textAlign = 'left';
         }
       }
