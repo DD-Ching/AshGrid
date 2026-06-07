@@ -205,7 +205,7 @@ function _arenaTrySEDConvert() {
 // SEED took match-time to build. Bots you just recruited from kills have
 // _seed=0 and are the natural candidates for conversion. Forms a soft
 // loop: kill → recruit → discard weakest for energy → build.
-const ARENA_RECYCLE_ENERGY = 60;          // energy refund per recycle
+const ARENA_RECYCLE_ENERGY = BALANCE.energy.recycleRefund;          // energy refund per recycle
 const ARENA_RECYCLE_KEEP_LAST = 1;        // never recycle below this many bots
 function _arenaTryRecycle() {
   if (!player || !player.alive) return false;

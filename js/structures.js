@@ -66,19 +66,19 @@ const STRUCTURE_DEFS = {
   //  wall   — balanced, blocks both bullets + LoS
   //  bunker — expensive, very tanky, blocks both
   cover: {
-    cost: 18, hp: 120, size: 30, blocks: true, blocksLOS: false,    // was 60
+    cost: BALANCE.buildCost.cover, hp: 120, size: 30, blocks: true, blocksLOS: false,    // was 60
     label: () => T('掩体', 'COVER'),
   },
   wall: {
-    cost: 30, hp: 220, size: 30, blocks: true, blocksLOS: true,     // was 100
+    cost: BALANCE.buildCost.wall, hp: 220, size: 30, blocks: true, blocksLOS: true,     // was 100
     label: () => T('牆', 'WALL'),
   },
   bunker: {
-    cost: 70, hp: 500, size: 30, blocks: true, blocksLOS: true,     // was 260
+    cost: BALANCE.buildCost.bunker, hp: 500, size: 30, blocks: true, blocksLOS: true,     // was 260
     label: () => T('堡垒', 'BUNKER'),
   },
   turret: {
-    cost: 100, hp: 160, size: 50, blocks: false, blocksLOS: false,  // was 80
+    cost: BALANCE.buildCost.turret, hp: 160, size: 50, blocks: false, blocksLOS: false,  // was 80
     range: 380, fireCd: 60, dmg: 25,
     // Phase 140 — power-supply mechanic removed: turret auto-fires for free,
     // no generator, no per-shot energy drain. Energy is now purely the
@@ -86,25 +86,25 @@ const STRUCTURE_DEFS = {
     label: () => T('判決砲塔 VERDICT', 'VERDICT TURRET'),
   },
   generator: {
-    cost: 80, hp: 120, size: 50, blocks: false, blocksLOS: false,   // was 50
+    cost: BALANCE.buildCost.generator, hp: 120, size: 50, blocks: false, blocksLOS: false,   // was 50
     energyPerSec: 1.0,
     powerSource: true,          // emits power; powerR = how far power radiates
     powerR: 200,
     label: () => T('種子反應爐 SEED REACTOR', 'SEED REACTOR'),
   },
   camera: {
-    cost: 60, hp: 90, size: 40, blocks: false, blocksLOS: false,    // was 40
+    cost: BALANCE.buildCost.camera, hp: 90, size: 40, blocks: false, blocksLOS: false,    // was 40
     visionR: 360,
     // Phase 140 — no power needed; the lens always feeds shared vision.
     label: () => T('審計鏡 AUDIT LENS', 'AUDIT LENS'),
   },
   bot: {
-    cost: 180, hp: 0, size: 0, blocks: false, blocksLOS: false,  // not a structure once placed
+    cost: BALANCE.buildCost.bot, hp: 0, size: 0, blocks: false, blocksLOS: false,  // not a structure once placed
     isUnitSpawner: true,
     label: () => T('同盟審計單位 ALLY', 'ALLIED AUDIT UNIT'),
   },
   terminal: {
-    cost: 200, hp: 140, size: 50, blocks: false, blocksLOS: false,  // was 60
+    cost: BALANCE.buildCost.terminal, hp: 140, size: 50, blocks: false, blocksLOS: false,  // was 60
     airstrikeCd: 1800,    // 30s between airstrikes
     needsPower: true,
     label: () => T('審計台 AUDIT CONSOLE', 'AUDIT CONSOLE'),
@@ -115,7 +115,7 @@ const STRUCTURE_DEFS = {
   // mine is the G-key defuse (defuseTicks = 5s). Cost stays at 40 — high
   // damage is balanced by the slow defuse counter, not by build cost.
   mine: {
-    cost: 40, hp: 9999, size: 24, blocks: false, blocksLOS: false,
+    cost: BALANCE.buildCost.mine, hp: 9999, size: 24, blocks: false, blocksLOS: false,
     bulletImmune: true, defuseTicks: 5 * 60,
     triggerR: 30, blastR: 140, dmg: 130,
     label: () => T('地雷', 'MINE'),
@@ -124,7 +124,7 @@ const STRUCTURE_DEFS = {
   // within TRIGGER_R of a 60u-extended line in front of the structure. Wider
   // arc than the mine, slightly higher damage, same defuse rules.
   tripmine: {
-    cost: 70, hp: 9999, size: 28, blocks: false, blocksLOS: false,
+    cost: BALANCE.buildCost.tripmine, hp: 9999, size: 28, blocks: false, blocksLOS: false,
     bulletImmune: true, defuseTicks: 5 * 60,
     triggerR: 50, blastR: 170, dmg: 150,
     label: () => T('诡雷', 'TRIPMINE'),
@@ -132,14 +132,14 @@ const STRUCTURE_DEFS = {
   // Sensor: passive — pings enemies in radius onto the minimap (no damage).
   // Cheap intel, easy to destroy. Useful behind walls to scout the next wave.
   sensor: {
-    cost: 30, hp: 70, size: 30, blocks: false, blocksLOS: false,    // was 30
+    cost: BALANCE.buildCost.sensor, hp: 70, size: 30, blocks: false, blocksLOS: false,    // was 30
     pingR: 320,
     label: () => T('診斷感測器 DIAGNOSTIC', 'DIAGNOSTIC SENSOR'),
   },
   // Smoke emitter: every 6s spawns a smoke cloud that blocks line-of-sight
   // for 5s in 140u radius. Tactical — denies enemy NN aim through it.
   smoke: {
-    cost: 70, hp: 110, size: 36, blocks: false, blocksLOS: false,   // was 50
+    cost: BALANCE.buildCost.smoke, hp: 110, size: 36, blocks: false, blocksLOS: false,   // was 50
     emitCd: 360, cloudLife: 300, cloudR: 140,
     label: () => T('靜默雲 STATIC', 'STATIC CLOUD'),
   },
@@ -149,7 +149,7 @@ const STRUCTURE_DEFS = {
   // electricity arcs around cover. Visually a stack of lightning lines that
   // fade over ~10 ticks.
   tesla: {
-    cost: 140, hp: 150, size: 38, blocks: false, blocksLOS: false,  // was 70
+    cost: BALANCE.buildCost.tesla, hp: 150, size: 38, blocks: false, blocksLOS: false,  // was 70
     range: 300, fireCd: 90, dmg: 30, chainR: 110, chainDmg: [22, 16, 10], chainMax: 3,
     needsPower: true,
     ammoPerShot: 5,
@@ -159,7 +159,7 @@ const STRUCTURE_DEFS = {
   // — they freeze in place + don't fire. No damage, pure crowd control.
   // Pairs with rocket / tesla as the burst payoff.
   emp: {
-    cost: 130, hp: 130, size: 36, blocks: false, blocksLOS: false,  // was 60
+    cost: BALANCE.buildCost.emp, hp: 130, size: 36, blocks: false, blocksLOS: false,  // was 60
     emitCd: 240, pulseR: 220, stunTicks: 180,
     needsPower: true,
     ammoPerShot: 8,
@@ -169,7 +169,7 @@ const STRUCTURE_DEFS = {
   // healAmt. Doesn't heal the player's own structures (they need rockets
   // killing the things shooting at them, not patches). Cheap support.
   medstation: {
-    cost: 100, hp: 110, size: 32, blocks: false, blocksLOS: false,  // was 50
+    cost: BALANCE.buildCost.medstation, hp: 110, size: 32, blocks: false, blocksLOS: false,  // was 50
     healCd: 60, healR: 200, healAmt: 4,
     needsPower: true,
     label: () => T('修復場 REPAIR FIELD', 'REPAIR FIELD'),
@@ -178,7 +178,7 @@ const STRUCTURE_DEFS = {
   // homes on the nearest enemy + detonates on contact. Drones live in
   // game._autoDrones, ticked + rendered separately.
   dronebay: {
-    cost: 200, hp: 170, size: 38, blocks: false, blocksLOS: false,  // was 80
+    cost: BALANCE.buildCost.dronebay, hp: 170, size: 38, blocks: false, blocksLOS: false,  // was 80
     spawnCd: 360, droneHp: 30, droneSpeed: 5, droneDmg: 40, droneBlastR: 60,
     // Phase 140 — no power needed; the bay auto-launches drones for free.
     label: () => T('審計蜂群 SWARM', 'AUDITOR SWARM'),
