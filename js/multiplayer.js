@@ -838,6 +838,17 @@ function _mpHandleKill(data) {
   // Phase 64 — softened kill cue + smaller volume (user '擊殺的声音太大').
   if (typeof playSfx === 'function') playSfx('death', { vol: 0.32 });
 
+  // Phase 140 — drop the victim's weapon as a ground pickup (MP parity with
+  // SOLO). MP opponents live in remotePlayers, not enemies[], so the
+  // weapon_drop.js frame-scan never sees them — but the kill event carries
+  // the victim's pos + weapon, so we spawn the drop straight from it. Pickup
+  // + server weapon-sync (next _mpSendInput sends the new wId) reuse the
+  // existing path; no server change needed.
+  if (typeof _spawnGroundWeapon === 'function' && typeof dx === 'number'
+      && typeof WEAPONS !== 'undefined') {
+    _spawnGroundWeapon(dx, dy, WEAPONS[data.weapon] || WEAPONS.RIFLE);
+  }
+
   // Local player got killed?
   if (data.victim === _mpState.myId && typeof player !== 'undefined') {
     // Phase X — duplicate-kill guard. Once we're already dead, a second

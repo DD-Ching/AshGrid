@@ -15,7 +15,7 @@
 //   AIRSTRIKES (callAirstrike + updateAirstrikes — adjacent helpers)
 //
 // Classic-script. Declares globally (highlights, ~30+ symbols total):
-//   STRUCTURE_DEFS · STRUCTURE_ORDER · WALL_KINDS · isWallKind
+//   STRUCTURE_DEFS · WALL_KINDS · isWallKind
 //   getStructureCost · canAffordStructure · placeStructure
 //   bulletHitStructure · cameraCanSee · recomputePowerGrid
 //   UPGRADE_TIERS · _moduleStat · _moduleUpgradeCost · upgradeNearestModule
@@ -184,12 +184,10 @@ const STRUCTURE_DEFS = {
     label: () => T('審計蜂群 SWARM', 'AUDITOR SWARM'),
   },
 };
-// Number-key build quick-select order (radial open → digits 1..6). Phase 140:
-// trimmed to EXACTLY the simplified wheel roster (mirrors BUILD_CATEGORIES) so
-// a digit never selects a module that's no longer on the wheel. The other
-// STRUCTURE_DEFS entries stay defined for MP-broadcast/legacy rendering but
-// are intentionally not number-selectable.
-const STRUCTURE_ORDER = ['wall', 'smoke', 'camera', 'turret', 'mine', 'dronebay'];
+// Phase 140 — STRUCTURE_ORDER removed. The number-key quick-select now reads
+// activeBuildKinds() (js/defense_build_ui.js), which derives straight from
+// BUILD_CATEGORIES and is mode-aware (defense-only in MP). One source of
+// truth for "what's on the wheel" → wheel, hit-test and hotkeys can't drift.
 
 function getStructureCost(kind) { return STRUCTURE_DEFS[kind]?.cost || 0; }
 // Cover-archetype kinds (cover/wall/bunker) all support drag-line placement
@@ -791,9 +789,9 @@ function updateAirstrikes() {
   }
 }
 
-// Build mode toggle state. Picks one of STRUCTURE_ORDER and shows a
-// preview at cursor. While in build mode, mouse-click places; build
-// mode auto-disables on Esc / right-click.
+// Build mode toggle state. Default kind 'wall'; number keys pick from the
+// mode-aware wheel (activeBuildKinds). Shows a preview at cursor. While in
+// build mode, mouse-click places; auto-disables on Esc / right-click.
 const buildMode = { active: false, radialOpen: false, kind: 'wall', radialCat: null };
 // Three-state build flow: OFF → RADIAL_OPEN → PLACING. B walks the cycle
 // forward; Esc bails out anywhere. Activating from OFF opens the radial

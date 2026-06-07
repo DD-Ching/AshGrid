@@ -55,7 +55,7 @@
 <script src="js/dynamic_radio.js?v=180"></script>
 <script src="js/i18n.js?v=180"></script>
 <script src="js/touch_input.js?v=190"></script>
-<script src="js/key_bindings.js?v=190"></script>
+<script src="js/key_bindings.js?v=191"></script>
 <script src="js/grenades.js?v=180"></script>
 <script src="js/squad_commands.js?v=180"></script>
 <!-- R12 — Player Lifecycle module. Single owner of player.alive /
@@ -69,9 +69,9 @@
      gameplay (not load), so this could technically load later too —
      keeping it here for visual ordering. -->
 <script src="js/mp_reconcile.js?v=186"></script>
-<script src="js/multiplayer.js?v=186"></script>
+<script src="js/multiplayer.js?v=191"></script>
 <script src="js/leaderboard.js?v=180"></script>
-<script src="js/structures.js?v=190"></script>
+<script src="js/structures.js?v=191"></script>
 <script src="js/tod.js?v=180"></script>
 <script src="js/weapons.js?v=190"></script>
 <script src="js/chassis.js?v=180"></script>
@@ -151,7 +151,7 @@
 <script src="js/drone_fpv.js?v=180"></script>
 <script src="js/vision_raycast.js?v=180"></script>
 <script src="js/camera.js?v=180"></script>
-<script src="js/defense_build_ui.js?v=190"></script>
+<script src="js/defense_build_ui.js?v=191"></script>
 <script src="js/pause.js?v=180"></script>
 <!-- R5 refactor — bullet update + collision (player + enemy loops,
      fire(), detonateRocket()). Pulled out of the 12 000-line inline
@@ -2850,7 +2850,7 @@ try {
 
 // ============ STRUCTURES + BUILD + POWER + UPGRADES + AIRSTRIKES ============
 // → Moved to js/structures.js (785 lines). Declares globally:
-//     STRUCTURE_DEFS · STRUCTURE_ORDER · WALL_KINDS · isWallKind
+//     STRUCTURE_DEFS · WALL_KINDS · isWallKind
 //     getStructureCost · canAffordStructure · placeStructure
 //     bulletHitStructure · cameraCanSee · recomputePowerGrid
 //     UPGRADE_TIERS · _moduleStat · _moduleUpgradeCost · upgradeNearestModule

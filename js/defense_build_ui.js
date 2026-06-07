@@ -42,6 +42,21 @@ const BUILD_CATEGORIES = [
     kinds: ['turret', 'mine', 'dronebay'] },
 ];
 
+// Phase 140 — mode-aware view of the wheel + SINGLE SOURCE OF TRUTH. In MP
+// PvP the offense modules (turret/mine/dronebay) can't target anyone —
+// opponents live in remotePlayers, not enemies[] (see index.html ~4251) — so
+// the online wheel shows DEFENSE only. Everything that needs "what's on the
+// wheel right now" (radial draw, radial pick, number-key quick-select) reads
+// through these two helpers, so the visuals, hit-testing and hotkeys can
+// never disagree, in either mode.
+function activeBuildCategories() {
+  const mp = (typeof _mpIsActive === 'function') && _mpIsActive();
+  return mp ? BUILD_CATEGORIES.filter(c => c.id === 'defense') : BUILD_CATEGORIES;
+}
+function activeBuildKinds() {
+  return activeBuildCategories().reduce((a, c) => a.concat(c.kinds), []);
+}
+
 function _radialGeom() {
   return {
     cx: W() / 2, cy: H() / 2,
@@ -66,10 +81,11 @@ function _radialPickAt(sx, sy) {
   if (theta < 0) theta += Math.PI * 2;
   if (theta >= Math.PI * 2) theta -= Math.PI * 2;
 
-  const NCAT = BUILD_CATEGORIES.length;
+  const cats = activeBuildCategories();
+  const NCAT = cats.length;
   const catStep = (Math.PI * 2) / NCAT;
   const catIdx = Math.floor((theta + catStep / 2) / catStep) % NCAT;
-  const cat = BUILD_CATEGORIES[catIdx];
+  const cat = cats[catIdx];
 
   // ─ Inner ring: pure category pick (always available while radial is open)
   if (d >= g.rInIn && d <= g.rInOut) {
@@ -84,13 +100,14 @@ function _radialPickAt(sx, sy) {
   if (d >= g.rOutIn && d <= g.rOutOut) {
     const activeId = buildMode.radialCat;
     if (!activeId) return null;
-    const exp = BUILD_CATEGORIES.find(c => c.id === activeId);
+    const exp = cats.find(c => c.id === activeId);
     if (!exp) return null;
-    const expIdx = BUILD_CATEGORIES.indexOf(exp);
+    const expIdx = cats.indexOf(exp);
     const expCenter = expIdx * catStep;
-    // Outer fan range slightly wider than the inner wedge so sub-items
-    // have breathing room. Half range = catStep/2 + 14° padding.
-    const halfRange = catStep / 2 + 0.25;
+    // Outer fan range slightly wider than the inner wedge so sub-items have
+    // breathing room. Clamp at 2.2rad so a single-category wheel (MP, where
+    // only DEFENSE shows → catStep = 2π) doesn't fan past a full circle.
+    const halfRange = Math.min(catStep / 2 + 0.25, 2.2);
     // Angular offset from the expanded cat's center, in (-π, π].
     let rel = theta - expCenter;
     if (rel > Math.PI) rel -= Math.PI * 2;
@@ -156,7 +173,8 @@ function drawDefenseStatusPill() {
 
 function drawBuildRadial() {
   const g = _radialGeom();
-  const NCAT = BUILD_CATEGORIES.length;
+  const cats = activeBuildCategories();
+  const NCAT = cats.length;
   const catStep = (Math.PI * 2) / NCAT;
   const hovered = _radialPickAt(mouse.x, mouse.y);
 
@@ -180,7 +198,7 @@ function drawBuildRadial() {
 
   // ─── Inner ring: category wedges ──────────────────────────────────
   for (let i = 0; i < NCAT; i++) {
-    const cat = BUILD_CATEGORIES[i];
+    const cat = cats[i];
     const ws = -Math.PI / 2 + (i - 0.5) * catStep;
     const we = -Math.PI / 2 + (i + 0.5) * catStep;
     const isHover     = (hovered && hovered.type === 'cat' && hovered.id === cat.id);
@@ -219,11 +237,13 @@ function drawBuildRadial() {
 
   // ─── Outer ring: sub-items fan for the previewed/committed category ─
   if (previewCatId) {
-    const exp = BUILD_CATEGORIES.find(c => c.id === previewCatId);
+    const exp = cats.find(c => c.id === previewCatId);
     if (exp) {
-      const expIdx = BUILD_CATEGORIES.indexOf(exp);
+      const expIdx = cats.indexOf(exp);
       const expCenter = -Math.PI / 2 + expIdx * catStep;
-      const halfRange = catStep / 2 + 0.25;
+      // Clamp matches _radialPickAt so a single-category (MP) wheel fans
+      // its sub-items over <2π instead of overlapping past full circle.
+      const halfRange = Math.min(catStep / 2 + 0.25, 2.2);
       const subCount = exp.kinds.length;
       const subStep = (halfRange * 2) / subCount;
 

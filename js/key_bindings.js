@@ -14,7 +14,7 @@
 // Also attaches the window keydown listener that dispatches by table.
 //
 // External deps (resolved at call-time):
-//   game · player · WORLD · currentMap · buildMode · STRUCTURE_ORDER
+//   game · player · WORLD · currentMap · buildMode · activeBuildKinds
 //   MISSIONS · mission · AG
 //   showSwapToast · showMessage · playRadioBeep · T
 //   toggleDrone · launchFPV · startReload · throwGrenade · toggleBuildMode
@@ -83,9 +83,12 @@ function _toggleAimAssist() {
 }
 
 function _pickBuildModuleByNumber(eKey) {
-  // 0-9 → module index 9, 0..8 (so '0' acts as a tenth slot)
+  // 0-9 → module index 9, 0..8 (so '0' acts as a tenth slot). Phase 140 —
+  // reads the mode-aware wheel (activeBuildKinds, defense-only in MP) so a
+  // hotkey can never select a module that isn't on the current wheel.
   const idx = eKey === '0' ? 9 : (parseInt(eKey, 10) - 1);
-  if (STRUCTURE_ORDER[idx]) buildMode.kind = STRUCTURE_ORDER[idx];
+  const kinds = (typeof activeBuildKinds === 'function') ? activeBuildKinds() : [];
+  if (kinds[idx]) buildMode.kind = kinds[idx];
   buildMode.radialOpen = false;
   buildMode._dragStart = null;
   buildMode._dragEnd   = null;
