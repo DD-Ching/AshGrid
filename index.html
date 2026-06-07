@@ -54,8 +54,8 @@
 <script src="js/arena_recruitment.js?v=180"></script>
 <script src="js/dynamic_radio.js?v=180"></script>
 <script src="js/i18n.js?v=180"></script>
-<script src="js/touch_input.js?v=183"></script>
-<script src="js/key_bindings.js?v=180"></script>
+<script src="js/touch_input.js?v=190"></script>
+<script src="js/key_bindings.js?v=190"></script>
 <script src="js/grenades.js?v=180"></script>
 <script src="js/squad_commands.js?v=180"></script>
 <!-- R12 — Player Lifecycle module. Single owner of player.alive /
@@ -71,15 +71,15 @@
 <script src="js/mp_reconcile.js?v=186"></script>
 <script src="js/multiplayer.js?v=186"></script>
 <script src="js/leaderboard.js?v=180"></script>
-<script src="js/structures.js?v=180"></script>
+<script src="js/structures.js?v=190"></script>
 <script src="js/tod.js?v=180"></script>
-<script src="js/weapons.js?v=180"></script>
+<script src="js/weapons.js?v=190"></script>
 <script src="js/chassis.js?v=180"></script>
 <script src="js/respawn_buff.js?v=180"></script>
 <script src="js/death_recap.js?v=180"></script>
 <script src="js/mote_affinity.js?v=180"></script>
-<script src="js/stage_hints.js?v=180"></script>
-<script src="js/pawn_swap.js?v=186"></script>
+<script src="js/stage_hints.js?v=189"></script>
+<script src="js/pawn_swap.js?v=189"></script>
 <!-- Phase 133.3 — death_decider.js extracts the death-decision logic
      out of pawn_swap.js so the auto-swap timestamp state is explicit.
      Loads AFTER pawn_swap.js so tryAutoSwapToClosestAlly is defined
@@ -131,19 +131,27 @@
      window.__setPlayerWeapon setter shim at top-level so WeaponState
      can mutate `playerWeapon` even though it's a `let` in another
      classic-script file. See js/weapon_state.js header. -->
-<script src="js/weapon_state.js?v=180"></script>
+<script src="js/weapon_state.js?v=190"></script>
+<!-- Phase 140 — weapon drop + hold-to-pickup (replaces manual X-swap). Loads
+     after weapons.js / weapon_state.js so applyWeaponToPlayer + WeaponState
+     are defined when a pickup completes. -->
+<script src="js/weapon_drop.js?v=190"></script>
 <!-- Phase 131 — GameMonetize SDK removed. Vendor declined our submission
      ("AI-generated"), so we cut the dependency. Outside crazygames.com
      (i.e. ashgrid.io / dev.ashgrid.pages.dev) the dispatch falls through
      to the built-in stub which fail-opens the reward. See ad_dispatch.js. -->
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
 <script src="js/missions/nn_deathmatch.js?v=185"></script>
-<script src="js/world_gen.js?v=185"></script>
+<!-- Phase 138B.1 — .io-style bot names; must load before world_gen spawns -->
+<script src="js/bot_names.js?v=188"></script>
+<!-- Phase 139b — believable leaderboard seed (uses pickBotName); presentation-only -->
+<script src="js/leaderboard_seed.js?v=189"></script>
+<script src="js/world_gen.js?v=188"></script>
 <script src="js/squad.js?v=180"></script>
 <script src="js/drone_fpv.js?v=180"></script>
 <script src="js/vision_raycast.js?v=180"></script>
 <script src="js/camera.js?v=180"></script>
-<script src="js/defense_build_ui.js?v=180"></script>
+<script src="js/defense_build_ui.js?v=190"></script>
 <script src="js/pause.js?v=180"></script>
 <!-- R5 refactor — bullet update + collision (player + enemy loops,
      fire(), detonateRocket()). Pulled out of the 12 000-line inline
@@ -159,7 +167,7 @@
 <!-- R8 refactor — HUD: renderHUD + renderHUDOverlays + drawMinimapPanel
      + drawHUDPanel + getModeLabel + panel cache + 6-zone card draw
      helpers. ~1300 lines from the inline script. -->
-<script src="js/hud.js?v=181"></script>
+<script src="js/hud.js?v=190"></script>
 <!-- R9 refactor — enemy AI + NN runtime: nnTick / nnBuildObs /
      nnApplyAction / patrol state machine / heat map / team vision /
      updateEnemies. 1145 lines from the inline script. -->
@@ -1560,14 +1568,29 @@ body.lang-en .lang-toggle .on { color: var(--black); }
 <div class="overlay start-screen" id="start">
   <button class="lang-toggle" data-lang-toggle><span class="seg" data-seg="zh">中</span>/<span class="seg on" data-seg="en">EN</span></button>
   <svg class="start-bg" viewBox="0 0 100 100" preserveAspectRatio="none">
-    <circle cx="78" cy="28" r="20" fill="#C8261C"/>
+    <circle class="ag-breathe" cx="78" cy="28" r="20" fill="#C8261C"/>
     <polygon points="0,100 0,42 48,100" fill="#C8261C"/>
     <polygon points="100,0 62,0 100,32" fill="#1A1A1A"/>
     <polygon points="55,55 75,75 35,75" fill="#1A1A1A" opacity="0.15"/>
-    <circle cx="22" cy="78" r="3" fill="#1A1A1A"/>
-    <line x1="22" y1="78" x2="55" y2="55" stroke="#1A1A1A" stroke-width="0.15" stroke-dasharray="0.4,0.6"/>
-    <line x1="55" y1="55" x2="78" y2="28" stroke="#1A1A1A" stroke-width="0.15" stroke-dasharray="0.4,0.6"/>
+    <circle class="ag-blip" cx="22" cy="78" r="3" fill="#1A1A1A"/>
+    <line class="ag-scan" x1="22" y1="78" x2="55" y2="55" stroke="#1A1A1A" stroke-width="0.15" stroke-dasharray="0.4,0.6"/>
+    <line class="ag-scan" x1="55" y1="55" x2="78" y2="28" stroke="#1A1A1A" stroke-width="0.15" stroke-dasharray="0.4,0.6"/>
   </svg>
+  <style>
+  /* Phase 139c — title-screen idle motion (待机). GPU-composited transform/
+     opacity only, slow + subtle so the poster "breathes" without distracting.
+     Menu-only (no game loop here) → zero gameplay-perf cost. Honors
+     prefers-reduced-motion for accessibility. */
+  .start-bg .ag-breathe { transform-box: fill-box; transform-origin: center; animation: agBreathe 9s ease-in-out infinite; }
+  .start-bg .ag-blip    { transform-box: fill-box; transform-origin: center; animation: agBlip 3.2s ease-in-out infinite; }
+  .start-bg .ag-scan    { animation: agScan 6s linear infinite; }
+  @keyframes agBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } }
+  @keyframes agBlip    { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.8); } }
+  @keyframes agScan    { to { stroke-dashoffset: -2; } }
+  @media (prefers-reduced-motion: reduce) {
+    .start-bg .ag-breathe, .start-bg .ag-blip, .start-bg .ag-scan { animation: none; }
+  }
+  </style>
   <div class="start-content">
     <div class="lobby-hero">
       <div class="brand-mark">UNIT 0451 · TACTICAL SIM</div>
@@ -2885,7 +2908,7 @@ const STAMINA_RECOVERY_MIN = 25;    // empty bar must recover to this much befor
 
 // ============ WEAPON HELPERS ============
 // → Moved to js/weapons.js (alongside WEAPONS table). Declares globally:
-//     applyWeaponToPlayer · swapPlayerWeapon · NN_WEAPON_POOL ·
+//     applyWeaponToPlayer · NN_WEAPON_POOL ·
 //     pickRandomNNWeaponId · `weapon` (compat shim) · tickShooter
 
 // Apply recoil kick after firing
@@ -3782,11 +3805,19 @@ async function _renderLeaderboardPanel(force = false) {
   if (force) listEl.innerHTML = '<span style="opacity:0.5;">refreshing…</span>';
   const top = await _lbFetchTop(20, force);
   const myUuid = (typeof _lbMyUuid === 'function') ? _lbMyUuid() : null;
-  if (!top || top.length === 0) {
+  // Phase 139b — the live Firebase board is currently all dev test data
+  // (every row named "0451", the default callsign), which reads as broken on
+  // the title screen. Blend real entries with a stable believable seed roster
+  // (varied .io handles via pickBotName) so the board always looks populated;
+  // the default-name pollution is sanitized and the player's own row kept.
+  const display = (typeof _lbDisplayList === 'function')
+    ? _lbDisplayList(top, myUuid, 20)
+    : (top || []);
+  if (!display || display.length === 0) {
     listEl.innerHTML = '<span style="opacity:0.55;">沒有玩家上榜 · 開一場就是榜首</span>';
     return;
   }
-  const rows = top.map((e, i) => {
+  const rows = display.map((e, i) => {
     const me = (e.uuid === myUuid);
     const rank = String(i + 1).padStart(2, ' ');
     const name = (e.name || '?').padEnd(12, ' ').slice(0, 12);
@@ -4809,12 +4840,14 @@ function updateMission() {
   // calls updateStructures redundantly — guard with a flag so we don't
   // double-tick when defense's update() runs first).
   if (game._nnMode && !game._structuresTickedThisFrame) {
-    // 4× passive regen (was 0.5/sec → 2/sec) so a 90s DM yields ~180⚡
-    // instead of ~45⚡. With the 100⚡ match-start budget + 20⚡/kill bonus
-    // (line 17529), the player can place 1 turret + several walls in a
-    // single match — the Build skill is reachable in normal play.
-    // User: '我建造的這個 Skill 沒有用上 ... 充電太慢了'.
-    game._energy = Math.min(999, (game._energy || 0) + 2.0 / 60);
+    // Passive regen (0.5 → 2 → Phase 140: 3/sec) so a 90s DM yields ~270⚡.
+    // With the 100⚡ match-start budget + per-kill bonus, the player can place
+    // 1 turret + several walls in a single match — the Build skill is
+    // reachable in normal play. Bumped again in Phase 140 because the
+    // generator (the old way to accelerate income) was removed from the wheel
+    // along with the power-supply mechanic, so passive trickle is now the
+    // ONLY income besides kills. User: '充電太慢了' / '東西變少, 簡單一點'.
+    game._energy = Math.min(999, (game._energy || 0) + 3.0 / 60);
     updateStructures();
     updateAirstrikes();
   }
@@ -5666,6 +5699,9 @@ function update() {
   updateEnemies();
   updateMission();   // mission tick (movement, capture progress, breach, spawn pressure)
   updateBullets();
+  // Phase 140 — drop a killed enemy's weapon + advance any hold-to-pickup.
+  // Runs after updateBullets so this frame's kills are detected immediately.
+  if (typeof updateWeaponDrops === 'function') updateWeaponDrops();
   // Phase 20a/b: multiplayer — broadcast position, interpolate remote
   // players, advance remote bullets + run hit-checks against the local
   // player. Phase 24: also tick ping markers (life countdown). All
@@ -6549,6 +6585,8 @@ function render() {
   renderTeslaBolts();
   renderEMPPulses();
   renderAutoDrones();
+  // Phase 140 — dropped weapons + their pickup ring (world-space).
+  if (typeof renderWeaponDrops === 'function') renderWeaponDrops();
   renderAirstrikes();
   // Build-mode placement preview — only while in placing mode (not while
   // the radial picker is on top of the world).

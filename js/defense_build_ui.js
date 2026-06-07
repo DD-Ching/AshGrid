@@ -25,24 +25,21 @@ const RADIAL_R_OUTER_IN  = 145;
 const RADIAL_R_OUTER     = 215;
 
 // ─── Categories ────────────────────────────────────────────────────────
-// 5 categories at 72° each. Order matters — visually goes clockwise from
-// 12 o'clock. `kinds` order = sub-item layout within the outer fan.
+// Phase 140 — simplified roster (user: '東西變少, 選項變少'). Two balanced
+// wedges, six modules total. The whole POWER category (generator/terminal)
+// + the power-supply mechanic are removed for this mode — turrets now
+// auto-fire for free (see structures.js). Dropped items (cover/bunker/
+// tesla/tripmine/generator/terminal/sensor/emp/medstation/bot) stay DEFINED
+// in structures.js so MP-broadcast or legacy structures still render; they
+// are just no longer buildable from the wheel. `kinds` order = sub-item
+// layout within the outer fan.
 const BUILD_CATEGORIES = [
-  { id: 'barrier', color: '#6B6B6B',
-    label: () => T('屏障',  'BARRIER'),
-    kinds: ['cover', 'wall', 'bunker'] },
+  { id: 'defense', color: '#65BFA3',
+    label: () => T('防禦',  'DEFENSE'),
+    kinds: ['wall', 'smoke', 'camera'] },
   { id: 'offense', color: '#C8261C',
     label: () => T('武裝',  'OFFENSE'),
-    kinds: ['turret', 'tesla', 'mine', 'tripmine'] },
-  { id: 'power',   color: '#FFD24A',
-    label: () => T('電力',  'POWER'),
-    kinds: ['generator', 'terminal', 'dronebay'] },
-  { id: 'support', color: '#42B7E8',
-    label: () => T('支援',  'SUPPORT'),
-    kinds: ['medstation', 'smoke', 'emp'] },
-  { id: 'recon',   color: '#65BFA3',
-    label: () => T('偵察',  'RECON'),
-    kinds: ['camera', 'sensor', 'bot'] },
+    kinds: ['turret', 'mine', 'dronebay'] },
 ];
 
 function _radialGeom() {

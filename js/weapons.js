@@ -103,11 +103,10 @@ let playerWeapon = WEAPONS.RIFLE;
 // to set `playerWeapon` directly; this thin shim is how.
 window.__setPlayerWeapon = function(w) { playerWeapon = w; };
 
-// ---- Weapon helpers (apply / swap / NN pool / tick) ----
-// R3: applyWeaponToPlayer + swapPlayerWeapon now delegate to
-// window.WeaponState (js/weapon_state.js). These wrappers stay so the
-// existing callsites (pawn_swap.js, mission factories, key bindings)
-// don't need to change.
+// ---- Weapon helpers (apply / NN pool / tick) ----
+// R3: applyWeaponToPlayer delegates to window.WeaponState
+// (js/weapon_state.js). The wrapper stays so existing callsites
+// (pawn_swap.js, mission factories, weapon_drop.js pickup) don't change.
 function applyWeaponToPlayer(w) {
   if (window.WeaponState && WeaponState.equip) {
     WeaponState.equip(w);
@@ -125,14 +124,9 @@ function applyWeaponToPlayer(w) {
   player._spentToZero = false;
 }
 
-// Mid-match weapon swap (X key). Logic owned by js/weapon_state.js —
-// see that file's `swap()` for the full contract (stash + pick other
-// slot or random NN pool weapon + reset trigger edge + toast).
-function swapPlayerWeapon() {
-  if (window.WeaponState && WeaponState.swap) {
-    WeaponState.swap();
-  }
-}
+// Phase 140 — swapPlayerWeapon() removed. Manual weapon switching is gone;
+// weapons change only by picking up a killed enemy's dropped gun, which
+// equips through applyWeaponToPlayer above (see js/weapon_drop.js).
 
 // Weapons NN units can spawn with. Same trade-offs as player picks.
 const NN_WEAPON_POOL = ['SMG', 'RIFLE', 'LMG', 'SNIPER', 'SHOTGUN'];

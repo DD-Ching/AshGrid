@@ -516,7 +516,13 @@ function renderHUDOverlays() {
     // On narrow viewports the status panel only goes to y=96 (height 80) so
     // place the toast below at y=104. Wide screens keep the original y=88.
     const _ntoast = W() < 500;
-    const tw = 220, th = 26;
+    // Auto-size the chip to its text so longer tutorial tips (routed here by
+    // stage_hints) don't overflow a fixed box. Font must be set before
+    // measureText for an accurate width.
+    ctx.font = 'bold 12px sans-serif';
+    const _toastTxt = game._swapToast.text;
+    const tw = Math.min(Math.max(220, ctx.measureText(_toastTxt).width + 28), W() - 24);
+    const th = 26;
     const tx = W() / 2 - tw / 2, ty = _ntoast ? 104 : 88;
     ctx.fillStyle = 'rgba(20, 18, 24, 0.85)';
     ctx.fillRect(tx, ty, tw, th);
@@ -524,9 +530,8 @@ function renderHUDOverlays() {
     ctx.lineWidth = 1.5;
     ctx.strokeRect(tx, ty, tw, th);
     ctx.fillStyle = COLORS.cream;
-    ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(game._swapToast.text, W() / 2, ty + 17);
+    ctx.fillText(_toastTxt, W() / 2, ty + 17);
     ctx.textAlign = 'left';
     ctx.restore();
     game._swapToast.ttl--;
@@ -744,16 +749,14 @@ function renderHUDOverlays() {
     ctx.textAlign = 'left';
     ctx.restore();
     game._touchActionButtons = [{ id: 'g', x: gx, y: gy, w: gSize, h: gSize }];
-    // Right-side column: Q / E / V / R / X + B (defense only). Phase 76
-    // adds X (swap weapon) since mobile players don't have a keyboard
-    // shortcut — they were stuck on their lobby weapon for the whole
-    // match.
+    // Right-side column: Q / E / V / R + B (defense only). Phase 140 — the X
+    // (swap weapon) button was removed: manual weapon switching is gone, you
+    // now change weapon by walking onto a killed enemy's dropped gun.
     const buttons = [
       { id: 'q', label: 'Q',   sub: 'UAV' },
       { id: 'e', label: 'E',   sub: 'FPV' },
       { id: 'v', label: 'V',   sub: '助', active: !!player._aimAssist },
       { id: 'r', label: 'R',   sub: '弹' },
-      { id: 'x', label: 'X',   sub: T('换', 'SWAP') },
     ];
     if (game._nnMode) {
       buttons.push({ id: 'b', label: 'B', sub: T('建', 'BUILD'), active: buildMode.active });

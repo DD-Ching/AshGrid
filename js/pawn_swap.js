@@ -305,8 +305,11 @@ function tryAutoSwapToClosestAlly() {
 // Small top-center toast for pawn-swap feedback — replaces the full-width
 // "接管 BRAVO" center banner that used to block view of the action while
 // the player was rapid-switching between bodies.
-function showSwapToast(text) {
-  game._swapToast = { text, ttl: 75 };   // 1.25s
+function showSwapToast(text, ttl = 75) {
+  // Default 75 ticks (~1.25s) for swap/command confirmations. Callers that
+  // need reading time (e.g. stage_hints tutorial tips) pass a larger ttl;
+  // hud.js auto-sizes the chip width to the text either way.
+  game._swapToast = { text, ttl };
 }
 
 // Phase 133.3 — handleLocalDeath moved to js/death_decider.js.

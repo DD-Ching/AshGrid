@@ -18,7 +18,7 @@
 //   MISSIONS · mission · AG
 //   showSwapToast · showMessage · playRadioBeep · T
 //   toggleDrone · launchFPV · startReload · throwGrenade · toggleBuildMode
-//   swapPlayerWeapon · upgradeNearestModule · togglePause
+//   upgradeNearestModule · togglePause
 //   issueSquadOrder · swapPlayerToAlly · startNextWave · onMissionSuccess
 //   _arenaTrySEDConvert · _ftueKeyLocked
 
@@ -158,7 +158,9 @@ const KEY_BINDINGS = {
   // Phase 104 — primary frag key (matches new action-bar label 'F FRAG').
   f:   { action: () => throwGrenade() },
   b:   { action: () => toggleBuildMode() },
-  x:   { action: () => swapPlayerWeapon() },
+  // Phase 140 — manual weapon swap removed. One pawn = one weapon; you change
+  // weapon by walking onto a killed enemy's dropped gun (see weapon_drop.js).
+  // X is intentionally left unbound.
   u:   { action: () => upgradeNearestModule() },
   v:   { action: () => _toggleAimAssist() },
   // Phase 6B: recycle the lowest-SEED squad bot into +60 build energy.

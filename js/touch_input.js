@@ -48,8 +48,9 @@ function _touchTriggerAction(id) {
       try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (err) {}
       break;
     case 'b':     toggleBuildMode(); break;
-    // Phase 76 — X swap weapon, added for mobile parity with desktop.
-    case 'x':     if (typeof swapPlayerWeapon === 'function') swapPlayerWeapon(); break;
+    // Phase 140 — manual weapon swap removed (one pawn = one weapon; pick up a
+    // killed enemy's dropped gun instead). The 'x' button no longer exists in
+    // the mobile action bar (see hud.js), so this case is gone.
     case 'pause': togglePause(); break;
   }
 }

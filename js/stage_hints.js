@@ -51,6 +51,12 @@ function showStageHint(id) {
   if (_hintsSeen().has(id)) return;
   _markHintSeen(id);
   const lang = (typeof getLang === 'function' && getLang() === 'zh') ? 'zh' : 'en';
-  if (typeof showRadioToast === 'function') showRadioToast('TIP', def[lang] || def.en);
-  else if (typeof showSwapToast === 'function') showSwapToast(def[lang] || def.en);
+  const msg = def[lang] || def.en;
+  // Phase 117 globally disabled showRadioToast (the bottom-left ding-dong the
+  // user removed). That silently killed EVERY tutorial hint: showRadioToast
+  // still EXISTS as a no-op, so the old `else if (showSwapToast)` fallback
+  // never fired. Route tips through showSwapToast instead — the live,
+  // SOUNDLESS, user-accepted top-center channel — with a longer dwell (~4.3s)
+  // so a new player can actually read the control instruction.
+  if (typeof showSwapToast === 'function') showSwapToast(msg, 260);
 }

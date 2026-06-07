@@ -80,8 +80,9 @@ const STRUCTURE_DEFS = {
   turret: {
     cost: 100, hp: 160, size: 50, blocks: false, blocksLOS: false,  // was 80
     range: 380, fireCd: 60, dmg: 25,
-    needsPower: true,           // dies if no generator can reach it
-    ammoPerShot: 3,             // each shot drains game._energy by this much
+    // Phase 140 — power-supply mechanic removed: turret auto-fires for free,
+    // no generator, no per-shot energy drain. Energy is now purely the
+    // one-time build cost (auto-recharges over time — see updateMission).
     label: () => T('判決砲塔 VERDICT', 'VERDICT TURRET'),
   },
   generator: {
@@ -94,7 +95,7 @@ const STRUCTURE_DEFS = {
   camera: {
     cost: 60, hp: 90, size: 40, blocks: false, blocksLOS: false,    // was 40
     visionR: 360,
-    needsPower: true,           // unpowered = no vision feed
+    // Phase 140 — no power needed; the lens always feeds shared vision.
     label: () => T('審計鏡 AUDIT LENS', 'AUDIT LENS'),
   },
   bot: {
@@ -179,12 +180,16 @@ const STRUCTURE_DEFS = {
   dronebay: {
     cost: 200, hp: 170, size: 38, blocks: false, blocksLOS: false,  // was 80
     spawnCd: 360, droneHp: 30, droneSpeed: 5, droneDmg: 40, droneBlastR: 60,
-    needsPower: true,
+    // Phase 140 — no power needed; the bay auto-launches drones for free.
     label: () => T('審計蜂群 SWARM', 'AUDITOR SWARM'),
   },
 };
-const STRUCTURE_ORDER = ['cover', 'wall', 'bunker', 'turret', 'generator', 'camera', 'bot', 'terminal',
-                         'mine', 'tripmine', 'sensor', 'smoke', 'tesla', 'emp', 'medstation', 'dronebay'];
+// Number-key build quick-select order (radial open → digits 1..6). Phase 140:
+// trimmed to EXACTLY the simplified wheel roster (mirrors BUILD_CATEGORIES) so
+// a digit never selects a module that's no longer on the wheel. The other
+// STRUCTURE_DEFS entries stay defined for MP-broadcast/legacy rendering but
+// are intentionally not number-selectable.
+const STRUCTURE_ORDER = ['wall', 'smoke', 'camera', 'turret', 'mine', 'dronebay'];
 
 function getStructureCost(kind) { return STRUCTURE_DEFS[kind]?.cost || 0; }
 // Cover-archetype kinds (cover/wall/bunker) all support drag-line placement
@@ -442,9 +447,9 @@ function updateStructures() {
           const d = Math.hypot(e.x - s.x, e.y - s.y);
           if (d < bestD && lineOfSight(s.x, s.y, e.x, e.y)) { best = e; bestD = d; }
         }
-        const ammoCost = def.ammoPerShot || 3;
-        if (best && (game._energy || 0) >= ammoCost) {
-          game._energy -= ammoCost;
+        // Phase 140 — no ammo/energy gate: turret fires whenever it has a
+        // target. Energy is a build cost only, no longer a per-shot resource.
+        if (best) {
           const a = Math.atan2(best.y - s.y, best.x - s.x);
           s.gunAngle = a;
           // Spawn a bullet from the turret — damage scales with tier
