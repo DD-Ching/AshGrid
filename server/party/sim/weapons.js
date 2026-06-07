@@ -1,11 +1,18 @@
 // ============================================================
-// Phase 2 — Shared weapon physics table (SERVER copy).
+// Phase 2 — Weapon physics table (SERVER, authoritative).
 // ============================================================
 //
-// IMPORTANT: this file's logic MUST stay byte-identical to
-// js/sim/weapons.js. Only the bottom export boilerplate differs.
-//
-// See js/sim/weapons.js for the full design comment.
+// SOURCE OF TRUTH for the 30-Hz weapon baseline. The CLIENT counterpart is
+// js/weapons.js (`WEAPONS`, hardcoded at the 60-fps frame rate). They are NOT
+// byte-identical — the client is the same baseline rescaled to 60 fps:
+//   client.damage  == base.damage            (tick-independent)
+//   client.spread  == base.spread            (tick-independent)
+//   client.pellets == base.pellets           (tick-independent)
+//   client.fireCd     == base.fireCdTicks * (60/30)
+//   client.bulletSpeed== base.bulletSpeed   / (60/30)
+//   client.bulletLife == base.bulletLife    * (60/30)
+// tools/check_sim_parity.js asserts this so the two can't silently drift
+// (Phase 143). `_BASE_30HZ` is exported for that test.
 
 // Phase 4b — weapon stats refactored to derive from a 30-Hz baseline so
 // future tick-rate changes are a one-liner. Per-tick rescale rules:
@@ -42,4 +49,4 @@ function getWeaponSim(id) {
   return WEAPONS_SIM[id] || WEAPONS_SIM.RIFLE;
 }
 
-export { WEAPONS_SIM, getWeaponSim };
+export { WEAPONS_SIM, getWeaponSim, _BASE_30HZ };

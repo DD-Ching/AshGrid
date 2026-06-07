@@ -1,0 +1,117 @@
+#!/usr/bin/env node
+/* eslint-disable */
+// ============ SOLO/MP SIM PARITY CHECK (Phase 143) ============
+// SOLO (client, 60 fps) and MP (server, server-authoritative) each carry their
+// OWN copy of the weapon physics + the NN observation layout. If they drift,
+// MP prediction desyncs and "did online get the same numbers?" becomes a
+// recurring doubt. This asserts the two stay in lock-step:
+//
+//   1. WEAPONS — client js/weapons.js (60 fps) must equal the server's
+//      _BASE_30HZ baseline (server/party/sim/weapons.js) rescaled by 60/30:
+//        damage / spread / pellets / blast* : identical (tick-independent)
+//        fireCd      = base.fireCdTicks * 2
+//        bulletSpeed = base.bulletSpeed / 2
+//        bulletLife  = base.bulletLife  * 2
+//   2. OBS_DIM — client OBS_DIM must equal the server buildObs() output length.
+//
+// Exit 1 on any mismatch (CI / pre-commit gate). No dependencies.
+//
+// Loading the two worlds: the server is ESM (server/package.json type:module)
+// → dynamic import(). The client js/weapons.js is a classic browser script
+// that assumes a `window` global → run it in a vm sandbox and lift out WEAPONS.
+
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const ROOT = path.join(__dirname, '..');
+const CLIENT_HZ = 60, BASE_HZ = 30, F = CLIENT_HZ / BASE_HZ;   // 2
+
+const problems = [];
+const fail = (msg) => problems.push(msg);
+
+// ── Load the client WEAPONS table out of the classic script ───────────────
+function loadClientWeapons() {
+  const src = fs.readFileSync(path.join(ROOT, 'js/weapons.js'), 'utf8')
+            + '\n;globalThis.__weaponsOut = WEAPONS;';
+  const sandbox = { window: {}, console };
+  vm.createContext(sandbox);
+  vm.runInContext(src, sandbox, { filename: 'js/weapons.js' });
+  return sandbox.__weaponsOut;
+}
+
+// ── Read the client OBS_DIM (inside index.html's inline script — regex it) ──
+function loadClientObsDim() {
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  const m = html.match(/OBS_DIM:\s*(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function near(a, b) { return Math.abs(a - b) < 1e-9; }
+
+(async () => {
+  const client = loadClientWeapons();
+  const { _BASE_30HZ, getWeaponSim } = await import(
+    'file://' + path.join(ROOT, 'server/party/sim/weapons.js')
+  );
+
+  // ── 1. Weapon parity ─────────────────────────────────────────────────────
+  let checked = 0;
+  for (const [id, base] of Object.entries(_BASE_30HZ)) {
+    const c = client[id];
+    if (!c) { fail(`weapon ${id}: present in server _BASE_30HZ but missing in client WEAPONS`); continue; }
+    checked++;
+    const expect = {
+      damage:      base.damage,
+      spread:      base.spread,
+      pellets:     base.pellets != null ? base.pellets : 1,
+      fireCd:      base.fireCdTicks * F,
+      bulletSpeed: base.bulletSpeed / F,
+      bulletLife:  base.bulletLife * F,
+    };
+    const got = {
+      damage:      c.damage,
+      spread:      c.spread,
+      pellets:     c.pellets != null ? c.pellets : 1,
+      fireCd:      c.fireCd,
+      bulletSpeed: c.bulletSpeed,
+      bulletLife:  c.bulletLife,
+    };
+    for (const k of Object.keys(expect)) {
+      if (!near(got[k], expect[k]))
+        fail(`weapon ${id}.${k}: client=${got[k]} but server baseline implies ${expect[k]}`);
+    }
+    // Rocket AOE fields are tick-independent → must be identical.
+    if (base.isRocket) {
+      for (const k of ['blastR', 'blastDmg', 'structDmgMul']) {
+        if (!near(c[k], base[k]))
+          fail(`weapon ${id}.${k}: client=${c[k]} server=${base[k]}`);
+      }
+    }
+  }
+  console.log(`Weapon parity: checked ${checked} weapons against the 30-Hz baseline.`);
+
+  // ── 2. Obs dimension parity ──────────────────────────────────────────────
+  const clientDim = loadClientObsDim();
+  const { buildObs } = await import(
+    'file://' + path.join(ROOT, 'server/party/sim/nn_obs.js')
+  );
+  // Run buildObs on an empty world — the enemy/teammate loops are skipped, so
+  // it just walks the layout to the end and returns the length.
+  const me = { x: 0, y: 0, angle: 0, alive: true, hp: 100, _recentDmg: 0, _fireCd: 0 };
+  const buf = new Float32Array(256);
+  let serverDim = null;
+  try { serverDim = buildObs(me, [], [], buf, false); }
+  catch (e) { fail(`server buildObs() threw: ${e.message}`); }
+
+  if (clientDim == null) fail('could not find client OBS_DIM in index.html');
+  if (serverDim != null && clientDim != null && serverDim !== clientDim)
+    fail(`OBS_DIM mismatch: client=${clientDim} server buildObs len=${serverDim}`);
+  console.log(`Obs parity: client OBS_DIM=${clientDim}, server buildObs len=${serverDim}.`);
+
+  // ── Verdict ──────────────────────────────────────────────────────────────
+  if (problems.length === 0) { console.log('OK — SOLO and MP sim are in lock-step.'); process.exit(0); }
+  console.error('\nFAIL — sim parity drift:');
+  for (const p of problems) console.error('  ✗ ' + p);
+  process.exit(1);
+})().catch(e => { console.error('parity check crashed:', e); process.exit(2); });
