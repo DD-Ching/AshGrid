@@ -1,0 +1,34 @@
+# AshGrid CI gate (Phase 146) — the same checks as the local pre-commit hook
+# (tools/githooks/pre-commit), but enforced server-side so they can't be
+# bypassed with --no-verify or skipped on a machine without the hook installed.
+#
+#   1. node --check every client JS file        (syntax errors)
+#   2. node tools/version.js check              (missing/untracked file, ?v= drift)
+#   3. node tools/check_sim_parity.js           (client↔server weapon / obs drift)
+#
+# No npm install needed: the parity test's server imports are local-only
+# (./constants.js), and the tools have zero dependencies.
+name: checks
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax-check client JS
+        run: find js -name '*.js' -print0 | xargs -0 -n1 -P4 node --check
+
+      - name: Asset version + integrity
+        run: node tools/version.js check
+
+      - name: SOLO/MP sim parity
+        run: node tools/check_sim_parity.js
