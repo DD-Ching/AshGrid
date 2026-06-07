@@ -1,0 +1,25 @@
+#!/bin/sh
+# AshGrid pre-commit gate (Phase 145) — blocks a commit when asset versioning
+# or SOLO/MP sim parity is broken, so those deploy/desync bug classes can't
+# slip in unnoticed. Tracked in-repo (not in .git/), activated per-clone with:
+#     git config core.hooksPath tools/githooks
+# Disable:                git config --unset core.hooksPath
+# Bypass a single commit: git commit --no-verify
+#
+# Git runs hooks from the repo root, so the tools/ paths resolve as-is.
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: node not found — skipping AshGrid checks (install node to enable)."
+  exit 0
+fi
+
+fail=0
+node tools/version.js check    || fail=1
+node tools/check_sim_parity.js || fail=1
+
+if [ "$fail" -ne 0 ]; then
+  echo ""
+  echo "pre-commit BLOCKED — fix the above, or bypass once with: git commit --no-verify"
+  exit 1
+fi
+exit 0
