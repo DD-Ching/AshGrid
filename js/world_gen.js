@@ -273,7 +273,12 @@ function spawnSoldier(cfg) {
     _useNN: true, _nnFireCd: 0, _nnRecentDmg: 0, _nnLastSeenTick: -9999,
     _nnDifficulty: nnStyle,
     _respawnAt: null,
-    callsign: 'R' + (Math.random().toString(36).slice(2,5).toUpperCase()),
+    // Phase 138B.1 — .io-style human name so the arena reads as a lobby of
+    // real players, not "RX4F". Falls back to the old random callsign if
+    // bot_names.js didn't load (additive, never crashes).
+    callsign: (typeof pickBotName === 'function')
+      ? pickBotName()
+      : ('R' + (Math.random().toString(36).slice(2,5).toUpperCase())),
   };
   // Chassis stats — applyChassisToUnit sets _chassis, speed, hp, maxHp,
   // radius. Base values tuned for skirmish (speed 2.5, hp 80, radius 13).
