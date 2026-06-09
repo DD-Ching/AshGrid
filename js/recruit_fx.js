@@ -14,7 +14,10 @@
 //   getLang · playRadioBeep
 
 let _rfxBanner = null;            // { name, squad, ttl, maxTtl }
-const _RFX_TTL = 84;             // ~1.4s — a beat longer than killstreak; it's a milestone
+// Phase 156 — TTL ticked in updateRecruitFx() (84 Hz sim step), not render(), so
+// it lasts the same wall-time on any display. 118 ticks ≈ 1.4s at 84 Hz — a beat
+// longer than the killstreak banner; it's a milestone.
+const _RFX_TTL = 118;
 
 function triggerRecruitFx(name) {
   const squad = (typeof allies !== 'undefined' && Array.isArray(allies))
@@ -28,8 +31,16 @@ function triggerRecruitFx(name) {
   }
 }
 
-function renderRecruitFx() {
+// State mutation — once per sim tick (called from update()): age the banner so
+// its lifetime is display-independent.
+function updateRecruitFx() {
   if (typeof game !== 'undefined' && game.state !== 'playing') { _rfxBanner = null; return; }
+  if (_rfxBanner && --_rfxBanner.ttl <= 0) _rfxBanner = null;
+}
+
+// Read-only draw — once per render frame (no state mutation).
+function renderRecruitFx() {
+  if (typeof game !== 'undefined' && game.state !== 'playing') return;
   const b = _rfxBanner;
   if (!b || typeof ctx === 'undefined') return;
 
@@ -69,7 +80,6 @@ function renderRecruitFx() {
   ctx.fillText(squadTxt, 0, 30);
 
   ctx.restore();
-  if (--b.ttl <= 0) _rfxBanner = null;
 }
 
 // Phase 155 — register as a screen-space layer OVER the HUD (was hand-wired in

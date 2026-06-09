@@ -33,15 +33,19 @@ function _ksTier(ks) {
 
 let _ksLastStreak = 0;
 let _ksBanner = null;   // { text, sub, col, ttl, maxTtl }
-const _KS_TTL = 66;     // ~1.1s on screen
+// Phase 156 — TTL is ticked in updateKillstreakFx() (the 84 Hz sim step), not in
+// render(), so the banner lasts the same wall-time on every display (it used to
+// fade ~2× fast at 120 Hz because render ran at display rate). 92 ticks ≈ 1.1s
+// at the 84 Hz sim rate — matches the original on-screen feel.
+const _KS_TTL = 92;
 
-function renderKillstreakFx() {
+// ── State mutation — once per sim tick (called from update()) ───────────────
+// Detects a fresh streak-tier crossing, fires the sting + shake, ages the banner.
+function updateKillstreakFx() {
   if (typeof game === 'undefined' || game.state !== 'playing') { _ksLastStreak = 0; _ksBanner = null; return; }
   if (typeof player === 'undefined' || !player) return;
 
   const ks = player._killStreak || 0;
-
-  // ── Detect a fresh tier crossing ─────────────────────────────────────
   if (ks < _ksLastStreak) _ksLastStreak = ks;          // streak ended → re-arm
   if (ks > _ksLastStreak && ks >= 2) {
     const tier = _ksTier(ks);
@@ -61,10 +65,14 @@ function renderKillstreakFx() {
     }
     _ksLastStreak = ks;
   }
+  if (_ksBanner && --_ksBanner.ttl <= 0) _ksBanner = null;
+}
 
-  // ── Draw the banner ──────────────────────────────────────────────────
+// ── Read-only draw — once per render frame (no state mutation) ──────────────
+function renderKillstreakFx() {
+  if (typeof game === 'undefined' || game.state !== 'playing') return;
   const b = _ksBanner;
-  if (!b) return;
+  if (!b || typeof ctx === 'undefined') return;
   const t = b.ttl / b.maxTtl;                           // 1 → 0
   // Pop in (first ~18%): scale 1.55 → 1.0 with overshoot; hold; fade last ~30%.
   const inP = Math.min(1, (1 - t) / 0.18);
@@ -91,8 +99,6 @@ function renderKillstreakFx() {
   ctx.fillStyle = (typeof COLORS !== 'undefined') ? COLORS.cream : '#F2E9D0';
   ctx.fillText(b.sub, 0, 22);
   ctx.restore();
-
-  if (--b.ttl <= 0) _ksBanner = null;
 }
 
 // Phase 155 — register as a screen-space layer OVER the HUD (was hand-wired in
