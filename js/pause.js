@@ -136,15 +136,17 @@ function drawPauseOverlay() {
       cyy += 18;
     }
   }
-  // Bottom action bar: [ Resume (red) ] [ Mute ] [ Exit (cream w/ red border) ]
+  // Bottom action bar: [ Resume (red) ] [ GFX ] [ Mute ] [ Exit (cream w/ red border) ]
   const barY = y + ch - 38;
   const gap = 8;
-  const totalW = cw - 48 - gap * 2;
-  const resumeW = Math.floor(totalW * 0.55);
+  const totalW = cw - 48 - gap * 3;
+  const resumeW = Math.floor(totalW * 0.46);
+  const gfxW    = Math.floor(totalW * 0.18);
   const muteW   = Math.floor(totalW * 0.18);
-  const exitW   = totalW - resumeW - muteW;
+  const exitW   = totalW - resumeW - gfxW - muteW;
   const resumeX = x + 24;
-  const muteX   = resumeX + resumeW + gap;
+  const gfxX    = resumeX + resumeW + gap;
+  const muteX   = gfxX + gfxW + gap;
   const exitX   = muteX + muteW + gap;
 
   ctx.fillStyle = COLORS.red;
@@ -153,6 +155,18 @@ function drawPauseOverlay() {
   ctx.font = 'bold 12px sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText(T('按 Esc 继续 · RESUME', 'Esc · RESUME'), resumeX + resumeW / 2, barY + 18);
+
+  // GFX quality toggle (Phase 153) — PERF (filled) caps DPR at 1.5 to claw back
+  // frame-time on weak/HiDPI machines; HQ (hollow) keeps full-res crisp text.
+  const _perfOn = (typeof _PERF_MODE !== 'undefined') && _PERF_MODE;
+  ctx.fillStyle = _perfOn ? COLORS.black : COLORS.cream;
+  ctx.fillRect(gfxX, barY, gfxW, 28);
+  ctx.strokeStyle = COLORS.black;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(gfxX, barY, gfxW, 28);
+  ctx.fillStyle = _perfOn ? COLORS.cream : COLORS.black;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(_perfOn ? T('⚡ 流畅', '⚡ PERF') : T('✦ 高清', '✦ HQ'), gfxX + gfxW / 2, barY + 18);
 
   // Mute toggle — filled black w/ cream icon when muted, hollow when audible
   ctx.fillStyle = AUDIO.muted ? COLORS.black : COLORS.cream;
@@ -175,6 +189,7 @@ function drawPauseOverlay() {
   ctx.textAlign = 'left';
 
   game._pauseResumeRect = { x: resumeX, y: barY, w: resumeW, h: 28 };
+  game._pauseGfxRect    = { x: gfxX,    y: barY, w: gfxW,    h: 28 };
   game._pauseMuteRect   = { x: muteX,   y: barY, w: muteW,   h: 28 };
   game._pauseExitRect   = { x: exitX,   y: barY, w: exitW,   h: 28 };
 

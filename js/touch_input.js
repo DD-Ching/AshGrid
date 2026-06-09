@@ -100,6 +100,7 @@ if (touchInput.enabled) {
       // 2) Pause overlay buttons (when paused)
       if (game._paused) {
         if (_hitRect(game._pauseResumeRect, _tx, _ty)) togglePause();
+        else if (_hitRect(game._pauseGfxRect, _tx, _ty)) { if (typeof setPerfMode === 'function') setPerfMode(!(typeof _PERF_MODE !== 'undefined' && _PERF_MODE)); }
         else if (_hitRect(game._pauseMuteRect, _tx, _ty)) setAudioMuted(!AUDIO.muted);
         else if (_hitRect(game._pauseExitRect, _tx, _ty)) exitMatchToMenu();
         continue;

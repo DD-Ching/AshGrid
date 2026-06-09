@@ -2601,8 +2601,22 @@ const HUD_AD_TOP = 90;
 const HUD_AD_BOTTOM = 0;
 
 let DPR = 1;
+// Phase 153 — GFX quality switch. HQ (default) uses the full devicePixelRatio
+// so text stays crisp on Retina/4K — this is exactly why the old hard 1.5 cap
+// was reverted. PERF caps DPR at 1.5 so every full-screen fill (low-HP
+// vignettes, the per-frame clear, HUD panels) pays 4–9× fewer pixels on HiDPI
+// panels, which restores the frame-time headroom that keeps movement smooth on
+// weaker machines. Toggled from the pause menu (drawPauseOverlay); persisted.
+let _PERF_MODE = false;
+try { _PERF_MODE = localStorage.getItem('ag_perf_mode') === '1'; } catch (e) {}
+function setPerfMode(on) {
+  _PERF_MODE = !!on;
+  try { localStorage.setItem('ag_perf_mode', _PERF_MODE ? '1' : '0'); } catch (e) {}
+  resize();
+}
 function resize() {
-  DPR = window.devicePixelRatio || 1;
+  const _rawDpr = window.devicePixelRatio || 1;
+  DPR = _PERF_MODE ? Math.min(1.5, _rawDpr) : _rawDpr;
   // Phase 108 — physically inset the canvas to leave the top + bottom
   // 60-px frame zones empty. Earlier the ad strips were position:fixed
   // overlays that COVERED the canvas underneath, which the user read
@@ -3223,6 +3237,7 @@ window.addEventListener('mousedown', e => {
   // While paused: click resume bar = unpause; click exit bar = back to menu.
   if (game._paused) {
     if (_hitRect(game._pauseResumeRect, _mx, _my)) togglePause();
+    else if (_hitRect(game._pauseGfxRect, _mx, _my)) { if (typeof setPerfMode === 'function') setPerfMode(!(typeof _PERF_MODE !== 'undefined' && _PERF_MODE)); }
     else if (_hitRect(game._pauseMuteRect, _mx, _my)) setAudioMuted(!AUDIO.muted);
     else if (_hitRect(game._pauseExitRect, _mx, _my)) exitMatchToMenu();
     e.preventDefault();
