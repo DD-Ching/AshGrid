@@ -34,3 +34,11 @@ function renderDangerVignette() {
   ctx.fillRect(0, 0, w, h);
   ctx.restore();
 }
+
+// Phase 155 — register as a screen-space layer UNDER the HUD (was hand-wired in
+// render()). allocsPerFrame:true flags that this builds a CanvasGradient every
+// frame while HP < 35% — visible here so a future pass can cache it.
+if (typeof registerFxLayer === 'function') {
+  registerFxLayer({ id: 'danger-vignette', space: 'overlay-under-hud',
+                    draw: renderDangerVignette, allocsPerFrame: true });
+}

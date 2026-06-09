@@ -175,7 +175,10 @@
      + drawHUDPanel + getModeLabel + panel cache + 6-zone card draw
      helpers. ~1300 lines from the inline script. -->
 <script src="js/hud.js?v=208"></script>
-<!-- Phase 147 — killstreak announcer (juice). Renders after renderHUD. -->
+<!-- Phase 155 — single frame owner + FX layer registry. MUST load before the
+     FX modules below (they registerFxLayer at load time) and before loop(). -->
+<script src="js/render_frame.js?v=208"></script>
+<!-- Phase 147 — killstreak announcer (juice). Registers an over-HUD FX layer. -->
 <script src="js/killstreak_fx.js?v=208"></script>
 <!-- Phase 148 — recruit celebration (juice). Renders after renderHUD. -->
 <script src="js/recruit_fx.js?v=208"></script>
@@ -6583,60 +6586,15 @@ function _detonateFPV(manual) {
 //     camera · CAMERA_MODES · updateCamera · screenToWorld
 
 // ============ RENDER ============
+// Phase 155 — the per-frame draw is owned by renderFrame() in js/render_frame.js
+// (single frame owner + FX layer registry). render() stays as the thin entry
+// point the loop calls; cosmetic FX register themselves instead of being
+// hand-wired here, so a new effect can't silently add per-frame cost to the
+// hot path again. Falls back to a bare clear if the module failed to load.
 function render() {
-  // Canvas-clear MUST be dark per FTUE/01 §A.4.1 ('幾乎不會有白色得底色').
-  // The world theme rect (per-map addTheme) renders over this; the clear
-  // shows around the edges when zoomed-out / smaller worlds. Phase 5
-  // uses COLORS.sky here (TOD-tinted) so the off-arena strip reads as
-  // sky-at-this-hour (warm ash by day, smoke-orange at dusk, void at
-  // night, cold steel-blue at dawn). All four palettes still respect
-  // 'never light bottom' — sky is the dimmer ash above a darker floor.
+  if (typeof renderFrame === 'function') { renderFrame(); return; }
   ctx.fillStyle = (typeof COLORS.sky !== 'undefined') ? COLORS.sky : COLORS.floor;
   ctx.fillRect(0, 0, W(), H());
-
-  // Apply camera shake — small random offset, decays in update(). Pure
-  // screen-space jitter; the world transform stays clean below.
-  let shakeX = 0, shakeY = 0;
-  if (game.shakeMag > 0.05) {
-    shakeX = (Math.random() - 0.5) * 2 * game.shakeMag;
-    shakeY = (Math.random() - 0.5) * 2 * game.shakeMag;
-  }
-
-  ctx.save();
-  ctx.translate(W()/2 + shakeX, H()/2 + shakeY);
-  ctx.scale(camera.scale, camera.scale);
-  ctx.rotate(camera.rotation);
-  ctx.translate(-camera.x, -camera.y);
-
-  renderWorld();
-  if (game.state === 'editor') renderEditorOverlay();
-  // Player-built structures + airstrike telegraphs in defense mode
-  renderFootprints();
-  renderSpawnBeacons();
-  renderStructures();
-  renderSmokeClouds();
-  renderTeslaBolts();
-  renderEMPPulses();
-  renderAutoDrones();
-  // Phase 140 — dropped weapons + their pickup ring (world-space).
-  if (typeof renderWeaponDrops === 'function') renderWeaponDrops();
-  renderAirstrikes();
-  // Build-mode placement preview — only while in placing mode (not while
-  // the radial picker is on top of the world).
-  if (buildMode.active && !buildMode.radialOpen
-      && game.state === 'playing' && !game._paused) renderBuildPreview();
-  // Mote red-eye glow + diegetic markers (player glow, eye-trail, SED ring,
-  // UAV memory outlines, UAV-mode locator). NO side-view portrait stickers.
-  ctx.restore();
-
-  // Phase 152 — low-HP danger vignette (screen-space, UNDER the HUD so the
-  // opaque corner panels stay readable on top).
-  if (typeof renderDangerVignette === 'function') renderDangerVignette();
-  if (game.state !== 'editor') renderHUD();
-  // Phase 147 — killstreak call-out banner (screen-space, over the HUD).
-  if (typeof renderKillstreakFx === 'function') renderKillstreakFx();
-  // Phase 148 — recruit celebration banner (sits lower; never collides).
-  if (typeof renderRecruitFx === 'function') renderRecruitFx();
 }
 
 // World-space rendering of placed structures.

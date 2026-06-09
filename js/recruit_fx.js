@@ -71,3 +71,9 @@ function renderRecruitFx() {
   ctx.restore();
   if (--b.ttl <= 0) _rfxBanner = null;
 }
+
+// Phase 155 — register as a screen-space layer OVER the HUD (was hand-wired in
+// render()), after killstreak so the two never collide.
+if (typeof registerFxLayer === 'function') {
+  registerFxLayer({ id: 'recruit', space: 'overlay-over-hud', draw: renderRecruitFx });
+}

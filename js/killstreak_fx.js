@@ -94,3 +94,9 @@ function renderKillstreakFx() {
 
   if (--b.ttl <= 0) _ksBanner = null;
 }
+
+// Phase 155 — register as a screen-space layer OVER the HUD (was hand-wired in
+// render()). Loads before recruit_fx.js so it draws first, matching old order.
+if (typeof registerFxLayer === 'function') {
+  registerFxLayer({ id: 'killstreak', space: 'overlay-over-hud', draw: renderKillstreakFx });
+}
