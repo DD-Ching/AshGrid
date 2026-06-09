@@ -5560,6 +5560,12 @@ function _tickShotgunAntiKamikaze() {
 function update() {
   if (game.state !== 'playing') return;
   game.time++;
+  // Phase 154 — render interpolation: snapshot the player's pre-tick position
+  // so render() can lerp between the last two sim states (see loop()). The sim
+  // runs at 84 Hz (timeScale 1.4); without this the world scrolls in discrete
+  // steps and reads as judder at any display refresh that isn't a clean
+  // multiple of that. Render-only — player.x stays the sim-authoritative value.
+  if (typeof player !== 'undefined' && player) { player._prevX = player.x; player._prevY = player.y; }
 
   // ─── Phase 66: smoothing/polish tick ────────────────────────────────
   // (a) HP damage trail. Apex / Overwatch / COD all do this — when HP
@@ -6676,6 +6682,26 @@ function loop() {
   if (!game._paused) {
     _stepAccumulator += dt60 * (game._timeScale != null ? game._timeScale : 1);
     while (_stepAccumulator >= 1) { update(); _stepAccumulator -= 1; }
+  }
+  // Phase 154 — sub-tick interpolation. _stepAccumulator now holds the leftover
+  // fraction toward the NEXT tick; lerp the player's DRAW position between its
+  // last two sim states so the world scrolls smoothly even when the 84 Hz sim
+  // and the display refresh don't divide evenly (the felt "movement judder").
+  // A teleport-class jump (pawn-swap, respawn, mode switch) moves > 60 u in one
+  // tick — snap instead of sliding the camera across the map, matching
+  // camera.js's own 60 u snap threshold. Camera + player sprite both read
+  // _drawX/_drawY so the player stays screen-centred and the ground scrolls
+  // smoothly. (Enemies/allies still step; interpolate them later only if felt.)
+  if (typeof player !== 'undefined' && player) {
+    if (player._prevX == null) { player._prevX = player.x; player._prevY = player.y; }
+    const _ia = game._paused ? 0 : Math.max(0, Math.min(1, _stepAccumulator));
+    const _idx = player.x - player._prevX, _idy = player.y - player._prevY;
+    if (_idx * _idx + _idy * _idy > 3600) {        // > 60 u → teleport, don't slide
+      player._drawX = player.x; player._drawY = player.y;
+    } else {
+      player._drawX = player._prevX + _idx * _ia;
+      player._drawY = player._prevY + _idy * _ia;
+    }
   }
   updateCamera();
   render();

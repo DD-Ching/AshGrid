@@ -581,7 +581,12 @@ function renderWorld() {
   if (player.alive) {
     const pInvuln = player._invulnUntil != null && game.time < player._invulnUntil;
     if (pInvuln) ctx.globalAlpha = 0.7 + 0.3 * Math.abs(Math.sin(game.time * 0.25));
-    drawHumanoid(player.x, player.y, player.angle, player.walkPhase, COLORS.black, false, player);
+    // Phase 154 — draw the player at the interpolated position (same source the
+    // camera follows) so the player stays screen-centred and the ground scrolls
+    // smoothly between sim ticks. Sim/aim/bullets still use player.x/y.
+    drawHumanoid(player._drawX != null ? player._drawX : player.x,
+                 player._drawY != null ? player._drawY : player.y,
+                 player.angle, player.walkPhase, COLORS.black, false, player);
     if (pInvuln) ctx.globalAlpha = 1;
   }
 

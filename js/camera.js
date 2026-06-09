@@ -53,7 +53,7 @@ const CAMERA_MODES = [
     rotation: () => -fpv.angle - Math.PI / 2 },
   { id: 'command',
     when:     () => game.mode === 'command',
-    target:   () => player,
+    target:   () => _playerFollowTarget(),
     scale:    () => 0.42,
     rotation: () => 0 },
   // (arena-mp: FTUE camera override stripped — _ftueCameraScale was a
@@ -61,10 +61,21 @@ const CAMERA_MODES = [
   // Default — covers tactical mode in normal NN matches.
   { id: 'tactical',
     when:     () => true,
-    target:   () => player,
+    target:   () => _playerFollowTarget(),
     scale:    () => 1,
     rotation: () => 0 },
 ];
+
+// Phase 154 — follow the player's interpolated DRAW position (computed in
+// loop() each frame) so the camera scrolls smoothly between 84 Hz sim ticks
+// instead of snapping to each quantized step. Falls back to the raw sim
+// position before the first interpolated frame is ready.
+function _playerFollowTarget() {
+  return {
+    x: (player._drawX != null ? player._drawX : player.x),
+    y: (player._drawY != null ? player._drawY : player.y),
+  };
+}
 
 function updateCamera() {
   // Walk the priority table; first match wins.
