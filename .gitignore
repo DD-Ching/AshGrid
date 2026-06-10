@@ -1,5 +1,7 @@
 .claude/
 .DS_Store
+# Local MCP tooling config (per-machine; not part of the game)
+.mcp.json
 # PartyKit / Workers builds (deployed separately, not bundled with Pages)
 server/node_modules/
 server/.partykit-cache/
@@ -9,3 +11,12 @@ ashgrid.zip
 # ai_arena/scripts/gen_verify_fixtures.py. Used only for offline parity
 # tests against the pure-JS runtime; don't commit (5.5MB of test data).
 ai_arena/onnx/*.verify.json
+# Image-compression scratch (iloveimg exports + loose source jpgs at repo
+# root — incl. a 45MB 51238.jpg). Root-level only; assets/*.jpg still tracked.
+/*.jpg
+/iloveimg-compressed/
+/iloveimg-compressed.zip
+# Stale pre-modular-split duplicate game tree (May-13 snapshot with a
+# 10.6k-line monolithic index.html — superseded by the 61-module root build).
+# Kept on disk in case it's a manual backup; never commit or serve it.
+/ashgrid/
