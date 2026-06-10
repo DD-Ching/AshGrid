@@ -903,6 +903,43 @@ export default class AshGridRoom {
       }));
       return;
     }
+    // Phase 159: arena recruitment (online). Mirrors the SOLO live-target
+    // path in js/arena_recruitment.js (_arenaConvertEnemyToAlly): a player
+    // who walks up to a wounded enemy bot and presses G converts it onto
+    // their team. Server is authoritative — it re-checks every gate so a
+    // spoofed/optimistic client can't force a recruit. The team flip rides
+    // the existing snapshot delta (curBots sends `team` on change), and the
+    // explicit recruitOk event lets every client fire the SED-convert VFX.
+    //   gates (same as SOLO live path):
+    //     • recruiter alive
+    //     • bot exists, alive, currently enemy (team 1)
+    //     • within touch reach (myR + botR + buffer ≈ 106px)
+    //     • bot hp < 50% maxHp
+    //     • recruiterSeed - botSeed > ARENA_SEED_GAP (10); bot seed = 0
+    if (data.type === 'recruit') {
+      if (!p.alive) return;
+      const botId = num(data.botId) | 0;
+      const bot = this.bots.get(botId);
+      if (!bot || !bot.alive) return;            // unknown / dead — reject
+      if (bot.team === 0) return;                // already friendly — reject
+      const reach = 13 + 14 + 80;                // myR + botR + ARENA_TOUCH_BUFFER
+      const dd = Math.hypot(bot.x - p.x, bot.y - p.y);
+      if (dd > reach) return;                     // out of touch range — reject
+      if (bot.hp >= (bot.maxHp || HP_MAX) * 0.5) return;   // not wounded enough
+      const recruiterSeed = num(data.seed) || 0;
+      if (recruiterSeed - 0 <= 10) return;        // SEED gate (ARENA_SEED_GAP) — bots are seed 0
+      // ── apply the SOLO conversion, server-side ──
+      bot.team = 0;
+      bot.hp = Math.max((bot.maxHp || HP_MAX) * 0.5, 30);
+      bot._respawnAt = null;
+      bot._recruitedBy = sender.id;
+      if (!bot.callsign) bot.callsign = 'R-' + botId;
+      this.party.broadcast(JSON.stringify({
+        type: 'recruitOk', botId, newTeam: 0,
+        recruiter: sender.id, callsign: bot.callsign,
+      }));
+      return;
+    }
     // Phase 43: explosion request from a client. Used for grenades / FPV /
     // airstrikes — server validates and applies AOE damage to structures
     // (and broadcasts hit/gone events). Bullets damage structures via the

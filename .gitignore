@@ -14,9 +14,12 @@ ai_arena/onnx/*.verify.json
 # Image-compression scratch (iloveimg exports + loose source jpgs at repo
 # root — incl. a 45MB 51238.jpg). Root-level only; assets/*.jpg still tracked.
 /*.jpg
+/*.jpeg
 /iloveimg-compressed/
 /iloveimg-compressed.zip
 # Stale pre-modular-split duplicate game tree (May-13 snapshot with a
 # 10.6k-line monolithic index.html — superseded by the 61-module root build).
 # Kept on disk in case it's a manual backup; never commit or serve it.
 /ashgrid/
+# Playwright MCP test artifacts (screenshots / console logs)
+/.playwright-mcp/

@@ -150,6 +150,12 @@ const KEY_BINDINGS = {
     // Phase 104 — F is now the PRIMARY frag throw key (resolves the
     // G grenade vs G recruit ambiguity in the HUD label). G keeps the
     // fallback throwGrenade() for backward compatibility / muscle memory.
+    // Phase 159 — MP first: online targets live in remoteBots, not
+    // enemies[], so the SOLO scan below finds nothing in MP. Route the
+    // press to the server-authoritative recruit path when online.
+    if (typeof _arenaTryRecruitMP === 'function' && _arenaTryRecruitMP()) {
+      return;
+    }
     if (typeof _arenaTrySEDConvert === 'function' && _arenaTrySEDConvert()) {
       return;
     }

@@ -353,6 +353,29 @@ function _mpHandleMessage(data) {
         rb.hp = 0;
       }
       break;
+    case 'recruitOk': {
+      // Phase 159 — server confirmed an arena recruit. Flip the bot onto
+      // our team locally for instant feel (the next snapshot delta carries
+      // the same team change, so this is idempotent). Aim-assist + FPV
+      // targeting gate on rb.team===0, so the bot stops being a hostile and
+      // starts fighting for us on the very next frame. Fire the SED-convert
+      // VFX on EVERY client (matches SOLO _arenaConvertEnemyToAlly).
+      const rb = _mpState.remoteBots && _mpState.remoteBots.get(data.botId);
+      if (rb) {
+        rb.team = (data.newTeam !== undefined) ? data.newTeam : 0;
+        rb.alive = true;
+        rb.callsign = data.callsign;
+        rb._arenaRecruit = true;
+      }
+      if (typeof triggerRecruitFx === 'function') triggerRecruitFx(data.callsign || 'UNIT');
+      if (typeof playRadioStatic === 'function') playRadioStatic(0.55, 0.45);
+      // Toast only for the recruiter (the player who pressed G).
+      if (typeof showSwapToast === 'function' && data.recruiter === _mpState.myId) {
+        showSwapToast(T('▸ 招降 · ' + (data.callsign || 'UNIT'),
+                        '▸ RECRUITED · ' + (data.callsign || 'UNIT')));
+      }
+      break;
+    }
     case 'wallHit':
       // Phase 44: NO explosion. Single-player regular bullets just vanish
       // when they hit a wall (only rockets detonate on impact, see
@@ -799,9 +822,13 @@ function _mpHandleKill(data) {
   const shooterName = (data.shooter === _mpState.myId)
     ? (typeof getOperatorName === 'function' ? getOperatorName() : 'YOU')
     : (_mpState.remotePlayers.get(data.shooter)?.name || String(data.shooter).slice(0, 6));
+  // Phase 159 — branch on the server's isBot marker so a bot victim shows a
+  // callsign (or a short BOT-xxx) instead of its raw numeric id ("10001").
   const victimName = (data.victim === _mpState.myId)
     ? (typeof getOperatorName === 'function' ? getOperatorName() : 'YOU')
-    : (_mpState.remotePlayers.get(data.victim)?.name || String(data.victim).slice(0, 6));
+    : data.isBot
+      ? (_mpState.remoteBots.get(data.victim)?.callsign || ('BOT-' + String(data.victim).slice(-3)))
+      : (_mpState.remotePlayers.get(data.victim)?.name || String(data.victim).slice(0, 6));
   _mpKillFeed.push({ killer: shooterName, victim: victimName, weapon: data.weapon || 'RIFLE', at: Date.now() });
   if (_mpKillFeed.length > 6) _mpKillFeed.splice(0, _mpKillFeed.length - 6);
 
