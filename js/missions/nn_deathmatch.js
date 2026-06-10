@@ -89,6 +89,15 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   // CPU + the player both survive past wave 10.
   let _waveNum = 0;
   let _nextWaveAt = game.time + 6 * 60;   // first reinforcement at +6 sec
+  // Phase 161 — periodic BUILD PHASE (SOLO only). Opens a short fortify window
+  // on its own cadence (decoupled from the wave clock so it stays sane once
+  // late-game waves are only ~6s apart). The window grants free covers
+  // (placeBuildBlock) + a small energy stipend, and surfaces the two
+  // rewarded-ad buttons (+2 covers / skip wave). MP build is server-driven, so
+  // this never opens online.
+  const BUILD_PERIOD = 45 * 60;           // a fortify window every 45 s
+  const BUILD_WINDOW = 12 * 60;           // each window stays open 12 s
+  let _nextBuildPhaseAt = game.time + 30 * 60;   // first window at +30 s
   function _waveInterval(n) {
     // 15s → 6s over the first 10 waves, then floor at 6s.
     return Math.max(360, 900 - n * 60);
@@ -321,6 +330,50 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
                  'Endless arena · die, respawn, recruit your squad'),
     teamKills,
 
+    // Phase 161 — methods the build-phase / death-recap HUD calls (all were
+    // undefined since the arena-mp fork, so the guarded call sites were inert).
+    // Survival revive via rewarded ad (player-only).
+    tryRevive() {
+      if (typeof requestRewardedAd !== 'function') return;
+      requestRewardedAd('survival_revive', (ok) => {
+        if (!ok) return;
+        if (typeof game._arenaRevivePlayerOnly === 'function') game._arenaRevivePlayerOnly();
+        else if (typeof game._arenaReviveTeam === 'function') game._arenaReviveTeam('blue');
+        else if (player) { player.alive = true; player.hp = player.maxHp || 100; }
+      });
+    },
+    // Share-run payload (shareSurvivalRun destructures {wave, kills, style};
+    // style falls back to 'elite' when omitted).
+    getRunSummary() {
+      return { wave: _waveNum, kills: teamKills[0] };
+    },
+    // Gate for the "WATCH AD · SKIP NEXT WAVE" button — only during an open
+    // build phase, once per phase.
+    canSkipWave() {
+      return !!(game._buildPhase && game._buildPhase.active && !game._buildPhase._skipUsed);
+    },
+    // Rewarded ad: push the next reinforcement out + grant supply, end the phase.
+    trySkipWave() {
+      if (!game._buildPhase || game._buildPhase._skipUsed) return;
+      if (typeof requestRewardedAd !== 'function') return;
+      game._buildPhase._skipUsed = true;
+      requestRewardedAd('skip_wave', (ok) => {
+        if (!ok) { if (game._buildPhase) game._buildPhase._skipUsed = false; return; }
+        _nextWaveAt = game.time + _waveInterval(_waveNum);   // delay next reinforcement
+        if (typeof game._energy === 'number') game._energy = Math.min(999, game._energy + 100);
+        if (typeof showSwapToast === 'function') {
+          showSwapToast(T('▶ 跳過下一波 · +補給', '▶ WAVE SKIPPED · +SUPPLY'));
+        }
+        game._buildPhase = null;
+      });
+    },
+    // The "+2 covers · +5s" ad calls this to actually extend the window.
+    _extendBreather(ticks) {
+      if (game._buildPhase) {
+        game._buildPhase.endsAt = (game._buildPhase.endsAt || game.time) + ticks;
+      }
+    },
+
     update() {
       const elapsed = game.time - startTick;
 
@@ -390,6 +443,32 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       if (game.time >= _nextWaveAt) {
         _spawnRedWave();
         _nextWaveAt = game.time + _waveInterval(_waveNum);
+      }
+
+      // Phase 161 — BUILD PHASE producer (SOLO only). Open a fortify window on
+      // the periodic clock; close it when its timer (endsAt) runs out. The two
+      // ad buttons can extend endsAt (_extendBreather) / end it (trySkipWave).
+      const _soloBuild = (typeof _mpState === 'undefined' || !_mpState.enabled);
+      if (_soloBuild) {
+        if (!game._buildPhase && game.time >= _nextBuildPhaseAt && player.alive) {
+          game._buildPhase = {
+            active: true, left: 3, _adExtended: false, _skipUsed: false,
+            endsAt: game.time + BUILD_WINDOW,
+          };
+          // small stipend so the player can also afford a wheel build or two
+          // during the lull — the deeper "energy too slow" complaint.
+          if (typeof game._energy === 'number') game._energy = Math.min(999, game._energy + 50);
+          _nextBuildPhaseAt = game.time + BUILD_PERIOD;
+          if (typeof showSwapToast === 'function') {
+            showSwapToast(T('▶ 建造階段 · 點擊放置掩體 ×3 · +50⚡',
+                            '▶ BUILD PHASE · tap to place cover ×3 · +50⚡'));
+          }
+          if (typeof playSfx === 'function') playSfx('match_win', { vol: 0.3 });
+        } else if (game._buildPhase && game.time >= (game._buildPhase.endsAt || 0)) {
+          game._buildPhase = null;   // window elapsed → close (ad-extend pushed endsAt)
+        }
+      } else if (game._buildPhase) {
+        game._buildPhase = null;     // safety: never leave a build phase open in MP
       }
       // Phase 9: evict long-dead reds. Without per-unit respawn, dead red
       // corpses would accumulate in the array forever (and still draw HP

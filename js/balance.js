@@ -21,11 +21,19 @@ const BALANCE = {
     mineDefuse:         10,    // finishing a hostile-mine defuse (index.html)
     recycleRefund:      60,    // scrapping a squad bot          (arena_recruitment.js)
   },
+  // Energy cost (⚡) per structure. The radial wheel (js/defense_build_ui.js)
+  // currently exposes only the 6 ACTIVE entries; the other 10 are LEGACY —
+  // dropped from the wheel but kept DEFINED so MP-broadcast / older structures
+  // still resolve a cost in getStructureCost() (a missing key would make
+  // canAffordStructure compare against NaN). Don't delete — relocate to the
+  // structure def if a true single source of truth is ever needed.
   buildCost: {
-    cover: 18, wall: 30, bunker: 70,                 // barriers
-    turret: 100, tesla: 140, mine: 40, tripmine: 70, // offense
-    generator: 80, terminal: 200, dronebay: 200,     // power / drones
-    medstation: 100, smoke: 70, emp: 130,            // support
-    camera: 60, sensor: 30, bot: 180,                // recon / ally
+    // ── active (in the build wheel) ──
+    wall: 30, smoke: 70, camera: 60,                 // defense
+    turret: 100, mine: 40, dronebay: 200,            // offense
+    // ── legacy (not in the wheel; kept for MP / back-compat) ──
+    cover: 18, bunker: 70, tesla: 140, tripmine: 70,
+    generator: 80, terminal: 200, medstation: 100, emp: 130,
+    sensor: 30, bot: 180,
   },
 };
