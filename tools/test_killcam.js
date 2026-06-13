@@ -82,11 +82,12 @@ console.log('Killcam smoke test — replay buffer + death-replay/respawn layer:'
   check(sb.ReplayBuffer.size() <= 80, 'ring buffer stays bounded under load (' + sb.ReplayBuffer.size() + ')');
 }
 
-// 2. Replay buffer is a no-op in MP / non-NN / dead.
+// 2. Replay buffer records in MP too (Phase 180e — samples remotePlayers/
+//    remoteBots), but is a no-op in non-NN / dead.
 {
-  const mp = makeSandbox({ _mpState: { enabled: true } });
+  const mp = makeSandbox({ _mpState: { enabled: true } });   // no remote Maps → records player+allies
   for (let i = 0; i < 40; i++) mp.replayBufferTick();
-  check(mp.ReplayBuffer.size() === 0, 'MP (_mpState.enabled) → buffer records nothing');
+  check(mp.ReplayBuffer.size() > 0, 'MP NN mode → buffer records (player + allies + remotes)');
 
   const non = makeSandbox();
   non.game._nnMode = false;
@@ -97,6 +98,23 @@ console.log('Killcam smoke test — replay buffer + death-replay/respawn layer:'
   dead.player.alive = false;
   for (let i = 0; i < 40; i++) dead.replayBufferTick();
   check(dead.ReplayBuffer.size() === 0, 'dead player → buffer frozen (records nothing)');
+}
+
+// 2b. MP buffer samples remotePlayers / remoteBots as opponents (team 1).
+{
+  const mp = makeSandbox({
+    _mpState: {
+      enabled: true,
+      remotePlayers: new Map([['r1', { x: 320, y: 100, angle: 0, alive: true }]]),
+      remoteBots:    new Map([['b1', { x: 360, y: 140, angle: 1, alive: true }]]),
+    },
+  });
+  for (let i = 0; i < 40; i++) mp.replayBufferTick();
+  const frames = mp.ReplayBuffer.frames();
+  const anyFoe = frames.some(f => f.units.some(u => u.team === 1));
+  const anyPlayer = frames.some(f => f.units.some(u => u.p === 1));
+  check(anyFoe, 'MP buffer records remotePlayers/remoteBots as team-1 opponents');
+  check(anyPlayer, 'MP buffer still records the local player');
 }
 
 // 3. Respawn edge starts a clean history.
@@ -132,13 +150,15 @@ function killCam(sb) {
   check(sb.killcamCanRespawn() === false, 'alive → cannot respawn');
 }
 
-// 5. Killcam never arms in MP even on a death wait (SOLO-first).
+// 5. Killcam ARMS the replay VISUAL in MP (Phase 180e), but does NOT control
+//    respawn — the server-authoritative path (mpRespawnEligible) owns SPACE in MP.
 {
   const sb = makeSandbox({ _mpState: { enabled: true } });
   killCam(sb);
   draw(sb);
-  check(sb.KillCam.phase() === 'off', 'MP death wait → killcam stays off (SOLO-only)');
-  check(sb.killcamCanRespawn() === false, 'MP → cannot trigger killcam respawn');
+  check(sb.KillCam.phase() === 'playing', 'MP death wait → killcam arms the replay visual');
+  check(sb.killcamCanRespawn() === false, 'MP → killcam does NOT control respawn (server path owns SPACE)');
+  check(sb.killcamBlocking() === true, 'MP replay → killcamBlocking true (suppresses the ad slot during replay)');
 }
 
 // 6. SOLO death → killcam arms; press-SPACE is the ONLY mutation and never revives.

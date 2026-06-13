@@ -14,7 +14,9 @@
 //     respawn deadline to "now" so the canonical revive path (nn_deathmatch.js
 //     _reviveTeam / per-unit revive) fires early. It never calls reviveAtSpawn
 //     itself.
-//   • SOLO-first: gated to SOLO NN mode. MP reuses the contract in a later phase.
+//   • The replay VISUAL plays in NN mode (SOLO or MP, Phase 180e). Respawn
+//     CONTROL stays SOLO; MP respawn is the server-authoritative path
+//     (multiplayer.js mpRespawnEligible / _mpRequestRespawn).
 //
 // It also needs no camera.js change — the replay is drawn with a self-contained
 // top-down transform centred on the kill, over a backdrop.
@@ -60,6 +62,12 @@
   function _solo() {
     return (typeof game !== 'undefined' && game && game._nnMode)
         && (typeof _mpState === 'undefined' || !_mpState || !_mpState.enabled);
+  }
+  // Phase 180e — the replay VISUAL arms in NN mode (SOLO or MP). The respawn
+  // CONTROL (canRespawn/requestRespawn + the 'done' SPACE hint) stays SOLO; MP
+  // respawn is the server-authoritative path (multiplayer.js mpRespawnEligible).
+  function _nnOn() {
+    return (typeof game !== 'undefined' && game && game._nnMode);
   }
   function _isDead() {
     return typeof player !== 'undefined' && player && !player.alive;
@@ -109,7 +117,7 @@
     if (_phase === 'off') {
       // `_requested` blocks a 1-frame re-trigger flash between pressing SPACE
       // and the revive actually landing next sim tick.
-      if (!_requested && _solo() && _inRespawnWait()
+      if (!_requested && _nnOn() && _inRespawnWait()
           && (typeof player !== 'undefined') && player._killer) {
         _begin();
       }
@@ -281,6 +289,9 @@
   function _renderRespawnHint(W_, H_) {
     // 'done' phase: the existing recap / countdown UI is visible underneath;
     // add only a single pulsing redeploy prompt above the bottom hint strip.
+    // SOLO only — in MP the prompt is drawn by hud.js gated on mpRespawnEligible
+    // (server-authoritative path), so killcam must not double-prompt.
+    if (!_solo()) return;
     const pulse = 0.65 + 0.35 * Math.sin(_now() * 0.006);
     ctx.textAlign = 'center';
     ctx.globalAlpha = pulse;

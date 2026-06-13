@@ -1,11 +1,10 @@
-// ============ REPLAY BUFFER — SOLO killcam ring buffer (Phase 179) ==========
+// ============ REPLAY BUFFER — killcam ring buffer (Phase 179 / 180e MP) ======
 // Records a lightweight world snapshot every few sim ticks into a fixed-size
 // ring buffer so the killcam (js/killcam.js) can replay the last ~3 s leading
-// up to the player's death — the "不要死不瞑目 / 谁干掉了你" ask. SOLO NN-mode
-// only: in MP the local frame isn't authoritative and opponents live in
-// remotePlayers (not enemies[]), so a faithful replay would need server history
-// we don't keep. The MP killcam (later phase) will reuse this module's contract
-// fed from a different source.
+// up to the player's death — the "不要死不瞑目 / 谁干掉了你" ask. NN mode (SOLO
+// or MP). SOLO samples enemies[]; MP samples the interpolated remotePlayers /
+// remoteBots (opponents don't live in enemies[] under MP). Player + allies are
+// sampled in both. It's a local visual replay only — not authoritative.
 //
 // Behaviour-preserving: records ONLY. The single write to game state is a hidden
 // stable `__replayId` tag on units so the killcam can follow the SAME body
@@ -38,9 +37,11 @@
   let _nextId   = 1;
   let _wasAlive = false;      // edge-detect respawn → start a clean history
 
-  function _solo() {
-    return (typeof game !== 'undefined' && game && game._nnMode)
-        && (typeof _mpState === 'undefined' || !_mpState || !_mpState.enabled);
+  function _nnOn() {
+    return (typeof game !== 'undefined' && game && game._nnMode);
+  }
+  function _mp() {
+    return (typeof _mpState !== 'undefined' && _mpState && _mpState.enabled);
   }
 
   // Stable per-unit id (lazy). Hidden field — no game logic reads it.
@@ -63,7 +64,7 @@
   }
 
   function replayBufferTick() {
-    if (!_solo()) return;
+    if (!_nnOn()) return;
     if (typeof player === 'undefined' || !player) return;
     // On the dead→alive edge (respawn / pawn-swap), drop the previous life's
     // frames so the NEXT killcam never shows a stale pre-respawn replay.
@@ -79,13 +80,23 @@
     const units = [];
     _pushUnit(units, player, 0, true);
 
-    // Gather allies (team 0) + enemies (team 1), keep the nearest MAX_UNITS so a
-    // big arena doesn't blow the snapshot up.
+    // Gather allies (team 0) + opponents (team 1), keep the nearest MAX_UNITS so
+    // a big arena doesn't blow the snapshot up. SOLO opponents live in enemies[];
+    // MP opponents are the interpolated remotePlayers / remoteBots (NOT enemies[]).
     const near = [];
-    const _al = (typeof allies  !== 'undefined' && allies)  ? allies  : [];
-    const _en = (typeof enemies !== 'undefined' && enemies) ? enemies : [];
+    const _al = (typeof allies !== 'undefined' && allies) ? allies : [];
     for (const a of _al) { if (!a) continue; const dx = a.x - px, dy = a.y - py; near.push({ u: a, team: 0, d: dx * dx + dy * dy }); }
-    for (const e of _en) { if (!e) continue; const dx = e.x - px, dy = e.y - py; near.push({ u: e, team: 1, d: dx * dx + dy * dy }); }
+    if (_mp()) {
+      const _addFoe = (u) => {
+        if (!u || typeof u.x !== 'number' || typeof u.y !== 'number') return;
+        const dx = u.x - px, dy = u.y - py; near.push({ u, team: 1, d: dx * dx + dy * dy });
+      };
+      if (_mpState.remotePlayers && _mpState.remotePlayers.forEach) _mpState.remotePlayers.forEach(_addFoe);
+      if (_mpState.remoteBots && _mpState.remoteBots.forEach) _mpState.remoteBots.forEach(_addFoe);
+    } else {
+      const _en = (typeof enemies !== 'undefined' && enemies) ? enemies : [];
+      for (const e of _en) { if (!e) continue; const dx = e.x - px, dy = e.y - py; near.push({ u: e, team: 1, d: dx * dx + dy * dy }); }
+    }
     near.sort((m, n) => m.d - n.d);
     for (let i = 0; i < near.length && units.length < MAX_UNITS; i++) {
       _pushUnit(units, near[i].u, near[i].team, false);
