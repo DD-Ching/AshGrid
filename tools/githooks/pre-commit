@@ -19,6 +19,7 @@ node tools/check_sim_parity.js || fail=1
 node tools/test_reconcile.js   || fail=1
 node tools/test_director.js    || fail=1
 node tools/test_killcam.js     || fail=1
+node tools/test_mp_respawn.js  || fail=1
 
 if [ "$fail" -ne 0 ]; then
   echo ""
