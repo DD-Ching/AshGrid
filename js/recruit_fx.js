@@ -19,9 +19,15 @@ let _rfxBanner = null;            // { name, squad, ttl, maxTtl }
 // longer than the killstreak banner; it's a milestone.
 const _RFX_TTL = 118;
 
-function triggerRecruitFx(name) {
-  const squad = (typeof allies !== 'undefined' && Array.isArray(allies))
-    ? allies.filter(a => a && a.alive).length : 0;
+// squadCount: optional explicit count. SOLO recruits push into allies[] so we
+// derive it from there; MP recruits live in _mpState.remoteBots (never allies[]),
+// so the multiplayer.js recruitOk handler passes the live team-0 bot count —
+// otherwise the "SQUAD ×N" payoff number always read ×0 online.
+function triggerRecruitFx(name, squadCount) {
+  const squad = (typeof squadCount === 'number')
+    ? squadCount
+    : ((typeof allies !== 'undefined' && Array.isArray(allies))
+        ? allies.filter(a => a && a.alive).length : 0);
   _rfxBanner = { name: name || 'UNIT', squad, ttl: _RFX_TTL, maxTtl: _RFX_TTL };
   // Rising arpeggio — a positive "joined up" sting, distinct from the kill beep.
   if (typeof playRadioBeep === 'function') {

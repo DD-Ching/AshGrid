@@ -367,7 +367,13 @@ function _mpHandleMessage(data) {
         rb.callsign = data.callsign;
         rb._arenaRecruit = true;
       }
-      if (typeof triggerRecruitFx === 'function') triggerRecruitFx(data.callsign || 'UNIT');
+      // MP squad size lives in remoteBots (team 0), not the SOLO allies[].
+      // Pass it explicitly so the "SQUAD ×N" payoff banner isn't stuck at ×0.
+      let _mpSquad = 0;
+      if (_mpState.remoteBots) {
+        for (const b of _mpState.remoteBots.values()) if (b.alive && b.team === 0) _mpSquad++;
+      }
+      if (typeof triggerRecruitFx === 'function') triggerRecruitFx(data.callsign || 'UNIT', _mpSquad);
       if (typeof playRadioStatic === 'function') playRadioStatic(0.55, 0.45);
       // Toast only for the recruiter (the player who pressed G).
       if (typeof showSwapToast === 'function' && data.recruiter === _mpState.myId) {
