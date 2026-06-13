@@ -43,7 +43,6 @@ const MP_PLAYER_SPEED   = 5.6;       // server px-per-tick (for reconciliation r
 const MP_INPUT_HZ       = 30;        // input send rate (matches tick rate)
 const MP_INPUT_PERIOD   = 1000 / MP_INPUT_HZ;
 const MP_REMOTE_LERP    = 0.35;      // legacy lerp rate (only used pre-buffer fill)
-const MP_BULLET_LERP    = 0.5;       // remote bullet smoothing rate (faster — bullets move fast)
 
 // Phase 39: snapshot interpolation. Industry-standard approach (Valve, id Software,
 // wings.io). Render remote entities `MP_INTERP_DELAY` ms in the past, finding the

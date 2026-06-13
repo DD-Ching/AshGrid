@@ -184,7 +184,7 @@ const BULLET_OFFSET     = 18;         // spawn distance from player center
 // cost of fairness for the shooter. The alternative — only counting hits
 // that land on the target's current position — punishes high-ping players
 // disproportionately. CS-style favor-the-shooter is the established norm.
-const HISTORY_TICKS     = 1 * TICK_HZ;       // 1 s of position history per player
+const HISTORY_TICKS     = TICK_HZ;           // 1 s of position history per player
 const LAG_INTERP_OFFSET = 3 * TICK_FACTOR;   // 6 ticks @ 60Hz = 100 ms — matches client interp
 const LAG_COMP_MAX      = 18 * TICK_FACTOR;  // 36 ticks @ 60Hz = 600 ms cap — beyond this
                                              //   prediction is not trustworthy.
