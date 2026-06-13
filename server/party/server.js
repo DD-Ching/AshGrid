@@ -379,6 +379,65 @@ function _spawnClearOfWalls(x, y) {
   return true;
 }
 
+// Phase 182 (MP port) — server-side anti-clump steering, mirroring the SOLO
+// js/npc_director.js npcSteerMoveDir. The trained PPO policy never learned
+// spacing and biases toward a map corner; this layers boids SEPARATION + arena
+// EDGE/CORNER repulsion onto the bot's chosen 8-dir move so online bots spread
+// out instead of all piling into the bottom-right ('全部都在地圖的右下角').
+// Pure function of (bot, chosen moveDir, its team roster); returns an adjusted
+// moveDir (0..8). When the bot is idle (moveDir 0) it only nudges if there's
+// real pressure (cornered / crowded), so open-field idle-aim is preserved.
+// EDGE_W 1.6 (vs the client's 1.25 base) because the server has no per-role
+// edgeAvoid multiplier — a single flat value sized so a bot heading straight at
+// a wall turns infield ~64px out, decisively breaking the corner pile-up.
+const _STEER = { SEP_R: 78, SEP_W: 1.35, EDGE_R: 170, EDGE_W: 1.6, MOVE_W: 1.0, IDLE_GATE: 0.45 };
+function _quantizeBotDir(dx, dy, fallback) {
+  const m = Math.hypot(dx, dy);
+  if (m < 1e-4) return fallback || 0;
+  const nx = dx / m, ny = dy / m;
+  let best = fallback || 1, bestDot = -Infinity;
+  for (let d = 1; d <= 8; d++) {
+    const v = _NN_MOVE_DIRS[d];
+    // _NN_MOVE_DIRS diagonals are un-normalized ([1,1]); normalize per-dir so
+    // a cardinal target doesn't tie-bias toward an adjacent diagonal.
+    const vm = Math.hypot(v[0], v[1]) || 1;
+    const dot = nx * (v[0] / vm) + ny * (v[1] / vm);
+    if (dot > bestDot) { bestDot = dot; best = d; }
+  }
+  return best;
+}
+export function _steerBotMoveDir(b, moveDir, friendlies) {
+  const base = _NN_MOVE_DIRS[moveDir] || [0, 0];
+  let sx = 0, sy = 0;
+  // separation — push off teammates closer than SEP_R
+  const R2 = _STEER.SEP_R * _STEER.SEP_R;
+  for (const m of friendlies) {
+    if (m === b || !m.alive) continue;
+    const ddx = b.x - m.x, ddy = b.y - m.y;
+    const d2 = ddx * ddx + ddy * ddy;
+    if (d2 > R2 || d2 < 1e-3) continue;
+    const d = Math.sqrt(d2);
+    const w = (1 - d / _STEER.SEP_R);
+    sx += (ddx / d) * w; sy += (ddy / d) * w;
+  }
+  sx *= _STEER.SEP_W; sy *= _STEER.SEP_W;
+  // edge / corner repulsion — bounds are [ARENA_PAD, ARENA_W-ARENA_PAD] etc.
+  const ER = _STEER.EDGE_R, ew = _STEER.EDGE_W;
+  const lx = b.x - ARENA_PAD, rx = (ARENA_W - ARENA_PAD) - b.x;
+  const ty = b.y - ARENA_PAD, by = (ARENA_H - ARENA_PAD) - b.y;
+  if (lx < ER) sx += (1 - lx / ER) * ew;
+  if (rx < ER) sx -= (1 - rx / ER) * ew;
+  if (ty < ER) sy += (1 - ty / ER) * ew;
+  if (by < ER) sy -= (1 - by / ER) * ew;
+  if (moveDir === 0) {
+    // idle: only step if cornered / crowded enough to matter, so a bot holding
+    // position in the open to aim+fire isn't forced to wander.
+    if (Math.hypot(sx, sy) < _STEER.IDLE_GATE) return 0;
+    return _quantizeBotDir(sx, sy, 0);
+  }
+  return _quantizeBotDir(base[0] * _STEER.MOVE_W + sx, base[1] * _STEER.MOVE_W + sy, moveDir);
+}
+
 // Phase 43: built structures. Mirrors the subset of STRUCTURE_DEFS the
 // server actually needs to enforce — HP for damage, size for collision,
 // blocks for whether bullets/players stop on it. Other client-side fields
@@ -650,6 +709,12 @@ export default class AshGridRoom {
         moveDir = b._lastAction.moveDir;
         fire = b._lastAction.fire;
       }
+
+      // Phase 182 (MP port) — anti-clump steering on EVERY tick (not just NN-
+      // decision ticks) so the cached moveDir can't re-pile bots into a corner
+      // between decisions. Separation + edge/corner repulsion; fire bit
+      // untouched (a steered bot still shoots its target).
+      moveDir = _steerBotMoveDir(b, moveDir, friendlies);
 
       const [dx, dy] = _NN_MOVE_DIRS[moveDir] || [0, 0];
       if (dx !== 0 || dy !== 0) {

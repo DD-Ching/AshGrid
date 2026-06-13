@@ -20,15 +20,36 @@
 
   console.log('MP respawn-authority smoke test — _respawnDecision (server):');
 
-  let dec;
+  let dec, steer;
   try {
     const mod = await import('../server/party/server.js');
     dec = mod._respawnDecision;
+    steer = mod._steerBotMoveDir;
   } catch (e) {
     console.error('FAIL — could not import server module:', e && e.message);
     process.exit(1);
   }
   check(typeof dec === 'function', '_respawnDecision exported from server.js');
+
+  // Phase 182 (MP port) — server-side anti-clump steering parity with the SOLO
+  // npc_director. Arena is 1800×1800, pad 50 → play box [50,1750]². Dirs:
+  // 3=E, 7=W. (Bots clumped in the bottom-right; this is the fix.)
+  if (typeof steer === 'function') {
+    // 1) piled onto a teammate while moving East → steered off it (not East).
+    const bot = { x: 900, y: 900, alive: true };
+    const mate = { x: 910, y: 900, alive: true };   // 10px east, deep inside SEP_R 78
+    const sOut = steer(bot, 3, [bot, mate]);
+    check(sOut !== 3 && sOut !== 0, 'steer: piled-on bot moving East is pushed off the mate (got ' + sOut + ')');
+    // 2) walking into the right wall → steered back infield (not East).
+    const edgeBot = { x: 1710, y: 900, alive: true };   // rx=40 < EDGE_R 170
+    check(steer(edgeBot, 3, [edgeBot]) !== 3, 'steer: bot walking into the right wall is turned infield');
+    // 3) idle in the open with no pressure → stays idle (aim-and-fire preserved).
+    check(steer({ x: 900, y: 900, alive: true }, 0, []) === 0, 'steer: idle open-field bot stays idle (0)');
+    // 4) idle wedged in the bottom-right corner → forced to step out (non-zero).
+    check(steer({ x: 1720, y: 1720, alive: true }, 0, []) !== 0, 'steer: idle corner-wedged bot steps out (non-zero)');
+  } else {
+    check(false, '_steerBotMoveDir exported from server.js');
+  }
 
   const AFK = 600;   // 3 s @ 200 Hz (AFK_RESPAWN_MAX_TICKS)
 
