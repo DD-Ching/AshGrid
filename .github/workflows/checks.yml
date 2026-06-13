@@ -7,6 +7,7 @@
 #   3. node tools/check_sim_parity.js           (client↔server weapon / obs drift)
 #   4. node tools/test_reconcile.js             (MP self-reconcile pipeline contract)
 #   5. node tools/test_director.js              (adaptive-director one-way DDA invariant)
+#   6. node tools/test_killcam.js               (death replay buffer + press-SPACE respawn)
 #
 # No npm install needed: the parity test's server imports are local-only
 # (./constants.js), and the tools have zero dependencies (the reconcile test
@@ -41,3 +42,6 @@ jobs:
 
       - name: Adaptive director (one-way DDA) smoke test
         run: node tools/test_director.js
+
+      - name: Killcam (death replay + respawn) smoke test
+        run: node tools/test_killcam.js
