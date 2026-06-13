@@ -933,7 +933,7 @@ export default class AshGridRoom {
       if (dd > reach) return;                     // out of touch range — reject
       if (bot.hp >= (bot.maxHp || HP_MAX) * 0.5) return;   // not wounded enough
       const recruiterSeed = num(data.seed) || 0;
-      if (recruiterSeed - 0 <= ARENA_SEED_GAP) return;   // SEED gate — bots are seed 0
+      if (recruiterSeed <= ARENA_SEED_GAP) return;   // SEED gate — bots are seed 0
       // Squad cap — parity with SOLO (arena_recruitment.js). Count this
       // player's live recruits and reject at the ceiling, so one player can't
       // permanently flip the whole shared bot pool and drain the arena for

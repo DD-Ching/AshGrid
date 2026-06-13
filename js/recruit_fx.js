@@ -26,8 +26,7 @@ const _RFX_TTL = 118;
 function triggerRecruitFx(name, squadCount) {
   const squad = (typeof squadCount === 'number')
     ? squadCount
-    : ((typeof allies !== 'undefined' && Array.isArray(allies))
-        ? allies.filter(a => a && a.alive).length : 0);
+    : (Array.isArray(allies) ? allies.filter(a => a && a.alive).length : 0);
   _rfxBanner = { name: name || 'UNIT', squad, ttl: _RFX_TTL, maxTtl: _RFX_TTL };
   // Rising arpeggio — a positive "joined up" sting, distinct from the kill beep.
   if (typeof playRadioBeep === 'function') {

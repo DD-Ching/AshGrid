@@ -35,7 +35,7 @@ function _arenaTryRecruitMP() {
   // own seed above the gap. Bail early; this is also why the HUD 'G RECRUIT'
   // prompt only lights up once player._seed > ARENA_SEED_GAP.
   const mySeed = player._seed || 0;
-  if (mySeed - 0 <= ARENA_SEED_GAP) return false;
+  if (mySeed <= ARENA_SEED_GAP) return false;
 
   // Squad cap — parity with the SOLO ARENA_SQUAD_CAP (=5) ceiling
   // (arena_recruitment.js:172). Without it, MP recruiting is unbounded and one
