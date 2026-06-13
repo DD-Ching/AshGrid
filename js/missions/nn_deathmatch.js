@@ -562,10 +562,8 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       // Clamp respawn positions to the playable interior of the NN_ARENA box
       // so a unit never spawns OUTSIDE the red border, regardless of jitter.
       const SP_PAD = 30;
-      const _spX = (cx) => Math.max(NN_ARENA.x0 + SP_PAD,
-                                     Math.min(NN_ARENA.x0 + NN_ARENA.w - SP_PAD, cx));
-      const _spY = (cy) => Math.max(NN_ARENA.y0 + SP_PAD,
-                                     Math.min(NN_ARENA.y0 + NN_ARENA.h - SP_PAD, cy));
+      const _spX = (cx) => clampToArenaX(cx, SP_PAD, SP_PAD);
+      const _spY = (cy) => clampToArenaY(cy, SP_PAD, SP_PAD);
       // Process respawns
       // Cycle helpers — next spawn point in placement order. game._nnSpawnBlueIdx
       // bumps every time someone respawns, so a 4-marker map sends respawn 1 to

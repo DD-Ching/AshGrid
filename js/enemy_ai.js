@@ -346,8 +346,8 @@ function nnApplyAction(unit, action, friendlies, enemies) {
   }
 
   // Clamp to NN arena play area, then a final wall push as a safety net
-  unit.x = Math.max(NN_ARENA.x0 + 20, Math.min(NN_ARENA.x0 + NN_ARENA.w - 20, unit.x));
-  unit.y = Math.max(NN_ARENA.y0 + 20, Math.min(NN_ARENA.y0 + NN_ARENA.h - 20, unit.y));
+  unit.x = clampToArenaX(unit.x, 20, 20);
+  unit.y = clampToArenaY(unit.y, 20, 20);
   pushOutOfBuildings(unit, r);
 
   // Decrement fire cooldown

@@ -603,8 +603,8 @@ function renderHUDOverlays() {
     // Project mouse to world, project back to screen for ghost rect
     const wp = screenToWorld(mouse.x, mouse.y);
     const SIZE = 60;
-    const cx = Math.max(NN_ARENA.x0, Math.min(NN_ARENA.x0 + NN_ARENA.w - SIZE, wp.x - SIZE / 2));
-    const cy = Math.max(NN_ARENA.y0, Math.min(NN_ARENA.y0 + NN_ARENA.h - SIZE, wp.y - SIZE / 2));
+    const cx = clampToArenaX(wp.x - SIZE / 2, 0, SIZE);
+    const cy = clampToArenaY(wp.y - SIZE / 2, 0, SIZE);
     // Inverse of screenToWorld for the rect corners
     const dx0 = cx - camera.x, dy0 = cy - camera.y;
     const dx1 = (cx + SIZE) - camera.x, dy1 = (cy + SIZE) - camera.y;

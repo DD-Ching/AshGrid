@@ -26,8 +26,8 @@ function placeBuildBlock(screenX, screenY) {
   const wp = screenToWorld(screenX, screenY);
   const SIZE = 60, PAD = 30;
   // clamp to the arena interior so a cover can't be dropped in the wall margin
-  const cx = Math.max(NN_ARENA.x0 + PAD, Math.min(NN_ARENA.x0 + NN_ARENA.w - SIZE - PAD, wp.x - SIZE / 2));
-  const cy = Math.max(NN_ARENA.y0 + PAD, Math.min(NN_ARENA.y0 + NN_ARENA.h - SIZE - PAD, wp.y - SIZE / 2));
+  const cx = clampToArenaX(wp.x - SIZE / 2, PAD, SIZE + PAD);
+  const cy = clampToArenaY(wp.y - SIZE / 2, PAD, SIZE + PAD);
   addLowCover(cx, cy, SIZE, SIZE, COLORS.creamDark, { kind: 'crate' });
   game._buildPhase.left--;
   if (typeof playSfx === 'function') playSfx('reload', { vol: 0.5 });
