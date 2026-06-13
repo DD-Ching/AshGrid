@@ -95,9 +95,22 @@ function renderHUD() {
   // Respawn countdown overlay — when player is dead in NN mode and waiting
   // for the 5-second respawn timer to elapse. Big "重生中 N" text + ring.
   if (game._nnMode && !player.alive && player._respawnAt != null) {
-    const ticksLeft = Math.max(0, player._respawnAt - game.time);
-    const sLeft = Math.ceil(ticksLeft / 60);
-    const fracLeft = ticksLeft / (5 * 60);
+    // Phase 179 — prefer the team-wipe wall-clock deadline so this big-number
+    // countdown shows REAL seconds (matching the recap), instead of tick-based
+    // game.time which drifts at the 84-tick sim rate. Falls back to the tick
+    // math for any path that didn't stamp respawnAtMs.
+    let sLeft, fracLeft;
+    const _bw = game._teamWipe && game._teamWipe.blue;
+    if (_bw && _bw.respawnAtMs) {
+      const msLeft = Math.max(0, _bw.respawnAtMs - Date.now());
+      const total = Math.max(1, _bw.respawnAtMs - (_bw.wipedAtMs || (_bw.respawnAtMs - 15000)));
+      sLeft = Math.ceil(msLeft / 1000);
+      fracLeft = msLeft / total;
+    } else {
+      const ticksLeft = Math.max(0, player._respawnAt - game.time);
+      sLeft = Math.ceil(ticksLeft / 60);
+      fracLeft = ticksLeft / (5 * 60);
+    }
     const cx = W() / 2, cy = H() / 2;
     // Dim backdrop
     ctx.fillStyle = 'rgba(20, 18, 24, 0.55)';

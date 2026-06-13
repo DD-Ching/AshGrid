@@ -106,6 +106,15 @@
     if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
       game._teamWipe.blue.wipedSince = _now();
       game._teamWipe.blue.respawnAt  = _now() + ticks;
+      // Phase 179 — ALSO stamp wall-clock deadlines so the countdown display +
+      // the revive condition agree in real seconds. The OTHER wipe trigger
+      // (_checkTeamWipe, Phase 92) already does this; this path (player dies
+      // last → wipe) previously left them unset, so display + revive fell back
+      // to tick-based game.time, which drifts vs real time at the 84-tick sim
+      // rate ("看廣告/復活的時間盤算感覺怪怪的"). Same unit as Phase 92
+      // (1000/60 ms per game-second tick) — global timing unchanged.
+      game._teamWipe.blue.wipedAtMs   = Date.now();
+      game._teamWipe.blue.respawnAtMs = Date.now() + ticks * (1000 / 60);
     }
     return 'wiped';
   }
