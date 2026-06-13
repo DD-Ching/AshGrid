@@ -41,14 +41,10 @@ function _arenaTryRecruitMP() {
   // (arena_recruitment.js:172). Without it, MP recruiting is unbounded and one
   // player can permanently flip the whole shared server bot pool, draining the
   // endless arena for everyone. The server re-enforces this authoritatively
-  // (per-recruiter count); this is the instant-feel client gate — count our
-  // live recruited bots (team 0). In the common solo-vs-bots room all team-0
-  // bots are ours; a busy PvP room is bounded by the server cap regardless.
-  if (typeof ARENA_SQUAD_CAP === 'number') {
-    let _squad = 0;
-    for (const rb of _mpState.remoteBots.values()) if (rb.alive && rb.team === 0) _squad++;
-    if (_squad >= ARENA_SQUAD_CAP) return false;
-  }
+  // (per-recruiter count); this is the instant-feel client gate. In the common
+  // solo-vs-bots room all team-0 bots are ours; a busy PvP room is bounded by
+  // the server cap regardless.
+  if (_mpAliveSquadCount() >= ARENA_SQUAD_CAP) return false;
 
   const myR = player.radius || 13;
   let best = null, bestD = Infinity;

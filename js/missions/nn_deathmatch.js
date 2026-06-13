@@ -490,17 +490,12 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         if (e._koStunned && e.alive
             && (game.time - (e._koStunnedAt || 0)) > _STUN_TICKS) {
           // C4 chokepoint: route the timeout-death through killUnit() so it
-          // earns the SAME credit as a normal kill. The old inline
-          // `game.score += 100; game.killCount++` skipped _lbBumpKill(), so a
-          // stun-timeout kill scored but never reached the leaderboard — the
-          // exact copy-paste divergence kill.js exists to kill. It also fires
-          // any onUnitDeath hooks uniformly.
+          // earns the SAME credit as a normal kill (score + killCount +
+          // _lbBumpKill + onUnitDeath hooks). The old inline `game.score += 100;
+          // game.killCount++` skipped _lbBumpKill(), so a stun-timeout kill
+          // scored but never reached the leaderboard.
           e._koStunned = false;
-          if (typeof killUnit === 'function') {
-            killUnit(e, { source: 'stun-timeout' });
-          } else {
-            e.alive = false; game.score += 100; game.killCount++;
-          }
+          killUnit(e, { source: 'stun-timeout' });
           if (typeof createExplosion === 'function') createExplosion(e.x, e.y, 'small');
         }
         if (e.alive) continue;

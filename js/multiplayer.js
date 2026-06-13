@@ -165,6 +165,15 @@ let _mpLastPingAt = 0;
 const _mpPings = [];
 
 function _mpIsActive() { return !!_mpState.enabled; }
+// Count our live recruited squad (alive team-0 server bots). MP analog of SOLO
+// _arenaAliveSquadCount(); single definition of the "what counts as my squad"
+// predicate, used by the recruit cap (arena_recruit_mp.js) and the recruit FX
+// count (recruitOk handler below).
+function _mpAliveSquadCount() {
+  let n = 0;
+  if (_mpState.remoteBots) for (const b of _mpState.remoteBots.values()) if (b.alive && b.team === 0) n++;
+  return n;
+}
 function _mpPeerCount() {
   if (!_mpState.enabled) return 0;
   // remotePlayers includes self; count is just its size.
@@ -369,11 +378,7 @@ function _mpHandleMessage(data) {
       }
       // MP squad size lives in remoteBots (team 0), not the SOLO allies[].
       // Pass it explicitly so the "SQUAD ×N" payoff banner isn't stuck at ×0.
-      let _mpSquad = 0;
-      if (_mpState.remoteBots) {
-        for (const b of _mpState.remoteBots.values()) if (b.alive && b.team === 0) _mpSquad++;
-      }
-      if (typeof triggerRecruitFx === 'function') triggerRecruitFx(data.callsign || 'UNIT', _mpSquad);
+      if (typeof triggerRecruitFx === 'function') triggerRecruitFx(data.callsign || 'UNIT', _mpAliveSquadCount());
       if (typeof playRadioStatic === 'function') playRadioStatic(0.55, 0.45);
       // Toast only for the recruiter (the player who pressed G).
       if (typeof showSwapToast === 'function' && data.recruiter === _mpState.myId) {

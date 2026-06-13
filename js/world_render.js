@@ -651,7 +651,7 @@ function renderWorld() {
           const _pR = (player.radius || 13) + (rb.radius || 14) + ARENA_TOUCH_BUFFER;
           const _ready = _ed <= _pR
             && rb.hp < 100 * ARENA_HP_GATE
-            && ((player._seed || 0) - 0) > ARENA_SEED_GAP;
+            && (player._seed || 0) > ARENA_SEED_GAP;   // bots are seed 0
           if (_ready) {
             const _pulse = 0.6 + 0.4 * Math.sin(game.time * 0.2);
             ctx.fillStyle = `rgba(230, 51, 41, ${_pulse})`;
