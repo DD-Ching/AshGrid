@@ -9,6 +9,7 @@
 #   5. node tools/test_director.js              (adaptive-director one-way DDA invariant)
 #   6. node tools/test_killcam.js               (death replay buffer + press-SPACE respawn)
 #   7. node tools/test_mp_respawn.js            (MP server respawn-authority rule)
+#   8. node tools/test_mp_ad_revive.js          (MP ad-revive is server-authoritative, no local revive)
 #
 # No npm install needed: the parity test's server imports are local-only
 # (./constants.js), and the tools have zero dependencies (the reconcile test
@@ -49,3 +50,6 @@ jobs:
 
       - name: MP respawn-authority smoke test
         run: node tools/test_mp_respawn.js
+
+      - name: MP ad-revive authority smoke test
+        run: node tools/test_mp_ad_revive.js

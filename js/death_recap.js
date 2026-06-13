@@ -41,10 +41,36 @@ function _isBlueTeamWiped() {
 }
 
 function _adRevivePlayer() {
-  if (_deathRecap.adReviveUsed) return;
+  if (_deathRecap.adReviveUsed) return; // in-flight guard (reset per death in triggerDeathRecap, on fail below)
   if (!_isBlueTeamWiped()) return;     // gate: team-wipe only
   _deathRecap.adReviveUsed = true;
+  const _isMP = (typeof _mpIsActive === 'function' && _mpIsActive());
   const doRevive = () => {
+    // Phase 60: bundle the 30-minute fast-respawn buff with the revive.
+    // One ad watch = both benefits → higher perceived ad value, more
+    // willing watches. Apply it FIRST so an MP requestRespawn carries
+    // buffActive=true (the server recomputes respawnAt 15s→5s, Phase 180d).
+    if (typeof applyRespawnBuff === 'function') applyRespawnBuff();
+
+    if (_isMP) {
+      // Phase 181 — MP is SERVER-AUTHORITATIVE. NEVER locally revive here:
+      // a local alive=true while the server still has us dead makes reconcile
+      // drag us back to the death spot ('前後左右移動會被拉回去') and
+      // _trySynthKill re-kills us after the post-respawn guard ('馬上死掉').
+      // Instead ASK the authority — the server shortens the respawn with the
+      // buff we just applied and revives us; the snapshot's alive flip then
+      // drives _mpRespawnLocalPlayer (we 'return to the room' at the server
+      // spawn with full shield). We do NOT dismiss the recap — the heaven
+      // countdown stays up until the server brings us back.
+      if (typeof _mpRequestRespawn === 'function') _mpRequestRespawn();
+      if (typeof showSwapToast === 'function') {
+        showSwapToast(_r('▶ 廣告收看完成 · 加速復活中…',
+                         '▶ AD WATCHED · FAST RESPAWN INCOMING…'));
+      }
+      return;
+    }
+
+    // SOLO — no authority, local revive is correct.
     // Phase 10D: ad path revives the OPERATOR ALONE — squad stays dead,
     // player has to rebuild via recruit. Fall back to whole-team revive
     // only if the player-only helper doesn't exist (defensive — older
@@ -62,10 +88,6 @@ function _adRevivePlayer() {
         PlayerLifecycle.reviveAtSpawn();
       }
     }
-    // Phase 60: bundle the 30-minute fast-respawn buff with the revive.
-    // One ad watch = both benefits → higher perceived ad value, more
-    // willing watches. Same rewarded ad, double payoff.
-    if (typeof applyRespawnBuff === 'function') applyRespawnBuff();
     dismissDeathRecap();
     if (typeof showSwapToast === 'function') {
       showSwapToast(_r('▶ 廣告收看完成 · 復活 + 30 分鐘加成',
@@ -141,6 +163,15 @@ function triggerDeathRecap() {
   if (!game._nnMode) return;
   _deathRecap.active = true;
   _deathRecap.adReviveBtnRect = null;
+  // Phase 181 — re-arm the watch-ad button on EVERY death. adReviveUsed used
+  // to latch true on the first watch and never reset ('one revive ad per
+  // match'), so in a long MP match the green button vanished forever after a
+  // single watch ('我現在沒有辦法增加看廣告綠色按鈕'). It now gates per-death:
+  // each death re-offers the ad; the !isRespawnBuffed() check still hides it
+  // while the 30-min buff is already running (no point re-pitching the same
+  // shorten). The flag stays as an in-flight guard against double-dispatch
+  // within one death (set on click, cleared on ad failure).
+  _deathRecap.adReviveUsed = false;
   _deathRecap.startTick = game.time;
   const k = player._killer;
   _deathRecap.killer = k;
@@ -182,6 +213,26 @@ function renderDeathRecap() {
   // without the player guessing where everyone is. User: '不應該直接擋住
   // 介面,不然的話我在切換它自動切換人員的時候會不會直接擋住,沒有辦法玩'.
   const W_ = W(), H_ = H();
+
+  // Phase 181 — MP 'heaven' backdrop. When you die in MP you LEAVE the room:
+  // cover the live arena with a clean opaque field so you no longer spectate
+  // remote bots wandering past your corpse ('一堆不屬於我的...看起來像殘影
+  // 一樣,幽靈的東西'). SOLO keeps the world visible (pawn-swap 1-4 needs to
+  // see live allies to retarget); MP has no pawn-swap, so the full cover is
+  // correct AND matches the user's '到一個世界,像是天堂一樣' waiting world.
+  // Drawn at full opacity UNDER the strips / countdown / ad button below.
+  const _mpHeaven = (typeof _mpIsActive === 'function' && _mpIsActive());
+  if (_mpHeaven) {
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(6, 8, 14, 0.985)';
+    ctx.fillRect(0, 0, W_, H_);
+    // faint horizon glow so it reads as a calm 'limbo', not a crash screen
+    ctx.fillStyle = 'rgba(40, 60, 110, 0.10)';
+    ctx.fillRect(0, H_ * 0.42, W_, H_ * 0.16);
+    ctx.restore();
+  }
+
   ctx.save();
   ctx.globalAlpha = fade;
 
