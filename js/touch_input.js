@@ -179,22 +179,7 @@ if (touchInput.enabled) {
       }
       // 4c) Build-phase ad-extend button
       if (_hitRect(game._buildPhaseAdRect, _tx, _ty)) {
-        if (game._buildPhase && !game._buildPhase._adExtended) {
-          game._buildPhase._adExtended = true;
-          requestRewardedAd('build_phase_extend', (ok) => {
-            // null-guard: Phase 161's build-phase auto-close timer can null
-            // game._buildPhase while this ad is on screen, so the dismiss path
-            // must re-check it too (the success branch below already does).
-            if (!ok) { if (game._buildPhase) game._buildPhase._adExtended = false; return; }
-            if (game._buildPhase) {
-              game._buildPhase.left += 2;
-              showSwapToast(T(`+2 掩体 · 时间延长 5s`, `+2 covers · +5s timer`));
-            }
-            if (mission && typeof mission._extendBreather === 'function') {
-              mission._extendBreather(420);   // +5 s at 84 ticks/s (was 300 = ~3.6 s)
-            }
-          });
-        }
+        if (typeof extendBuildPhaseViaAd === 'function') extendBuildPhaseViaAd();
         continue;
       }
       // 5a) BUILD PHASE: between-wave cover placement takes precedence

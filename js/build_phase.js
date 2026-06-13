@@ -13,12 +13,13 @@
 // game._buildPhase shape (read by hud.js / touch_input.js / index.html):
 //   { active:bool, left:int, _adExtended:bool, _skipUsed:bool, endsAt:tick }
 //
-// Classic-script. Declares one global:
+// Classic-script. Declares two globals:
 //   placeBuildBlock(screenX, screenY)   — place one free cover, decrement left.
+//   extendBuildPhaseViaAd()             — rewarded-ad "+2 covers · +5s" extend.
 //
 // Deps (all globals, resolved at call time): screenToWorld (camera.js),
 // addLowCover (world_gen.js), NN_ARENA (maps.js), COLORS, playSfx,
-// showSwapToast, T.
+// showSwapToast, T, requestRewardedAd (ad_dispatch.js), mission.
 
 function placeBuildBlock(screenX, screenY) {
   if (!game._buildPhase || game._buildPhase.left <= 0) return;
@@ -34,4 +35,29 @@ function placeBuildBlock(screenX, screenY) {
     showSwapToast(T('放置掩體 · 剩餘 ' + game._buildPhase.left,
                     'COVER PLACED · ' + game._buildPhase.left + ' left'));
   }
+}
+
+// Rewarded-ad "+2 covers · +5s" extend, fired by the build-phase ad button.
+// Single owner of this block — the mouse (index.html) and touch (touch_input.js)
+// handlers both inlined an identical copy, so the Phase 162 300→420-tick fix had
+// to land twice. Folds in the `requestRewardedAd` existence guard the touch
+// caller used to omit (it would have thrown if the ad dispatcher were absent;
+// the mouse caller already guarded, so this is behaviour-preserving there).
+function extendBuildPhaseViaAd() {
+  if (!game._buildPhase || game._buildPhase._adExtended) return;
+  if (typeof requestRewardedAd !== 'function') return;
+  game._buildPhase._adExtended = true;
+  requestRewardedAd('build_phase_extend', (ok) => {
+    // null-guard: the build-phase auto-close timer can null game._buildPhase
+    // while this ad is on screen, so the dismiss path must re-check it too
+    // (the success branch below already does).
+    if (!ok) { if (game._buildPhase) game._buildPhase._adExtended = false; return; }
+    if (game._buildPhase) {
+      game._buildPhase.left += 2;
+      showSwapToast(T(`+2 掩体 · 时间延长 5s`, `+2 covers · +5s timer`));
+    }
+    if (mission && typeof mission._extendBreather === 'function') {
+      mission._extendBreather(420);   // +5 s at 84 ticks/s
+    }
+  });
 }
