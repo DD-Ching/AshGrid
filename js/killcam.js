@@ -291,6 +291,10 @@
 
   // single entry from the FX registry — runs every rendered frame
   function _fxDraw() {
+    // Phase 180a fix — stay fully out of the way while paused (pause menu / ad
+    // overlay): don't arm, advance, or paint, so the killcam never flashes
+    // over/under the pause overlay. The playback clock resumes on unpause.
+    if (typeof game !== 'undefined' && game._paused) return;
     _update();
     if (_phase === 'off') return;
     _render();

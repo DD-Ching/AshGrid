@@ -105,6 +105,13 @@
     player._lastRespawnAt = _gt;
     player._respawnAt = null;
     player._killedAtTime = 0;
+    // Phase 180a fix — clear per-death attribution so a fresh life never shows
+    // the PREVIOUS life's killer in the killcam / recap, and the recent-hits
+    // breakdown doesn't mix lives (killcam arms on player._killer; death_recap
+    // reads _recentHits).
+    player._killer = null;
+    player._killerWeapon = '';
+    player._recentHits = [];
     // Phase 136 — route through MpReconcile single-owner. Both windows
     // (soft + forced) clear on a fresh body. Caller (pawn_swap) can
     // re-set IF this revive is part of a swap (line 213 in pawn_swap.js).

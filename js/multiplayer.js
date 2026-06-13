@@ -1356,13 +1356,16 @@ function _mpRequestRespawn() {
 function mpRespawnTick() {
   if (!_mpState.enabled || (typeof game !== 'undefined' && game._paused)) return;
   if (typeof player === 'undefined' || !player || player.alive || !mpRespawnEligible()) {
-    _mpState._eligibleSince = 0;
+    _mpState._eligibleSinceTick = 0;
     return;
   }
-  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-  if (!_mpState._eligibleSince) _mpState._eligibleSince = now;
-  // Anti-soft-lock: auto-return if still dead 12 s after becoming eligible.
-  if (now - _mpState._eligibleSince > 12000) _mpRequestRespawn();
+  // Use game.time (sim ticks) for the grace, NOT wall-clock: game.time freezes
+  // while paused (ad / pause menu), so a long ad can't elapse the grace and
+  // auto-respawn the instant it closes — the player keeps the press-SPACE
+  // choice. ~12 s in the self-consistent 60-tick-second = 720 ticks.
+  const t = (typeof game !== 'undefined' && game.time != null) ? game.time : 0;
+  if (!_mpState._eligibleSinceTick) _mpState._eligibleSinceTick = t;
+  if (t - _mpState._eligibleSinceTick > 720) _mpRequestRespawn();
 }
 
 // Respawn handler — when server says we respawned, the snapshot will

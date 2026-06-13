@@ -101,7 +101,11 @@ function renderHUD() {
     // math for any path that didn't stamp respawnAtMs.
     let sLeft, fracLeft;
     const _bw = game._teamWipe && game._teamWipe.blue;
-    if (_bw && _bw.respawnAtMs) {
+    // Phase 180a fix — only trust the wall-clock deadline while the wipe is
+    // ACTIVE. _reviveTeam / _revivePlayerOnly / the MP clear reset wipedSince
+    // but NOT respawnAtMs, so a stale past respawnAtMs from an earlier wipe
+    // would otherwise freeze a later individual-death countdown at 0.
+    if (_bw && _bw.wipedSince != null && _bw.respawnAtMs) {
       const msLeft = Math.max(0, _bw.respawnAtMs - Date.now());
       const total = Math.max(1, _bw.respawnAtMs - (_bw.wipedAtMs || (_bw.respawnAtMs - 15000)));
       sLeft = Math.ceil(msLeft / 1000);

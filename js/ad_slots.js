@@ -52,7 +52,11 @@ function _updateRespawnAdSlot() {
     && game._teamWipe.blue
     && game._teamWipe.blue.wipedSince != null;
   const isMobile = (typeof touchInput !== 'undefined') && touchInput.enabled;
-  slot.style.display = (teamWiped && !isMobile) ? 'block' : 'none';
+  // Phase 180a fix — hold the ad billboard back while the killcam replay is
+  // covering the screen, so it appears AFTER the replay (death → killcam → ad)
+  // instead of punching a DOM iframe through the replay (廣告牆擋住回放).
+  const killcamUp = (typeof killcamBlocking === 'function') && killcamBlocking();
+  slot.style.display = (teamWiped && !isMobile && !killcamUp) ? 'block' : 'none';
   // Phase 102 (6/x) — gate the secondary 970×250 billboard on viewport
   // height. A portal-embed iframe is typically 1280×720; the full stack
   // (336×280 + 970×250 + labels + gaps ≈ 572 px) plus top/bottom strips
@@ -62,7 +66,7 @@ function _updateRespawnAdSlot() {
   // DOM-anchored button (death_recap.js) can land cleanly below.
   const secondary = document.getElementById('respawnAdSecondary');
   if (secondary) {
-    secondary.style.display = (window.innerHeight >= 850) ? 'block' : 'none';
+    secondary.style.display = (!killcamUp && window.innerHeight >= 850) ? 'block' : 'none';
   }
   // Phase 103 — flanking 336×280 slots beside the center rect. Gated on
   // viewport ≥ 1720 px wide (each flank lives at center ± [515..851] px,
@@ -71,7 +75,7 @@ function _updateRespawnAdSlot() {
   if (!_respawnAdLeftFlankEl)  _respawnAdLeftFlankEl  = document.getElementById('respawnAdLeftFlank');
   if (!_respawnAdRightFlankEl) _respawnAdRightFlankEl = document.getElementById('respawnAdRightFlank');
   const wideEnough = window.innerWidth >= 1720;
-  const flankWant = (teamWiped && !isMobile && wideEnough) ? 'block' : 'none';
+  const flankWant = (teamWiped && !isMobile && wideEnough && !killcamUp) ? 'block' : 'none';
   if (_respawnAdLeftFlankEl  && _respawnAdLeftFlankEl.style.display  !== flankWant) _respawnAdLeftFlankEl.style.display  = flankWant;
   if (_respawnAdRightFlankEl && _respawnAdRightFlankEl.style.display !== flankWant) _respawnAdRightFlankEl.style.display = flankWant;
 }
