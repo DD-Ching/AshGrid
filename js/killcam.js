@@ -306,7 +306,12 @@
     const W_ = W(), H_ = H();
     ctx.save();
     if (_phase === 'playing') {
-      ctx.fillStyle = 'rgba(8, 6, 10, 0.84)';
+      // Phase 181 — OPAQUE backdrop. The old 0.84 alpha let 16% of the live
+      // arena bleed through behind the frozen replay, so moving live units
+      // (esp. MP remote bots) showed as doubled afterimages over the replay
+      // markers ('看起來像殘影一樣,幽靈的東西'). A clean cover makes the
+      // replay read as its own 'world' and removes the ghosting entirely.
+      ctx.fillStyle = 'rgba(8, 6, 10, 0.99)';
       ctx.fillRect(0, 0, W_, H_);
       _renderReplay(W_, H_);
       _renderBanner(W_, H_);
