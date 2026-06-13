@@ -253,22 +253,32 @@ function nnApplyAction(unit, action, friendlies, enemies) {
   // Skipped during squad orders so RALLY / formations aren't broken.
   // User '不擠成一團'.
   if (moveDir !== 0 && !_squadOrderActive()) {
-    let nearestMate = null, nearestD2 = 45 * 45;
-    for (const m of friendlies) {
-      if (m === unit || !m.alive) continue;
-      const ddx = m.x - unit.x, ddy = m.y - unit.y;
-      const d2 = ddx * ddx + ddy * ddy;
-      if (d2 < nearestD2) { nearestD2 = d2; nearestMate = m; }
-    }
-    if (nearestMate) {
-      const [mdx, mdy] = NN.MOVE_DIRS[moveDir] || [0, 0];
-      const mateDx = nearestMate.x - unit.x, mateDy = nearestMate.y - unit.y;
-      // dot > 0 → moveDir points toward mate. Rotate ±45° away.
-      if (mdx * mateDx + mdy * mateDy > 0) {
-        // cross product sign tells us which side the mate is on; rotate
-        // the opposite way so we curve around them.
-        const crossSign = (mdx * mateDy - mdy * mateDx) >= 0 ? -1 : 1;
-        moveDir = ((moveDir - 1 + crossSign + 8) % 8) + 1;
+    // Phase 182 — additive NPC director: real boids SEPARATION + arena
+    // edge/corner repulsion + event flinch (js/npc_director.js). It supersedes
+    // the old single-nearest-mate 45° nudge below, which couldn't stop a blob
+    // from curving ALONG a wall into the corner. Guarded + flag-gated so
+    // removing the module (or game._npcAI=false) restores the legacy nudge.
+    if (typeof npcSteerMoveDir === 'function'
+        && (typeof game === 'undefined' || game._npcAI !== false)) {
+      moveDir = npcSteerMoveDir(unit, moveDir, friendlies);
+    } else {
+      let nearestMate = null, nearestD2 = 45 * 45;
+      for (const m of friendlies) {
+        if (m === unit || !m.alive) continue;
+        const ddx = m.x - unit.x, ddy = m.y - unit.y;
+        const d2 = ddx * ddx + ddy * ddy;
+        if (d2 < nearestD2) { nearestD2 = d2; nearestMate = m; }
+      }
+      if (nearestMate) {
+        const [mdx, mdy] = NN.MOVE_DIRS[moveDir] || [0, 0];
+        const mateDx = nearestMate.x - unit.x, mateDy = nearestMate.y - unit.y;
+        // dot > 0 → moveDir points toward mate. Rotate ±45° away.
+        if (mdx * mateDx + mdy * mateDy > 0) {
+          // cross product sign tells us which side the mate is on; rotate
+          // the opposite way so we curve around them.
+          const crossSign = (mdx * mateDy - mdy * mateDx) >= 0 ? -1 : 1;
+          moveDir = ((moveDir - 1 + crossSign + 8) % 8) + 1;
+        }
       }
     }
   }
@@ -579,6 +589,16 @@ function _nnUpdateAiMode(unit, hostile) {
       unit._patrolTarget = null;        // re-pick on first patrol tick
     }
   }
+  // Phase 182 — additive corner fail-safe: a combat bot wedged against an edge
+  // with no progress (the '卡在角落像廢鐵' look) is dropped to patrol so the
+  // anti-corner picker pulls it back infield. Guarded + flag-gated.
+  if (unit._aiMode === 'combat'
+      && typeof npcCombatFailsafe === 'function'
+      && (typeof game === 'undefined' || game._npcAI !== false)
+      && npcCombatFailsafe(unit, hostile)) {
+    unit._aiMode = 'patrol';
+    unit._patrolTarget = null;
+  }
 }
 
 // Phase 79 — arena occupancy heatmap. Each cell of a 6×6 grid tracks how
@@ -634,6 +654,15 @@ function _nnHeatTick() {
 //      bots disperse afterward, the heat decays and the area becomes
 //      pickable again. Long-term equilibrium ≈ uniform distribution.
 function _nnPickPatrolTarget(unit) {
+  // Phase 182 — additive utility-AI goal layer: score interest points by role,
+  // crowd capacity, edge-avoidance + objective (js/npc_director.js) so movement
+  // reads as purposeful + spread, not random wander. Guarded + flag-gated; on
+  // null/absent it falls through to the original random picker below unchanged.
+  if (typeof npcPickGoal === 'function'
+      && (typeof game === 'undefined' || game._npcAI !== false)) {
+    const g = npcPickGoal(unit);
+    if (g) return g;
+  }
   const pad = 120;
   const pickOne = () => {
     const r = Math.random();
@@ -817,6 +846,9 @@ async function nnTick() {
   // Phase 79 — tick the arena occupancy heatmap. Cheap (decay = ~36 mults,
   // deposit = ~6-10 unit lookups). Drives patrol picker's anti-cluster bias.
   _nnHeatTick();
+  // Phase 182 — additive NPC-director tick (event scan → flinch). Guarded +
+  // flag-gated; cheap no-op when js/npc_director.js absent or game._npcAI=false.
+  if (typeof npcDirectorTick === 'function') npcDirectorTick();
 
   // Phase 61: patrol/combat state machine. Run the patrol mover for any
   // unit that has no detection; only combat units enter the NN inference

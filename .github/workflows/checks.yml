@@ -53,3 +53,6 @@ jobs:
 
       - name: MP ad-revive authority smoke test
         run: node tools/test_mp_ad_revive.js
+
+      - name: NPC director (anti-clump / goals / fail-safe) smoke test
+        run: node tools/test_npc_director.js
