@@ -716,7 +716,16 @@ function _mpHandleKill(data) {
     if (!player.alive) return;
     // Bullet-specific telemetry — set BEFORE the state transition so the
     // death-recap UI reads the right killer / weapon next frame.
-    player._killer = { callsign: shooterName };
+    // Phase 179 — capture the killer's position for the killcam (谁干掉了你).
+    // The kill event carries the victim pos (data.x/y); the shooter's pos comes
+    // from their lerped remotePlayers entry, falling back to the victim's spot
+    // so the killcam still has a focus point if the shooter is a bot / unknown.
+    const _shooterRp = _mpState.remotePlayers.get(data.shooter);
+    player._killer = {
+      callsign: shooterName,
+      x: (_shooterRp && typeof _shooterRp.x === 'number') ? _shooterRp.x : player.x,
+      y: (_shooterRp && typeof _shooterRp.y === 'number') ? _shooterRp.y : player.y,
+    };
     player._killerWeapon = data.weapon;
     // Phase 129c — delegate to canonical handleLocalDeath (pawn_swap.js).
     // It owns: killPlayer + (try-auto-swap-first / scheduleRespawn + mark

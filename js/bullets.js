@@ -469,6 +469,11 @@ function updateBullets() {
         // Track most recent damage source for the killer-info banner
         player._lastDamageBy = b.fromUnit || null;
         player._lastDamageWeapon = b.weaponName || '';
+        // Phase 179 — recent-hits log for the death recap / killcam (was read
+        // by death_recap.js but never populated). Keep the last 6, cheap.
+        if (!player._recentHits) player._recentHits = [];
+        player._recentHits.push({ dmg: b.damage, weapon: b.weaponName || '' });
+        if (player._recentHits.length > 6) player._recentHits.shift();
         // Directional hurt indicator — angle FROM player TO bullet source.
         // Decays over ~30 frames; render in renderHUDOverlays as edge glow.
         const srcX = b.x - b.vx, srcY = b.y - b.vy;
