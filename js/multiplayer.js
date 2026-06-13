@@ -1332,7 +1332,16 @@ function mpRespawnEligible() {
   if (!_mpState.enabled) return false;
   if (typeof player === 'undefined' || !player || player.alive) return false;
   if (!player._killedAtTime) return false;
-  const t = (typeof game !== 'undefined' && game.time) ? game.time : 0;
+  // Phase 180d — prefer the wall-clock deadline (stamped on the team-wipe by
+  // handleLocalDeath) so the prompt lines up with REAL seconds AND the server's
+  // real respawn time. The tick clock drifts (84-tick sim sec ≈ 0.71 real sec),
+  // so the old `game.time` gate fired ~4 s early → SPACE was a silent no-op
+  // until the server actually allowed it. Client stamps respawnAtMs ~½RTT after
+  // the server schedules its respawnAt, i.e. slightly LATE = safe, never early.
+  const bw = (typeof game !== 'undefined' && game._teamWipe) ? game._teamWipe.blue : null;
+  if (bw && bw.respawnAtMs) return Date.now() >= bw.respawnAtMs;
+  // Fallback (no wall-clock deadline): tick-based, null-safe (tick 0 is valid).
+  const t = (typeof game !== 'undefined' && game.time != null) ? game.time : 0;
   const minDead = (typeof getRespawnSeconds === 'function') ? getRespawnSeconds() * 60 : 90;
   return (t - player._killedAtTime) >= minDead;
 }

@@ -848,6 +848,14 @@ export default class AshGridRoom {
       // dead client stopped sending 'input' (so it couldn't update it).
       if (!p.alive) {
         if (typeof data.buffActive === 'boolean') p.respawnBuffActive = data.buffActive;
+        // Phase 180d — re-derive the deadline from the ORIGINAL death tick + the
+        // (possibly just-updated) buff, so an ad watched AFTER death actually
+        // shortens the in-flight respawn instead of being ignored (respawnAt was
+        // locked at kill time with the buff state as it was then).
+        if (p.killedAtTick != null) {
+          p.respawnAt = p.killedAtTick + (p.respawnBuffActive
+            ? RESPAWN_TICKS_BUFFED : RESPAWN_TICKS_DEFAULT);
+        }
         p.lastInputTickAt = this.tickCount;
         if (_respawnDecision(p.alive, this.tickCount, p.respawnAt, 0, AFK_RESPAWN_MAX_TICKS)) {
           this._respawn(p);
@@ -1244,6 +1252,7 @@ export default class AshGridRoom {
                   }));
                   if (q.hp <= 0) {
                     q.alive = false;
+                    q.killedAtTick = this.tickCount;   // Phase 180d — buff-after-death recompute
                     q.respawnAt = this.tickCount + (q.respawnBuffActive
                       ? RESPAWN_TICKS_BUFFED
                       : RESPAWN_TICKS_DEFAULT);
@@ -1265,6 +1274,7 @@ export default class AshGridRoom {
           }));
           if (p.hp <= 0) {
             p.alive = false;
+            p.killedAtTick = this.tickCount;   // Phase 180d — buff-after-death recompute
             p.respawnAt = this.tickCount + (p.respawnBuffActive
               ? RESPAWN_TICKS_BUFFED
               : RESPAWN_TICKS_DEFAULT);
@@ -1487,6 +1497,7 @@ export default class AshGridRoom {
     }));
     if (bestVictim.hp <= 0) {
       bestVictim.alive = false;
+      bestVictim.killedAtTick = this.tickCount;   // Phase 180d — buff-after-death recompute
       bestVictim.respawnAt = this.tickCount + (bestVictim.respawnBuffActive
         ? RESPAWN_TICKS_BUFFED
         : RESPAWN_TICKS_DEFAULT);

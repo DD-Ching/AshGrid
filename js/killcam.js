@@ -225,6 +225,23 @@
       const u = f.units[i];
       if (u.p || (_killerId != null && u.id === _killerId)) _drawUnit(u);
     }
+    // Phase 180d — killer was never sampled into the buffer (distant / sniper /
+    // turret stayed outside the nearest-MAX_UNITS window) so it has no moving
+    // marker to ring. Draw a STATIC killer marker at its known final position
+    // (the kill-line endpoint) so '谁干掉了你' — ring + name — is always shown.
+    if (_killerId == null) {
+      const ksx = _sx(_kx), ksy = _sy(_ky);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#E0392A';
+      ctx.beginPath(); ctx.arc(ksx, ksy, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#FF5A3C';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(ksx, ksy, 15, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#FF5A3C';
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(_killerName, ksx, ksy - 22);
+    }
   }
 
   function _renderBanner(W_, H_) {

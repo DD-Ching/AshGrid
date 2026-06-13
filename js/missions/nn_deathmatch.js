@@ -171,6 +171,19 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
     const units = team === 'blue'
       ? (player ? [player, ...allies] : allies.slice())
       : enemies.slice();
+    // Phase 180d — respawn the team AT the team spawn, not in place at the death
+    // spot. _reviveTeam used to leave x/y untouched, so the squad popped back
+    // exactly where it fell ('probably surrounded by red'), contradicting the
+    // 'RESPAWN AT BLUE BASE' HUD + the killcam press-SPACE that now triggers it.
+    // SOLO-only: in MP the local player's position is server-authoritative
+    // (reconcile would fight a client-side teleport), so MP keeps the old
+    // alive/hp resets without repositioning.
+    const _soloRevive = (typeof _mpState === 'undefined' || !_mpState || !_mpState.enabled);
+    const spawnList = team === 'blue'
+      ? (game._nnSpawnBlueList || (game._nnSpawnBlue ? [game._nnSpawnBlue] : null))
+      : (game._nnSpawnRedList  || (game._nnSpawnRed  ? [game._nnSpawnRed]  : null));
+    const _hasClamp = (typeof clampToArenaX === 'function' && typeof clampToArenaY === 'function');
+    let spawnCursor = 0;
     for (const u of units) {
       if (!u) continue;
       u.alive = true;
@@ -186,6 +199,17 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       // Phase 102 — clear chain-takeover consumed flag so ex-op slots
       // come back as live teammates after the team-wipe bulk respawn.
       u._consumed = false;
+      // Phase 180d — reposition to a cycled spawn point (y-jitter + arena clamp),
+      // mirroring the per-unit respawn path (_nextBlueSpawn). SOLO only.
+      if (_soloRevive && spawnList && spawnList.length) {
+        const sp = spawnList[spawnCursor % spawnList.length];
+        spawnCursor++;
+        if (sp) {
+          const jy = sp.y + (Math.random() - 0.5) * 60;
+          u.x = _hasClamp ? clampToArenaX(sp.x, 30, 30) : sp.x;
+          u.y = _hasClamp ? clampToArenaY(jy, 30, 30) : jy;
+        }
+      }
     }
   }
   // Exposed so death_recap.js (ad-revive button) can call.
