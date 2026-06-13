@@ -114,7 +114,7 @@ function drawPauseOverlay() {
       [T('退出', 'Exit'), T('从下方按钮回主菜单', 'Use button below')],
     ]],
   ];
-  let colX = x + 24, colY = y + 116;
+  let colY = y + 116;
   const COL_W = (cw - 48) / 2;
   for (let ci = 0; ci < cats.length; ci++) {
     const [title, items] = cats[ci];
