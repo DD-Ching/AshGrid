@@ -492,9 +492,10 @@ function renderHUDOverlays() {
     const cx = W()/2, cy = H()/2;
     const edge = 80;
     const dx = Math.cos(ang), dy = Math.sin(ang);
-    const ox = cx + dx * Math.max(W(), H());
-    const oy = cy + dy * Math.max(W(), H());
-    const grad = ctx.createRadialGradient(ox, oy, edge, ox, oy, Math.max(W(), H()));
+    const maxDim = Math.max(W(), H());
+    const ox = cx + dx * maxDim;
+    const oy = cy + dy * maxDim;
+    const grad = ctx.createRadialGradient(ox, oy, edge, ox, oy, maxDim);
     grad.addColorStop(0, `rgba(200, 38, 28, ${eased * 0.55})`);
     grad.addColorStop(1, 'rgba(200, 38, 28, 0)');
     ctx.fillStyle = grad;

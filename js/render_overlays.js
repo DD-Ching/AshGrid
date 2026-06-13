@@ -1918,13 +1918,11 @@ function collectMissionWaypoints() { return []; }
 // Phase 75 had moved + shrunk it; Phase 77 drops it entirely.
 function drawObjectivePanel(lines) {
   if (W() < 500) return;
-  const _narrow = false;     // never hit since we early-return on narrow
-  const w = _narrow ? 200 : 300;
-  const h = (_narrow ? 32 : 36) + lines.length * (_narrow ? 14 : 17);
-  // On narrow we move BELOW the status panel (status height ~80, top 16 → 96).
-  // Position at y=104 leaves an 8px gap. On wide, stay at y=54 (centered top).
-  const x = _narrow ? (W() - w) - 16 : (W() / 2 - w / 2);
-  const y = _narrow ? 104 : 54;
+  // Wide screens only — narrow screens early-return above. Top-centered panel.
+  const w = 300;
+  const h = 36 + lines.length * 17;
+  const x = W() / 2 - w / 2;
+  const y = 54;
   drawHUDPanel(x, y, w, h, null);
   ctx.fillStyle = COLORS.red;
   ctx.fillRect(x + 10, y + 8, 28, 12);
@@ -1934,15 +1932,15 @@ function drawObjectivePanel(lines) {
   ctx.fillText('MSN', x + 24, y + 17);
   ctx.textAlign = 'left';
   ctx.fillStyle = COLORS.black;
-  ctx.font = _narrow ? 'bold 9px sans-serif' : 'bold 11px sans-serif';
+  ctx.font = 'bold 11px sans-serif';
   const title = (missionTitle(mission) || '').toUpperCase();
   ctx.fillText(title, x + 46, y + 17);
   ctx.fillStyle = 'rgba(26, 26, 26, 0.18)';
   ctx.fillRect(x + 10, y + 26, w - 20, 1);
   ctx.fillStyle = COLORS.black;
-  ctx.font = _narrow ? '9px monospace' : '10px monospace';
+  ctx.font = '10px monospace';
   for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], x + 10, y + (_narrow ? 36 : 40) + i * (_narrow ? 14 : 16));
+    ctx.fillText(lines[i], x + 10, y + 40 + i * 16);
   }
 }
 

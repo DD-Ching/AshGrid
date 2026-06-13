@@ -934,7 +934,6 @@ function updateEnemies() {
     if (e.angle == null) e.angle = Math.random() * Math.PI*2;
     if (e.alerted == null) e.alerted = 0;
     if (e.lockTime == null) e.lockTime = 0;
-    if (e.coverPick == null) e.coverPick = null;
     if (e.peekTimer == null) e.peekTimer = 0;
     if (e.recentDamage == null) e.recentDamage = 0;
     e.recentDamage = Math.max(0, e.recentDamage - 1);
