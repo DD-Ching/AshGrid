@@ -81,8 +81,18 @@ if (touchInput.enabled) {
       _initAimAssist();
     }
   }
-  // Prevent the page from scrolling / pinch-zooming under our gestures.
-  document.body.style.touchAction = 'none';
+  // Prevent the page from scrolling / pinch-zooming under our gestures. This file
+  // loads in <head>, where document.body is still null — the bare assignment
+  // threw "Cannot read properties of null (reading 'style')" and aborted the
+  // touch-handler setup below it (pre-existing since the original extraction;
+  // bit mobile, where <body> parse timing varies). Defer to DOM-ready so it
+  // actually applies once body exists.
+  const _setTouchAction = () => { if (document.body) document.body.style.touchAction = 'none'; };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _setTouchAction, { once: true });
+  } else {
+    _setTouchAction();
+  }
 
   const onStart = (e) => {
     // Phase 108b — canvas is CSS-offset HUD_AD_TOP px from window top
