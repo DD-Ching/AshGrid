@@ -86,10 +86,13 @@ const FPV_VIEW_RANGE = 600;
 const FPV_VIEW_RANGE_SQ = FPV_VIEW_RANGE * FPV_VIEW_RANGE;
 const FPV_VIEW_ARC = Math.PI * (150 / 180);   // 150° front cone
 function isVisibleToFriendly(x, y) {
+  // VIEW lives in index.html (loads after this file), so square it at call time
+  // (runtime), not module-load — once per call instead of once per viewer below.
+  const rangeSq = VIEW.range * VIEW.range;
   if (player.alive) {
     const dx = x - player.x, dy = y - player.y;
     const d2 = dx*dx + dy*dy;
-    if (d2 < VIEW.range * VIEW.range
+    if (d2 < rangeSq
         && angleInCone(player.angle, effectiveArc(Math.sqrt(d2)), player.x, player.y, x, y)
         && lineOfSight(player.x, player.y, x, y)) return true;
   }
@@ -97,7 +100,7 @@ function isVisibleToFriendly(x, y) {
     if (!a.alive) continue;
     const dx = x - a.x, dy = y - a.y;
     const d2 = dx*dx + dy*dy;
-    if (d2 < VIEW.range * VIEW.range
+    if (d2 < rangeSq
         && angleInCone(a.angle, effectiveArc(Math.sqrt(d2)), a.x, a.y, x, y)
         && lineOfSight(a.x, a.y, x, y)) return true;
   }
