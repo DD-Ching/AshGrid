@@ -37,6 +37,15 @@ function _arenaTryRecruitMP() {
   const mySeed = player._seed || 0;
   if (mySeed - 0 <= ARENA_SEED_GAP) return false;
 
+  // Squad cap — parity with the SOLO ARENA_SQUAD_CAP (=5) ceiling
+  // (arena_recruitment.js:172). Without it, MP recruiting is unbounded and one
+  // player can permanently flip the whole shared server bot pool, draining the
+  // endless arena for everyone. The server re-enforces this authoritatively
+  // (per-recruiter count); this is the instant-feel client gate. In the common
+  // solo-vs-bots room all team-0 bots are ours; a busy PvP room is bounded by
+  // the server cap regardless.
+  if (_mpAliveSquadCount() >= ARENA_SQUAD_CAP) return false;
+
   const myR = player.radius || 13;
   let best = null, bestD = Infinity;
   for (const rb of _mpState.remoteBots.values()) {
@@ -56,6 +65,11 @@ function _arenaTryRecruitMP() {
   // Fire the request. Server validates + broadcasts recruitOk (handled in
   // multiplayer.js). Optimistically consume the G press so it doesn't also
   // throw a grenade, matching the SOLO "G recruited → no frag" behaviour.
-  _mpSendRaw({ type: 'recruit', botId: best.id, seed: Math.floor(mySeed) });
+  // Send the RAW float seed (not Math.floor): the client gate above compares
+  // the raw value to ARENA_SEED_GAP, and so does the server. Flooring made a
+  // seed of 10.7 pass the client gate (10.7 > 10) but become 10 on the wire,
+  // which the server rejected (10 <= 10) — a ~1s dead zone right at the gate
+  // boundary where the lit 'G RECRUIT' prompt silently did nothing.
+  _mpSendRaw({ type: 'recruit', botId: best.id, seed: mySeed });
   return true;
 }

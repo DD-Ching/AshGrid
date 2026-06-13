@@ -636,6 +636,31 @@ function renderWorld() {
         ctx.fillRect(rb.x - 15, rb.y - 26, 30 * rb.hp / 100, 3);
       }
       ctx.globalAlpha = 1;
+      // Recruit cue — parity with the SOLO enemies[] cue (above). Phase 159
+      // wired the MP recruit ACTION but not the CUE, so online the player had
+      // no per-bot signal that a wounded enemy was a G-press away. MP bots are
+      // server seed 0; show "SEED 0" within engagement range and a pulsing
+      // "▶ G" once the live gates (touch range + hp<50% + our SEED > gap) pass.
+      if (game._nnMode && rb.team === 1) {
+        const _ed = Math.hypot(rb.x - player.x, rb.y - player.y);
+        if (_ed < 200) {
+          ctx.fillStyle = COLORS.black;
+          ctx.font = 'bold 9px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('SEED 0', rb.x, rb.y - 36);
+          const _pR = (player.radius || 13) + (rb.radius || 14) + ARENA_TOUCH_BUFFER;
+          const _ready = _ed <= _pR
+            && rb.hp < 100 * ARENA_HP_GATE
+            && (player._seed || 0) > ARENA_SEED_GAP;   // bots are seed 0
+          if (_ready) {
+            const _pulse = 0.6 + 0.4 * Math.sin(game.time * 0.2);
+            ctx.fillStyle = `rgba(230, 51, 41, ${_pulse})`;
+            ctx.font = 'bold 12px monospace';
+            ctx.fillText('▶ G', rb.x, rb.y - 48);
+          }
+          ctx.textAlign = 'left';
+        }
+      }
     }
   }
 

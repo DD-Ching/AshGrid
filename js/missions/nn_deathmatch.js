@@ -95,9 +95,14 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   // (placeBuildBlock) + a small energy stipend, and surfaces the two
   // rewarded-ad buttons (+2 covers / skip wave). MP build is server-driven, so
   // this never opens online.
-  const BUILD_PERIOD = 45 * 60;           // a fortify window every 45 s
-  const BUILD_WINDOW = 12 * 60;           // each window stays open 12 s
-  let _nextBuildPhaseAt = game.time + 30 * 60;   // first window at +30 s
+  // NOTE: game.time advances at the SIM tick rate (_timeScale 1.4 → 84 ticks/s,
+  // see index.html), NOT 60 — a "seconds" value must be sec*84. Phase 161
+  // shipped these as sec*60, so every build window ran ~30% shorter than its
+  // label (worsening the known "build window too short" complaint). Rescaled to
+  // sec*84 to match the labels — same convention Phase 156 used for FX TTLs.
+  const BUILD_PERIOD = 45 * 84;           // a fortify window every 45 s
+  const BUILD_WINDOW = 12 * 84;           // each window stays open 12 s
+  let _nextBuildPhaseAt = game.time + 30 * 84;   // first window at +30 s
   function _waveInterval(n) {
     // 15s → 6s over the first 10 waves, then floor at 6s.
     return Math.max(360, 900 - n * 60);
@@ -484,9 +489,13 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         if (!e) continue;
         if (e._koStunned && e.alive
             && (game.time - (e._koStunnedAt || 0)) > _STUN_TICKS) {
-          e.alive = false;
+          // C4 chokepoint: route the timeout-death through killUnit() so it
+          // earns the SAME credit as a normal kill (score + killCount +
+          // _lbBumpKill + onUnitDeath hooks). The old inline `game.score += 100;
+          // game.killCount++` skipped _lbBumpKill(), so a stun-timeout kill
+          // scored but never reached the leaderboard.
           e._koStunned = false;
-          game.score += 100; game.killCount++;
+          killUnit(e, { source: 'stun-timeout' });
           if (typeof createExplosion === 'function') createExplosion(e.x, e.y, 'small');
         }
         if (e.alive) continue;

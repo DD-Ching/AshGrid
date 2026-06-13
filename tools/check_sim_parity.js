@@ -109,6 +109,27 @@ function near(a, b) { return Math.abs(a - b) < 1e-9; }
     fail(`OBS_DIM mismatch: client=${clientDim} server buildObs len=${serverDim}`);
   console.log(`Obs parity: client OBS_DIM=${clientDim}, server buildObs len=${serverDim}.`);
 
+  // ── 3. Arena recruit constants parity (client ↔ server) ──────────────────
+  // The recruit SEED gate + squad cap each live as a const literal on BOTH
+  // sides of the network boundary (client js/arena_recruitment.js, server
+  // server/party/server.js). If they drift, the client lights "▶ G RECRUIT"
+  // for a recruit the server then silently rejects — the exact dead-zone class
+  // Phase 163's seed-floor fix chased. Regex both out and assert equality.
+  const constOf = (relPath, name) => {
+    const src = fs.readFileSync(path.join(ROOT, relPath), 'utf8');
+    const m = src.match(new RegExp('const\\s+' + name + '\\s*=\\s*(-?\\d+(?:\\.\\d+)?)'));
+    return m ? parseFloat(m[1]) : null;
+  };
+  for (const name of ['ARENA_SEED_GAP', 'ARENA_SQUAD_CAP']) {
+    const cv = constOf('js/arena_recruitment.js', name);
+    const sv = constOf('server/party/server.js', name);
+    if (cv == null) fail(`${name}: not found in js/arena_recruitment.js`);
+    if (sv == null) fail(`${name}: not found in server/party/server.js`);
+    if (cv != null && sv != null && cv !== sv)
+      fail(`${name} mismatch: client=${cv} server=${sv}`);
+  }
+  console.log('Arena recruit parity: ARENA_SEED_GAP + ARENA_SQUAD_CAP checked client↔server.');
+
   // ── Verdict ──────────────────────────────────────────────────────────────
   if (problems.length === 0) { console.log('OK — SOLO and MP sim are in lock-step.'); process.exit(0); }
   console.error('\nFAIL — sim parity drift:');
