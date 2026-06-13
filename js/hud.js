@@ -492,9 +492,10 @@ function renderHUDOverlays() {
     const cx = W()/2, cy = H()/2;
     const edge = 80;
     const dx = Math.cos(ang), dy = Math.sin(ang);
-    const ox = cx + dx * Math.max(W(), H());
-    const oy = cy + dy * Math.max(W(), H());
-    const grad = ctx.createRadialGradient(ox, oy, edge, ox, oy, Math.max(W(), H()));
+    const maxDim = Math.max(W(), H());
+    const ox = cx + dx * maxDim;
+    const oy = cy + dy * maxDim;
+    const grad = ctx.createRadialGradient(ox, oy, edge, ox, oy, maxDim);
     grad.addColorStop(0, `rgba(200, 38, 28, ${eased * 0.55})`);
     grad.addColorStop(1, 'rgba(200, 38, 28, 0)');
     ctx.fillStyle = grad;
@@ -603,8 +604,8 @@ function renderHUDOverlays() {
     // Project mouse to world, project back to screen for ghost rect
     const wp = screenToWorld(mouse.x, mouse.y);
     const SIZE = 60;
-    const cx = Math.max(NN_ARENA.x0, Math.min(NN_ARENA.x0 + NN_ARENA.w - SIZE, wp.x - SIZE / 2));
-    const cy = Math.max(NN_ARENA.y0, Math.min(NN_ARENA.y0 + NN_ARENA.h - SIZE, wp.y - SIZE / 2));
+    const cx = clampToArenaX(wp.x - SIZE / 2, 0, SIZE);
+    const cy = clampToArenaY(wp.y - SIZE / 2, 0, SIZE);
     // Inverse of screenToWorld for the rect corners
     const dx0 = cx - camera.x, dy0 = cy - camera.y;
     const dx1 = (cx + SIZE) - camera.x, dy1 = (cy + SIZE) - camera.y;

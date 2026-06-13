@@ -8,10 +8,23 @@
 //   addBuilding / addLowCover / addOverhead / addRoute / addLandmark /
 //   addDecoration / addThemeShape / addTree / addNetworkNode
 //   buildCoverPoints() · isWalkable(x, y, r) · etc.
+//   clampToArenaX(v, lo, hi) / clampToArenaY(v, lo, hi)
 //
 // External deps: WORLD · MAPS · currentMap · buildings · lowCovers ·
 //   overheads · routes · landmarks · themeShapes · decorations · trees ·
-//   networkNodes · enemies · allies · player
+//   networkNodes · enemies · allies · player · NN_ARENA
+
+// Clamp a world coord into the NN_ARENA play box, insetting `lo` from the low
+// edge and `hi` from the high edge. Single home for the "keep it inside the red
+// border" Math.max/min that build_phase.js (cover placement), hud.js (ghost
+// preview), enemy_ai.js (unit containment) and nn_deathmatch.js (respawn) each
+// open-coded. NN_ARENA resolves at call time, so load order vs maps.js is moot.
+function clampToArenaX(v, lo, hi) {
+  return Math.max(NN_ARENA.x0 + lo, Math.min(NN_ARENA.x0 + NN_ARENA.w - hi, v));
+}
+function clampToArenaY(v, lo, hi) {
+  return Math.max(NN_ARENA.y0 + lo, Math.min(NN_ARENA.y0 + NN_ARENA.h - hi, v));
+}
 
 function generateWorld(mapIndex) {
   clearWorld();

@@ -524,7 +524,6 @@ function updateBullets() {
       if (!a.alive) continue;
       if (Math.hypot(b.x - a.x, b.y - a.y) < a.radius) {
         if (a._invulnUntil != null && game.time < a._invulnUntil) { hit = true; break; }
-        const wasAlive = true;
         const wasFullish = a.hp / a.maxHp > 0.5;
         _applyDamageToUnit(a, b.damage);
         // Phase 97 — NN ally taking damage gets the same alert treatment

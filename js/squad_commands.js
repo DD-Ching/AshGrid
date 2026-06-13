@@ -77,7 +77,6 @@ function _squadAnchor() {
   return { x: player.x, y: player.y };
 }
 function _squadOrderMoveDirFor(unit, friendlies, enemies, orderId) {
-  const tx = (a, b) => a - b;
   if (orderId === 'rally') {
     const a = _squadAnchor();
     const dx = a.x - unit.x, dy = a.y - unit.y;
