@@ -579,7 +579,10 @@ function _mpReconcileSelfPosition() {
   // remains because _mpHandleSelfSnapshot calls it positionally in the R13
   // ordered helper chain. Keep the wrapper so the chain stays self-documenting.
   if (typeof MpReconcile !== 'undefined') {
-    MpReconcile.reconcilePosition(MP_PLAYER_SPEED);
+    // Forward the server-self position + unacked inputs the module used to read
+    // straight off _mpState (Phase 173 made reconcilePosition a pure function).
+    MpReconcile.reconcilePosition(
+      _mpState.serverSelfX, _mpState.serverSelfY, _mpState.pendingInputs, MP_PLAYER_SPEED);
   }
 }
 

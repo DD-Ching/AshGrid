@@ -39,7 +39,9 @@
 //   player._reconcileErr              { dx, dy } pending error to spread
 //
 // External deps (resolved at call-time via globals):
-//   game · player · _mpState · MP_PLAYER_SPEED
+//   game · player   (Phase 173: reconcilePosition's _mpState.serverSelfX/Y +
+//   pendingInputs + MP_PLAYER_SPEED reads became caller-passed args, so the
+//   module no longer reaches into _mpState at all)
 
 (function() {
   'use strict';
@@ -120,26 +122,24 @@
   //   • small error (<3u)      → dead zone, no-op
   //   • else                   → accumulate to _reconcileErr for tick bleed
   //
-  // Args:
-  //   MP_PLAYER_SPEED  per-input base movement (caller provides — was
-  //                    a const inside multiplayer.js)
-  //
-  // Reads _mpState.serverSelfX/Y + _mpState.pendingInputs from the
-  // global _mpState. Could be passed as args for purity, but keeping
-  // the direct read avoids a wider refactor in this phase.
-  function reconcilePosition(MP_PLAYER_SPEED) {
+  // Args (all caller-passed — Phase 173 made this a pure function of its
+  // inputs; the multiplayer.js caller forwards the same _mpState fields it
+  // always did, so behaviour is unchanged):
+  //   serverX, serverY  server-authoritative self pos (was _mpState.serverSelfX/Y)
+  //   pendingInputs     unacked client inputs to replay (was _mpState.pendingInputs)
+  //   speed             per-input base movement (MP_PLAYER_SPEED in multiplayer.js)
+  function reconcilePosition(serverX, serverY, pendingInputs, speed) {
     const p = _player();
     if (!p) return;
-    if (typeof _mpState === 'undefined' || !_mpState) return;
 
-    let predX = _mpState.serverSelfX;
-    let predY = _mpState.serverSelfY;
+    let predX = serverX;
+    let predY = serverY;
     if (typeof predX !== 'number' || typeof predY !== 'number') return;
 
     // Re-apply unacked inputs with the same multipliers the server
     // applied. Mismatched multipliers were the Phase X 'wolf-sprint
     // rubber-banding' bug.
-    const inputs = _mpState.pendingInputs || [];
+    const inputs = pendingInputs || [];
     for (const inp of inputs) {
       let dx = inp.dx, dy = inp.dy;
       const mag = Math.hypot(dx, dy);
@@ -148,8 +148,8 @@
       const wpnMul    = (typeof inp.wMul === 'number') ? inp.wMul : 1.0;
       const chsMul    = (typeof inp.cMul === 'number') ? inp.cMul : 1.0;
       const mul = sprintMul * wpnMul * chsMul;
-      predX += dx * MP_PLAYER_SPEED * mul;
-      predY += dy * MP_PLAYER_SPEED * mul;
+      predX += dx * speed * mul;
+      predY += dy * speed * mul;
     }
 
     const dx = predX - p.x;
