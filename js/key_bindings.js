@@ -253,6 +253,16 @@ window.addEventListener('keydown', e => {
     killcamRequestRespawn();
     return;
   }
+  // Phase 180 — MP: SPACE on the death screen asks the authority to bring you
+  // back (server respawns → client waits for the snapshot, never self-revives).
+  // Mutually exclusive with the SOLO killcam path above (solo vs mp).
+  if ((e.key === ' ' || e.code === 'Space')
+      && typeof mpRespawnEligible === 'function' && mpRespawnEligible()
+      && typeof _mpRequestRespawn === 'function') {
+    e.preventDefault();
+    _mpRequestRespawn();
+    return;
+  }
   // Build-radial number shortcut: digits pick a module ONLY when the
   // radial picker UI is actually visible. Earlier this gated on the
   // bare `buildMode.active` flag, which meant ANY time the player had

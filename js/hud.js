@@ -146,6 +146,17 @@ function renderHUD() {
     ctx.globalAlpha = 0.7;
     ctx.fillText(T('在出生点重新部署 / RESPAWN AT BLUE BASE', 'RESPAWN AT BLUE BASE'), cx, cy + 80);
     ctx.globalAlpha = 1;
+    // Phase 180 — MP: once the server will honour a respawn request, prompt the
+    // player to press SPACE to return (server-authoritative; multiplayer.js
+    // mpRespawnEligible / _mpRequestRespawn). SOLO uses the killcam prompt.
+    if (typeof mpRespawnEligible === 'function' && mpRespawnEligible()) {
+      const _retPulse = 0.6 + 0.4 * Math.sin(Date.now() * 0.006);
+      ctx.globalAlpha = _retPulse;
+      ctx.fillStyle = '#3FE63F';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillText(T('▶ 按空白键返回战场', '▶ PRESS SPACE TO RETURN'), cx, cy + 130);
+      ctx.globalAlpha = 1;
+    }
     ctx.textAlign = 'left';
   }
   // Phase 82 — static respawn ad slot. Shown during the respawn countdown

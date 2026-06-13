@@ -1318,6 +1318,53 @@ function _mpBroadcastSwap(x, y, botId) {
   _mpSendRaw({ type: 'swap', x: Math.round(x), y: Math.round(y), botId: botId || 0 });
 }
 
+// ─── Phase 180 — server-authoritative respawn ("請求 → 權威 → 返回房間") ──────
+// The client NEVER self-revives in MP. When the player presses SPACE on the
+// death screen (or after a grace fallback), we ASK the server; the server brings
+// us back (snapshot alive=true) and mp_reconcile._tryRespawnLocal follows. This
+// is the safe pattern: we never get ahead of the authority, so no desync /
+// die-respawn loop (the Phase 122/125/129c/136 bug class).
+
+// Eligible to ask? Dead in MP AND the local respawn countdown has elapsed —
+// mirrors mp_reconcile._tryRespawnLocal's gate so the prompt + key + the moment
+// the server will honour the request all line up.
+function mpRespawnEligible() {
+  if (!_mpState.enabled) return false;
+  if (typeof player === 'undefined' || !player || player.alive) return false;
+  if (!player._killedAtTime) return false;
+  const t = (typeof game !== 'undefined' && game.time) ? game.time : 0;
+  const minDead = (typeof getRespawnSeconds === 'function') ? getRespawnSeconds() * 60 : 90;
+  return (t - player._killedAtTime) >= minDead;
+}
+
+// Send the request (throttled so a held key / grace loop can't spam the socket).
+function _mpRequestRespawn() {
+  if (!_mpState.enabled) return false;
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  if (now - (_mpState._lastRespawnReqAt || 0) < 400) return false;
+  _mpState._lastRespawnReqAt = now;
+  _mpSendRaw({
+    type: 'requestRespawn',
+    buffActive: (typeof isRespawnBuffed === 'function') ? isRespawnBuffed() : false,
+  });
+  return true;
+}
+
+// Per-tick driver: once eligible, wait for the player to press SPACE (the UI
+// prompts), but after a grace window send the request anyway so a player who
+// never presses still returns — no soft-lock. Reset on revive / not-MP / paused.
+function mpRespawnTick() {
+  if (!_mpState.enabled || (typeof game !== 'undefined' && game._paused)) return;
+  if (typeof player === 'undefined' || !player || player.alive || !mpRespawnEligible()) {
+    _mpState._eligibleSince = 0;
+    return;
+  }
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  if (!_mpState._eligibleSince) _mpState._eligibleSince = now;
+  // Anti-soft-lock: auto-return if still dead 12 s after becoming eligible.
+  if (now - _mpState._eligibleSince > 12000) _mpRequestRespawn();
+}
+
 // Respawn handler — when server says we respawned, the snapshot will
 // flip alive=true. Local recap UI is driven by server's 'kill' event +
 // snapshot's alive flag.

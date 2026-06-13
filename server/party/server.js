@@ -146,6 +146,17 @@ const BOT_RESPAWN_TICKS = 5 * TICK_HZ;     // 5 s
 // 3 s is safely past 'tab is hidden' without falsely flagging brief
 // network hiccups on the focused tab.
 const AFK_RESPAWN_MAX_TICKS = 3 * TICK_HZ; // 3 s
+// Phase 180 — pure respawn-eligibility rule, shared by the auto AFK-gate path
+// (tick loop) and the explicit requestRespawn handler, and unit-tested in
+// tools/test_mp_respawn.js (no room instance needed). A dead player may respawn
+// once the timer has elapsed AND we've seen recent activity (idleTicks under the
+// AFK gate). The request path passes idleTicks=0 — the request itself proves the
+// player is present, which is the whole point of "press SPACE → 返回房間".
+export function _respawnDecision(alive, tickCount, respawnAt, idleTicks, afkMaxTicks) {
+  if (alive) return false;
+  if (tickCount < respawnAt) return false;
+  return idleTicks < afkMaxTicks;
+}
 const HP_MAX            = 100;
 const INVULN_TICKS      = 3 * TICK_HZ;     // 3 s spawn protection
 // Phase 60: respawn time is ad-buffable (DEFAULT_SEC / BUFFED_SEC in
@@ -827,6 +838,23 @@ export default class AshGridRoom {
       if (typeof data.buffActive === 'boolean') p.respawnBuffActive = data.buffActive;
       return;
     }
+    if (data.type === 'requestRespawn') {
+      // Phase 180 — server-authoritative "返回房間". The client sends this when
+      // the player presses SPACE on the death screen (and as an anti-soft-lock
+      // grace fallback). Mark them active (satisfies the AFK gate), then respawn
+      // if the timer has elapsed. The client NEVER self-revives — it waits for
+      // the next snapshot's alive=true (mp_reconcile _tryRespawnLocal). No-op
+      // while alive or before the timer. Also accept the buff flag here since a
+      // dead client stopped sending 'input' (so it couldn't update it).
+      if (!p.alive) {
+        if (typeof data.buffActive === 'boolean') p.respawnBuffActive = data.buffActive;
+        p.lastInputTickAt = this.tickCount;
+        if (_respawnDecision(p.alive, this.tickCount, p.respawnAt, 0, AFK_RESPAWN_MAX_TICKS)) {
+          this._respawn(p);
+        }
+      }
+      return;
+    }
     if (data.type === 'emote' || data.type === 'ping') {
       // Transient peer-to-peer — server just relays.
       data.from = sender.id;
@@ -1025,14 +1053,14 @@ export default class AshGridRoom {
     // 1. Apply inputs + advance players
     for (const p of this.players.values()) {
       if (!p.alive) {
-        if (this.tickCount >= p.respawnAt) {
-          // R+1 — AFK gate. Only respawn if the client has shown a
-          // recent heartbeat (input within AFK_RESPAWN_MAX_TICKS).
-          // Otherwise hold them dead — when they tab back in, their
-          // first input updates lastInputTickAt and the next tick
-          // respawns them naturally.
-          const idleTicks = this.tickCount - (p.lastInputTickAt | 0);
-          if (idleTicks < AFK_RESPAWN_MAX_TICKS) this._respawn(p);
+        // R+1 — AFK gate (now via the shared _respawnDecision rule). Only auto-
+        // respawn if the client has shown a recent heartbeat (input within
+        // AFK_RESPAWN_MAX_TICKS); otherwise hold them dead until they return.
+        // Phase 180 — the explicit requestRespawn handler is the player-driven
+        // path; this stays as the auto fallback.
+        const idleTicks = this.tickCount - (p.lastInputTickAt | 0);
+        if (_respawnDecision(p.alive, this.tickCount, p.respawnAt, idleTicks, AFK_RESPAWN_MAX_TICKS)) {
+          this._respawn(p);
         }
         continue;
       }
