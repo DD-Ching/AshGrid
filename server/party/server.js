@@ -154,11 +154,14 @@ const INVULN_TICKS      = 3 * TICK_HZ;     // 3 s spawn protection
 const RESPAWN_TICKS_DEFAULT = 15 * TICK_HZ;  // 15 s
 const RESPAWN_TICKS_BUFFED  = 5  * TICK_HZ;  // 5 s
 // Arena recruit gates — authoritative server copies of the client constants in
-// js/arena_recruitment.js (ARENA_SEED_GAP / ARENA_SQUAD_CAP). Kept as named
-// constants (not bare literals) so a balance change is one grep-able edit on
-// each side; the 'recruit' message handler is the only consumer.
-const ARENA_SEED_GAP  = 10;   // min recruiter-SEED differential (bots are seed 0)
-const ARENA_SQUAD_CAP = 5;    // max live recruited bots per player
+// js/arena_recruitment.js (ARENA_SEED_GAP / ARENA_SQUAD_CAP / ARENA_HP_GATE /
+// ARENA_TOUCH_BUFFER). Kept as named constants (not bare literals) so a balance
+// change is one grep-able edit on each side; the 'recruit' message handler is
+// the only consumer. tools/check_sim_parity.js asserts all four match client.
+const ARENA_SEED_GAP     = 10;   // min recruiter-SEED differential (bots are seed 0)
+const ARENA_SQUAD_CAP    = 5;    // max live recruited bots per player
+const ARENA_HP_GATE      = 0.5;  // target HP must be below maxHp * gate to recruit
+const ARENA_TOUCH_BUFFER = 80;   // px added to radii sum (~106px reach)
 const FIRE_COOLDOWN     = 6 * TICK_FACTOR;   // 12 ticks @ 60Hz = 200 ms = ~5 shots/sec
 const BULLET_SPEED      = 14 / TICK_FACTOR;  // 7 — half of 30-Hz baseline
 const BULLET_LIFE       = 60 * TICK_FACTOR;  // 120 ticks @ 60Hz = 2 s
@@ -928,10 +931,10 @@ export default class AshGridRoom {
       const bot = this.bots.get(botId);
       if (!bot || !bot.alive) return;            // unknown / dead — reject
       if (bot.team === 0) return;                // already friendly — reject
-      const reach = 13 + 14 + 80;                // myR + botR + ARENA_TOUCH_BUFFER
+      const reach = 13 + 14 + ARENA_TOUCH_BUFFER;   // myR + botR + buffer
       const dd = Math.hypot(bot.x - p.x, bot.y - p.y);
       if (dd > reach) return;                     // out of touch range — reject
-      if (bot.hp >= (bot.maxHp || HP_MAX) * 0.5) return;   // not wounded enough
+      if (bot.hp >= (bot.maxHp || HP_MAX) * ARENA_HP_GATE) return;   // not wounded enough
       const recruiterSeed = num(data.seed) || 0;
       if (recruiterSeed <= ARENA_SEED_GAP) return;   // SEED gate — bots are seed 0
       // Squad cap — parity with SOLO (arena_recruitment.js). Count this
