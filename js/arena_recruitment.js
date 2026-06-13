@@ -291,6 +291,20 @@ function _arenaSpawnFactoryBot(team, x, y) {
       showSwapToast(T('▶ 工廠生產 · ' + u.callsign, '▶ FACTORY PRODUCED · ' + u.callsign));
     }
   } else {
+    // Phase 176 — adaptive director: wave reinforcements escalate as the player
+    // dominates (SOLO one-way DDA). Baseline leaves _nnDifficulty unset → the
+    // global default brain, exactly as before; only an UPGRADE sets it, so this
+    // is a no-op at rest / when the director is absent / in MP.
+    if (typeof directorPickStyle === 'function') {
+      const up = directorPickStyle(null);
+      if (up) {
+        u._nnDifficulty = up;
+        if (typeof directorPickWeapon === 'function') {
+          const w2 = directorPickWeapon(chassisId, up, wid);
+          if (w2 && typeof WEAPONS !== 'undefined' && WEAPONS[w2]) u._weapon = WEAPONS[w2];
+        }
+      }
+    }
     enemies.push(u);
   }
 }

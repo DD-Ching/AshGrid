@@ -716,7 +716,16 @@ function _mpHandleKill(data) {
     if (!player.alive) return;
     // Bullet-specific telemetry — set BEFORE the state transition so the
     // death-recap UI reads the right killer / weapon next frame.
-    player._killer = { callsign: shooterName };
+    // Phase 179 — capture the killer's position for the killcam (谁干掉了你).
+    // The kill event carries the victim pos (data.x/y); the shooter's pos comes
+    // from their lerped remotePlayers entry, falling back to the victim's spot
+    // so the killcam still has a focus point if the shooter is a bot / unknown.
+    const _shooterRp = _mpState.remotePlayers.get(data.shooter);
+    player._killer = {
+      callsign: shooterName,
+      x: (_shooterRp && typeof _shooterRp.x === 'number') ? _shooterRp.x : player.x,
+      y: (_shooterRp && typeof _shooterRp.y === 'number') ? _shooterRp.y : player.y,
+    };
     player._killerWeapon = data.weapon;
     // Phase 129c — delegate to canonical handleLocalDeath (pawn_swap.js).
     // It owns: killPlayer + (try-auto-swap-first / scheduleRespawn + mark
@@ -1307,6 +1316,65 @@ function _mpBroadcastExplosion(x, y, radius, dmg) {
 function _mpBroadcastSwap(x, y, botId) {
   if (!_mpState.enabled) return;
   _mpSendRaw({ type: 'swap', x: Math.round(x), y: Math.round(y), botId: botId || 0 });
+}
+
+// ─── Phase 180 — server-authoritative respawn ("請求 → 權威 → 返回房間") ──────
+// The client NEVER self-revives in MP. When the player presses SPACE on the
+// death screen (or after a grace fallback), we ASK the server; the server brings
+// us back (snapshot alive=true) and mp_reconcile._tryRespawnLocal follows. This
+// is the safe pattern: we never get ahead of the authority, so no desync /
+// die-respawn loop (the Phase 122/125/129c/136 bug class).
+
+// Eligible to ask? Dead in MP AND the local respawn countdown has elapsed —
+// mirrors mp_reconcile._tryRespawnLocal's gate so the prompt + key + the moment
+// the server will honour the request all line up.
+function mpRespawnEligible() {
+  if (!_mpState.enabled) return false;
+  if (typeof player === 'undefined' || !player || player.alive) return false;
+  if (!player._killedAtTime) return false;
+  // Phase 180d — prefer the wall-clock deadline (stamped on the team-wipe by
+  // handleLocalDeath) so the prompt lines up with REAL seconds AND the server's
+  // real respawn time. The tick clock drifts (84-tick sim sec ≈ 0.71 real sec),
+  // so the old `game.time` gate fired ~4 s early → SPACE was a silent no-op
+  // until the server actually allowed it. Client stamps respawnAtMs ~½RTT after
+  // the server schedules its respawnAt, i.e. slightly LATE = safe, never early.
+  const bw = (typeof game !== 'undefined' && game._teamWipe) ? game._teamWipe.blue : null;
+  if (bw && bw.respawnAtMs) return Date.now() >= bw.respawnAtMs;
+  // Fallback (no wall-clock deadline): tick-based, null-safe (tick 0 is valid).
+  const t = (typeof game !== 'undefined' && game.time != null) ? game.time : 0;
+  const minDead = (typeof getRespawnSeconds === 'function') ? getRespawnSeconds() * 60 : 90;
+  return (t - player._killedAtTime) >= minDead;
+}
+
+// Send the request (throttled so a held key / grace loop can't spam the socket).
+function _mpRequestRespawn() {
+  if (!_mpState.enabled) return false;
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  if (now - (_mpState._lastRespawnReqAt || 0) < 400) return false;
+  _mpState._lastRespawnReqAt = now;
+  _mpSendRaw({
+    type: 'requestRespawn',
+    buffActive: (typeof isRespawnBuffed === 'function') ? isRespawnBuffed() : false,
+  });
+  return true;
+}
+
+// Per-tick driver: once eligible, wait for the player to press SPACE (the UI
+// prompts), but after a grace window send the request anyway so a player who
+// never presses still returns — no soft-lock. Reset on revive / not-MP / paused.
+function mpRespawnTick() {
+  if (!_mpState.enabled || (typeof game !== 'undefined' && game._paused)) return;
+  if (typeof player === 'undefined' || !player || player.alive || !mpRespawnEligible()) {
+    _mpState._eligibleSinceTick = 0;
+    return;
+  }
+  // Use game.time (sim ticks) for the grace, NOT wall-clock: game.time freezes
+  // while paused (ad / pause menu), so a long ad can't elapse the grace and
+  // auto-respawn the instant it closes — the player keeps the press-SPACE
+  // choice. ~12 s in the self-consistent 60-tick-second = 720 ticks.
+  const t = (typeof game !== 'undefined' && game.time != null) ? game.time : 0;
+  if (!_mpState._eligibleSinceTick) _mpState._eligibleSinceTick = t;
+  if (t - _mpState._eligibleSinceTick > 720) _mpRequestRespawn();
 }
 
 // Respawn handler — when server says we respawned, the snapshot will

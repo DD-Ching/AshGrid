@@ -244,6 +244,25 @@ window.addEventListener('keydown', e => {
     _detonateFPV(true);
     return;
   }
+  // Phase 179 — SPACE redeploys from the death killcam (SOLO). Self-gates on
+  // killcamCanRespawn() (dead + replay seen), so it's a no-op during live play
+  // and an ad in flight is already swallowed by the game._paused gate above.
+  if ((e.key === ' ' || e.code === 'Space')
+      && typeof killcamCanRespawn === 'function' && killcamCanRespawn()) {
+    e.preventDefault();
+    killcamRequestRespawn();
+    return;
+  }
+  // Phase 180 — MP: SPACE on the death screen asks the authority to bring you
+  // back (server respawns → client waits for the snapshot, never self-revives).
+  // Mutually exclusive with the SOLO killcam path above (solo vs mp).
+  if ((e.key === ' ' || e.code === 'Space')
+      && typeof mpRespawnEligible === 'function' && mpRespawnEligible()
+      && typeof _mpRequestRespawn === 'function') {
+    e.preventDefault();
+    _mpRequestRespawn();
+    return;
+  }
   // Build-radial number shortcut: digits pick a module ONLY when the
   // radial picker UI is actually visible. Earlier this gated on the
   // bare `buildMode.active` flag, which meant ANY time the player had

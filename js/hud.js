@@ -95,9 +95,26 @@ function renderHUD() {
   // Respawn countdown overlay — when player is dead in NN mode and waiting
   // for the 5-second respawn timer to elapse. Big "重生中 N" text + ring.
   if (game._nnMode && !player.alive && player._respawnAt != null) {
-    const ticksLeft = Math.max(0, player._respawnAt - game.time);
-    const sLeft = Math.ceil(ticksLeft / 60);
-    const fracLeft = ticksLeft / (5 * 60);
+    // Phase 179 — prefer the team-wipe wall-clock deadline so this big-number
+    // countdown shows REAL seconds (matching the recap), instead of tick-based
+    // game.time which drifts at the 84-tick sim rate. Falls back to the tick
+    // math for any path that didn't stamp respawnAtMs.
+    let sLeft, fracLeft;
+    const _bw = game._teamWipe && game._teamWipe.blue;
+    // Phase 180a fix — only trust the wall-clock deadline while the wipe is
+    // ACTIVE. _reviveTeam / _revivePlayerOnly / the MP clear reset wipedSince
+    // but NOT respawnAtMs, so a stale past respawnAtMs from an earlier wipe
+    // would otherwise freeze a later individual-death countdown at 0.
+    if (_bw && _bw.wipedSince != null && _bw.respawnAtMs) {
+      const msLeft = Math.max(0, _bw.respawnAtMs - Date.now());
+      const total = Math.max(1, _bw.respawnAtMs - (_bw.wipedAtMs || (_bw.respawnAtMs - 15000)));
+      sLeft = Math.ceil(msLeft / 1000);
+      fracLeft = msLeft / total;
+    } else {
+      const ticksLeft = Math.max(0, player._respawnAt - game.time);
+      sLeft = Math.ceil(ticksLeft / 60);
+      fracLeft = ticksLeft / (5 * 60);
+    }
     const cx = W() / 2, cy = H() / 2;
     // Dim backdrop
     ctx.fillStyle = 'rgba(20, 18, 24, 0.55)';
@@ -133,6 +150,17 @@ function renderHUD() {
     ctx.globalAlpha = 0.7;
     ctx.fillText(T('在出生点重新部署 / RESPAWN AT BLUE BASE', 'RESPAWN AT BLUE BASE'), cx, cy + 80);
     ctx.globalAlpha = 1;
+    // Phase 180 — MP: once the server will honour a respawn request, prompt the
+    // player to press SPACE to return (server-authoritative; multiplayer.js
+    // mpRespawnEligible / _mpRequestRespawn). SOLO uses the killcam prompt.
+    if (typeof mpRespawnEligible === 'function' && mpRespawnEligible()) {
+      const _retPulse = 0.6 + 0.4 * Math.sin(Date.now() * 0.006);
+      ctx.globalAlpha = _retPulse;
+      ctx.fillStyle = '#3FE63F';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillText(T('▶ 按空白键返回战场', '▶ PRESS SPACE TO RETURN'), cx, cy + 130);
+      ctx.globalAlpha = 1;
+    }
     ctx.textAlign = 'left';
   }
   // Phase 82 — static respawn ad slot. Shown during the respawn countdown

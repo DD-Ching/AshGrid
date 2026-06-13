@@ -260,11 +260,15 @@ function spawnSoldier(cfg) {
   // Style pick — biased toward 'elite' but with variety. Skip 'tactical'
   // (it falls back to elite weights anyway) so we don't waste a slot.
   const styleRoll = Math.random();
-  const nnStyle = styleRoll < 0.40 ? 'elite'
-                : styleRoll < 0.62 ? 'warrior'
-                : styleRoll < 0.80 ? 'sharpshooter'
-                : styleRoll < 0.92 ? 'defensive'
-                :                    'cqb';
+  let nnStyle = styleRoll < 0.40 ? 'elite'
+              : styleRoll < 0.62 ? 'warrior'
+              : styleRoll < 0.80 ? 'sharpshooter'
+              : styleRoll < 0.92 ? 'defensive'
+              :                    'cqb';
+  // Phase 176 — adaptive director (SOLO one-way DDA): once the player starts
+  // dominating, upgrade this spawn toward a tougher brain. No-op at baseline /
+  // when the director is absent or disabled / in MP (returns nnStyle unchanged).
+  if (typeof directorPickStyle === 'function') nnStyle = directorPickStyle(nnStyle);
   // Weapon — wolves get fast/light, heavies get LMG/SHOTGUN, riflemen
   // anything from the standard pool.
   let weaponId;
@@ -274,6 +278,8 @@ function spawnSoldier(cfg) {
   // Sharpshooters always get SNIPER (their style trained on it)
   if (nnStyle === 'sharpshooter')  weaponId = 'SNIPER';
   if (nnStyle === 'cqb' && chassisId !== 'heavy') weaponId = (Math.random() < 0.7 ? 'SMG' : 'SHOTGUN');
+  // Phase 176 — director may upgrade the weapon too (upward only, high heat).
+  if (typeof directorPickWeapon === 'function') weaponId = directorPickWeapon(chassisId, nnStyle, weaponId);
   const enemyDef = {
     x, y,
     angle: 0, gunAngle: 0, gunRecoil: 0, swayPhase: Math.random()*Math.PI*2,
