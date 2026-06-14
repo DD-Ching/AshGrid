@@ -57,6 +57,7 @@
     // goal selection
     CAP_R:    150,    // "capacity": teammates within this of a candidate crowd it
     CAP_PEN:  1.6,    // score penalty per crowding teammate
+    HEAT_SCALE: 0.05, // weight on the shared _nnHeatmap occupancy penalty
     EDGE_CAP: 420,    // cap interior-distance reward so midfield isn't over-valued
     GOAL_PAD: 130,    // keep candidate goals this far off the arena wall
     // fail-safe
@@ -76,7 +77,6 @@
     holder:  { edgeAvoid: 1.35, wEdge: 1.5, wSpread: 1.0, wFoe:  0.2, wCover: 1.3, flinch: 0.60 },
     scout:   { edgeAvoid: 1.10, wEdge: 1.1, wSpread: 1.5, wFoe: -0.7, wCover: 0.2, flinch: 0.70, explore: true },
   };
-  const ROLE_KEYS  = Object.keys(ROLES);
   // spawn distribution (sums ~1): a squad reads as a mix, not a clone army.
   const ROLE_PICK = [
     { k: 'holder',  p: 0.30 },
@@ -157,12 +157,21 @@
   // ── roles ────────────────────────────────────────────────────────────
   function npcRole(unit) {
     if (!unit) return ROLES.holder;
-    if (!unit._npcRole) {
-      let r = Math.random(), pick = 'holder';
+    // (Re)assign on first sight OR when the unit changes side (recruit / pawn-swap
+    // flips team) — otherwise a recruited enemy keeps its enemy-life role (e.g. a
+    // 'scout' that biases AWAY from foes would make your new ally hang back). A
+    // fresh side also drops stale volatile steering state.
+    if (!unit._npcRole || (unit._npcRoleTeam != null && unit._npcRoleTeam !== unit.team)) {
+      // Default to the LAST bucket so any float-drift remainder (ROLE_PICK sums
+      // to ~1.0) lands on its intended role rather than over-weighting 'holder'.
+      let r = Math.random(), pick = ROLE_PICK[ROLE_PICK.length - 1].k;
       for (const e of ROLE_PICK) { if (r < e.p) { pick = e.k; break; } r -= e.p; }
       unit._npcRole = pick;
       // personality noise: ±15% private jitter so two same-role bots still differ.
       unit._npcNoise = 0.85 + Math.random() * 0.30;
+      unit._npcRoleTeam = unit.team;
+      unit._npcFlee = null;
+      unit._npcProg = null;
     }
     return ROLES[unit._npcRole] || ROLES.holder;
   }
@@ -193,15 +202,21 @@
     sx *= CFG.SEP_W; sy *= CFG.SEP_W;
 
     // EDGE / CORNER repulsion — the core anti-"all bots in the bottom-right" fix.
-    const a = _arena();
-    const ew = CFG.EDGE_W * (role.edgeAvoid || 1) * noise;
-    const ER = CFG.EDGE_R;
-    const lx = unit.x - a.x0, rx = (a.x0 + a.w) - unit.x;
-    const ty = unit.y - a.y0, by2 = (a.y0 + a.h) - unit.y;
-    if (lx < ER)  sx += (1 - lx / ER)  * ew;   // near left  → push right (+x)
-    if (rx < ER)  sx -= (1 - rx / ER)  * ew;   // near right → push left  (-x)
-    if (ty < ER)  sy += (1 - ty / ER)  * ew;   // near top   → push down  (+y)
-    if (by2 < ER) sy -= (1 - by2 / ER) * ew;   // near bottom→ push up    (-y)
+    // ONLY in combat. In patrol the bot has an explicit goal (npcPickGoal already
+    // scores AWAY from edges, and cover points legitimately sit ~32px off walls),
+    // so adding edge repulsion there would bend the bot off wall-near goals it can
+    // never then reach (EDGE_R 170 > GOAL_PAD 130) — holders could never take cover.
+    if (unit._aiMode !== 'patrol') {
+      const a = _arena();
+      const ew = CFG.EDGE_W * (role.edgeAvoid || 1) * noise;
+      const ER = CFG.EDGE_R;
+      const lx = unit.x - a.x0, rx = (a.x0 + a.w) - unit.x;
+      const ty = unit.y - a.y0, by2 = (a.y0 + a.h) - unit.y;
+      if (lx < ER)  sx += (1 - lx / ER)  * ew;   // near left  → push right (+x)
+      if (rx < ER)  sx -= (1 - rx / ER)  * ew;   // near right → push left  (-x)
+      if (ty < ER)  sy += (1 - ty / ER)  * ew;   // near top   → push down  (+y)
+      if (by2 < ER) sy -= (1 - by2 / ER) * ew;   // near bottom→ push up    (-y)
+    }
 
     // EVENT FLINCH — brief panic away from a recent nearby blast (memory-lite).
     if (unit._npcFlee && _now() < unit._npcFlee.until) {
@@ -276,6 +291,13 @@
         if (t) s += Math.min(Math.hypot(c.x - t.x, c.y - t.y), 300) / 100 * 0.25 * (role.wSpread || 1);
       }
       s -= crowd * CFG.CAP_PEN * (role.wSpread || 1);
+      // (3b) reuse the existing tuned occupancy heatmap (enemy_ai.js Phase 79)
+      // instead of maintaining a second, weaker anti-cluster model — hot
+      // (recently-occupied) cells score lower, so the whole squad relaxes toward
+      // an even spread. _nnHeatTick keeps the grid live; this consumes it.
+      if (typeof _nnHeatAt === 'function') {
+        s -= _nnHeatAt(c.x, c.y) * CFG.HEAT_SCALE * (role.wSpread || 1);
+      }
       // (4) anti-pattern vs own last goal
       if (unit._patrolTarget) s += Math.min(Math.hypot(c.x - unit._patrolTarget.x, c.y - unit._patrolTarget.y), 250) / 120;
       // (5) role objective vs the enemy mass
@@ -288,7 +310,6 @@
       if (c.cover) s += (role.wCover || 0) * 1.5;
       if (s > bestScore) { bestScore = s; best = c; }
     }
-    if (best) { best._reason = role === ROLES.holder ? 'hold' : (role.perp ? 'flank' : role.explore ? 'scout' : 'push'); }
     return best;
   }
 
@@ -296,15 +317,25 @@
   function npcCombatFailsafe(unit, hostile) {
     if (!_on() || !unit) return false;
     const t = _now();
-    let ref = unit._npcProg;
-    if (!ref) { unit._npcProg = { x: unit.x, y: unit.y, t }; return false; }
+    const ref = unit._npcProg;
+    // No anchor, OR a STALE one (gap >> window → we weren't measuring recently, i.e.
+    // the unit just entered combat / respawned): reseed and don't judge this window,
+    // so a fresh fight isn't instantly mis-flagged 'stuck' against an old anchor.
+    if (!ref || (t - ref.t) > CFG.FS_WINDOW * 1.5) { unit._npcProg = { x: unit.x, y: unit.y, t }; return false; }
     if (t - ref.t < CFG.FS_WINDOW) return false;
     const moved = Math.hypot(unit.x - ref.x, unit.y - ref.y);
     const nearEdge = _edgeDist(unit.x, unit.y) < CFG.FS_EDGE;
     unit._npcProg = { x: unit.x, y: unit.y, t };   // reset window
-    // Wedged against an edge AND barely moved over ~2.5s → it's stuck in a
-    // corner. Hand it to patrol; the anti-corner picker pulls it back infield.
-    return nearEdge && moved < CFG.FS_MIN_MOVE;
+    // Not wedged → cheap exit (the common case, every window).
+    if (!(nearEdge && moved < CFG.FS_MIN_MOVE)) return false;
+    // ONLY when genuinely wedged (rare) do the expensive LoS scan: never pull a
+    // bot that's actively engaging a VISIBLE enemy — demoting it to patrol drops a
+    // fire tick (patrol fire-bit off) and walks it off its line (~2.5s fire-stutter
+    // for a unit holding a defensive line). _nnUpdateAiMode already scanned for
+    // detection this tick, so gating here (not at entry) avoids a per-tick double
+    // visibility scan for every combat unit. (This is why `hostile` is passed in.)
+    if (typeof nnNearestVisibleEnemy === 'function' && nnNearestVisibleEnemy(unit, hostile)) return false;
+    return true;
   }
 
   // ── light AI-director event scan (called from nnTick) ─────────────────
