@@ -253,6 +253,21 @@ window.addEventListener('keydown', e => {
     killcamRequestRespawn();
     return;
   }
+  // Phase 183 — SOLO no-killcam fallback: respawn is now SPACE-gated (the
+  // nn_deathmatch timers only fire on _respawnRequested), so a death where the
+  // killcam never armed (e.g. no _killer) would otherwise soft-lock. If we're
+  // dead in a SOLO NN match with a pending respawn, SPACE still requests it.
+  if ((e.key === ' ' || e.code === 'Space')
+      && typeof requestSoloRespawn === 'function'
+      && typeof player !== 'undefined' && player && !player.alive
+      && typeof game !== 'undefined' && game._nnMode
+      && (typeof _mpState === 'undefined' || !_mpState || !_mpState.enabled)
+      && (player._respawnAt != null
+          || (game._teamWipe && game._teamWipe.blue && game._teamWipe.blue.wipedSince))) {
+    e.preventDefault();
+    requestSoloRespawn();
+    return;
+  }
   // Phase 180 — MP: SPACE on the death screen asks the authority to bring you
   // back (server respawns → client waits for the snapshot, never self-revives).
   // Mutually exclusive with the SOLO killcam path above (solo vs mp).

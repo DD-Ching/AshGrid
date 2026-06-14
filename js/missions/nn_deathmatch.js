@@ -168,6 +168,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
     if (!state) return;
     state.wipedSince = null;
     state.respawnAt  = null;
+    state.respawnRequested = false;   // Phase 183 — served; next wipe must re-request (SPACE)
     const units = team === 'blue'
       ? (player ? [player, ...allies] : allies.slice())
       : enemies.slice();
@@ -459,7 +460,11 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       // End-of-wipe team revive — Phase 92 uses wall-clock to match the
       // displayed countdown exactly.
       const _blueWipe = game._teamWipe.blue;
-      if (_blueWipe.wipedSince
+      // Phase 183 — SPACE-gated: only revive the wiped squad once the player has
+      // explicitly requested it (killcam SPACE → respawnRequested). No request =
+      // stay dead (the user's '不按空白鍵就永遠不會復活'). The deadline still acts
+      // as a floor (can't revive before it) via the collapse-to-now on request.
+      if (_blueWipe.wipedSince && _blueWipe.respawnRequested
           && (_blueWipe.respawnAtMs ? Date.now() >= _blueWipe.respawnAtMs
                                     : game.time >= _blueWipe.respawnAt)) {
         _reviveTeam('blue');
@@ -604,8 +609,10 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         game._nnSpawnRedIdx = (game._nnSpawnRedIdx + 1) % list.length;
         return sp;
       };
-      if (!player.alive && player._respawnAt != null && game.time >= player._respawnAt) {
-        // R12 — canonical revive transition (alive=true, hp=max, armor=max,
+      if (!player.alive && player._respawnRequested && player._respawnAt != null && game.time >= player._respawnAt) {
+        // Phase 183 — SPACE-gated (player._respawnRequested set by SPACE); no
+        // request = never auto-revive. R12 — canonical revive transition
+        // (alive=true, hp=max, armor=max,
         // gunRecoil=0, reloading=false, _invulnUntil=+SPAWN_INVULN_TICKS,
         // _lastRespawnAt=now, _respawnAt=null, _killedAtTime=0).
         const psp = _nextBlueSpawn();

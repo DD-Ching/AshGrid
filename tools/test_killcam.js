@@ -187,6 +187,11 @@ function killCam(sb) {
         && sb.game._teamWipe.blue.respawnAtMs <= Date.now(),
         'requestRespawn() collapses the wall-clock deadline to now');
   check(sb.player._respawnAt === sb.game.time, 'requestRespawn() collapses the per-player tick deadline');
+  // Phase 183 — SPACE-gate flags: the nn_deathmatch auto-revive timers now ONLY
+  // fire when these are set, so SPACE is the sole respawn trigger (no SPACE =
+  // stay dead). requestRespawn must set both the per-player and team-wipe flags.
+  check(sb.player._respawnRequested === true, 'requestRespawn() sets the per-player SPACE-gate flag');
+  check(sb.game._teamWipe.blue.respawnRequested === true, 'requestRespawn() sets the team-wipe SPACE-gate flag');
   check(sb.KillCam.phase() === 'off', 'requestRespawn() hands control back (phase off)');
 
   // latch: a follow-up frame while still dead must NOT re-arm the killcam.

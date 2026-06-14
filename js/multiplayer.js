@@ -1359,22 +1359,13 @@ function _mpRequestRespawn() {
   return true;
 }
 
-// Per-tick driver: once eligible, wait for the player to press SPACE (the UI
-// prompts), but after a grace window send the request anyway so a player who
-// never presses still returns — no soft-lock. Reset on revive / not-MP / paused.
+// Phase 183 — respawn is now STRICTLY SPACE-gated (the user's '不按空白鍵就
+// 永遠不會復活'). The old 720-tick (~12s) grace auto-request was removed: the
+// client only asks the server to respawn when the player presses SPACE
+// (key_bindings.js → _mpRequestRespawn). No SPACE = stay dead. Kept as a no-op
+// stub so the index.html update() hook + any caller stay valid without edits.
 function mpRespawnTick() {
-  if (!_mpState.enabled || (typeof game !== 'undefined' && game._paused)) return;
-  if (typeof player === 'undefined' || !player || player.alive || !mpRespawnEligible()) {
-    _mpState._eligibleSinceTick = 0;
-    return;
-  }
-  // Use game.time (sim ticks) for the grace, NOT wall-clock: game.time freezes
-  // while paused (ad / pause menu), so a long ad can't elapse the grace and
-  // auto-respawn the instant it closes — the player keeps the press-SPACE
-  // choice. ~12 s in the self-consistent 60-tick-second = 720 ticks.
-  const t = (typeof game !== 'undefined' && game.time != null) ? game.time : 0;
-  if (!_mpState._eligibleSinceTick) _mpState._eligibleSinceTick = t;
-  if (t - _mpState._eligibleSinceTick > 720) _mpRequestRespawn();
+  _mpState._eligibleSinceTick = 0;
 }
 
 // Respawn handler — when server says we respawned, the snapshot will
