@@ -203,20 +203,22 @@ function _applyDamageToUnit(u, dmg) {
 // Regen tick — call once per frame from the main update loop. Walks
 // allies + enemies + player; if a unit is heavy and the no-damage
 // cooldown has elapsed, top up its armor toward maxArmor.
+// 184q — per-unit armour regen, hoisted to module scope so tickArmorRegen no
+// longer allocates a fresh combined [player, ...allies, ...enemies] array EVERY
+// sim tick (it ran every frame in a long match). Behaviour-identical.
+function _regenUnitArmor(u, now) {
+  if (!u || !u.alive) return;
+  const c = CHASSIS[u._chassis];
+  if (!c || c.armor == null) return;
+  const delay = c.armorRegenDelay != null ? c.armorRegenDelay : 180;
+  if (now - (u._armorLastHurtAt || 0) < delay) return;
+  if (u.armor >= u.maxArmor) return;
+  u.armor = Math.min(u.maxArmor, u.armor + (c.armorRegenPerTick || 0.5));
+}
 function tickArmorRegen() {
   if (typeof game === 'undefined' || game.state !== 'playing') return;
   const now = game.time;
-  const list = [];
-  if (typeof player !== 'undefined') list.push(player);
-  if (typeof allies !== 'undefined') for (const a of allies) list.push(a);
-  if (typeof enemies !== 'undefined') for (const e of enemies) list.push(e);
-  for (const u of list) {
-    if (!u || !u.alive) continue;
-    const c = CHASSIS[u._chassis];
-    if (!c || c.armor == null) continue;
-    const delay = c.armorRegenDelay != null ? c.armorRegenDelay : 180;
-    if (now - (u._armorLastHurtAt || 0) < delay) continue;
-    if (u.armor >= u.maxArmor) continue;
-    u.armor = Math.min(u.maxArmor, u.armor + (c.armorRegenPerTick || 0.5));
-  }
+  if (typeof player !== 'undefined') _regenUnitArmor(player, now);
+  if (typeof allies !== 'undefined') for (const a of allies) _regenUnitArmor(a, now);
+  if (typeof enemies !== 'undefined') for (const e of enemies) _regenUnitArmor(e, now);
 }
