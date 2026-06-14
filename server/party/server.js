@@ -157,6 +157,41 @@ export function _respawnDecision(alive, tickCount, respawnAt, idleTicks, afkMaxT
   if (tickCount < respawnAt) return false;
   return idleTicks < afkMaxTicks;
 }
+
+// Phase 184e — server-side chassis damage routing. Mirrors the client
+// js/chassis.js _applyDamageToUnit exactly so a heavy is a real tank online and
+// a dashing wolf actually takes 70% less, instead of the server applying flat
+// damage to HP (chassis-blind = the SOLO/MP '不同步'). Pure + exported so it's
+// unit-tested in tools/test_mp_chassis.js (no room/socket needed), same pattern
+// as _respawnDecision.
+//
+// Order matches the client: DASH cut first (covers the whole hit), THEN the
+// heavy ARMOUR buffer (drain armour; overflow / no-armour bleeds to HP at
+// ARMOR_BLEED). A non-heavy, non-dashing player takes FULL damage — identical
+// to the pre-184e `p.hp -= dmg`, so humanoid MP is byte-for-byte unchanged.
+//   p.input.dashActive : 1 while the client's wolf dash is active (client only
+//                        sets it for wolf + game._classes, so it's self-gated).
+//   p.maxArmor / p.armor : sized from input.aMax (heavy 60, everyone else 0).
+// Mutates p.hp / p.armor / p._armorLastHurtTick. Returns hp damage actually dealt.
+export function _applyChassisDamage(p, dmg, tickCount) {
+  if (!p || !(dmg > 0)) return 0;
+  if (p.input && p.input.dashActive) dmg = dmg * DASH_DMG_MUL;   // wolf dash -70%
+  const hpBefore = p.hp;
+  if (p.maxArmor > 0) {
+    p._armorLastHurtTick = tickCount | 0;
+    if (p.armor > 0) {
+      const absorbed = Math.min(p.armor, dmg);
+      p.armor -= absorbed;
+      const overflow = dmg - absorbed;
+      if (overflow > 0) p.hp -= overflow * ARMOR_BLEED;
+    } else {
+      p.hp -= dmg * ARMOR_BLEED;       // no armour left, still bleeds reduced
+    }
+  } else {
+    p.hp -= dmg;                       // non-heavy: full damage (legacy)
+  }
+  return hpBefore - p.hp;
+}
 const HP_MAX            = 100;
 const INVULN_TICKS      = 3 * TICK_HZ;     // 3 s spawn protection
 // Phase 60: respawn time is ad-buffable (DEFAULT_SEC / BUFFED_SEC in
@@ -164,6 +199,20 @@ const INVULN_TICKS      = 3 * TICK_HZ;     // 3 s spawn protection
 // TICK_HZ doesn't drift the player-visible countdown.
 const RESPAWN_TICKS_DEFAULT = 15 * TICK_HZ;  // 15 s
 const RESPAWN_TICKS_BUFFED  = 5  * TICK_HZ;  // 5 s
+// Phase 184e — server-side chassis DEFENCE parity with client js/chassis.js.
+// The server was chassis-blind on defence (only HP, after 184e-1), so a heavy's
+// armour buffer + a wolf's dash damage-cut were SOLO-only — the same '不同步'
+// class of desync as the HP cap. These mirror chassis.js exactly, rescaled to
+// TICK_HZ (the client's per-frame 0.5 armour @ 60-tick-sec = 30 armour/s; 3 s
+// no-damage delay) so the FEEL matches SOLO without touching the timing unit.
+//   DASH_DMG_MUL  : incoming damage ×0.30 while a wolf is dashing (input.dashActive)
+//   ARMOR_BLEED   : fraction of post-armour overflow that leaks to HP (heavy)
+//   ARMOR_REGEN_* : top-up rate / no-damage delay for the heavy armour buffer
+const DASH_DMG_MUL            = 0.30;
+const ARMOR_BLEED             = 0.65;
+const ARMOR_REGEN_DELAY_TICKS = 3 * TICK_HZ;   // 3 s of no damage before regen
+const ARMOR_REGEN_PER_TICK    = 30 / TICK_HZ;  // 30 armour / second (=0.15 @ 200Hz)
+const ARMOR_MAX_CAP           = 500;           // clamp on client-sent aMax (sanity)
 // Arena recruit gates — authoritative server copies of the client constants in
 // js/arena_recruitment.js (ARENA_SEED_GAP / ARENA_SQUAD_CAP / ARENA_HP_GATE /
 // ARENA_TOUCH_BUFFER). Kept as named constants (not bare literals) so a balance
@@ -800,6 +849,9 @@ export default class AshGridRoom {
       x: spawn.x, y: spawn.y, angle: 0,
       hp: HP_MAX,
       maxHp: HP_MAX,           // Phase 184e — resized per-chassis from input.hMul
+      armor: 0,                // Phase 184e — heavy armour buffer (sized from input.aMax)
+      maxArmor: 0,
+      _armorLastHurtTick: -999999,
       alive: true,
       fireCdUntil: 0,
       invulnUntil: this.tickCount + INVULN_TICKS,
@@ -827,7 +879,7 @@ export default class AshGridRoom {
       // continuous drag-back because client moved at 2.48× while server
       // moved at 1.0×).
       input: { dx: 0, dy: 0, angle: 0, fire: false, seq: 0, vT: 0,
-               sprint: 0, wMul: 1.0, cMul: 1.0, rMul: 1.0, hMul: 1.0, wId: 'RIFLE' },
+               sprint: 0, wMul: 1.0, cMul: 1.0, rMul: 1.0, hMul: 1.0, dashActive: 0, wId: 'RIFLE' },
       lastInputSeq: 0,
       // Echoed back in snapshot so client can compute RTT.
       lastInputT: 0,
@@ -897,6 +949,22 @@ export default class AshGridRoom {
           const wasFull = p.hp >= (p.maxHp || HP_MAX);
           p.maxHp = newMax;
           if (wasFull && p.alive) p.hp = p.maxHp;
+        }
+      }
+      // Phase 184e — wolf DASH flag (client sets it only for wolf + game._classes,
+      // so it's self-gated; the server just trusts the bit). Read in
+      // _applyChassisDamage to cut incoming damage 70%.
+      if (typeof data.dashActive !== 'undefined') p.input.dashActive = data.dashActive ? 1 : 0;
+      // Phase 184e — heavy ARMOUR capacity (CHASSIS[chassis].armor, 0 for others).
+      // Size maxArmor; top a full-armour unit to the new cap (mirrors the hMul
+      // bump) so a just-spawned heavy starts with its buffer. Clamp sane.
+      if (typeof data.aMax === 'number' && isFinite(data.aMax)) {
+        const cap = Math.max(0, Math.min(ARMOR_MAX_CAP, data.aMax));
+        if (cap !== p.maxArmor) {
+          const wasFull = p.armor >= (p.maxArmor || 0);
+          p.maxArmor = cap;
+          if (wasFull && p.alive) p.armor = p.maxArmor;
+          else if (p.armor > cap) p.armor = cap;
         }
       }
       if (typeof data.wId  === 'string')      p.input.wId    = data.wId;
@@ -1170,6 +1238,13 @@ export default class AshGridRoom {
         continue;
       }
       const inp = p.input;
+      // Phase 184e — heavy armour regen (parity with client tickArmorRegen): once
+      // ARMOR_REGEN_DELAY_TICKS have passed since the last hit, top up toward
+      // maxArmor. No-op for non-heavy (maxArmor 0).
+      if (p.maxArmor > 0 && p.armor < p.maxArmor
+          && (this.tickCount - (p._armorLastHurtTick || 0)) >= ARMOR_REGEN_DELAY_TICKS) {
+        p.armor = Math.min(p.maxArmor, p.armor + ARMOR_REGEN_PER_TICK);
+      }
       // Movement: shared simStepPerTick (wings.io-style), honours sprint
       // + weapon/chassis multipliers carried per-input (wMul, cMul). Server
       // and client agree byte-for-byte; missing fields default to 1.0 so
@@ -1319,7 +1394,7 @@ export default class AshGridRoom {
         const cx = prevX + sx * t, cy = prevY + sy * t;
         const dx = p.x - cx, dy = p.y - cy;
         if (dx * dx + dy * dy < r2) {
-          p.hp -= b.damage;
+          _applyChassisDamage(p, b.damage, this.tickCount);   // Phase 184e — armour/dash routing
           consumed = true;
           if (b._dbgShooter) console.log(`[hitdebug] t${this.tickCount} bid=${b.id} PLAYER victim=${p.id} dmg=${b.damage} → hp=${p.hp}`);
           // Phase 2 — rocket AOE on direct hit. The wsim profile sets
@@ -1341,7 +1416,7 @@ export default class AshGridRoom {
                 if (this.tickCount < q.invulnUntil) continue;
                 const qdx = q.x - b.x, qdy = q.y - b.y;
                 if (qdx * qdx + qdy * qdy <= blastR2) {
-                  q.hp -= blastDmg;
+                  _applyChassisDamage(q, blastDmg, this.tickCount);   // Phase 184e — armour/dash routing
                   this.party.broadcast(JSON.stringify({
                     type: 'hit', victim: q.id, shooter: b.shooterId,
                     hp: Math.max(0, q.hp), weapon: b.weapon,
@@ -1579,7 +1654,7 @@ export default class AshGridRoom {
     const lastBullet = this.bullets[this.bullets.length - 1];
     const lcDmg    = (lastBullet && typeof lastBullet.damage === 'number') ? lastBullet.damage : BULLET_DAMAGE;
     const lcWeapon = (lastBullet && lastBullet.weapon) ? lastBullet.weapon : 'RIFLE';
-    bestVictim.hp -= lcDmg;
+    _applyChassisDamage(bestVictim, lcDmg, this.tickCount);   // Phase 184e — armour/dash routing
     if (shooter.hitDebug) console.log(`[hitdebug] t${this.tickCount} LAGCOMP shooter=${shooter.id} victim=${bestVictim.id} dmg=${lcDmg} → hp=${bestVictim.hp}`);
     if (this.bullets.length > 0) this.bullets.pop();
     // Phase 41: include impact coords for client-side blood/popup placement.
@@ -1613,6 +1688,8 @@ export default class AshGridRoom {
     const spawn = this._pickSpawn();
     p.x = spawn.x; p.y = spawn.y;
     p.hp = p.maxHp || HP_MAX;     // Phase 184e — respawn at the per-chassis max
+    p.armor = p.maxArmor || 0;    // Phase 184e — refill heavy armour on respawn
+    p._armorLastHurtTick = this.tickCount;
     p.alive = true;
     p.respawnRequested = false;   // Phase 182 — request served; next death must re-ask
     p.invulnUntil = this.tickCount + INVULN_TICKS;
@@ -1713,6 +1790,8 @@ export default class AshGridRoom {
         angle: round3(p.angle),
         hp: p.hp,
         maxHp: p.maxHp,                       // Phase 184e — per-chassis ceiling (remote HP bars)
+        armor: Math.round(p.armor),           // Phase 184e — heavy armour buffer (rounded: cuts regen delta churn)
+        maxArmor: p.maxArmor,
         alive: p.alive,
         invuln: this.tickCount < p.invulnUntil,
         name: p.name,
@@ -1786,6 +1865,8 @@ export default class AshGridRoom {
         if (!last || last.angle !== p.angle) out.angle = p.angle;
         if (!last || last.hp !== p.hp) out.hp = p.hp;
         if (!last || last.maxHp !== p.maxHp) out.maxHp = p.maxHp;   // Phase 184e — sent on change only (~free)
+        if (!last || last.armor !== p.armor) out.armor = p.armor;       // Phase 184e — heavy armour (delta)
+        if (!last || last.maxArmor !== p.maxArmor) out.maxArmor = p.maxArmor;
         if (!last || last.alive !== p.alive) out.alive = p.alive;
         if (!last || last.invuln !== p.invuln) {
           if (p.invuln) out.invuln = true;     // omit when false (saves bytes)
@@ -1795,7 +1876,7 @@ export default class AshGridRoom {
         playerDeltas.push(out);
         // Save the FULL state (not just delta) so next tick's diff has
         // ground truth.
-        state.players.set(p.id, { x: p.x, y: p.y, angle: p.angle, hp: p.hp, maxHp: p.maxHp, alive: p.alive, invuln: p.invuln });
+        state.players.set(p.id, { x: p.x, y: p.y, angle: p.angle, hp: p.hp, maxHp: p.maxHp, armor: p.armor, maxArmor: p.maxArmor, alive: p.alive, invuln: p.invuln });
       }
 
       // ── Bullets: per-receiver AOI cull + delta for known bullets ──

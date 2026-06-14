@@ -341,6 +341,18 @@
         sp.hp
       );
     }
+    // Phase 184e — heavy ARMOUR sync. Same two-writer reasoning as hp: local
+    // (client-only NN bullet drained player.armor via _applyDamageToUnit) vs
+    // server (MP bullet drained the authoritative p.armor). min() keeps both
+    // kinds of armour loss durable; respawn (server armour low→full) is handled
+    // by the justRespawned guard like hp. Only meaningful for a heavy (maxArmor>0).
+    if (typeof sp.armor === 'number' && !_justRespawned
+        && typeof player.maxArmor === 'number' && player.maxArmor > 0) {
+      player.armor = Math.min(
+        (typeof player.armor === 'number') ? player.armor : sp.armor,
+        sp.armor
+      );
+    }
     // Invuln pin: server is authoritative for spawn protection.
     // Phase 5: only act when sp.invuln is EXPLICITLY in the snapshot —
     // undefined means delta has no change, leave _invulnUntil alone.

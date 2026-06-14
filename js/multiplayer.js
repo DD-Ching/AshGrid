@@ -490,6 +490,8 @@ function _mpHandleSnapshot(snap) {
           targetX: sp.x, targetY: sp.y,
           angle: sp.angle,
           hp: sp.hp, maxHp: (typeof sp.maxHp === 'number' ? sp.maxHp : 100), alive: sp.alive,
+          armor: (typeof sp.armor === 'number' ? sp.armor : 0),
+          maxArmor: (typeof sp.maxArmor === 'number' ? sp.maxArmor : 0),
           name: sp.name, invuln: !!sp.invuln,
           buffer: [],   // [{t, x, y, angle}]  t = server clock at broadcast
         };
@@ -502,6 +504,8 @@ function _mpHandleSnapshot(snap) {
       if (sp.angle !== undefined) rp.angle = sp.angle;
       if (sp.hp !== undefined) rp.hp = sp.hp;
       if (sp.maxHp !== undefined) rp.maxHp = sp.maxHp;   // Phase 184e — per-chassis ceiling for remote HP bars
+      if (sp.armor !== undefined) rp.armor = sp.armor;       // Phase 184e — remote heavy armour buffer
+      if (sp.maxArmor !== undefined) rp.maxArmor = sp.maxArmor;
       if (sp.alive !== undefined) rp.alive = sp.alive;
       if (sp.invuln !== undefined) rp.invuln = !!sp.invuln;
       if (sp.name) rp.name = sp.name;
@@ -862,6 +866,14 @@ function _mpSendInput() {
   const hMul = (typeof CHASSIS !== 'undefined' && typeof player !== 'undefined'
     && player._chassis && CHASSIS[player._chassis] && typeof CHASSIS[player._chassis].hpMul === 'number')
     ? CHASSIS[player._chassis].hpMul : 1.0;
+  // Phase 184e — heavy ARMOUR capacity + wolf DASH flag, the defence half of the
+  // chassis parity (server was chassis-blind on defence too). aMax is a base stat
+  // (always sent, like hMul); dashActive is only ever non-zero for a wolf with
+  // game._classes on (set by the sprint logic), so it's self-gated client-side.
+  const aMax = (typeof CHASSIS !== 'undefined' && typeof player !== 'undefined'
+    && player._chassis && CHASSIS[player._chassis] && typeof CHASSIS[player._chassis].armor === 'number')
+    ? CHASSIS[player._chassis].armor : 0;
+  const dashActive = (typeof player !== 'undefined' && player._dashActive) ? 1 : 0;
   let wId = 'RIFLE';
   if (typeof WEAPONS !== 'undefined' && typeof playerWeapon !== 'undefined' && playerWeapon) {
     if (playerWeapon === WEAPONS.RIFLE)        wId = 'RIFLE';
@@ -897,7 +909,7 @@ function _mpSendInput() {
     buffActive: (typeof isRespawnBuffed === 'function') ? isRespawnBuffed() : false,
     // Per-tick loadout (see big comment above).
     sprint: sprint ? 1 : 0,
-    wMul, cMul, wId, rMul, hMul,
+    wMul, cMul, wId, rMul, hMul, aMax, dashActive,
   };
   _mpSendRaw(input);
 
@@ -1063,6 +1075,14 @@ function _mpRenderRemote() {
       ctx.fillRect(rp.x - 15, rp.y - 22, 30, 3);
       ctx.fillStyle = COLORS.red;
       ctx.fillRect(rp.x - 15, rp.y - 22, 30 * Math.max(0, hp) / maxHp, 3);
+    }
+    // Phase 184e — heavy armour bar (cyan), sits just above the HP bar, mirrors
+    // the SOLO enemy bar in world_render.js. Only a heavy with live armour.
+    if (rp.maxArmor > 0 && rp.armor > 0) {
+      ctx.fillStyle = 'rgba(20,20,32,0.55)';
+      ctx.fillRect(rp.x - 15, rp.y - 26, 30, 2);
+      ctx.fillStyle = '#42B7E8';
+      ctx.fillRect(rp.x - 15, rp.y - 26, 30 * Math.max(0, rp.armor) / rp.maxArmor, 2);
     }
     // Name label — sits between chevron and HP bar.
     ctx.fillStyle = COLORS.black;
