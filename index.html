@@ -4919,6 +4919,7 @@ function update() {
   // reads them. Runs after updateSoundEvents() so this tick's kills are seen.
   if (typeof updateKillstreakFx === 'function') updateKillstreakFx();
   if (typeof updateAchievementFx === 'function') updateAchievementFx();   // 184n — unlock card
+  if (typeof updateSwapToast === 'function') updateSwapToast();           // 184p — display-rate-safe toast
   if (typeof updateRecruitFx === 'function') updateRecruitFx();
 
   // Mission completion drives wave advancement.

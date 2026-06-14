@@ -537,9 +537,10 @@ function renderHUDOverlays() {
   // Replaces the giant center-screen "接管 BRAVO" banner that used to block
   // view while rapid-switching.
   if (game._swapToast && game._swapToast.ttl > 0) {
-    const tot = 75;
+    const tot = game._swapToast.maxTtl || 75;          // 184p — real lifetime, not a hardcoded 75
     const t = game._swapToast.ttl / tot;
-    const alpha = t < 0.3 ? (t / 0.3) : 1;     // fade out at end
+    const inP = Math.min(1, (1 - t) / 0.12);           // 184p — symmetric pop-in (~12%)
+    const alpha = (t < 0.3 ? (t / 0.3) : 1) * (inP < 1 ? inP : 1);
     ctx.save();
     ctx.globalAlpha = alpha;
     // On narrow viewports the status panel only goes to y=96 (height 80) so
@@ -563,7 +564,8 @@ function renderHUDOverlays() {
     ctx.fillText(_toastTxt, W() / 2, ty + 17);
     ctx.textAlign = 'left';
     ctx.restore();
-    game._swapToast.ttl--;
+    // 184p — ttl is now aged in updateSwapToast() (sim-tick), NOT here in render,
+    // so the toast lasts the same wall-time regardless of display refresh rate.
   }
 
   // Mode-specific overlays
