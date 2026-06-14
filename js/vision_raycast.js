@@ -13,54 +13,11 @@
 // External deps: buildings · overheads · visionRays · visionPoly ·
 //   enemyVisionPoly · player · enemies · allies · VIEW · ENEMY_VIEW
 
-// Ray vs axis-aligned rect — returns t (distance along ray) or Infinity if no hit.
-function rayRect(x0, y0, dx, dy, rect) {
-  const invX = dx === 0 ? Infinity : 1 / dx;
-  const invY = dy === 0 ? Infinity : 1 / dy;
-  const tx1 = (rect.x - x0) * invX;
-  const tx2 = (rect.x + rect.w - x0) * invX;
-  const ty1 = (rect.y - y0) * invY;
-  const ty2 = (rect.y + rect.h - y0) * invY;
-  const tmin = Math.max(Math.min(tx1, tx2), Math.min(ty1, ty2));
-  const tmax = Math.min(Math.max(tx1, tx2), Math.max(ty1, ty2));
-  if (tmax < 0 || tmin > tmax) return Infinity;
-  return tmin > 0 ? tmin : Infinity;
-}
-
-// Cast a ray from (x0, y0) in direction angle, up to maxDist; returns the hit point.
-function castVisionRay(x0, y0, angle, maxDist, blockers) {
-  const dx = Math.cos(angle), dy = Math.sin(angle);
-  let best = maxDist;
-  for (const b of blockers) {
-    const t = rayRect(x0, y0, dx, dy, b);
-    if (t < best) best = t;
-  }
-  return { x: x0 + dx * best, y: y0 + dy * best, t: best };
-}
-
-// Build a fan-shaped visibility polygon from origin (numRays + 2 verts).
-function buildVisionPoly(out, ox, oy, faceAngle, arc, range) {
-  out.length = 0;
-  out.push({ x: ox, y: oy });
-  const half = arc / 2;
-  // Cull to nearby blockers for perf — only buildings/lowCovers within (range + diagonal) bounding circle.
-  const cull = range + 200;
-  const blockers = [];
-  for (const b of buildings) {
-    const cx = b.x + b.w/2, cy = b.y + b.h/2;
-    if (Math.hypot(cx - ox, cy - oy) - Math.hypot(b.w, b.h)/2 < cull) blockers.push(b);
-  }
-  for (const lc of lowCovers) {
-    const cx = lc.x + lc.w/2, cy = lc.y + lc.h/2;
-    if (Math.hypot(cx - ox, cy - oy) - Math.hypot(lc.w, lc.h)/2 < cull) blockers.push(lc);
-  }
-  for (let i = 0; i <= visionRays; i++) {
-    const t = i / visionRays;
-    const a = faceAngle - half + arc * t;
-    const hit = castVisionRay(ox, oy, a, range, blockers);
-    out.push(hit);
-  }
-}
+// 184r — removed the dead ray-cone fog subsystem (rayRect / castVisionRay /
+// buildVisionPoly). Its only consumer was drawSharedVisionFog() in
+// render_overlays.js, which was itself never called — the whole chain was
+// orphaned. The live fog-of-war path uses isVisibleToFriendly (below). Kept
+// angDiff + angleInCone (used by isVisibleToFriendly and others).
 
 // Wrap (target - current) into [-PI, PI]. Used to drive damped rotations.
 function angDiff(target, current) {
@@ -71,10 +28,9 @@ function angDiff(target, current) {
 }
 
 function angleInCone(srcAngle, arc, ox, oy, tx, ty) {
-  const a = Math.atan2(ty - oy, tx - ox);
-  let d = a - srcAngle;
-  while (d > Math.PI) d -= Math.PI*2;
-  while (d < -Math.PI) d += Math.PI*2;
+  // 184r — reuse the sibling angDiff() wrap (byte-identical to the old inline
+  // while-loops) instead of duplicating it.
+  const d = angDiff(Math.atan2(ty - oy, tx - ox), srcAngle);
   return Math.abs(d) <= arc / 2;
 }
 

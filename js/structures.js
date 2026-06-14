@@ -706,20 +706,8 @@ function updateStructures() {
   }
 }
 
-// Camera structures extend shared vision — used by line-of-sight checks for
-// auto-aim and minimap reveal. Returns true if any friendly camera (or
-// normal blue unit) can see (sx, sy).
-function cameraCanSee(sx, sy) {
-  if (!game._structures) return false;
-  for (const s of game._structures) {
-    if (s.kind !== 'camera' || s.hp <= 0) continue;
-    const def = STRUCTURE_DEFS.camera;
-    if (Math.hypot(sx - s.x, sy - s.y) <= def.visionR) {
-      if (lineOfSight(s.x, s.y, sx, sy)) return true;
-    }
-  }
-  return false;
-}
+// 184r — removed dead cameraCanSee() (zero call sites; camera vision is handled
+// via the shared isVisibleToFriendly path, not this orphan).
 
 // Damage closest structure on bullet hit. Called from updateBullets when
 // the bullet enters a structure's bbox. Returns true if hit was absorbed.

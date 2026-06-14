@@ -32,12 +32,8 @@ function _segSegHits(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2) {
   const tb = ((bx1 - ax1) * (ay2 - ay1) - (by1 - ay1) * (ax2 - ax1)) / d;
   return ta >= 0 && ta <= 1 && tb >= 0 && tb <= 1;
 }
-// Inflate a line segment by `pad` and test if a point sits inside the capsule.
-// Capsule = segment + a half-circle on each end + a rectangle along the body.
-function _pointInCapsule(px, py, x1, y1, x2, y2, pad) {
-  const r = _segPointDist(px, py, x1, y1, x2, y2);
-  return r.dist <= pad;
-}
+// 184r — removed dead _pointInCapsule() (zero call sites; capsule hit tests use
+// _segPointDist directly at the live call sites).
 
 function isInsideRect(x, y, r) {
   return x > r.x && x < r.x+r.w && y > r.y && y < r.y+r.h;
