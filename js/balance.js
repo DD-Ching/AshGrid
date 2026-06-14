@@ -55,3 +55,17 @@ function addEnergy(amount) {
   if (typeof game === 'undefined' || !game) return;
   game._energy = Math.min(999, (game._energy || 0) + amount);
 }
+// Phase 185 — energy SPEND helpers, the counterparts to addEnergy. canAffordEnergy
+// is the repeated `(game._energy||0) >= cost` check; spendEnergy pairs the check +
+// a clamped deduct and returns whether it spent. Used by the GUARDED structure /
+// upgrade / tesla spends (sites that already check affordability — behaviour-
+// identical). NOT applied to un-guarded drains (e.g. EMP) that intentionally let
+// energy dip, so their edge behaviour is unchanged.
+function canAffordEnergy(cost) {
+  return (typeof game !== 'undefined' && game) ? (game._energy || 0) >= cost : false;
+}
+function spendEnergy(cost) {
+  if (!canAffordEnergy(cost)) return false;
+  game._energy = Math.max(0, (game._energy || 0) - cost);
+  return true;
+}

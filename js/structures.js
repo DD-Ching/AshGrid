@@ -194,7 +194,7 @@ function getStructureCost(kind) { return STRUCTURE_DEFS[kind]?.cost || 0; }
 // because they're modular building blocks. Other modules are single-place.
 const WALL_KINDS = new Set(['cover', 'wall', 'bunker']);
 function isWallKind(kind) { return WALL_KINDS.has(kind); }
-function canAffordStructure(kind) { return (game._energy || 0) >= getStructureCost(kind); }
+function canAffordStructure(kind) { return canAffordEnergy(getStructureCost(kind)); }
 
 // Place a structure at world (wx, wy). For combat-bot it instead spawns an
 // NN ally directly (one-time use, no persistent module). Returns true on
@@ -227,7 +227,7 @@ function placeStructure(kind, wx, wy) {
       _respawnAt: null, _invulnUntil: game.time + 60,
       _deployed: true,
     });
-    game._energy -= def.cost;
+    spendEnergy(def.cost);
     showSwapToast(T(`部署 ${callsign}`, `Deployed ${callsign}`));
     playSfx('reload', { vol: 0.6 });
     return true;
@@ -246,7 +246,7 @@ function placeStructure(kind, wx, wy) {
     fireCd: 0, airstrikeCd: 0, _placedAt: game.time,
   };
   game._structures.push(s);
-  game._energy -= def.cost;
+  spendEnergy(def.cost);
   // Phase 43: in MP, tell the server we built this so it can enforce
   // collision + accept damage from other players' bullets/grenades, and
   // broadcast to other clients so they see the wall too.
@@ -342,11 +342,10 @@ function upgradeNearestModule() {
     showSwapToast(lang === 'zh' ? '模塊已達 III 級' : 'Module at max tier');
     return false;
   }
-  if ((game._energy || 0) < cost) {
+  if (!spendEnergy(cost)) {
     showSwapToast(lang === 'zh' ? `能源不足 (需 ${cost}⚡)` : `Need ${cost}⚡`);
     return false;
   }
-  game._energy -= cost;
   best.tier = next;
   // Bump current HP by the same ratio so an upgraded module isn't half-dead
   const newMaxHp = _moduleStat(best, 'maxHp') || best.maxHp;
@@ -593,7 +592,7 @@ function updateStructures() {
           if (d < primaryD && lineOfSight(s.x, s.y, e.x, e.y)) { primary = e; primaryD = d; }
         }
         if (primary) {
-          game._energy -= teslaAmmo;
+          spendEnergy(teslaAmmo);
           const teslaDmg = _moduleStat(s, 'dmg');
           const teslaCdNew = _moduleStat(s, 'fireCd');
           game._teslaBolts = game._teslaBolts || [];
