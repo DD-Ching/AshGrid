@@ -49,6 +49,7 @@
 <!-- Phase 144 — BALANCE: single home for tunable numbers. MUST load before
      structures.js + arena_recruitment.js (they read BALANCE at definition time). -->
 <script src="js/balance.js?v=232"></script>
+<script src="js/geometry.js?v=232"></script>
 <script src="js/audio_mute.js?v=232"></script>
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
@@ -2404,44 +2405,7 @@ function _wait(ms) {
   });
 }
 
-// Wait for any of `keys` to be pressed (case-insensitive against single
-// characters; symbolic keys like 'TAB', '1-4' compare against e.key).
-// Resolves on press OR when timeoutMs elapses, whichever first. Mouse
-// click on the intro overlay also resolves (acts as "skip this beat").
-function _waitForKeyOrTimeout(keyHint, timeoutMs) {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      window.removeEventListener('keydown', onKey);
-      const intro = document.getElementById('intro');
-      intro && intro.removeEventListener('click', onClick);
-      resolve();
-    };
-    const onKey = (e) => {
-      if (_introSkipFlag) { finish(); return; }
-      const k = (e.key || '').toLowerCase();
-      const hint = (keyHint || '').toLowerCase();
-      // Match: any letter mentioned in the hint, plus 1-4 if hint
-      // contains '1-4', plus tab if hint contains 'tab'.
-      const matches =
-        (hint.includes('wasd') && 'wasd'.includes(k)) ||
-        (hint.includes('mouse')) ||                       // any key works as proxy
-        (hint === 'r' && k === 'r') ||
-        (hint === 'x' && k === 'x') ||
-        (hint === 'q' && k === 'q') ||
-        (hint.includes('1-4') && /^[1-4]$/.test(k)) ||
-        (hint.includes('tab') && k === 'tab');
-      if (matches) { e.preventDefault(); finish(); }
-    };
-    const onClick = () => finish();
-    window.addEventListener('keydown', onKey);
-    const intro = document.getElementById('intro');
-    intro && intro.addEventListener('click', onClick);
-    if (timeoutMs > 0) setTimeout(finish, timeoutMs);
-  });
-}
+// _waitForKeyOrTimeout removed (Phase 185 — dead code, zero callers).
 
 async function playIntroSequence() {
   const intro = document.getElementById('intro');
@@ -3231,9 +3195,7 @@ window.addEventListener('mousemove', e => {
     if (c) editor._dragEnd = { gx: c.gx, gy: c.gy };
   }
 });
-function _hitRect(r, x, y) {
-  return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-}
+// _hitRect → js/geometry.js (Phase 185 modularization)
 window.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   // Phase 108b — the canvas is now CSS-positioned at top: HUD_AD_TOP px
@@ -4652,36 +4614,8 @@ const COVER_HP_BY_KIND = {
 // in-game build-mode both produce these; legacy 60u FIXED_MAPS rooms
 // still use the rectangular `buildings` table unchanged.
 const wallLines = [];
-function _segPointDist(px, py, x1, y1, x2, y2) {
-  // Returns closest distance + the projected point on the segment (clamped
-  // 0..1). Used by collision (entity vs wall) and bullet hits.
-  const dx = x2 - x1, dy = y2 - y1;
-  const len2 = dx * dx + dy * dy;
-  if (len2 < 0.0001) {
-    return { dist: Math.hypot(px - x1, py - y1), cx: x1, cy: y1, t: 0 };
-  }
-  let t = ((px - x1) * dx + (py - y1) * dy) / len2;
-  if (t < 0) t = 0; else if (t > 1) t = 1;
-  const cx = x1 + t * dx, cy = y1 + t * dy;
-  return { dist: Math.hypot(px - cx, py - cy), cx, cy, t };
-}
-function _segSegHits(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2) {
-  const d = (ax2 - ax1) * (by2 - by1) - (ay2 - ay1) * (bx2 - bx1);
-  if (Math.abs(d) < 1e-9) return false;       // parallel
-  const ta = ((bx1 - ax1) * (by2 - by1) - (by1 - ay1) * (bx2 - bx1)) / d;
-  const tb = ((bx1 - ax1) * (ay2 - ay1) - (by1 - ay1) * (ax2 - ax1)) / d;
-  return ta >= 0 && ta <= 1 && tb >= 0 && tb <= 1;
-}
-// Inflate a line segment by `pad` and test if a point sits inside the capsule.
-// Capsule = segment + a half-circle on each end + a rectangle along the body.
-function _pointInCapsule(px, py, x1, y1, x2, y2, pad) {
-  const r = _segPointDist(px, py, x1, y1, x2, y2);
-  return r.dist <= pad;
-}
-
-function isInsideRect(x, y, r) {
-  return x > r.x && x < r.x+r.w && y > r.y && y < r.y+r.h;
-}
+// _segPointDist / _segSegHits / _pointInCapsule / isInsideRect
+//   → js/geometry.js (Phase 185 modularization)
 
 // ============ MAP DEFINITIONS ============
 // → Moved to js/maps.js. Declares globally:
