@@ -390,7 +390,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       requestRewardedAd('skip_wave', (ok) => {
         if (!ok) { if (game._buildPhase) game._buildPhase._skipUsed = false; return; }
         _nextWaveAt = game.time + _waveInterval(_waveNum);   // delay next reinforcement
-        if (typeof game._energy === 'number') game._energy = Math.min(999, game._energy + 100);
+        if (typeof game._energy === 'number') addEnergy(100);
         if (typeof showSwapToast === 'function') {
           showSwapToast(T('▶ 跳過下一波 · +補給', '▶ WAVE SKIPPED · +SUPPLY'));
         }
@@ -492,7 +492,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           };
           // small stipend so the player can also afford a wheel build or two
           // during the lull — the deeper "energy too slow" complaint.
-          if (typeof game._energy === 'number') game._energy = Math.min(999, game._energy + 50);
+          if (typeof game._energy === 'number') addEnergy(50);
           _nextBuildPhaseAt = game.time + BUILD_PERIOD;
           if (typeof showSwapToast === 'function') {
             showSwapToast(T('▶ 建造階段 · 點擊放置掩體 ×3 · +50⚡',

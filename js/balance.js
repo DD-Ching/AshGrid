@@ -47,3 +47,11 @@ const BALANCE = {
     sensor: 30, bot: 180,
   },
 };
+
+// Phase 185 — single energy-GAIN helper. Kills the `Math.min(999, (game._energy
+// || 0) + X)` idiom that was copy-pasted 9× (the 999 cap was a magic number
+// repeated everywhere). Behaviour-identical; the shared pool clamps at 999.
+function addEnergy(amount) {
+  if (typeof game === 'undefined' || !game) return;
+  game._energy = Math.min(999, (game._energy || 0) + amount);
+}

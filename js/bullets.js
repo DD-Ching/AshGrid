@@ -188,7 +188,7 @@ function detonateRocket(b) {
           showSwapToast(T(`敌方重生点已摧毁`, `Enemy spawn destroyed`));
             unlockAchievement('beacon_kill');
           game._spawnBeacons.splice(bk, 1);
-          game._energy = Math.min(999, (game._energy || 0) + BALANCE.energy.spawnBeaconDestroy);
+          addEnergy(BALANCE.energy.spawnBeaconDestroy);
         }
       }
     }
@@ -287,7 +287,7 @@ function updateBullets() {
           // Per-kill energy bonus (any NN mode) so building is sustainable
           // even outside Defense's wave-clear payouts.
           if (game._nnMode) {
-            game._energy = Math.min(999, (game._energy || 0) + BALANCE.energy.perKill);
+            addEnergy(BALANCE.energy.perKill);
           }
           // Slow-mo on 3+ killstreak — 0.55× for 1.5s, retriggers on each
           // subsequent kill so a hot streak stays in slow-mo. Tiny shake on
@@ -414,7 +414,7 @@ function updateBullets() {
             showSwapToast(T(`敌方重生点已摧毁`, `Enemy spawn destroyed`));
             unlockAchievement('beacon_kill');
             game._spawnBeacons.splice(ci, 1);
-            game._energy = Math.min(999, (game._energy || 0) + BALANCE.energy.spawnBeaconDestroy);
+            addEnergy(BALANCE.energy.spawnBeaconDestroy);
             game.score += 250;
           }
           hit = true; break;

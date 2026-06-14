@@ -430,7 +430,7 @@ function updateStructures() {
     if (def.needsPower && !s._powered) continue;
     // Generator: tick energy
     if (s.kind === 'generator') {
-      game._energy = Math.min(999, (game._energy || 0) + (def.energyPerSec / 60));
+      addEnergy(def.energyPerSec / 60);
     }
     // Turret: scan + fire (also drains game._energy as ammo)
     if (s.kind === 'turret') {

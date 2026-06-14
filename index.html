@@ -4713,7 +4713,7 @@ function updateMission() {
     // generator (the old way to accelerate income) was removed from the wheel
     // along with the power-supply mechanic, so passive trickle is now the
     // ONLY income besides kills. User: '充電太慢了' / '東西變少, 簡單一點'.
-    game._energy = Math.min(999, (game._energy || 0) + BALANCE.energy.regenPerSec / 60);
+    addEnergy(BALANCE.energy.regenPerSec / 60);
     updateStructures();
     updateAirstrikes();
   }

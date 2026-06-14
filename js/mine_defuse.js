@@ -62,7 +62,7 @@ function tickMineDefuse() {
     // Complete — remove the mine + refund a tiny chunk of energy as a
     // 'recovered components' reward.
     target.hp = 0;
-    game._energy = Math.min(999, (game._energy || 0) + BALANCE.energy.mineDefuse);
+    addEnergy(BALANCE.energy.mineDefuse);
     if (typeof showSwapToast === 'function') {
       showSwapToast(T(`▶ 拆解完成 +${BALANCE.energy.mineDefuse}⚡`, `▶ DEFUSED +${BALANCE.energy.mineDefuse}⚡`));
     }

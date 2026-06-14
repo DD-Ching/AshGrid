@@ -304,7 +304,7 @@ function _arenaTryRecycle() {
   allies.splice(idx, 1);
   // Credit energy
   if (typeof game !== 'undefined') {
-    game._energy = Math.min(999, (game._energy || 0) + ARENA_RECYCLE_ENERGY);
+    addEnergy(ARENA_RECYCLE_ENERGY);
   }
   // Feedback
   if (typeof showSwapToast === 'function') {
