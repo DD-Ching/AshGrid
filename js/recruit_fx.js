@@ -28,6 +28,11 @@ function triggerRecruitFx(name, squadCount) {
     ? squadCount
     : (Array.isArray(allies) ? allies.filter(a => a && a.alive).length : 0);
   _rfxBanner = { name: name || 'UNIT', squad, ttl: _RFX_TTL, maxTtl: _RFX_TTL };
+  // Phase 184n — screen-punch on recruit, matching the killstreak juice. Recruit
+  // is the game's signature progression beat but was the one big moment with no
+  // tactile shake. Tasteful + capped, scales slightly with squad size. Zero
+  // balance impact (shake is cosmetic, gated by SHAKE_CAP in triggerShake).
+  if (typeof triggerShake === 'function') triggerShake(Math.min(6, 3 + squad * 0.5), 8);
   // Rising arpeggio — a positive "joined up" sting, distinct from the kill beep.
   if (typeof playRadioBeep === 'function') {
     playRadioBeep(600, 0.16);

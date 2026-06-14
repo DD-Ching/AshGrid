@@ -198,6 +198,7 @@
 <script src="js/render_frame.js?v=234"></script>
 <!-- Phase 147 — killstreak announcer (juice). Registers an over-HUD FX layer. -->
 <script src="js/killstreak_fx.js?v=234"></script>
+<script src="js/achievement_fx.js?v=234"></script>
 <!-- Phase 148 — recruit celebration (juice). Renders after renderHUD. -->
 <script src="js/recruit_fx.js?v=234"></script>
 <!-- Phase 152 — low-HP danger vignette (juice). Renders under the HUD. -->
@@ -4917,6 +4918,7 @@ function update() {
   // banners last the same wall-time on every display refresh. render() only
   // reads them. Runs after updateSoundEvents() so this tick's kills are seen.
   if (typeof updateKillstreakFx === 'function') updateKillstreakFx();
+  if (typeof updateAchievementFx === 'function') updateAchievementFx();   // 184n — unlock card
   if (typeof updateRecruitFx === 'function') updateRecruitFx();
 
   // Mission completion drives wave advancement.
