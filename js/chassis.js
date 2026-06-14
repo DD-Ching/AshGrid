@@ -176,6 +176,13 @@ function _applyDamageToUnit(u, dmg) {
   // (world_render flashes the humanoid white while game.time < this). Set here,
   // the one damage chokepoint, so it fires for bullets / AOE / melee alike.
   u._hitFlashUntil = ((typeof game !== 'undefined') ? game.time : 0) + 5;
+  // Phase 184c — Charger DASH damage reduction: while dashing (set by the sprint
+  // logic for a wolf when game._classes is on), incoming damage is cut 70%.
+  // Applied at this single chokepoint BEFORE armor/HP so it covers bullets/AOE/
+  // melee alike. SOLO only for now (MP must server-validate — deferred to 184e).
+  if (u._dashActive && (typeof game === 'undefined' || game._classes)) {
+    dmg = dmg * 0.30;
+  }
   const c = CHASSIS[u._chassis];
   if (c && c.armor != null) {
     u._armorLastHurtAt = (typeof game !== 'undefined') ? game.time : 0;

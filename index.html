@@ -5835,6 +5835,23 @@ function updatePlayer() {
                      && (!player._spentToZero || player.stamina >= STAMINA_RECOVERY_MIN);
   player.sprinting = wantsSprint;
 
+  // Phase 184c — Charger DASH: for a wolf with the class system on, sprinting IS
+  // the dash — it additionally drains ENERGY and grants the -70% damage window
+  // (player._dashActive, read by chassis.js _applyDamageToUnit). Out of energy →
+  // dash + its speed boost end this frame. SOLO only (MP dash → server, 184e).
+  player._dashActive = false;
+  if (player.sprinting && typeof game !== 'undefined' && game._classes
+      && player._chassis === 'wolf') {
+    const _dashPerF = ((typeof BALANCE === 'object' && BALANCE.ability)
+      ? (BALANCE.ability.dash || 0) : 0) / 60;   // per-second rate → per-frame
+    if ((game._energy || 0) >= _dashPerF) {
+      game._energy = Math.max(0, game._energy - _dashPerF);
+      player._dashActive = true;
+    } else {
+      player.sprinting = false;
+    }
+  }
+
   if (player.sprinting) {
     player.stamina = Math.max(0, player.stamina - STAMINA_DRAIN_PER_F);
     if (player.stamina === 0) player._spentToZero = true;
