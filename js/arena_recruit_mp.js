@@ -31,11 +31,23 @@ function _arenaTryRecruitMP() {
   if (typeof player === 'undefined' || !player || !player.alive) return false;
   if (!_mpState.remoteBots || _mpState.remoteBots.size === 0) return false;
 
-  // SEED gate (skill differential) — bots are seed 0, so we just need our
-  // own seed above the gap. Bail early; this is also why the HUD 'G RECRUIT'
-  // prompt only lights up once player._seed > ARENA_SEED_GAP.
+  // Phase 184g — chassis-as-classes recruit, MP mirror of SOLO
+  // arena_recruitment._arenaTrySEDConvert (flag-gated game._classes, off by
+  // default). Two regimes, picked the SAME way on both sides; the server
+  // re-validates via _recruitGateOk using the cls+klass we send.
+  //   classes-on: HUMANOID (builder) ONLY; eligibility = bot weaker than me
+  //               (rb.hp < player.hp); SEED gate dropped. Wolf/heavy don't
+  //               recruit (wolf devours — that MP path is a later phase).
+  //   classes-off: legacy SEED + wound<50% (byte-identical to pre-184g).
+  const classesBuilder = (typeof game !== 'undefined' && game._classes)
+    && (!player._chassis || player._chassis === 'humanoid');
+  if ((typeof game !== 'undefined' && game._classes) && !classesBuilder) return false;  // non-builder doesn't recruit under classes
+
+  // SEED gate (skill differential) — legacy only. Bots are seed 0, so we just
+  // need our own seed above the gap. Bail early; this is also why the HUD
+  // 'G RECRUIT' prompt only lights up once player._seed > ARENA_SEED_GAP.
   const mySeed = player._seed || 0;
-  if (mySeed <= ARENA_SEED_GAP) return false;
+  if (!classesBuilder && mySeed <= ARENA_SEED_GAP) return false;
 
   // Squad cap — parity with the SOLO ARENA_SQUAD_CAP (=5) ceiling
   // (arena_recruitment.js:172). Without it, MP recruiting is unbounded and one
@@ -56,8 +68,11 @@ function _arenaTryRecruitMP() {
     const dx = rb.x - player.x, dy = rb.y - player.y;
     const d = Math.hypot(dx, dy);
     if (d > reach) continue;
-    // HP gate — must wound the bot below half first (bot maxHp = 100).
-    if (typeof rb.hp === 'number' && rb.hp >= 100 * ARENA_HP_GATE) continue;
+    // HP gate — classes: bot weaker than me; legacy: wounded below half (maxHp 100).
+    if (typeof rb.hp === 'number') {
+      if (classesBuilder) { if (rb.hp >= (player.hp || 1)) continue; }
+      else if (rb.hp >= 100 * ARENA_HP_GATE) continue;
+    }
     if (d < bestD) { bestD = d; best = rb; }
   }
   if (!best) return false;
@@ -70,6 +85,10 @@ function _arenaTryRecruitMP() {
   // seed of 10.7 pass the client gate (10.7 > 10) but become 10 on the wire,
   // which the server rejected (10 <= 10) — a ~1s dead zone right at the gate
   // boundary where the lit 'G RECRUIT' prompt silently did nothing.
-  _mpSendRaw({ type: 'recruit', botId: best.id, seed: mySeed });
+  // cls+klass tell the server which gate to re-validate. Only sent meaningfully
+  // under classes; legacy recruits omit them (server takes the legacy branch).
+  _mpSendRaw(classesBuilder
+    ? { type: 'recruit', botId: best.id, seed: mySeed, cls: 1, klass: 'builder' }
+    : { type: 'recruit', botId: best.id, seed: mySeed });
   return true;
 }

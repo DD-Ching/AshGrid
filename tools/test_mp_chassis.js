@@ -20,10 +20,11 @@
 
   console.log('MP chassis-damage parity test — _applyChassisDamage (server):');
 
-  let dmgFn;
+  let dmgFn, gateFn;
   try {
     const mod = await import('../server/party/server.js');
     dmgFn = mod._applyChassisDamage;
+    gateFn = mod._recruitGateOk;
   } catch (e) {
     console.error('FAIL — could not import server module:', e && e.message);
     process.exit(1);
@@ -79,7 +80,22 @@
   check(dmgFn(p, -5, 1) === 0 && p.hp === 100, 'negative damage → no-op');
   check(dmgFn(null, 25, 1) === 0, 'null player → no-op (no throw)');
 
-  if (problems.length === 0) { console.log('OK — MP chassis-damage routing matches client chassis.js (armour + dash + bleed).'); process.exit(0); }
+  // ── Phase 184g — _recruitGateOk (HP/SEED eligibility, both regimes) ──
+  check(typeof gateFn === 'function', '_recruitGateOk exported from server.js');
+  if (typeof gateFn === 'function') {
+    // classes-on humanoid (builder): weaker-than-me wins, SEED irrelevant.
+    check(gateFn(true, 40, 100, 100, 0) === true,  'classes: bot weaker than me (40<100) → recruitable, SEED ignored');
+    check(gateFn(true, 100, 100, 100, 0) === false, 'classes: bot equal hp (100<100 false) → rejected');
+    check(gateFn(true, 90, 100, 100, 999) === true, 'classes: high SEED irrelevant — only hp matters');
+    check(gateFn(true, 80, 100, 70, 999) === false, 'classes: bot stronger than my current hp (80<70 false) → rejected');
+    // legacy: wounded < 50% AND SEED > gap (ARENA_SEED_GAP=10).
+    check(gateFn(false, 40, 100, 100, 20) === true,  'legacy: wounded<50% (40) + SEED 20 → recruitable');
+    check(gateFn(false, 60, 100, 100, 20) === false, 'legacy: not wounded enough (60>=50) → rejected');
+    check(gateFn(false, 40, 100, 100, 10) === false, 'legacy: SEED == gap (10) → rejected (strict >)');
+    check(gateFn(false, 40, 100, 100, 0) === false,  'legacy: SEED 0 (a bot recruiting) → rejected');
+  }
+
+  if (problems.length === 0) { console.log('OK — MP chassis-damage routing matches client chassis.js (armour + dash + bleed) + recruit gate.'); process.exit(0); }
   console.error('\nFAIL — MP chassis-damage rule broken:');
   for (const pr of problems) console.error('  ✗ ' + pr);
   process.exit(1);

@@ -158,6 +158,23 @@ export function _respawnDecision(alive, tickCount, respawnAt, idleTicks, afkMaxT
   return idleTicks < afkMaxTicks;
 }
 
+// Phase 184g — recruit HP/SEED eligibility, shared by the 'recruit' handler and
+// unit-tested in tools/test_mp_chassis.js. The OTHER gates (alive / team / reach
+// / squad-cap) stay inline in the handler; this is just the HP/SEED rule that
+// diverges by mode. Mirrors the SOLO split in js/arena_recruitment.js:
+//   classes-on humanoid (builder): target weaker than recruiter, SEED dropped —
+//                                  the redesign's '别人血量比我低我就可以招降';
+//   legacy (classes-off / non-builder): bot wounded < 50% maxHp AND recruiter
+//                                  SEED above the gap (bots are seed 0).
+// classesBuilder is set ONLY when the client sends cls=1 + klass='builder', which
+// only happens with game._classes on — so live recruit is byte-identical to pre-184g.
+export function _recruitGateOk(classesBuilder, botHp, botMaxHp, recruiterHp, recruiterSeed) {
+  if (classesBuilder) return botHp < recruiterHp;
+  if (botHp >= (botMaxHp || HP_MAX) * ARENA_HP_GATE) return false;
+  if (recruiterSeed <= ARENA_SEED_GAP) return false;
+  return true;
+}
+
 // Phase 184e — server-side chassis damage routing. Mirrors the client
 // js/chassis.js _applyDamageToUnit exactly so a heavy is a real tank online and
 // a dashing wolf actually takes 70% less, instead of the server applying flat
@@ -1130,9 +1147,13 @@ export default class AshGridRoom {
       const reach = 13 + 14 + ARENA_TOUCH_BUFFER;   // myR + botR + buffer
       const dd = Math.hypot(bot.x - p.x, bot.y - p.y);
       if (dd > reach) return;                     // out of touch range — reject
-      if (bot.hp >= (bot.maxHp || HP_MAX) * ARENA_HP_GATE) return;   // not wounded enough
-      const recruiterSeed = num(data.seed) || 0;
-      if (recruiterSeed <= ARENA_SEED_GAP) return;   // SEED gate — bots are seed 0
+      // Phase 184g — HP/SEED eligibility via the shared _recruitGateOk rule.
+      // classes-on humanoid (builder) uses the redesign gate (bot weaker than
+      // me, SEED dropped — '别人血量比我低我就可以招降'); legacy = wounded<50% + SEED.
+      // The classes path is gated on the client-sent cls+klass (only set when
+      // game._classes is on), so live (classes-off) recruit is byte-unchanged.
+      const classesBuilder = !!data.cls && data.klass === 'builder';
+      if (!_recruitGateOk(classesBuilder, bot.hp, bot.maxHp || HP_MAX, p.hp, num(data.seed) || 0)) return;
       // Squad cap — parity with SOLO (arena_recruitment.js). Count this
       // player's live recruits and reject at the ceiling, so one player can't
       // permanently flip the whole shared bot pool and drain the arena for
