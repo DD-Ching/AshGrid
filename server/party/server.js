@@ -1778,7 +1778,7 @@ export default class AshGridRoom {
         : RESPAWN_TICKS_DEFAULT);
       this.party.broadcast(JSON.stringify({
         type: 'kill', shooter: shooter.id, victim: bestVictim.id,
-        weapon: 'RIFLE', lc: 1,
+        weapon: lcWeapon, lc: 1,   // 184s — was hardcoded 'RIFLE'; the hit event above already used lcWeapon, so a sniper/rocket lag-comp KILL mislabelled in the feed/recap
         x: round1(impactX), y: round1(impactY),
       }));
     }
