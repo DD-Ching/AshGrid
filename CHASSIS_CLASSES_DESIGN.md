@@ -82,13 +82,16 @@ Any client-only ability (dash −70%, lifesteal hp gain) WILL rubber-band agains
 the next snapshot unless the server agrees. MP changes require `partykit deploy`
 + a 2-client smoke test before shipping.
 
-## Open decisions to confirm (sensible defaults chosen; will proceed unless told)
-1. "**最多上線五個**" — squad size: **5 total = you + 4 members** (default), or
-   5 members + you (6)? Phase 183 used you+4.
-2. Recruit eligibility `target.hp < player.hp` — drop the SEED gate entirely?
-   (SEED HUD/recycle becomes vestigial — default: drop it.)
-3. Does Dog **execute** require a prior "stun" (white/反白) like recruit, or can
-   it execute any live target under the HP threshold? (Default: same 反白 gate.)
-4. Heavy weapon switching partly **reverses** the Phase-140 "one pawn = one
-   weapon" decision — confirm intent (default: Heavy-only exception).
-5. Energy: per-player (recommended for MP) vs single match pool.
+## Decisions — CONFIRMED 2026-06-14
+1. **Squad size = you + 4 (5 total).** Matches the Phase-183 5-dot HUD.
+2. **Recruit/execute eligibility = target.hp < player.hp, ANY live target — NO
+   stun/反白 step required, drop the hp<50% AND the SEED gate.** Press G on any
+   live enemy weaker than you (+ touch range + energy + squad cap). SEED HUD /
+   recycle becomes vestigial → remove/ignore.
+3. **Dog execute = same rule** (just weaker, no stun). Humanoid G = recruit;
+   wolf G = execute+lifesteal; both gate on target.hp < player.hp.
+4. **Heavy-only multi-weapon.** Heavy stockpiles + cycles (R) + fire-all
+   ultimate; humanoid/wolf stay single-weapon (Phase-140 rule kept for them).
+5. **Per-player energy** (`u._energy`/`u._energyMax`, server-tracked for MP).
+   Migrate the global `game._energy` build economy to per-player as its own
+   sub-step; recruit/dash/ultimate spend the actor's pool.

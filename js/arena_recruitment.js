@@ -170,6 +170,37 @@ function _arenaConvertEnemyToAlly(e) {
 function _arenaTrySEDConvert() {
   if (!player || !player.alive) return false;
   if (_arenaAliveSquadCount() >= ARENA_SQUAD_CAP) return false;
+
+  // Phase 184b — chassis-as-classes recruit (flag-gated `game._classes`; default
+  // OFF so live behaviour is unchanged until the whole redesign is ready to flip
+  // on — test with game._classes=true). NEW rule (2026-06-14 decisions):
+  //   • only the BUILDER (humanoid) recruits to the squad (wolf G = execute,
+  //     184c; other chassis fall through to grenade);
+  //   • eligibility is simply target.hp < player.hp — any LIVE enemy weaker than
+  //     you, no stun/反白 step, no hp<50%, no SEED gap;
+  //   • costs BALANCE.ability.recruit energy.
+  if (typeof game !== 'undefined' && game._classes) {
+    if (player._chassis && player._chassis !== 'humanoid') return false;
+    const cost = (typeof BALANCE === 'object' && BALANCE.ability) ? (BALANCE.ability.recruit || 0) : 0;
+    if (cost > 0 && (game._energy || 0) < cost) return false;
+    const myR = player.radius || 13;
+    const myHp = player.hp || 1;
+    let best = null, bestD = Infinity;
+    for (const e of enemies) {
+      if (!e || !e.alive || e._humanPiloted) continue;
+      const touchD = myR + (e.radius || 13) + ARENA_TOUCH_BUFFER;
+      const d = Math.hypot(e.x - player.x, e.y - player.y);
+      if (d > touchD) continue;
+      if (e.hp >= myHp) continue;                 // must be WEAKER than me
+      if (d < bestD) { bestD = d; best = e; }
+    }
+    if (!best) return false;
+    const ok = _arenaConvertEnemyToAlly(best);
+    if (ok && cost > 0) game._energy = Math.max(0, (game._energy || 0) - cost);
+    return ok;
+  }
+
+  // ── legacy path (classes flag off) — unchanged Phase 18 behaviour ──
   const mySeed = player._seed || 0;
   const myR = player.radius || 13;
   let best = null, bestD = Infinity;
