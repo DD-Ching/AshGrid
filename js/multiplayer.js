@@ -386,6 +386,29 @@ function _mpHandleMessage(data) {
       }
       break;
     }
+    case 'executeOk': {
+      // Phase 184i — server confirmed a wolf DEVOUR. The victim bot is already
+      // going alive=false via the snapshot; here we fire the VFX on EVERY client
+      // (parity with SOLO _arenaTryDevour) and, for the devourer only, apply the
+      // energy steal + the HP lifesteal. The HP grant is server-authoritative
+      // (rides the snapshot) but the self-reconcile takes min(local, server),
+      // which would MASK a heal — so we bump local hp by the same `healed`
+      // up-front so min() agrees and the heal isn't swallowed.
+      const bx = data.x, by = data.y;
+      if (typeof createExplosion === 'function' && typeof bx === 'number') createExplosion(bx, by, 'small');
+      if (typeof triggerRecruitFx === 'function') triggerRecruitFx('DEVOUR');
+      if (typeof playRadioStatic === 'function') playRadioStatic(0.55, 0.45);
+      if (data.by === _mpState.myId && typeof player !== 'undefined' && player) {
+        const healed = (typeof data.healed === 'number') ? data.healed : 0;
+        if (healed > 0) player.hp = Math.min(player.maxHp || 100, (player.hp || 0) + healed);
+        if (typeof addEnergy === 'function') addEnergy(25);   // stolenEnergy — matches SOLO flat 25
+        if (typeof showSwapToast === 'function') {
+          showSwapToast(T('▸ 吞噬 · +' + healed + ' 血 +25 能量',
+                          '▸ DEVOUR · +' + healed + ' HP +25 energy'));
+        }
+      }
+      break;
+    }
     case 'wallHit':
       // Phase 44: NO explosion. Single-player regular bullets just vanish
       // when they hit a wall (only rockets detonate on impact, see

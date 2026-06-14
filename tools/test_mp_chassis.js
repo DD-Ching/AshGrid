@@ -20,11 +20,12 @@
 
   console.log('MP chassis-damage parity test — _applyChassisDamage (server):');
 
-  let dmgFn, gateFn;
+  let dmgFn, gateFn, devourHpFn;
   try {
     const mod = await import('../server/party/server.js');
     dmgFn = mod._applyChassisDamage;
     gateFn = mod._recruitGateOk;
+    devourHpFn = mod._devourStolenHp;
   } catch (e) {
     console.error('FAIL — could not import server module:', e && e.message);
     process.exit(1);
@@ -93,6 +94,15 @@
     check(gateFn(false, 60, 100, 100, 20) === false, 'legacy: not wounded enough (60>=50) → rejected');
     check(gateFn(false, 40, 100, 100, 10) === false, 'legacy: SEED == gap (10) → rejected (strict >)');
     check(gateFn(false, 40, 100, 100, 0) === false,  'legacy: SEED 0 (a bot recruiting) → rejected');
+  }
+
+  // ── Phase 184i — _devourStolenHp (wolf devour lifesteal amount) ──
+  check(typeof devourHpFn === 'function', '_devourStolenHp exported from server.js');
+  if (typeof devourHpFn === 'function') {
+    check(devourHpFn(100) === 50, 'devour: 100-maxHp bot → 50 HP stolen (half)');
+    check(devourHpFn(180) === 90, 'devour: 180-maxHp (heavy) bot → 90 HP stolen');
+    check(devourHpFn(30) === 20,  'devour: tiny bot → floor of 20 HP');
+    check(devourHpFn(0) === 40,   'devour: missing maxHp → default 80 → 40 (no NaN)');
   }
 
   if (problems.length === 0) { console.log('OK — MP chassis-damage routing matches client chassis.js (armour + dash + bleed) + recruit gate.'); process.exit(0); }

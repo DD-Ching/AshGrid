@@ -175,6 +175,14 @@ export function _recruitGateOk(classesBuilder, botHp, botMaxHp, recruiterHp, rec
   return true;
 }
 
+// Phase 184i — wolf DEVOUR lifesteal amount, mirrors SOLO js/arena_recruitment.js
+// _arenaTryDevour (處決吸血 — execute a weaker enemy, steal ~half its max HP).
+// Energy steal (flat 25) is client-side on executeOk (game._energy is per-client).
+// Pure + exported for the unit test.
+export function _devourStolenHp(botMaxHp) {
+  return Math.max(20, Math.round((botMaxHp || 80) * 0.5));
+}
+
 // Phase 184e — server-side chassis damage routing. Mirrors the client
 // js/chassis.js _applyDamageToUnit exactly so a heavy is a real tank online and
 // a dashing wolf actually takes 70% less, instead of the server applying flat
@@ -1172,6 +1180,34 @@ export default class AshGridRoom {
       this.party.broadcast(JSON.stringify({
         type: 'recruitOk', botId, newTeam: 0,
         recruiter: sender.id, callsign: bot.callsign,
+      }));
+      return;
+    }
+    // Phase 184i — wolf DEVOUR (處決吸血), server-authoritative. The Charger's G
+    // EXECUTES a weaker enemy bot: it vanishes (normal bot death + respawn timer)
+    // and the wolf lifesteals ~half the victim's max HP. HP grant is server-side
+    // (player.hp is authoritative online); the energy steal (+25) is applied
+    // client-side on executeOk. Gates mirror the SOLO live path (alive / enemy /
+    // reach / weaker-than-me). Flag-gated client-side (wolf + game._classes only
+    // ever sends executeRequest), so live is unaffected — old clients never send it.
+    if (data.type === 'executeRequest') {
+      if (!p.alive) return;
+      const botId = num(data.botId) | 0;
+      const bot = this.bots.get(botId);
+      if (!bot || !bot.alive) return;            // unknown / dead — reject
+      if (bot.team === 0) return;                // friendly — reject (can't devour your own)
+      const reach = 13 + 14 + ARENA_TOUCH_BUFFER;
+      if (Math.hypot(bot.x - p.x, bot.y - p.y) > reach) return;   // out of reach
+      if (bot.hp >= p.hp) return;                // must be WEAKER than me
+      const bx = bot.x, by = bot.y;
+      const healed = _devourStolenHp(bot.maxHp || HP_MAX);
+      bot.alive = false;                         // vanish — normal bot death + respawn
+      bot.hp = 0;
+      bot._respawnAt = this.tickCount + BOT_RESPAWN_TICKS;
+      p.hp = Math.min(p.maxHp || HP_MAX, p.hp + healed);   // lifesteal (rides snapshot)
+      this.party.broadcast(JSON.stringify({
+        type: 'executeOk', botId, by: sender.id,
+        x: round1(bx), y: round1(by), healed,
       }));
       return;
     }

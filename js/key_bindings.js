@@ -171,6 +171,12 @@ const KEY_BINDINGS = {
     if (typeof _arenaTryDevour === 'function' && _arenaTryDevour()) {
       return;
     }
+    // Phase 184i — MP wolf DEVOUR (server-authoritative); tried before MP recruit
+    // since a wolf devours rather than recruits. Self-gates to wolf + classes +
+    // online, so it no-ops otherwise and the chain falls through unchanged.
+    if (typeof _arenaTryDevourMP === 'function' && _arenaTryDevourMP()) {
+      return;
+    }
     if (typeof _arenaTryRecruitMP === 'function' && _arenaTryRecruitMP()) {
       return;
     }

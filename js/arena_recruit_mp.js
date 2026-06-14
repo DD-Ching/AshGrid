@@ -103,3 +103,38 @@ function _arenaTryRecruitMP() {
     : { type: 'recruit', botId: best.id, seed: mySeed });
   return true;
 }
+
+// Phase 184i — wolf DEVOUR (處決吸血), MP mirror of SOLO _arenaTryDevour. The
+// Charger's G executes a weaker enemy BOT (remoteBots, not enemies[]): sends an
+// executeRequest; the server validates + vanishes the bot + grants the HP
+// lifesteal (authoritative), then broadcasts executeOk where every client fires
+// the VFX and the devourer gains the energy steal. Flag-gated (wolf +
+// game._classes) so it no-ops for other chassis / classes-off / SOLO.
+//   _arenaTryDevourMP() → bool (true = request sent, consume G; skip recruit/grenade)
+function _arenaTryDevourMP() {
+  if (typeof _mpState === 'undefined' || !_mpState.enabled) return false;
+  if (typeof player === 'undefined' || !player || !player.alive) return false;
+  if (!(typeof game !== 'undefined' && game._classes)) return false;
+  if (player._chassis !== 'wolf') return false;
+  if (!_mpState.remoteBots || _mpState.remoteBots.size === 0) return false;
+
+  const myR = player.radius || 13;
+  const myHp = player.hp || 1;
+  let best = null, bestD = Infinity;
+  for (const rb of _mpState.remoteBots.values()) {
+    if (!rb.alive) continue;
+    if (rb.team === 0) continue;                  // friendly — can't devour your own
+    const reach = myR + (rb.radius || 14) + ARENA_TOUCH_BUFFER;   // ~106px, same as SOLO
+    const dx = rb.x - player.x, dy = rb.y - player.y;
+    const d = Math.hypot(dx, dy);
+    if (d > reach) continue;
+    if (typeof rb.hp === 'number' && rb.hp >= myHp) continue;     // must be WEAKER than me
+    if (d < bestD) { bestD = d; best = rb; }
+  }
+  if (!best) return false;
+  // Server validates + applies the HP lifesteal + broadcasts executeOk (handled
+  // in multiplayer.js — VFX for all, energy steal for the devourer). No
+  // optimistic team/hp flip here; the server is the one source of truth.
+  _mpSendRaw({ type: 'executeRequest', botId: best.id });
+  return true;
+}
