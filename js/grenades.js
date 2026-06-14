@@ -106,7 +106,12 @@ function explodeGrenade(g) {
     const blocked = !lineOfSight(g.x, g.y, u.x, u.y);
     const dmg = Math.round(GRENADE_DAMAGE_MAX * (1 - d / GRENADE_RADIUS) * (blocked ? 0.35 : 1));
     if (dmg <= 0) continue;
-    u.hp -= dmg;
+    // 184o — route through the chassis damage gateway so a heavy's armour buffer
+    // (and a wolf's dash reduction) apply to grenade AOE too, not just bullets.
+    // _applyDamageToUnit re-checks invuln (line 102 above is now a harmless
+    // double-guard) and reduces u.hp; the kill branch below is unchanged.
+    if (typeof _applyDamageToUnit === 'function') _applyDamageToUnit(u, dmg);
+    else u.hp -= dmg;
     if (u === player) {
       game.hitFlash = 16;
       playSfx('hit');

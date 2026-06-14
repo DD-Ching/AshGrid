@@ -483,7 +483,7 @@ function updateStructures() {
           const d = Math.hypot(e.x - s.x, e.y - s.y);
           if (d < def.blastR) {
             const dmg = Math.round(def.dmg * (1 - d / def.blastR));
-            e.hp -= dmg;
+            if (typeof _applyDamageToUnit === 'function') _applyDamageToUnit(e, dmg); else e.hp -= dmg;   // 184o chassis armour
             if (e.hp <= 0) { killUnit(e, { credit: false, source: 'mine' }); createExplosion(e.x, e.y, 'small'); }
           }
         }
@@ -597,7 +597,7 @@ function updateStructures() {
           const teslaCdNew = _moduleStat(s, 'fireCd');
           game._teslaBolts = game._teslaBolts || [];
           // Primary zap — damage scales with tier
-          primary.hp -= teslaDmg;
+          if (typeof _applyDamageToUnit === 'function') _applyDamageToUnit(primary, teslaDmg); else primary.hp -= teslaDmg;   // 184o chassis armour
           spawnDamagePopup(primary.x, primary.y - 14, teslaDmg, primary.hp <= 0);
           if (primary.hp <= 0 && primary.alive) {
             killUnit(primary, { lbBump: false, source: 'tesla' });
@@ -616,7 +616,7 @@ function updateStructures() {
             }
             if (!next) break;
             const dmg = def.chainDmg[h] || def.chainDmg[def.chainDmg.length - 1];
-            next.hp -= dmg;
+            if (typeof _applyDamageToUnit === 'function') _applyDamageToUnit(next, dmg); else next.hp -= dmg;   // 184o chassis armour
             spawnDamagePopup(next.x, next.y - 14, dmg, next.hp <= 0);
             if (next.hp <= 0 && next.alive) {
               killUnit(next, { lbBump: false, source: 'tesla' });
@@ -675,7 +675,7 @@ function updateStructures() {
             const ed = Math.hypot(e.x - d.x, e.y - d.y);
             if (ed < d.blastR) {
               const dmg = Math.round(d.dmg * (1 - ed / d.blastR));
-              e.hp -= dmg;
+              if (typeof _applyDamageToUnit === 'function') _applyDamageToUnit(e, dmg); else e.hp -= dmg;   // 184o chassis armour
               if (e.hp <= 0 && e.alive) {
                 killUnit(e, { lbBump: false, source: 'drone' });
                 createExplosion(e.x, e.y, 'small');
@@ -777,7 +777,8 @@ function updateAirstrikes() {
           if (!e.alive) continue;
           const d = Math.hypot(e.x - ex, e.y - ey);
           if (d < 130) {
-            e.hp -= Math.round(70 * (1 - d / 130));
+            const admg = Math.round(70 * (1 - d / 130));
+            if (typeof _applyDamageToUnit === 'function') _applyDamageToUnit(e, admg); else e.hp -= admg;   // 184o chassis armour
             if (e.hp <= 0) { killUnit(e, { credit: false, source: 'airstrike' }); createExplosion(e.x, e.y, 'small'); }
           }
         }

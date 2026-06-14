@@ -52,7 +52,9 @@ function createExplosion(x, y, size) {
     for (const e of enemies) {
       if (!e.alive) continue;
       if (Math.hypot(e.x-x, e.y-y) < radius) {
-        e.hp -= aoeDmg;
+        // 184o — chassis gateway so a heavy enemy's armour absorbs explosion AOE.
+        if (typeof _applyDamageToUnit === 'function') _applyDamageToUnit(e, aoeDmg);
+        else e.hp -= aoeDmg;
         if (e.hp <= 0) {
           // Phase 18: first KO → stun + freeze, second KO → real death.
           if (typeof _tryStunOrKill === 'function' && _tryStunOrKill(e)) {
