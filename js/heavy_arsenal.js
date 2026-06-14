@@ -17,6 +17,11 @@
   'use strict';
   const MAX = 3;                 // stockpile cap (the "3 把來回切換")
   window.heavyMaxWeapons = MAX;
+  // Ultimate barrel splay (radians between stockpiled weapons). MUST equal the
+  // server's ULT_FAN_STEP (server/party/server.js) so the client ghost burst and
+  // the server-authoritative burst fan identically — tools/check_sim_parity.js
+  // asserts the two literals match (184m: was a bare 0.14 on both sides).
+  const ULT_FAN_STEP = 0.14;
 
   function _on() {
     return typeof game !== 'undefined' && game && game._classes
@@ -82,7 +87,7 @@
     const n = ws.length;
     for (let wi = 0; wi < n; wi++) {
       const w = ws[wi];
-      const fanBase = baseAngle + (wi - (n - 1) / 2) * 0.14;   // splay the barrels
+      const fanBase = baseAngle + (wi - (n - 1) / 2) * ULT_FAN_STEP;   // splay the barrels
       const pellets = w.pellets || 1;
       for (let i = 0; i < pellets; i++) {
         const barrel = fanBase + (Math.random() - 0.5) * (w.spread || 0);
