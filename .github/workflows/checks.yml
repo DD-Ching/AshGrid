@@ -11,6 +11,7 @@
 #   7. node tools/test_mp_respawn.js            (MP server respawn-authority rule)
 #   8. node tools/test_mp_ad_revive.js          (MP ad-revive is server-authoritative, no local revive)
 #   9. node tools/test_mp_chassis.js            (MP server chassis-damage routing: armour + dash + bleed)
+#  10. node tools/test_squad_slots.js           (squad roster: SOLO + MP my-recruits-only filter + cap)
 #
 # No npm install needed: the parity test's server imports are local-only
 # (./constants.js), and the tools have zero dependencies (the reconcile test
@@ -63,3 +64,6 @@ jobs:
 
       - name: MP chassis-damage parity smoke test
         run: node tools/test_mp_chassis.js
+
+      - name: Squad-slot roster smoke test
+        run: node tools/test_squad_slots.js

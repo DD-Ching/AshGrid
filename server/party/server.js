@@ -1817,6 +1817,12 @@ export default class AshGridRoom {
           angle: round3(b.angle),
           hp: b.hp,
           alive: b.alive,
+          // Phase 184f — recruiter connection id (0 = enemy / un-recruited). The
+          // server already tracks _recruitedBy (recruit handler) but never sent
+          // it, so a client couldn't tell ITS recruits from a teammate's → the
+          // squad panel over-counted in 2+-human rooms ('隊友存在但槽位只有一個').
+          // Sent delta-on-change (changes only on recruit), like `team` — ~free.
+          rby: b._recruitedBy || 0,
         }))
       : [];
 
@@ -1922,6 +1928,7 @@ export default class AshGridRoom {
         const last = state.bots.get(b.id);
         const out = { id: b.id };
         if (!last || last.team !== b.team) out.team = b.team;   // team is "permanent" — sent on keyframe
+        if (!last || last.rby !== b.rby) out.rby = b.rby;       // Phase 184f — recruiter id, change-only (~free)
         if (!last || last.x !== b.x) out.x = b.x;
         if (!last || last.y !== b.y) out.y = b.y;
         if (!last || last.angle !== b.angle) out.angle = b.angle;
@@ -1929,7 +1936,7 @@ export default class AshGridRoom {
         if (!last || last.alive !== b.alive) out.alive = b.alive;
         // Drop fully-idle bots (only id) — client keeps last-known state.
         if (Object.keys(out).length > 1) botDeltas.push(out);
-        state.bots.set(b.id, { team: b.team, x: b.x, y: b.y, angle: b.angle, hp: b.hp, alive: b.alive });
+        state.bots.set(b.id, { team: b.team, rby: b.rby, x: b.x, y: b.y, angle: b.angle, hp: b.hp, alive: b.alive });
       }
 
       const snap = {

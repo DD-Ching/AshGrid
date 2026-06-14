@@ -580,11 +580,13 @@ function _mpHandleSnapshot(snap) {
           x: sb.x, y: sb.y,
           targetX: sb.x, targetY: sb.y,
           angle: sb.angle, hp: sb.hp, alive: sb.alive,
+          _recruitedBy: sb.rby || 0,   // Phase 184f — recruiter conn id (0 = enemy/un-recruited)
           _walkPhase: 0,
         };
         _mpState.remoteBots.set(sb.id, rb);
       } else {
         if (sb.team !== undefined) rb.team = sb.team;
+        if (sb.rby !== undefined) rb._recruitedBy = sb.rby;   // Phase 184f — change-only delta
         if (sb.x !== undefined) rb.targetX = sb.x;
         if (sb.y !== undefined) rb.targetY = sb.y;
         if (sb.angle !== undefined) rb.angle = sb.angle;
