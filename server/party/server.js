@@ -238,6 +238,15 @@ const ARMOR_BLEED             = 0.65;
 const ARMOR_REGEN_DELAY_TICKS = 3 * TICK_HZ;   // 3 s of no damage before regen
 const ARMOR_REGEN_PER_TICK    = 30 / TICK_HZ;  // 30 armour / second (=0.15 @ 200Hz)
 const ARMOR_MAX_CAP           = 500;           // clamp on client-sent aMax (sanity)
+// Phase 184j — heavy ULTIMATE (大招 — fire all stockpiled weapons at once). The
+// client spends the energy + shows the local burst; the server spawns the burst
+// AUTHORITATIVELY so it actually damages remote players/bots online (a ghost-only
+// burst hit nothing server-side). Cap the weapon count to the stockpile size and
+// rate-limit so a spoofed client can't machine-gun bursts (energy is the real
+// client-side gate; this is just abuse protection).
+const HEAVY_STOCKPILE_MAX = 3;
+const ULT_COOLDOWN_TICKS  = 1 * TICK_HZ;   // ≥1 s between server-accepted bursts
+const ULT_FAN_STEP        = 0.14;          // radians between barrels — matches js/heavy_arsenal.js
 // Arena recruit gates — authoritative server copies of the client constants in
 // js/arena_recruitment.js (ARENA_SEED_GAP / ARENA_SQUAD_CAP / ARENA_HP_GATE /
 // ARENA_TOUCH_BUFFER). Kept as named constants (not bare literals) so a balance
@@ -1209,6 +1218,30 @@ export default class AshGridRoom {
         type: 'executeOk', botId, by: sender.id,
         x: round1(bx), y: round1(by), healed,
       }));
+      return;
+    }
+    // Phase 184j — heavy ULTIMATE: spawn the all-weapons burst AUTHORITATIVELY so
+    // it damages remote players/bots (the client's local burst is _mpGhost — visual
+    // + client-only-NN collision only). Each stockpiled weapon fires at a fanned
+    // angle, reusing the same spawnBulletsFromUnit path as normal fire. Energy is
+    // spent client-side (heavy_arsenal.js); here we cap + rate-limit for abuse.
+    // Echoes of these bullets back to the shooter are render-suppressed by the
+    // existing _mpRenderRemoteBullets shooter==us rule (no twin tracer).
+    if (data.type === 'ultimateBurst') {
+      if (!p.alive) return;
+      if (p._lastUltTick != null && (this.tickCount - p._lastUltTick) < ULT_COOLDOWN_TICKS) return;
+      const list = Array.isArray(data.weapons) ? data.weapons.slice(0, HEAVY_STOCKPILE_MAX) : [];
+      if (!list.length) return;
+      p._lastUltTick = this.tickCount;
+      const baseAngle = num(data.angle);
+      const n = list.length;
+      for (let wi = 0; wi < n; wi++) {
+        const wid = (typeof list[wi] === 'string') ? list[wi] : 'RIFLE';
+        const wsim = getWeaponSim(wid);
+        const fan = baseAngle + (wi - (n - 1) / 2) * ULT_FAN_STEP;
+        const nb = spawnBulletsFromUnit({ x: p.x, y: p.y, id: p.id, team: 0 }, { ...wsim, weaponId: wid }, fan);
+        for (const b of nb) { b.id = this.nextBulletId++; b.shooterId = p.id; b.weapon = wid; this.bullets.push(b); }
+      }
       return;
     }
     // Phase 43: explosion request from a client. Used for grenades / FPV /

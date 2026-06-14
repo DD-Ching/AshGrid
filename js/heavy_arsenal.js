@@ -99,6 +99,20 @@
       }
       muzzleFlashes.push({ x: player.x + Math.cos(fanBase) * 22, y: player.y + Math.sin(fanBase) * 22, angle: fanBase, life: 6 });
     }
+    // Phase 184j — in MP the local bullets above are _mpGhost (visual + client-
+    // only-NN collision); they do NOT damage remote players/bots. Send an
+    // ultimateBurst so the SERVER spawns the same all-weapons fan authoritatively
+    // (its echoes to us are render-suppressed, so no twin tracer). Map each
+    // stockpiled weapon object back to its wId for getWeaponSim server-side.
+    if (mpGhost && typeof _mpSendRaw === 'function' && typeof WEAPONS !== 'undefined') {
+      const ids = [];
+      for (const w of ws) {
+        let id = 'RIFLE';
+        for (const k of Object.keys(WEAPONS)) { if (WEAPONS[k] === w) { id = k; break; } }
+        ids.push(id);
+      }
+      _mpSendRaw({ type: 'ultimateBurst', weapons: ids, angle: baseAngle });
+    }
     if (typeof triggerShake === 'function') triggerShake(6, 12);
     if (typeof emitSound === 'function') emitSound(player.x, player.y, 1800, true, true, null);
     if (typeof showSwapToast === 'function') showSwapToast(T('▶ 大招 · 全武器齊射', '▶ ULTIMATE · ALL GUNS'));
