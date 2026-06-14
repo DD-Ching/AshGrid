@@ -157,6 +157,48 @@ function _arenaConvertEnemyToAlly(e) {
   return true;
 }
 
+// Phase 184c — Wolf/Dog DEVOUR (處決吸血). The Charger's G is NOT recruit: it
+// EXECUTES a weaker live enemy (target.hp < player.hp + touch range) — the enemy
+// vanishes (no squad slot) and the dog LIFESTEALS its hp + energy. Flag-gated
+// (game._classes) + wolf-only; self-gates so the G dispatcher tries it first and
+// no-ops for other chassis / when classes off / in MP (enemies[] empty there).
+function _arenaTryDevour() {
+  if (!player || !player.alive) return false;
+  if (!(typeof game !== 'undefined' && game._classes)) return false;
+  if (player._chassis !== 'wolf') return false;
+  const myR = player.radius || 13;
+  const myHp = player.hp || 1;
+  let best = null, bestD = Infinity;
+  for (const e of enemies) {
+    if (!e || !e.alive || e._humanPiloted) continue;
+    const touchD = myR + (e.radius || 13) + ARENA_TOUCH_BUFFER;
+    const d = Math.hypot(e.x - player.x, e.y - player.y);
+    if (d > touchD) continue;
+    if (e.hp >= myHp) continue;            // must be WEAKER than me
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  if (!best) return false;
+  // Execute + lifesteal: vanish (no squad slot), steal ~half the victim's max HP
+  // + a flat energy chunk into the dog.
+  const stolenHp = Math.max(20, Math.round((best.maxHp || 80) * 0.5));
+  const stolenEnergy = 25;
+  const bx = best.x, by = best.y;
+  best.alive = false;
+  best._koStunned = false;
+  const idx = enemies.indexOf(best);
+  if (idx >= 0) enemies.splice(idx, 1);
+  player.hp = Math.min(player.maxHp || 100, (player.hp || 0) + stolenHp);
+  if (typeof game !== 'undefined') game._energy = (game._energy || 0) + stolenEnergy;
+  if (typeof createExplosion === 'function') createExplosion(bx, by, 'small');
+  if (typeof playRadioStatic === 'function') playRadioStatic(0.55, 0.45);
+  if (typeof triggerRecruitFx === 'function') triggerRecruitFx('DEVOUR');
+  if (typeof showSwapToast === 'function') {
+    showSwapToast(T('▸ 吞噬 · +' + stolenHp + ' 血 +' + stolenEnergy + ' 能量',
+                    '▸ DEVOUR · +' + stolenHp + ' HP +' + stolenEnergy + ' energy'));
+  }
+  return true;
+}
+
 // G-key handler. Returns true if we converted (so the dispatcher skips grenade).
 // Phase 18: TWO recruit paths now:
 //   (a) STUNNED targets — player walks up to a KO-stunned enemy (white, frozen)
