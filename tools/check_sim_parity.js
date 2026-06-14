@@ -138,6 +138,21 @@ function near(a, b) { return Math.abs(a - b) < 1e-9; }
   }
   console.log('Arena recruit parity: SEED_GAP + SQUAD_CAP + HP_GATE + TOUCH_BUFFER checked client↔server.');
 
+  // ── 4. Heavy ULTIMATE fan-step parity (client ↔ server) ──────────────────
+  // The heavy 大招 spawns its all-weapons fan twice: a client _mpGhost burst
+  // (js/heavy_arsenal.js — instant visual) and the authoritative server burst
+  // (server/party/server.js ultimateBurst). Both splay barrels by ULT_FAN_STEP
+  // radians; if the two literals drift, the ghost fan and the real bullets
+  // diverge. Bind them (184m — both were a bare 0.14 with no guard).
+  {
+    const cv = constOf('js/heavy_arsenal.js', 'ULT_FAN_STEP');
+    const sv = constOf('server/party/server.js', 'ULT_FAN_STEP');
+    if (cv == null) fail('ULT_FAN_STEP: not found in js/heavy_arsenal.js');
+    if (sv == null) fail('ULT_FAN_STEP: not found in server/party/server.js');
+    if (cv != null && sv != null && cv !== sv) fail(`ULT_FAN_STEP mismatch: client=${cv} server=${sv}`);
+    else if (cv != null) console.log(`Heavy ultimate fan parity: ULT_FAN_STEP=${cv} checked client↔server.`);
+  }
+
   // ── Verdict ──────────────────────────────────────────────────────────────
   if (problems.length === 0) { console.log('OK — SOLO and MP sim are in lock-step.'); process.exit(0); }
   console.error('\nFAIL — sim parity drift:');

@@ -92,7 +92,7 @@ function nnBuildObs(me, friendlies, enemies, outBuf, flipX = false) {
   // would let the PPO model still 'see' a stunned silhouette at the
   // wrong slot and decide to fire toward it. Single filter here keeps
   // the trained behaviour aligned with the no-friendly-fire intent.
-  const enemySorted = enemies.filter(e => e.alive && !e._koStunned).slice().sort((a, b) => {
+  const enemySorted = enemies.filter(e => e.alive && !e._koStunned).sort((a, b) => {   // 184q — .filter() already copies; .slice() was redundant
     const va = nnIsVisible(me, a) ? 1 : 0;
     const vb = nnIsVisible(me, b) ? 1 : 0;
     if (va !== vb) return vb - va;
@@ -975,9 +975,13 @@ function updateEnemies() {
     e.recentDamage = Math.max(0, e.recentDamage - 1);
 
     const hasHardTarget = e.attackTarget && e.attackTarget.alive;
+    // 184q — reuse pass-1's visibility result (e._sees, set above with the SAME
+    // nearestVisibleFriendly args). Only the flanker sort runs between the passes
+    // and it never moves units or changes attackTarget, so this is identical to
+    // recomputing — halving the per-enemy LoS/vision cost each tick.
     const tgt = hasHardTarget
       ? e.attackTarget
-      : nearestVisibleFriendly(e.x, e.y, e.angle, ENEMY_VIEW.range, ENEMY_VIEW.arc);
+      : (e._sees || null);
     const canSee = tgt != null;
     const tx = tgt ? tgt.x : null, ty = tgt ? tgt.y : null;
     const dist = tgt ? Math.hypot(tx - e.x, ty - e.y) : 0;

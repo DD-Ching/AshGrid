@@ -127,6 +127,10 @@ function unlockAchievement(id) {
   const a = ACHIEVEMENTS.find(x => x.id === id);
   if (!a) return;
   _matchAchievementUnlocks.push(a);
+  // Phase 184n — fire the animated unlock CARD (js/achievement_fx.js). Silent +
+  // additive; the corner toast below stays as the quiet log echo. Guarded so the
+  // module being absent is a no-op.
+  if (typeof _achievementFxEnqueue === 'function') _achievementFxEnqueue(a);
   const lang = (typeof getLang === 'function') ? getLang() : 'en';
   const title = (lang === 'zh') ? a.title_zh : a.title_en;
   // Achievement unlock used to route through showRadioToast — that path

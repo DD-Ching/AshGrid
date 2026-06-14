@@ -656,6 +656,13 @@ function _mpHandleHit(data) {
   // event is from older deploy (dev still in flight).
   const ix = (typeof data.x === 'number') ? data.x : null;
   const iy = (typeof data.y === 'number') ? data.y : null;
+  // 184p — the hit FEEDBACK (shake magnitude + floating damage number) used a
+  // hardcoded 25, so a sniper (100) or rocket (80) hit looked/felt like a pistol
+  // round. Read the real weapon damage the server sent (data.weapon) so the
+  // popup + shake scale with the actual hit, matching SOLO. Falls back to 25.
+  const hitDmg = (typeof WEAPONS !== 'undefined' && data.weapon && WEAPONS[data.weapon]
+                  && typeof WEAPONS[data.weapon].damage === 'number')
+    ? WEAPONS[data.weapon].damage : 25;
   // Victim-side: flash red, screen shake, play hit sound, blood spray.
   if (data.victim === _mpState.myId) {
     if (typeof game !== 'undefined') game.hitFlash = Math.max(game.hitFlash || 0, 12);
@@ -663,7 +670,7 @@ function _mpHandleHit(data) {
     // Phase 41: screen shake scales with damage. Single-player parity
     // (index.html: triggerShake(min(6, b.damage * 0.25), 8) on player hit).
     if (typeof triggerShake === 'function') {
-      triggerShake(Math.min(6, 25 * 0.25), 8);
+      triggerShake(Math.min(6, hitDmg * 0.25), 8);
     }
     // Phase 68 — MP parity for the Phase 67 directional hurt indicator.
     // SP sets _hurtAngle + _hurtIntensity at the bullet-vs-player site
@@ -676,7 +683,7 @@ function _mpHandleHit(data) {
     }
     // Floating damage popup at the impact point so we know which side took it.
     if (typeof spawnDamagePopup === 'function' && ix != null && iy != null) {
-      spawnDamagePopup(ix, iy, 25, false);
+      spawnDamagePopup(ix, iy, hitDmg, false);
     }
     return;
   }
@@ -688,7 +695,7 @@ function _mpHandleHit(data) {
     // every hit on enemies. Anchored to impact coords, not victim's lerped
     // pos, so it stays put while the body drifts.
     if (typeof spawnDamagePopup === 'function' && ix != null && iy != null) {
-      spawnDamagePopup(ix, iy, 25, false);
+      spawnDamagePopup(ix, iy, hitDmg, false);
     }
     // Phase 40 telemetry: track lag-compensated vs physics hits so the F3
     // overlay can show the favor-the-shooter rate.

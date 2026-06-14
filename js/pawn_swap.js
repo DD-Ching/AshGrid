@@ -309,7 +309,19 @@ function showSwapToast(text, ttl = 75) {
   // Default 75 ticks (~1.25s) for swap/command confirmations. Callers that
   // need reading time (e.g. stage_hints tutorial tips) pass a larger ttl;
   // hud.js auto-sizes the chip width to the text either way.
-  game._swapToast = { text, ttl };
+  // 184p — store maxTtl so the fade math + the new updateSwapToast() age it at a
+  // display-independent rate (it used to decrement in render() → faded ~2× fast
+  // on a 120 Hz screen, the exact Phase-156 bug the killstreak/recruit banners
+  // already fixed; this one was missed).
+  game._swapToast = { text, ttl, maxTtl: ttl };
+}
+// State tick — once per sim step (called from update()), so the toast lasts the
+// same wall-time on every display. Mirrors updateKillstreakFx / updateRecruitFx.
+function updateSwapToast() {
+  // 184u — clear when not in a live match (mirrors updateRecruitFx) so a toast
+  // active at match-end can't freeze + leak into the next match's first frames.
+  if (typeof game !== 'undefined' && game.state !== 'playing') { game._swapToast = null; return; }
+  if (game._swapToast && --game._swapToast.ttl <= 0) game._swapToast = null;
 }
 
 // Phase 133.3 — handleLocalDeath moved to js/death_decider.js.

@@ -537,9 +537,10 @@ function renderHUDOverlays() {
   // Replaces the giant center-screen "接管 BRAVO" banner that used to block
   // view while rapid-switching.
   if (game._swapToast && game._swapToast.ttl > 0) {
-    const tot = 75;
+    const tot = game._swapToast.maxTtl || 75;          // 184p — real lifetime, not a hardcoded 75
     const t = game._swapToast.ttl / tot;
-    const alpha = t < 0.3 ? (t / 0.3) : 1;     // fade out at end
+    const inP = Math.min(1, (1 - t) / 0.12);           // 184p — symmetric pop-in (~12%)
+    const alpha = (t < 0.3 ? (t / 0.3) : 1) * (inP < 1 ? inP : 1);
     ctx.save();
     ctx.globalAlpha = alpha;
     // On narrow viewports the status panel only goes to y=96 (height 80) so
@@ -563,7 +564,8 @@ function renderHUDOverlays() {
     ctx.fillText(_toastTxt, W() / 2, ty + 17);
     ctx.textAlign = 'left';
     ctx.restore();
-    game._swapToast.ttl--;
+    // 184p — ttl is now aged in updateSwapToast() (sim-tick), NOT here in render,
+    // so the toast lasts the same wall-time regardless of display refresh rate.
   }
 
   // Mode-specific overlays
@@ -1400,19 +1402,31 @@ function _hud_drawMinimapLegend(mx, my, mw, mh) {
   const ly = my + mh + 2;
   if (ly + 14 > H()) return;
   ctx.font = 'bold 8px monospace';
-  ctx.fillStyle = '#C8261C';
-  ctx.beginPath(); ctx.arc(mx + 12, ly + 7, 2.5, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#aaa';
-  ctx.fillText('YOU', mx + 20, ly + 10);
-  ctx.fillStyle = '#777';
-  ctx.beginPath(); ctx.arc(mx + 52, ly + 7, 2, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#aaa';
-  ctx.fillText('ENEMY', mx + 58, ly + 10);
-  ctx.strokeStyle = '#aaa';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(mx + 96, ly + 7, 2.5, 0, Math.PI*2); ctx.stroke();
-  ctx.fillStyle = '#aaa';
-  ctx.fillText('ALLY', mx + 103, ly + 10);
-  ctx.strokeRect(mx + 130, ly + 4, 6, 6);
-  ctx.fillText('OBJ', mx + 140, ly + 10);
+  const _label = '#aaa';
+  // 184t — swatches now MATCH the real minimap markers (drawMinimapPanel):
+  //   YOU = black square · ENEMY = red square · ALLY = creamDark square (black
+  //   outline) · OBJ = pulsing red circle. They previously showed the wrong
+  //   shapes AND colors (red dot / grey dot / grey ring / grey square), teaching
+  //   the player the wrong glyphs.
+  const black = (typeof COLORS !== 'undefined' && COLORS.black) ? COLORS.black : '#1A1A1A';
+  const red   = (typeof COLORS !== 'undefined' && COLORS.red)   ? COLORS.red   : '#C8261C';
+  const creamD = (typeof COLORS !== 'undefined' && COLORS.creamDark) ? COLORS.creamDark : '#B7AE93';
+  // YOU — black square
+  ctx.fillStyle = black;
+  ctx.fillRect(mx + 10, ly + 4, 6, 6);
+  ctx.fillStyle = _label; ctx.fillText('YOU', mx + 20, ly + 10);
+  // ENEMY — red square
+  ctx.fillStyle = red;
+  ctx.fillRect(mx + 50, ly + 5, 5, 5);
+  ctx.fillStyle = _label; ctx.fillText('ENEMY', mx + 58, ly + 10);
+  // ALLY — creamDark square w/ black outline
+  ctx.fillStyle = creamD;
+  ctx.fillRect(mx + 94, ly + 4, 6, 6);
+  ctx.strokeStyle = black; ctx.lineWidth = 0.5;
+  ctx.strokeRect(mx + 94, ly + 4, 6, 6);
+  ctx.fillStyle = _label; ctx.fillText('ALLY', mx + 104, ly + 10);
+  // OBJ — red circle (the pulsing objective marker)
+  ctx.fillStyle = red;
+  ctx.beginPath(); ctx.arc(mx + 134, ly + 7, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = _label; ctx.fillText('OBJ', mx + 140, ly + 10);
 }

@@ -38,13 +38,5 @@ function bumpCycleNum() {
   if (chip) chip.textContent = `CYCLE #${n}`;
   return n;
 }
-function getSeedIntegrity() {
-  try { const n = parseInt(localStorage.getItem('ag.seedIntegrity') || '87', 10);
-        return isFinite(n) ? Math.max(0, Math.min(100, n)) : 87; }
-  catch (e) { return 87; }
-}
-function setSeedIntegrity(v) {
-  const next = Math.max(0, Math.min(100, v|0));
-  AG.set('seedIntegrity', next);
-  return next;
-}
+// 184r — removed dead getSeedIntegrity()/setSeedIntegrity() (zero call sites;
+// the SEED-integrity HUD readout was cut, leaving these orphaned).

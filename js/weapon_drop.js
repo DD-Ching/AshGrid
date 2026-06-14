@@ -145,6 +145,17 @@ function renderWeaponDrops() {
     ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'center';
     ctx.fillText(nm.charAt(0).toUpperCase(), 0, 4);
+    // 184t — full weapon name below the crate when the player is close, so you
+    // can tell what you're grabbing (the single initial is ambiguous — S could
+    // be SMG / SNIPER / SHOTGUN). Distance-gated to avoid clutter from afar.
+    if (typeof player !== 'undefined' && player && nm !== '?') {
+      const ddx = player.x - g.x, ddy = player.y - g.y;
+      if (ddx * ddx + ddy * ddy < 160 * 160) {
+        ctx.fillStyle = cream;
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(nm.toUpperCase(), 0, 22);
+      }
+    }
     ctx.textAlign = 'left';
     // Capture ring — only on the drop currently being picked up.
     if (g === _wpPickupTarget && _wpPickupProgress > 0) {

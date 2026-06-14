@@ -22,6 +22,12 @@ function lineOfSight(x1, y1, x2, y2) {
       if (_segSegHits(x1, y1, x2, y2, w.x1, w.y1, w.x2, w.y2)) return false;
     }
   }
+  // 184q — hoist the structure/smoke lists out of the 28-step march (they don't
+  // change within one call) and skip the whole sub-scan when empty (the common
+  // case). Behaviour-identical; just avoids re-resolving game._structures /
+  // _smokeClouds + an empty-loop setup 28× per LoS check (a very hot path).
+  const structs = (game._structures && game._structures.length) ? game._structures : null;
+  const smoke   = (game._smokeClouds && game._smokeClouds.length) ? game._smokeClouds : null;
   const steps = 28;
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
@@ -33,8 +39,8 @@ function lineOfSight(x1, y1, x2, y2) {
       if (x > lc.x && x < lc.x+lc.w && y > lc.y && y < lc.y+lc.h) return false;
     }
     // Player-built walls block sight too
-    if (game._structures) {
-      for (const s of game._structures) {
+    if (structs) {
+      for (const s of structs) {
         if (s.hp <= 0) continue;
         const def = STRUCTURE_DEFS[s.kind];
         if (!def || !def.blocksLOS) continue;
@@ -44,8 +50,8 @@ function lineOfSight(x1, y1, x2, y2) {
     }
     // Smoke clouds block sight at near-full opacity in the middle, fading
     // at the edges. Approximation: any sample point within 0.85×R blocks.
-    if (game._smokeClouds) {
-      for (const c of game._smokeClouds) {
+    if (smoke) {
+      for (const c of smoke) {
         const fade = c.life / c.maxLife;
         if (fade < 0.15) continue;            // dissipating — let through
         const blockR = c.r * 0.85;

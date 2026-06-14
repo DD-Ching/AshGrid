@@ -1632,52 +1632,11 @@ function drawLandmarksTop() {
   }
 }
 
-// ============ VISION / FOG / SOUND RENDERING ============
-// Soft fog over the world. The cones of every alive friendly (player + allies)
-// are CUT OUT of the fog using destination-out compositing — overlapping cones
-// merge into one visible region, so the player never sees crossed cone edges.
-// The cone vertex is offset forward from each unit so the fan doesn't look like
-// a sharp triangle pinned to the character; instead it spreads out in front.
-const VISION_OFFSET = 24;
-const FOG_TINT = 'rgba(28, 26, 32, 0.36)';
-const _polyBuf = [];
-function drawSharedVisionFog() {
-  // Bounding box of the world viewport in world coords
-  const camHalfW = W() / camera.scale + 400;
-  const camHalfH = H() / camera.scale + 400;
-  const fx = camera.x - camHalfW, fy = camera.y - camHalfH;
-  const fw = camHalfW * 2, fh = camHalfH * 2;
-
-  ctx.save();
-  ctx.fillStyle = FOG_TINT;
-  ctx.fillRect(fx, fy, fw, fh);
-
-  ctx.globalCompositeOperation = 'destination-out';
-
-  const friendlies = [];
-  if (player.alive) friendlies.push(player);
-  for (const a of allies) if (a.alive) friendlies.push(a);
-
-  for (const f of friendlies) {
-    const ox = f.x + Math.cos(f.angle) * VISION_OFFSET;
-    const oy = f.y + Math.sin(f.angle) * VISION_OFFSET;
-    buildVisionPoly(_polyBuf, ox, oy, f.angle, VIEW.arc, VIEW.range);
-    ctx.beginPath();
-    ctx.moveTo(_polyBuf[0].x, _polyBuf[0].y);
-    for (let i = 1; i < _polyBuf.length; i++) {
-      ctx.lineTo(_polyBuf[i].x, _polyBuf[i].y);
-    }
-    ctx.closePath();
-    ctx.fill();
-    // Small "self halo" so the unit isn't sitting in dim fog
-    ctx.beginPath();
-    ctx.arc(f.x, f.y, 56, 0, Math.PI*2);
-    ctx.fill();
-  }
-
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.restore();
-}
+// ============ SOUND RENDERING ============
+// 184r — removed dead drawSharedVisionFog() (cone-cutout fog) + its consts
+// (VISION_OFFSET / FOG_TINT / _polyBuf): it was never called (the live fog-of-war
+// uses the isVisibleToFriendly cull path), and it was the sole consumer of the
+// also-removed buildVisionPoly/castVisionRay/rayRect chain in vision_raycast.js.
 
 function drawSoundIndicators() {
   if (!player.alive || soundEvents.length === 0) return;

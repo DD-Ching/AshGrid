@@ -34,199 +34,200 @@
      Order matters when extractions depend on each other; today none do.
      New modules → add a <script src="js/..."> line here.
 ================================================== -->
-<script src="js/operators_log.js?v=234"></script>
-<script src="js/achievements.js?v=234"></script>
-<script src="js/audit_console.js?v=234"></script>
-<script src="js/intro_narrative.js?v=234"></script>
+<script src="js/operators_log.js?v=235"></script>
+<script src="js/achievements.js?v=235"></script>
+<script src="js/audit_console.js?v=235"></script>
+<script src="js/intro_narrative.js?v=235"></script>
 <!-- Audio (load order: positional → narrative → ambient) -->
-<script src="js/audio/positional.js?v=234"></script>
-<script src="js/audio/narrative.js?v=234"></script>
-<script src="js/audio/ambient.js?v=234"></script>
+<script src="js/audio/positional.js?v=235"></script>
+<script src="js/audio/narrative.js?v=235"></script>
+<script src="js/audio/ambient.js?v=235"></script>
 <!-- R14 — audio mute stack. Sits BETWEEN positional.js (which owns AUDIO
      object + low-level gain wiring) and consumers (ad_state, crazygames,
      pause menu). Centralises mute priority: persistent user preference
      OR transient stack-sourced mutes. -->
 <!-- Phase 144 — BALANCE: single home for tunable numbers. MUST load before
      structures.js + arena_recruitment.js (they read BALANCE at definition time). -->
-<script src="js/balance.js?v=234"></script>
-<script src="js/geometry.js?v=234"></script>
-<script src="js/nn_loader.js?v=234"></script>
-<script src="js/explosions_fx.js?v=234"></script>
-<script src="js/combat_helpers.js?v=234"></script>
-<script src="js/mission_runtime.js?v=234"></script>
-<script src="js/audio_mute.js?v=234"></script>
+<script src="js/balance.js?v=235"></script>
+<script src="js/geometry.js?v=235"></script>
+<script src="js/nn_loader.js?v=235"></script>
+<script src="js/explosions_fx.js?v=235"></script>
+<script src="js/combat_helpers.js?v=235"></script>
+<script src="js/mission_runtime.js?v=235"></script>
+<script src="js/audio_mute.js?v=235"></script>
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=234"></script>
-<script src="js/arena_recruitment.js?v=234"></script>
-<script src="js/dynamic_radio.js?v=234"></script>
-<script src="js/i18n.js?v=234"></script>
-<script src="js/touch_input.js?v=234"></script>
-<script src="js/key_bindings.js?v=234"></script>
-<script src="js/grenades.js?v=234"></script>
-<script src="js/squad_commands.js?v=234"></script>
+<script src="js/audio/sfx.js?v=235"></script>
+<script src="js/arena_recruitment.js?v=235"></script>
+<script src="js/dynamic_radio.js?v=235"></script>
+<script src="js/i18n.js?v=235"></script>
+<script src="js/touch_input.js?v=235"></script>
+<script src="js/key_bindings.js?v=235"></script>
+<script src="js/grenades.js?v=235"></script>
+<script src="js/squad_commands.js?v=235"></script>
 <!-- R12 — Player Lifecycle module. Single owner of player.alive /
      _respawnAt / _invulnUntil / _killedAtTime / _lastDeathX/Y /
      _lastRespawnAt. MUST load before multiplayer.js / death_recap.js /
      pawn_swap.js / missions/* since they all call into PlayerLifecycle.* -->
-<script src="js/player_lifecycle.js?v=234"></script>
+<script src="js/player_lifecycle.js?v=235"></script>
 <!-- Phase 136 — MP reconcile single-owner state machine. MUST load
      BEFORE multiplayer.js + pawn_swap.js because both modules look up
      window.MpReconcile at call time but the lookup happens during
      gameplay (not load), so this could technically load later too —
      keeping it here for visual ordering. -->
-<script src="js/mp_reconcile.js?v=234"></script>
-<script src="js/multiplayer.js?v=234"></script>
+<script src="js/mp_reconcile.js?v=235"></script>
+<script src="js/multiplayer.js?v=235"></script>
 <!-- Phase 159 — arena recruit, MP half. AFTER multiplayer.js (uses _mpState /
      _mpSendRaw) and after arena_recruitment.js (reuses ARENA_* gate consts). -->
-<script src="js/arena_recruit_mp.js?v=234"></script>
-<script src="js/leaderboard.js?v=234"></script>
+<script src="js/arena_recruit_mp.js?v=235"></script>
+<script src="js/leaderboard.js?v=235"></script>
 <!-- Phase 141 — unit kill/death chokepoint. Loads before bullets/structures/
      grenades (which call killUnit) and before weapon_drop.js (which subscribes
      onUnitDeath at load). -->
-<script src="js/kill.js?v=234"></script>
+<script src="js/kill.js?v=235"></script>
 <!-- Phase 176 — adaptive director (SOLO one-way DDA). MUST load AFTER kill.js
      (it subscribes onUnitDeath at load for the player-pressure signal). The
      spawn hooks (world_gen.js / arena_recruitment.js) call it at runtime, so
      order vs those is irrelevant. -->
-<script src="js/adaptive_director.js?v=234"></script>
-<script src="js/structures.js?v=234"></script>
-<script src="js/mine_defuse.js?v=234"></script>
-<script src="js/tod.js?v=234"></script>
-<script src="js/weapons.js?v=234"></script>
-<script src="js/chassis.js?v=234"></script>
-<script src="js/heavy_arsenal.js?v=234"></script>
-<script src="js/respawn_buff.js?v=234"></script>
-<script src="js/death_recap.js?v=234"></script>
-<script src="js/mote_affinity.js?v=234"></script>
-<script src="js/stage_hints.js?v=234"></script>
-<script src="js/pawn_swap.js?v=234"></script>
+<script src="js/adaptive_director.js?v=235"></script>
+<script src="js/structures.js?v=235"></script>
+<script src="js/mine_defuse.js?v=235"></script>
+<script src="js/tod.js?v=235"></script>
+<script src="js/weapons.js?v=235"></script>
+<script src="js/chassis.js?v=235"></script>
+<script src="js/heavy_arsenal.js?v=235"></script>
+<script src="js/respawn_buff.js?v=235"></script>
+<script src="js/death_recap.js?v=235"></script>
+<script src="js/mote_affinity.js?v=235"></script>
+<script src="js/stage_hints.js?v=235"></script>
+<script src="js/pawn_swap.js?v=235"></script>
 <!-- Phase 133.3 — death_decider.js extracts the death-decision logic
      out of pawn_swap.js so the auto-swap timestamp state is explicit.
      Loads AFTER pawn_swap.js so tryAutoSwapToClosestAlly is defined
      when death_decider.handleLocalDeath looks for it at call time. -->
-<script src="js/death_decider.js?v=234"></script>
-<script src="js/global_stats.js?v=234"></script>
-<script src="js/progressive_unlock.js?v=234"></script>
+<script src="js/death_decider.js?v=235"></script>
+<script src="js/global_stats.js?v=235"></script>
+<script src="js/progressive_unlock.js?v=235"></script>
 <!-- R11 Step 1 — ad dispatch registry. MUST load before the SDK adapter
      (crazygames.js) so its window.registerAdProvider is defined when CG
      tries to register on SDK_READY. Replaces the pre-R11 "override war"
      where each SDK overwrote window.requestRewardedAd in load order.
      See js/ad_dispatch.js header for the priority table.
      Phase 131 — GameMonetize adapter removed (vendor declined). -->
-<script src="js/ad_dispatch.js?v=234"></script>
+<script src="js/ad_dispatch.js?v=235"></script>
 <!-- R11 Step 2 — run_history.js absorbs the survival/defense run scores +
      share + uploadSurvivalRun from the old js/ad_stubs.js (deleted).
      Operator name (getOperatorName / setOperatorName) moved to
      js/global_stats.js above. Loads AFTER global_stats.js so its
      bumpSurvivalWave + getOperatorName lookups resolve. -->
-<script src="js/run_history.js?v=234"></script>
+<script src="js/run_history.js?v=235"></script>
 <!-- Crazy Games SDK wiring — registers itself with ad_dispatch on SDK_READY.
      In local dev SDK shows a dev-mode overlay; on the portal it serves real ads. -->
-<script src="js/crazygames.js?v=234"></script>
+<script src="js/crazygames.js?v=235"></script>
 <!-- R1 refactor — explicit ad-lifecycle state machine. Provides
      window.adState for the CG SDK adapter to forward events into.
      See js/ad_state.js header for the state diagram.
      Phase 131 — gamemonetize.js consumer removed. -->
-<script src="js/ad_state.js?v=234"></script>
+<script src="js/ad_state.js?v=235"></script>
 <!-- Phase 131b — Adsterra banner hostname-gate. Sets window.__onCrazyGames
      + __loadAdsterra / __loadAdsterraNative helpers used inline by the ad
      slot scripts in <body>. MUST load before those slots are parsed. -->
-<script src="js/banner_gate.js?v=234"></script>
+<script src="js/banner_gate.js?v=235"></script>
 <!-- R11 Step 3 — ad slot DOM toggling. Centralises _updateRespawnAdSlot /
      _updateFrameAdSlots + their cached element refs. Called per-frame by
      js/hud.js renderHUD. Phase 131b — side-rail toggler removed (rails
      were force-hidden every frame since Phase 106; DOM now deleted). -->
-<script src="js/ad_slots.js?v=234"></script>
+<script src="js/ad_slots.js?v=235"></script>
 <!-- Phase 123 — anti-adblock notice. Detects (browser adblock vs network
      firewall) and shows a polite bottom-of-screen toast. Self-suppresses
      for 7 days on dismiss. Detection runs on window.load + 5 s settle. -->
-<script src="js/adblock_notice.js?v=234"></script>
+<script src="js/adblock_notice.js?v=235"></script>
 <!-- R2 refactor — Input module. Owns ALL writes to the global `mouse`
      state + canvas-inset coord translation. See js/input.js header
      for the trigger-edge primitives. -->
-<script src="js/input.js?v=234"></script>
+<script src="js/input.js?v=235"></script>
 <!-- R3 refactor — WeaponState module. Owns every weapon-state write on
      `player` (ammo / reload / fireCooldown / swap / equip). Loads
      AFTER js/weapons.js (above) — weapons.js installs the
      window.__setPlayerWeapon setter shim at top-level so WeaponState
      can mutate `playerWeapon` even though it's a `let` in another
      classic-script file. See js/weapon_state.js header. -->
-<script src="js/weapon_state.js?v=234"></script>
+<script src="js/weapon_state.js?v=235"></script>
 <!-- Phase 140 — weapon drop + hold-to-pickup (replaces manual X-swap). Loads
      after weapons.js / weapon_state.js so applyWeaponToPlayer + WeaponState
      are defined when a pickup completes. -->
-<script src="js/weapon_drop.js?v=234"></script>
+<script src="js/weapon_drop.js?v=235"></script>
 <!-- Phase 131 — GameMonetize SDK removed. Vendor declined our submission
      ("AI-generated"), so we cut the dependency. Outside crazygames.com
      (i.e. ashgrid.io / dev.ashgrid.pages.dev) the dispatch falls through
      to the built-in stub which fail-opens the reward. See ad_dispatch.js. -->
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=234"></script>
+<script src="js/missions/nn_deathmatch.js?v=235"></script>
 <!-- Phase 138B.1 — .io-style bot names; must load before world_gen spawns -->
-<script src="js/bot_names.js?v=234"></script>
+<script src="js/bot_names.js?v=235"></script>
 <!-- Phase 139b — believable leaderboard seed (uses pickBotName); presentation-only -->
-<script src="js/leaderboard_seed.js?v=234"></script>
-<script src="js/world_gen.js?v=234"></script>
+<script src="js/leaderboard_seed.js?v=235"></script>
+<script src="js/world_gen.js?v=235"></script>
 <!-- Phase 161 — build-phase free-cover placer (placeBuildBlock). Producer
      (game._buildPhase) lives in js/missions/nn_deathmatch.js. -->
-<script src="js/build_phase.js?v=234"></script>
-<script src="js/squad.js?v=234"></script>
-<script src="js/drone_fpv.js?v=234"></script>
-<script src="js/vision_raycast.js?v=234"></script>
-<script src="js/camera.js?v=234"></script>
-<script src="js/defense_build_ui.js?v=234"></script>
-<script src="js/pause.js?v=234"></script>
+<script src="js/build_phase.js?v=235"></script>
+<script src="js/squad.js?v=235"></script>
+<script src="js/drone_fpv.js?v=235"></script>
+<script src="js/vision_raycast.js?v=235"></script>
+<script src="js/camera.js?v=235"></script>
+<script src="js/defense_build_ui.js?v=235"></script>
+<script src="js/pause.js?v=235"></script>
 <!-- R5 refactor — bullet update + collision (player + enemy loops,
      fire(), detonateRocket()). Pulled out of the 12 000-line inline
      script. Functions resolve dependencies (player, enemies, etc.) at
      call time via classic-script globals, so this file MUST load
      before the main inline script declares those globals — which is
      fine, the functions aren't called until tickPlayerCombat runs. -->
-<script src="js/bullets.js?v=234"></script>
+<script src="js/bullets.js?v=235"></script>
 <!-- R6 refactor — world render (renderFootprints, renderWorld,
      drawLowCovers, drawOverheads). Same load-time-decoupled pattern
      as bullets.js; functions resolve their globals at call time. -->
-<script src="js/world_render.js?v=234"></script>
+<script src="js/world_render.js?v=235"></script>
 <!-- R8 refactor — HUD: renderHUD + renderHUDOverlays + drawMinimapPanel
      + drawHUDPanel + getModeLabel + panel cache + 6-zone card draw
      helpers. ~1300 lines from the inline script. -->
-<script src="js/hud.js?v=234"></script>
+<script src="js/hud.js?v=235"></script>
 <!-- Phase 155 — single frame owner + FX layer registry. MUST load before the
      FX modules below (they registerFxLayer at load time) and before loop(). -->
-<script src="js/render_frame.js?v=234"></script>
+<script src="js/render_frame.js?v=235"></script>
 <!-- Phase 147 — killstreak announcer (juice). Registers an over-HUD FX layer. -->
-<script src="js/killstreak_fx.js?v=234"></script>
+<script src="js/killstreak_fx.js?v=235"></script>
+<script src="js/achievement_fx.js?v=235"></script>
 <!-- Phase 148 — recruit celebration (juice). Renders after renderHUD. -->
-<script src="js/recruit_fx.js?v=234"></script>
+<script src="js/recruit_fx.js?v=235"></script>
 <!-- Phase 152 — low-HP danger vignette (juice). Renders under the HUD. -->
-<script src="js/danger_fx.js?v=234"></script>
+<script src="js/danger_fx.js?v=235"></script>
 <!-- Phase 179 — death killcam (replay + press-SPACE respawn). Registers an
      over-HUD FX layer, so MUST load after render_frame.js (registerFxLayer)
      and after death_recap.js. Reads the SOLO replay_buffer.js ring buffer. -->
-<script src="js/killcam.js?v=234"></script>
+<script src="js/killcam.js?v=235"></script>
 <!-- R9 refactor — enemy AI + NN runtime: nnTick / nnBuildObs /
      nnApplyAction / patrol state machine / heat map / team vision /
      updateEnemies. 1145 lines from the inline script. -->
-<script src="js/enemy_ai.js?v=234"></script>
+<script src="js/enemy_ai.js?v=235"></script>
 <!-- Phase 182 — additive NPC believability layer (separation/edge-repulsion,
      interest-point goal selection, roles, corner fail-safe, event flinch, debug
      overlay ?aidebug=1). Reads enemy_ai globals at call-time; needs render_frame
      (registerFxLayer) already loaded above. Kill switch: game._npcAI=false. -->
-<script src="js/npc_director.js?v=234"></script>
+<script src="js/npc_director.js?v=235"></script>
 <!-- Phase 177 — player behaviour-cloning recorder (F9). Loads after enemy_ai.js
      so nnBuildObs is defined; called per-tick from update(). Off by default. -->
-<script src="js/player_recorder.js?v=234"></script>
+<script src="js/player_recorder.js?v=235"></script>
 <!-- Phase 179 — SOLO killcam replay ring buffer. Records a lightweight world
      snapshot per few ticks (called from update()); read by js/killcam.js on
      death. No render deps, so order vs render_frame.js is irrelevant. -->
-<script src="js/replay_buffer.js?v=234"></script>
+<script src="js/replay_buffer.js?v=235"></script>
 <!-- R10 refactor — overlay render: renderStructures + the various
      world/screen overlays (build preview, editor, themes, routes,
      landmarks, vision fog, sound indicators, unit sprites, FPV/UAV/
      command overlays). ~2200 lines from the inline script. -->
-<script src="js/render_overlays.js?v=234"></script>
+<script src="js/render_overlays.js?v=235"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -4917,6 +4918,8 @@ function update() {
   // banners last the same wall-time on every display refresh. render() only
   // reads them. Runs after updateSoundEvents() so this tick's kills are seen.
   if (typeof updateKillstreakFx === 'function') updateKillstreakFx();
+  if (typeof updateAchievementFx === 'function') updateAchievementFx();   // 184n — unlock card
+  if (typeof updateSwapToast === 'function') updateSwapToast();           // 184p — display-rate-safe toast
   if (typeof updateRecruitFx === 'function') updateRecruitFx();
 
   // Mission completion drives wave advancement.
@@ -5348,7 +5351,7 @@ loop();
 <!-- Late-loaded modules — these have top-level .push() / .build() calls
      that reference WORLD or NN_ARENA, which the main inline <script>
      declares. Must run AFTER the inline script. -->
-<script src="js/maps.js?v=234"></script>
-<script src="js/missions/nn_arena_variants.js?v=234"></script>
+<script src="js/maps.js?v=235"></script>
+<script src="js/missions/nn_arena_variants.js?v=235"></script>
 </body>
 </html>

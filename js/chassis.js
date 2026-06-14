@@ -158,7 +158,16 @@ function applyChassisToUnit(u, chassisId, baseSpeed, baseHp, baseRadius) {
 //   armor = 0: damage hits HP at armorBleedFactor. Bleeds at 50% even
 //              with no armor (heavy is still tankier than humanoid).
 //   Non-heavy: full damage to HP (legacy behaviour).
-function _applyDamageToUnit(u, dmg) {
+// 184o-fix — `ignoreInvuln` lets callers that HISTORICALLY bypassed the spawn
+// shield keep that behaviour while still gaining the chassis armour/dash routing.
+// The mine / tesla-chain / drone-bay / airstrike / explosion-AOE sites used raw
+// `hp -= dmg` (no invuln check), so routing them through this gateway would have
+// SILENTLY made spawn-shielded enemies immune to those sources — an unvetted
+// defense-mode balance change. Passing ignoreInvuln:true preserves the original
+// damage-through-shield behaviour; only the armour/dash math is added. (Whether
+// the shield SHOULD block structures — per the Phase 122 "shield always holds"
+// intent below — is a deliberate balance call left to the owner.)
+function _applyDamageToUnit(u, dmg, ignoreInvuln) {
   if (!u || !u.alive || !(dmg > 0)) return;
   // Phase 122 — centralised invuln gate. Every per-caller gate (Phase 117
   // kamikaze splash, bullets.js:456, grenades.js:102 …) was a fragile
@@ -167,7 +176,8 @@ function _applyDamageToUnit(u, dmg) {
   // (which is exactly how the Phase 117 regression happened). Centralising
   // here means the shield ALWAYS holds; per-caller gates become defensive
   // double-checks but no longer load-bearing.
-  if (u._invulnUntil != null
+  if (!ignoreInvuln
+      && u._invulnUntil != null
       && typeof game !== 'undefined'
       && game.time < u._invulnUntil) {
     return;
@@ -203,20 +213,22 @@ function _applyDamageToUnit(u, dmg) {
 // Regen tick — call once per frame from the main update loop. Walks
 // allies + enemies + player; if a unit is heavy and the no-damage
 // cooldown has elapsed, top up its armor toward maxArmor.
+// 184q — per-unit armour regen, hoisted to module scope so tickArmorRegen no
+// longer allocates a fresh combined [player, ...allies, ...enemies] array EVERY
+// sim tick (it ran every frame in a long match). Behaviour-identical.
+function _regenUnitArmor(u, now) {
+  if (!u || !u.alive) return;
+  const c = CHASSIS[u._chassis];
+  if (!c || c.armor == null) return;
+  const delay = c.armorRegenDelay != null ? c.armorRegenDelay : 180;
+  if (now - (u._armorLastHurtAt || 0) < delay) return;
+  if (u.armor >= u.maxArmor) return;
+  u.armor = Math.min(u.maxArmor, u.armor + (c.armorRegenPerTick || 0.5));
+}
 function tickArmorRegen() {
   if (typeof game === 'undefined' || game.state !== 'playing') return;
   const now = game.time;
-  const list = [];
-  if (typeof player !== 'undefined') list.push(player);
-  if (typeof allies !== 'undefined') for (const a of allies) list.push(a);
-  if (typeof enemies !== 'undefined') for (const e of enemies) list.push(e);
-  for (const u of list) {
-    if (!u || !u.alive) continue;
-    const c = CHASSIS[u._chassis];
-    if (!c || c.armor == null) continue;
-    const delay = c.armorRegenDelay != null ? c.armorRegenDelay : 180;
-    if (now - (u._armorLastHurtAt || 0) < delay) continue;
-    if (u.armor >= u.maxArmor) continue;
-    u.armor = Math.min(u.maxArmor, u.armor + (c.armorRegenPerTick || 0.5));
-  }
+  if (typeof player !== 'undefined') _regenUnitArmor(player, now);
+  if (typeof allies !== 'undefined') for (const a of allies) _regenUnitArmor(a, now);
+  if (typeof enemies !== 'undefined') for (const e of enemies) _regenUnitArmor(e, now);
 }
