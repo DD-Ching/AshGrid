@@ -289,6 +289,22 @@ function updateBullets() {
           if (game._nnMode) {
             addEnergy(BALANCE.energy.perKill);
           }
+          // Phase 184d — Heavy ARSENAL loots the victim's FPV/drone quota on a
+          // kill ('幹掉敵人之後還可以搶他們的無人機額度'). Flag-gated (game._classes
+          // off by default → no live effect), heavy-only, player's own bullet
+          // only. SOLO path; MP victims (remoteBots) are a separate path.
+          if (typeof game !== 'undefined' && game._classes && !b.fromAlly
+              && typeof player !== 'undefined' && player._chassis === 'heavy'
+              && typeof fpv !== 'undefined'
+              && typeof e._fpvAmmo === 'number' && e._fpvAmmo > 0) {
+            const looted = e._fpvAmmo;
+            fpv.available += looted;
+            fpv.max = Math.max(fpv.max, fpv.available);
+            e._fpvAmmo = 0;
+            if (typeof showSwapToast === 'function') {
+              showSwapToast(T('▶ 掠奪 · +' + looted + ' 無人機', '▶ LOOTED · +' + looted + ' FPV'));
+            }
+          }
           // Slow-mo on 3+ killstreak — 0.55× for 1.5s, retriggers on each
           // subsequent kill so a hot streak stays in slow-mo. Tiny shake on
           // every kill so even a single shot punches.

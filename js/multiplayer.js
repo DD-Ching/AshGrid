@@ -170,7 +170,17 @@ function _mpIsActive() { return !!_mpState.enabled; }
 // count (recruitOk handler below).
 function _mpAliveSquadCount() {
   let n = 0;
-  if (_mpState.remoteBots) for (const b of _mpState.remoteBots.values()) if (b.alive && b.team === 0) n++;
+  const myId = _mpState ? _mpState.myId : null;
+  if (_mpState.remoteBots) for (const b of _mpState.remoteBots.values()) {
+    if (!b.alive || b.team !== 0) continue;
+    // Phase 184k — count only MY recruits (parity with getSquadSlots + the server
+    // cap, which both filter on _recruitedBy). Before this the cap counted every
+    // team-0 bot — a teammate's recruits AND the i%2 neutral team-0 spawns (rby 0)
+    // — so the recruiter hit the ARENA_SQUAD_CAP after ~1 recruit. The `!= null`
+    // keeps the pre-184f fall-through for a server/peer that omits rby.
+    if (myId != null && b._recruitedBy != null && b._recruitedBy !== myId) continue;
+    n++;
+  }
   return n;
 }
 function _mpPeerCount() {
@@ -380,9 +390,45 @@ function _mpHandleMessage(data) {
       if (typeof triggerRecruitFx === 'function') triggerRecruitFx(data.callsign || 'UNIT', _mpAliveSquadCount());
       if (typeof playRadioStatic === 'function') playRadioStatic(0.55, 0.45);
       // Toast only for the recruiter (the player who pressed G).
-      if (typeof showSwapToast === 'function' && data.recruiter === _mpState.myId) {
-        showSwapToast(T('▸ 招降 · ' + (data.callsign || 'UNIT'),
-                        '▸ RECRUITED · ' + (data.callsign || 'UNIT')));
+      if (data.recruiter === _mpState.myId) {
+        // 184k — spend the classes recruit energy cost HERE, on server
+        // confirmation, not optimistically at send (no loss on a server reject).
+        // Re-derive the classes-builder mode the same way the request did; legacy
+        // recruit is free, so this is a no-op then.
+        if (typeof game !== 'undefined' && game._classes
+            && typeof player !== 'undefined' && player
+            && (!player._chassis || player._chassis === 'humanoid')
+            && typeof spendEnergy === 'function'
+            && typeof BALANCE === 'object' && BALANCE.ability) {
+          spendEnergy(BALANCE.ability.recruit || 0);
+        }
+        if (typeof showSwapToast === 'function') {
+          showSwapToast(T('▸ 招降 · ' + (data.callsign || 'UNIT'),
+                          '▸ RECRUITED · ' + (data.callsign || 'UNIT')));
+        }
+      }
+      break;
+    }
+    case 'executeOk': {
+      // Phase 184i — server confirmed a wolf DEVOUR. The victim bot is already
+      // going alive=false via the snapshot; here we fire the VFX on EVERY client
+      // (parity with SOLO _arenaTryDevour) and, for the devourer only, apply the
+      // energy steal + the HP lifesteal. The HP grant is server-authoritative
+      // (rides the snapshot) but the self-reconcile takes min(local, server),
+      // which would MASK a heal — so we bump local hp by the same `healed`
+      // up-front so min() agrees and the heal isn't swallowed.
+      const bx = data.x, by = data.y;
+      if (typeof createExplosion === 'function' && typeof bx === 'number') createExplosion(bx, by, 'small');
+      if (typeof triggerRecruitFx === 'function') triggerRecruitFx('DEVOUR');
+      if (typeof playRadioStatic === 'function') playRadioStatic(0.55, 0.45);
+      if (data.by === _mpState.myId && typeof player !== 'undefined' && player) {
+        const healed = (typeof data.healed === 'number') ? data.healed : 0;
+        if (healed > 0) player.hp = Math.min(player.maxHp || 100, (player.hp || 0) + healed);
+        if (typeof addEnergy === 'function') addEnergy(25);   // stolenEnergy — matches SOLO flat 25
+        if (typeof showSwapToast === 'function') {
+          showSwapToast(T('▸ 吞噬 · +' + healed + ' 血 +25 能量',
+                          '▸ DEVOUR · +' + healed + ' HP +25 energy'));
+        }
       }
       break;
     }
@@ -489,7 +535,9 @@ function _mpHandleSnapshot(snap) {
           x: sp.x, y: sp.y,
           targetX: sp.x, targetY: sp.y,
           angle: sp.angle,
-          hp: sp.hp, alive: sp.alive,
+          hp: sp.hp, maxHp: (typeof sp.maxHp === 'number' ? sp.maxHp : 100), alive: sp.alive,
+          armor: (typeof sp.armor === 'number' ? sp.armor : 0),
+          maxArmor: (typeof sp.maxArmor === 'number' ? sp.maxArmor : 0),
           name: sp.name, invuln: !!sp.invuln,
           buffer: [],   // [{t, x, y, angle}]  t = server clock at broadcast
         };
@@ -501,6 +549,9 @@ function _mpHandleSnapshot(snap) {
       if (sp.y !== undefined) rp.targetY = sp.y;
       if (sp.angle !== undefined) rp.angle = sp.angle;
       if (sp.hp !== undefined) rp.hp = sp.hp;
+      if (sp.maxHp !== undefined) rp.maxHp = sp.maxHp;   // Phase 184e — per-chassis ceiling for remote HP bars
+      if (sp.armor !== undefined) rp.armor = sp.armor;       // Phase 184e — remote heavy armour buffer
+      if (sp.maxArmor !== undefined) rp.maxArmor = sp.maxArmor;
       if (sp.alive !== undefined) rp.alive = sp.alive;
       if (sp.invuln !== undefined) rp.invuln = !!sp.invuln;
       if (sp.name) rp.name = sp.name;
@@ -575,11 +626,13 @@ function _mpHandleSnapshot(snap) {
           x: sb.x, y: sb.y,
           targetX: sb.x, targetY: sb.y,
           angle: sb.angle, hp: sb.hp, alive: sb.alive,
+          _recruitedBy: sb.rby || 0,   // Phase 184f — recruiter conn id (0 = enemy/un-recruited)
           _walkPhase: 0,
         };
         _mpState.remoteBots.set(sb.id, rb);
       } else {
         if (sb.team !== undefined) rb.team = sb.team;
+        if (sb.rby !== undefined) rb._recruitedBy = sb.rby;   // Phase 184f — change-only delta
         if (sb.x !== undefined) rb.targetX = sb.x;
         if (sb.y !== undefined) rb.targetY = sb.y;
         if (sb.angle !== undefined) rb.angle = sb.angle;
@@ -853,6 +906,22 @@ function _mpSendInput() {
   // got pushed-out at humanoid 14px → continuous drag-back near walls.
   const rMul = (typeof player !== 'undefined' && typeof player._chassisRadiusMul === 'number')
     ? player._chassisRadiusMul : 1.0;
+  // Phase 184e — chassis HP multiplier. The server hard-coded 100 HP, so a heavy
+  // (hpMul 1.8) was a non-tank online — a SOLO/MP desync ('多人跟單人感覺不一樣').
+  // Send it so the server sizes maxHp per-chassis. Base stat, NOT a class ability,
+  // so it applies regardless of game._classes (parity with SOLO, where hpMul is
+  // always baked into player.maxHp by applyChassisToUnit).
+  const hMul = (typeof CHASSIS !== 'undefined' && typeof player !== 'undefined'
+    && player._chassis && CHASSIS[player._chassis] && typeof CHASSIS[player._chassis].hpMul === 'number')
+    ? CHASSIS[player._chassis].hpMul : 1.0;
+  // Phase 184e — heavy ARMOUR capacity + wolf DASH flag, the defence half of the
+  // chassis parity (server was chassis-blind on defence too). aMax is a base stat
+  // (always sent, like hMul); dashActive is only ever non-zero for a wolf with
+  // game._classes on (set by the sprint logic), so it's self-gated client-side.
+  const aMax = (typeof CHASSIS !== 'undefined' && typeof player !== 'undefined'
+    && player._chassis && CHASSIS[player._chassis] && typeof CHASSIS[player._chassis].armor === 'number')
+    ? CHASSIS[player._chassis].armor : 0;
+  const dashActive = (typeof player !== 'undefined' && player._dashActive) ? 1 : 0;
   let wId = 'RIFLE';
   if (typeof WEAPONS !== 'undefined' && typeof playerWeapon !== 'undefined' && playerWeapon) {
     if (playerWeapon === WEAPONS.RIFLE)        wId = 'RIFLE';
@@ -888,7 +957,7 @@ function _mpSendInput() {
     buffActive: (typeof isRespawnBuffed === 'function') ? isRespawnBuffed() : false,
     // Per-tick loadout (see big comment above).
     sprint: sprint ? 1 : 0,
-    wMul, cMul, wId, rMul,
+    wMul, cMul, wId, rMul, hMul, aMax, dashActive,
   };
   _mpSendRaw(input);
 
@@ -1044,13 +1113,24 @@ function _mpRenderRemote() {
     // Pass walkPhase so legs swing while moving. Phase 47 swaps the body
     // colour to redBright so MP players read brighter than NPCs.
     drawHumanoid(rp.x, rp.y, rp.angle || 0, rp.walkPhase || 0, COLORS.redBright, true, rp);
-    // HP bar — matches NPC bar at index.html:7910 (30×3 @ y-26).
+    // HP bar — matches NPC bar at index.html:7910 (30×3 @ y-26). Phase 184e —
+    // use the peer's per-chassis maxHp (heavy 180 etc.) so a heavy's bar isn't
+    // pinned full; default 100 for pre-184e peers / unset.
     const hp = (typeof rp.hp === 'number') ? rp.hp : 100;
-    if (hp < 100) {
+    const maxHp = (typeof rp.maxHp === 'number' && rp.maxHp > 0) ? rp.maxHp : 100;
+    if (hp < maxHp) {
       ctx.fillStyle = COLORS.black;
       ctx.fillRect(rp.x - 15, rp.y - 22, 30, 3);
       ctx.fillStyle = COLORS.red;
-      ctx.fillRect(rp.x - 15, rp.y - 22, 30 * Math.max(0, hp) / 100, 3);
+      ctx.fillRect(rp.x - 15, rp.y - 22, 30 * Math.max(0, hp) / maxHp, 3);
+    }
+    // Phase 184e — heavy armour bar (cyan), sits just above the HP bar, mirrors
+    // the SOLO enemy bar in world_render.js. Only a heavy with live armour.
+    if (rp.maxArmor > 0 && rp.armor > 0) {
+      ctx.fillStyle = 'rgba(20,20,32,0.55)';
+      ctx.fillRect(rp.x - 15, rp.y - 26, 30, 2);
+      ctx.fillStyle = '#42B7E8';
+      ctx.fillRect(rp.x - 15, rp.y - 26, 30 * Math.max(0, rp.armor) / rp.maxArmor, 2);
     }
     // Name label — sits between chevron and HP bar.
     ctx.fillStyle = COLORS.black;

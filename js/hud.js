@@ -1085,8 +1085,12 @@ function getSquadSlots() {
     if (bots) {
       for (const b of bots.values()) {
         if (!b || !b.alive || b.team !== 0) continue;
-        // prefer MY recruits (server caps per-recruiter); fall back to any team-0
-        // if the server didn't stamp _recruitedBy.
+        // Count only MY recruits. Phase 184f — the server now stamps _recruitedBy
+        // (rby) on every bot (0 = enemy / un-recruited neutral). Before that it
+        // was never sent, so this guard short-circuited and the panel counted ALL
+        // team-0 bots (a teammate's recruits + the i%2 neutral team-0 spawns) →
+        // the 2+-human over-count. The `!= null` keeps the old fall-through for
+        // any pre-184f server / peer that omits the field.
         if (myId != null && b._recruitedBy != null && b._recruitedBy !== myId) continue;
         out.push({ alive: true, hp: Math.max(0, Math.floor(b.hp || 0)), maxHp: b.maxHp || 100 });
         if (out.length >= maxMembers) break;

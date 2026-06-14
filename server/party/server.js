@@ -157,6 +157,75 @@ export function _respawnDecision(alive, tickCount, respawnAt, idleTicks, afkMaxT
   if (tickCount < respawnAt) return false;
   return idleTicks < afkMaxTicks;
 }
+
+// Phase 184g — recruit HP/SEED eligibility, shared by the 'recruit' handler and
+// unit-tested in tools/test_mp_chassis.js. The OTHER gates (alive / team / reach
+// / squad-cap) stay inline in the handler; this is just the HP/SEED rule that
+// diverges by mode. Mirrors the SOLO split in js/arena_recruitment.js:
+//   classes-on humanoid (builder): target weaker than recruiter, SEED dropped —
+//                                  the redesign's '别人血量比我低我就可以招降';
+//   legacy (classes-off / non-builder): bot wounded < 50% maxHp AND recruiter
+//                                  SEED above the gap (bots are seed 0).
+// classesBuilder is set ONLY when the client sends cls=1 + klass='builder', which
+// only happens with game._classes on — so live recruit is byte-identical to pre-184g.
+export function _recruitGateOk(classesBuilder, botHp, botMaxHp, recruiterHp, recruiterSeed) {
+  if (classesBuilder) return botHp < recruiterHp;
+  if (botHp >= (botMaxHp || HP_MAX) * ARENA_HP_GATE) return false;
+  if (recruiterSeed <= ARENA_SEED_GAP) return false;
+  return true;
+}
+
+// Phase 184i — wolf DEVOUR lifesteal amount, mirrors SOLO js/arena_recruitment.js
+// _arenaTryDevour (處決吸血 — execute a weaker enemy, steal ~half its max HP).
+// Energy steal (flat 25) is client-side on executeOk (game._energy is per-client).
+// Pure + exported for the unit test.
+export function _devourStolenHp(botMaxHp) {
+  return Math.max(20, Math.round((botMaxHp || 80) * 0.5));
+}
+
+// Phase 184e — server-side chassis damage routing. Mirrors the client
+// js/chassis.js _applyDamageToUnit exactly so a heavy is a real tank online and
+// a dashing wolf actually takes 70% less, instead of the server applying flat
+// damage to HP (chassis-blind = the SOLO/MP '不同步'). Pure + exported so it's
+// unit-tested in tools/test_mp_chassis.js (no room/socket needed), same pattern
+// as _respawnDecision.
+//
+// Order matches the client: DASH cut first (covers the whole hit), THEN the
+// heavy ARMOUR buffer (drain armour; overflow / no-armour bleeds to HP at
+// ARMOR_BLEED). A non-heavy, non-dashing player takes FULL damage — identical
+// to the pre-184e `p.hp -= dmg`, so humanoid MP is byte-for-byte unchanged.
+//   p.input.dashActive : 1 while the client's wolf dash is active (client only
+//                        sets it for wolf + game._classes, so it's self-gated).
+//   p.maxArmor / p.armor : sized from input.aMax (heavy 60, everyone else 0).
+// Mutates p.hp / p.armor / p._armorLastHurtTick. Returns hp damage actually dealt.
+export function _applyChassisDamage(p, dmg, tickCount) {
+  if (!p || !(dmg > 0)) return 0;
+  // Wolf DASH -70%. The bit is client-asserted (energy-gated client-side, the
+  // trust model), but we reject it server-side for an ARMOURED unit (dash is
+  // wolf-only; a heavy has armour — this kills the spoofed heavy+armour+dash
+  // near-immortal compound) or a STATIONARY one (dash is a movement ability —
+  // no camping tank). A legit dashing wolf has maxArmor 0 and is moving, so this
+  // is a no-op for real play; it only bounds a modified client. (Review 184e–j #A.)
+  if (p.input && p.input.dashActive && !(p.maxArmor > 0)
+      && (Math.abs(p.input.dx) > 0.01 || Math.abs(p.input.dy) > 0.01)) {
+    dmg = dmg * DASH_DMG_MUL;
+  }
+  const hpBefore = p.hp;
+  if (p.maxArmor > 0) {
+    p._armorLastHurtTick = tickCount | 0;
+    if (p.armor > 0) {
+      const absorbed = Math.min(p.armor, dmg);
+      p.armor -= absorbed;
+      const overflow = dmg - absorbed;
+      if (overflow > 0) p.hp -= overflow * ARMOR_BLEED;
+    } else {
+      p.hp -= dmg * ARMOR_BLEED;       // no armour left, still bleeds reduced
+    }
+  } else {
+    p.hp -= dmg;                       // non-heavy: full damage (legacy)
+  }
+  return hpBefore - p.hp;
+}
 const HP_MAX            = 100;
 const INVULN_TICKS      = 3 * TICK_HZ;     // 3 s spawn protection
 // Phase 60: respawn time is ad-buffable (DEFAULT_SEC / BUFFED_SEC in
@@ -164,6 +233,29 @@ const INVULN_TICKS      = 3 * TICK_HZ;     // 3 s spawn protection
 // TICK_HZ doesn't drift the player-visible countdown.
 const RESPAWN_TICKS_DEFAULT = 15 * TICK_HZ;  // 15 s
 const RESPAWN_TICKS_BUFFED  = 5  * TICK_HZ;  // 5 s
+// Phase 184e — server-side chassis DEFENCE parity with client js/chassis.js.
+// The server was chassis-blind on defence (only HP, after 184e-1), so a heavy's
+// armour buffer + a wolf's dash damage-cut were SOLO-only — the same '不同步'
+// class of desync as the HP cap. These mirror chassis.js exactly, rescaled to
+// TICK_HZ (the client's per-frame 0.5 armour @ 60-tick-sec = 30 armour/s; 3 s
+// no-damage delay) so the FEEL matches SOLO without touching the timing unit.
+//   DASH_DMG_MUL  : incoming damage ×0.30 while a wolf is dashing (input.dashActive)
+//   ARMOR_BLEED   : fraction of post-armour overflow that leaks to HP (heavy)
+//   ARMOR_REGEN_* : top-up rate / no-damage delay for the heavy armour buffer
+const DASH_DMG_MUL            = 0.30;
+const ARMOR_BLEED             = 0.65;
+const ARMOR_REGEN_DELAY_TICKS = 3 * TICK_HZ;   // 3 s of no damage before regen
+const ARMOR_REGEN_PER_TICK    = 30 / TICK_HZ;  // 30 armour / second (=0.15 @ 200Hz)
+const ARMOR_MAX_CAP           = 500;           // clamp on client-sent aMax (sanity)
+// Phase 184j — heavy ULTIMATE (大招 — fire all stockpiled weapons at once). The
+// client spends the energy + shows the local burst; the server spawns the burst
+// AUTHORITATIVELY so it actually damages remote players/bots online (a ghost-only
+// burst hit nothing server-side). Cap the weapon count to the stockpile size and
+// rate-limit so a spoofed client can't machine-gun bursts (energy is the real
+// client-side gate; this is just abuse protection).
+const HEAVY_STOCKPILE_MAX = 3;
+const ULT_COOLDOWN_TICKS  = 1 * TICK_HZ;   // ≥1 s between server-accepted bursts
+const ULT_FAN_STEP        = 0.14;          // radians between barrels — matches js/heavy_arsenal.js
 // Arena recruit gates — authoritative server copies of the client constants in
 // js/arena_recruitment.js (ARENA_SEED_GAP / ARENA_SQUAD_CAP / ARENA_HP_GATE /
 // ARENA_TOUCH_BUFFER). Kept as named constants (not bare literals) so a balance
@@ -799,6 +891,10 @@ export default class AshGridRoom {
       id: conn.id,
       x: spawn.x, y: spawn.y, angle: 0,
       hp: HP_MAX,
+      maxHp: HP_MAX,           // Phase 184e — resized per-chassis from input.hMul
+      armor: 0,                // Phase 184e — heavy armour buffer (sized from input.aMax)
+      maxArmor: 0,
+      _armorLastHurtTick: -999999,
       alive: true,
       fireCdUntil: 0,
       invulnUntil: this.tickCount + INVULN_TICKS,
@@ -826,7 +922,7 @@ export default class AshGridRoom {
       // continuous drag-back because client moved at 2.48× while server
       // moved at 1.0×).
       input: { dx: 0, dy: 0, angle: 0, fire: false, seq: 0, vT: 0,
-               sprint: 0, wMul: 1.0, cMul: 1.0, rMul: 1.0, wId: 'RIFLE' },
+               sprint: 0, wMul: 1.0, cMul: 1.0, rMul: 1.0, hMul: 1.0, dashActive: 0, wId: 'RIFLE' },
       lastInputSeq: 0,
       // Echoed back in snapshot so client can compute RTT.
       lastInputT: 0,
@@ -884,6 +980,37 @@ export default class AshGridRoom {
       if (typeof data.wMul === 'number')      p.input.wMul   = data.wMul;
       if (typeof data.cMul === 'number')      p.input.cMul   = data.cMul;
       if (typeof data.rMul === 'number')      p.input.rMul   = data.rMul;
+      // Phase 184e — per-chassis max HP (heavy 1.8× etc.). Resize maxHp; if the
+      // unit is at full + undamaged (e.g. just spawned at the default 100), bump
+      // current hp to the new ceiling so a heavy doesn't spend its first life at
+      // 100/180. A damaged player is NOT healed. Clamp the mul to a sane range.
+      if (typeof data.hMul === 'number' && isFinite(data.hMul)) {
+        const mul = Math.max(0.25, Math.min(3, data.hMul));
+        p.input.hMul = mul;
+        const newMax = Math.max(1, Math.round(HP_MAX * mul));
+        if (newMax !== p.maxHp) {
+          const wasFull = p.hp >= (p.maxHp || HP_MAX);
+          p.maxHp = newMax;
+          if (wasFull && p.alive) p.hp = p.maxHp;
+          else if (p.hp > p.maxHp) p.hp = p.maxHp;   // 184k — shrink down-clamp (mirrors armour)
+        }
+      }
+      // Phase 184e — wolf DASH flag (client sets it only for wolf + game._classes,
+      // so it's self-gated; the server just trusts the bit). Read in
+      // _applyChassisDamage to cut incoming damage 70%.
+      if (typeof data.dashActive !== 'undefined') p.input.dashActive = data.dashActive ? 1 : 0;
+      // Phase 184e — heavy ARMOUR capacity (CHASSIS[chassis].armor, 0 for others).
+      // Size maxArmor; top a full-armour unit to the new cap (mirrors the hMul
+      // bump) so a just-spawned heavy starts with its buffer. Clamp sane.
+      if (typeof data.aMax === 'number' && isFinite(data.aMax)) {
+        const cap = Math.max(0, Math.min(ARMOR_MAX_CAP, data.aMax));
+        if (cap !== p.maxArmor) {
+          const wasFull = p.armor >= (p.maxArmor || 0);
+          p.maxArmor = cap;
+          if (wasFull && p.alive) p.armor = p.maxArmor;
+          else if (p.armor > cap) p.armor = cap;
+        }
+      }
       if (typeof data.wId  === 'string')      p.input.wId    = data.wId;
       // Server-side NN bots — spawned lazily on the FIRST input from any
       // player in the room. Bots persist until the room empties (matches
@@ -1047,9 +1174,13 @@ export default class AshGridRoom {
       const reach = 13 + 14 + ARENA_TOUCH_BUFFER;   // myR + botR + buffer
       const dd = Math.hypot(bot.x - p.x, bot.y - p.y);
       if (dd > reach) return;                     // out of touch range — reject
-      if (bot.hp >= (bot.maxHp || HP_MAX) * ARENA_HP_GATE) return;   // not wounded enough
-      const recruiterSeed = num(data.seed) || 0;
-      if (recruiterSeed <= ARENA_SEED_GAP) return;   // SEED gate — bots are seed 0
+      // Phase 184g — HP/SEED eligibility via the shared _recruitGateOk rule.
+      // classes-on humanoid (builder) uses the redesign gate (bot weaker than
+      // me, SEED dropped — '别人血量比我低我就可以招降'); legacy = wounded<50% + SEED.
+      // The classes path is gated on the client-sent cls+klass (only set when
+      // game._classes is on), so live (classes-off) recruit is byte-unchanged.
+      const classesBuilder = !!data.cls && data.klass === 'builder';
+      if (!_recruitGateOk(classesBuilder, bot.hp, bot.maxHp || HP_MAX, p.hp, num(data.seed) || 0)) return;
       // Squad cap — parity with SOLO (arena_recruitment.js). Count this
       // player's live recruits and reject at the ceiling, so one player can't
       // permanently flip the whole shared bot pool and drain the arena for
@@ -1069,6 +1200,58 @@ export default class AshGridRoom {
         type: 'recruitOk', botId, newTeam: 0,
         recruiter: sender.id, callsign: bot.callsign,
       }));
+      return;
+    }
+    // Phase 184i — wolf DEVOUR (處決吸血), server-authoritative. The Charger's G
+    // EXECUTES a weaker enemy bot: it vanishes (normal bot death + respawn timer)
+    // and the wolf lifesteals ~half the victim's max HP. HP grant is server-side
+    // (player.hp is authoritative online); the energy steal (+25) is applied
+    // client-side on executeOk. Gates mirror the SOLO live path (alive / enemy /
+    // reach / weaker-than-me). Flag-gated client-side (wolf + game._classes only
+    // ever sends executeRequest), so live is unaffected — old clients never send it.
+    if (data.type === 'executeRequest') {
+      if (!p.alive) return;
+      const botId = num(data.botId) | 0;
+      const bot = this.bots.get(botId);
+      if (!bot || !bot.alive) return;            // unknown / dead — reject
+      if (bot.team === 0) return;                // friendly — reject (can't devour your own)
+      const reach = 13 + 14 + ARENA_TOUCH_BUFFER;
+      if (Math.hypot(bot.x - p.x, bot.y - p.y) > reach) return;   // out of reach
+      if (bot.hp >= p.hp) return;                // must be WEAKER than me
+      const bx = bot.x, by = bot.y;
+      const healed = _devourStolenHp(bot.maxHp || HP_MAX);
+      bot.alive = false;                         // vanish — normal bot death + respawn
+      bot.hp = 0;
+      bot._respawnAt = this.tickCount + BOT_RESPAWN_TICKS;
+      p.hp = Math.min(p.maxHp || HP_MAX, p.hp + healed);   // lifesteal (rides snapshot)
+      this.party.broadcast(JSON.stringify({
+        type: 'executeOk', botId, by: sender.id,
+        x: round1(bx), y: round1(by), healed,
+      }));
+      return;
+    }
+    // Phase 184j — heavy ULTIMATE: spawn the all-weapons burst AUTHORITATIVELY so
+    // it damages remote players/bots (the client's local burst is _mpGhost — visual
+    // + client-only-NN collision only). Each stockpiled weapon fires at a fanned
+    // angle, reusing the same spawnBulletsFromUnit path as normal fire. Energy is
+    // spent client-side (heavy_arsenal.js); here we cap + rate-limit for abuse.
+    // Echoes of these bullets back to the shooter are render-suppressed by the
+    // existing _mpRenderRemoteBullets shooter==us rule (no twin tracer).
+    if (data.type === 'ultimateBurst') {
+      if (!p.alive) return;
+      if (p._lastUltTick != null && (this.tickCount - p._lastUltTick) < ULT_COOLDOWN_TICKS) return;
+      const list = Array.isArray(data.weapons) ? data.weapons.slice(0, HEAVY_STOCKPILE_MAX) : [];
+      if (!list.length) return;
+      p._lastUltTick = this.tickCount;
+      const baseAngle = num(data.angle);
+      const n = list.length;
+      for (let wi = 0; wi < n; wi++) {
+        const wid = (typeof list[wi] === 'string') ? list[wi] : 'RIFLE';
+        const wsim = getWeaponSim(wid);
+        const fan = baseAngle + (wi - (n - 1) / 2) * ULT_FAN_STEP;
+        const nb = spawnBulletsFromUnit({ x: p.x, y: p.y, id: p.id, team: 0 }, { ...wsim, weaponId: wid }, fan);
+        for (const b of nb) { b.id = this.nextBulletId++; b.shooterId = p.id; b.weapon = wid; this.bullets.push(b); }
+      }
       return;
     }
     // Phase 43: explosion request from a client. Used for grenades / FPV /
@@ -1155,6 +1338,13 @@ export default class AshGridRoom {
         continue;
       }
       const inp = p.input;
+      // Phase 184e — heavy armour regen (parity with client tickArmorRegen): once
+      // ARMOR_REGEN_DELAY_TICKS have passed since the last hit, top up toward
+      // maxArmor. No-op for non-heavy (maxArmor 0).
+      if (p.maxArmor > 0 && p.armor < p.maxArmor
+          && (this.tickCount - (p._armorLastHurtTick || 0)) >= ARMOR_REGEN_DELAY_TICKS) {
+        p.armor = Math.min(p.maxArmor, p.armor + ARMOR_REGEN_PER_TICK);
+      }
       // Movement: shared simStepPerTick (wings.io-style), honours sprint
       // + weapon/chassis multipliers carried per-input (wMul, cMul). Server
       // and client agree byte-for-byte; missing fields default to 1.0 so
@@ -1304,7 +1494,7 @@ export default class AshGridRoom {
         const cx = prevX + sx * t, cy = prevY + sy * t;
         const dx = p.x - cx, dy = p.y - cy;
         if (dx * dx + dy * dy < r2) {
-          p.hp -= b.damage;
+          _applyChassisDamage(p, b.damage, this.tickCount);   // Phase 184e — armour/dash routing
           consumed = true;
           if (b._dbgShooter) console.log(`[hitdebug] t${this.tickCount} bid=${b.id} PLAYER victim=${p.id} dmg=${b.damage} → hp=${p.hp}`);
           // Phase 2 — rocket AOE on direct hit. The wsim profile sets
@@ -1326,7 +1516,7 @@ export default class AshGridRoom {
                 if (this.tickCount < q.invulnUntil) continue;
                 const qdx = q.x - b.x, qdy = q.y - b.y;
                 if (qdx * qdx + qdy * qdy <= blastR2) {
-                  q.hp -= blastDmg;
+                  _applyChassisDamage(q, blastDmg, this.tickCount);   // Phase 184e — armour/dash routing
                   this.party.broadcast(JSON.stringify({
                     type: 'hit', victim: q.id, shooter: b.shooterId,
                     hp: Math.max(0, q.hp), weapon: b.weapon,
@@ -1564,7 +1754,7 @@ export default class AshGridRoom {
     const lastBullet = this.bullets[this.bullets.length - 1];
     const lcDmg    = (lastBullet && typeof lastBullet.damage === 'number') ? lastBullet.damage : BULLET_DAMAGE;
     const lcWeapon = (lastBullet && lastBullet.weapon) ? lastBullet.weapon : 'RIFLE';
-    bestVictim.hp -= lcDmg;
+    _applyChassisDamage(bestVictim, lcDmg, this.tickCount);   // Phase 184e — armour/dash routing
     if (shooter.hitDebug) console.log(`[hitdebug] t${this.tickCount} LAGCOMP shooter=${shooter.id} victim=${bestVictim.id} dmg=${lcDmg} → hp=${bestVictim.hp}`);
     if (this.bullets.length > 0) this.bullets.pop();
     // Phase 41: include impact coords for client-side blood/popup placement.
@@ -1597,7 +1787,9 @@ export default class AshGridRoom {
   _respawn(p) {
     const spawn = this._pickSpawn();
     p.x = spawn.x; p.y = spawn.y;
-    p.hp = HP_MAX;
+    p.hp = p.maxHp || HP_MAX;     // Phase 184e — respawn at the per-chassis max
+    p.armor = p.maxArmor || 0;    // Phase 184e — refill heavy armour on respawn
+    p._armorLastHurtTick = this.tickCount;
     p.alive = true;
     p.respawnRequested = false;   // Phase 182 — request served; next death must re-ask
     p.invulnUntil = this.tickCount + INVULN_TICKS;
@@ -1697,6 +1889,9 @@ export default class AshGridRoom {
         y: round1(p.y),
         angle: round3(p.angle),
         hp: p.hp,
+        maxHp: p.maxHp,                       // Phase 184e — per-chassis ceiling (remote HP bars)
+        armor: Math.round(p.armor),           // Phase 184e — heavy armour buffer (rounded: cuts regen delta churn)
+        maxArmor: p.maxArmor,
         alive: p.alive,
         invuln: this.tickCount < p.invulnUntil,
         name: p.name,
@@ -1722,6 +1917,12 @@ export default class AshGridRoom {
           angle: round3(b.angle),
           hp: b.hp,
           alive: b.alive,
+          // Phase 184f — recruiter connection id (0 = enemy / un-recruited). The
+          // server already tracks _recruitedBy (recruit handler) but never sent
+          // it, so a client couldn't tell ITS recruits from a teammate's → the
+          // squad panel over-counted in 2+-human rooms ('隊友存在但槽位只有一個').
+          // Sent delta-on-change (changes only on recruit), like `team` — ~free.
+          rby: b._recruitedBy || 0,
         }))
       : [];
 
@@ -1769,6 +1970,9 @@ export default class AshGridRoom {
         if (!last || last.y !== p.y) out.y = p.y;
         if (!last || last.angle !== p.angle) out.angle = p.angle;
         if (!last || last.hp !== p.hp) out.hp = p.hp;
+        if (!last || last.maxHp !== p.maxHp) out.maxHp = p.maxHp;   // Phase 184e — sent on change only (~free)
+        if (!last || last.armor !== p.armor) out.armor = p.armor;       // Phase 184e — heavy armour (delta)
+        if (!last || last.maxArmor !== p.maxArmor) out.maxArmor = p.maxArmor;
         if (!last || last.alive !== p.alive) out.alive = p.alive;
         if (!last || last.invuln !== p.invuln) {
           if (p.invuln) out.invuln = true;     // omit when false (saves bytes)
@@ -1778,7 +1982,7 @@ export default class AshGridRoom {
         playerDeltas.push(out);
         // Save the FULL state (not just delta) so next tick's diff has
         // ground truth.
-        state.players.set(p.id, { x: p.x, y: p.y, angle: p.angle, hp: p.hp, alive: p.alive, invuln: p.invuln });
+        state.players.set(p.id, { x: p.x, y: p.y, angle: p.angle, hp: p.hp, maxHp: p.maxHp, armor: p.armor, maxArmor: p.maxArmor, alive: p.alive, invuln: p.invuln });
       }
 
       // ── Bullets: per-receiver AOI cull + delta for known bullets ──
@@ -1824,6 +2028,7 @@ export default class AshGridRoom {
         const last = state.bots.get(b.id);
         const out = { id: b.id };
         if (!last || last.team !== b.team) out.team = b.team;   // team is "permanent" — sent on keyframe
+        if (!last || last.rby !== b.rby) out.rby = b.rby;       // Phase 184f — recruiter id, change-only (~free)
         if (!last || last.x !== b.x) out.x = b.x;
         if (!last || last.y !== b.y) out.y = b.y;
         if (!last || last.angle !== b.angle) out.angle = b.angle;
@@ -1831,7 +2036,7 @@ export default class AshGridRoom {
         if (!last || last.alive !== b.alive) out.alive = b.alive;
         // Drop fully-idle bots (only id) — client keeps last-known state.
         if (Object.keys(out).length > 1) botDeltas.push(out);
-        state.bots.set(b.id, { team: b.team, x: b.x, y: b.y, angle: b.angle, hp: b.hp, alive: b.alive });
+        state.bots.set(b.id, { team: b.team, rby: b.rby, x: b.x, y: b.y, angle: b.angle, hp: b.hp, alive: b.alive });
       }
 
       const snap = {

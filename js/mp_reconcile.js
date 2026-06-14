@@ -341,6 +341,18 @@
         sp.hp
       );
     }
+    // Phase 184e/184k — heavy ARMOUR sync. Unlike hp (two writers: client-only NN
+    // damage + server MP damage → min()), the local player's armour is driven
+    // ONLY by the server: remote-player bullets are visual-only client-side
+    // (no local armour write), so the server is the sole authority. Take its value
+    // DIRECTLY (clamped) — a min() here masked the server's 30/s regen (client
+    // regenerated locally at 60fps, then min() yanked the bar back each snapshot →
+    // a ~3s post-hit stutter; review 184e–j #D). Respawn (low→full) handled by the
+    // justRespawned guard like hp.
+    if (typeof sp.armor === 'number' && !_justRespawned
+        && typeof player.maxArmor === 'number' && player.maxArmor > 0) {
+      player.armor = Math.max(0, Math.min(player.maxArmor, sp.armor));
+    }
     // Invuln pin: server is authoritative for spawn protection.
     // Phase 5: only act when sp.invuln is EXPLICITLY in the snapshot —
     // undefined means delta has no change, leave _invulnUntil alone.
