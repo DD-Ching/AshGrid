@@ -316,14 +316,6 @@
   // ── combat fail-safe: drain corner-wedged "scrap metal" ───────────────
   function npcCombatFailsafe(unit, hostile) {
     if (!_on() || !unit) return false;
-    // Never pull a bot that's actively engaging a VISIBLE enemy — demoting it to
-    // patrol drops a fire tick (patrol fire-bit is off) and walks it off its line,
-    // a ~2.5s twitch/fire-stutter loop for any unit holding a defensive line near
-    // a wall. Only drain bots that are wedged with NO live target (stale/sound-
-    // only detection). This is also why `hostile` is passed in.
-    if (typeof nnNearestVisibleEnemy === 'function' && nnNearestVisibleEnemy(unit, hostile)) {
-      return false;
-    }
     const t = _now();
     const ref = unit._npcProg;
     // No anchor, OR a STALE one (gap >> window → we weren't measuring recently, i.e.
@@ -334,9 +326,16 @@
     const moved = Math.hypot(unit.x - ref.x, unit.y - ref.y);
     const nearEdge = _edgeDist(unit.x, unit.y) < CFG.FS_EDGE;
     unit._npcProg = { x: unit.x, y: unit.y, t };   // reset window
-    // Wedged against an edge AND barely moved over ~2.5s with no live target →
-    // stuck in a corner. Hand it to patrol; the anti-corner picker pulls it back.
-    return nearEdge && moved < CFG.FS_MIN_MOVE;
+    // Not wedged → cheap exit (the common case, every window).
+    if (!(nearEdge && moved < CFG.FS_MIN_MOVE)) return false;
+    // ONLY when genuinely wedged (rare) do the expensive LoS scan: never pull a
+    // bot that's actively engaging a VISIBLE enemy — demoting it to patrol drops a
+    // fire tick (patrol fire-bit off) and walks it off its line (~2.5s fire-stutter
+    // for a unit holding a defensive line). _nnUpdateAiMode already scanned for
+    // detection this tick, so gating here (not at entry) avoids a per-tick double
+    // visibility scan for every combat unit. (This is why `hostile` is passed in.)
+    if (typeof nnNearestVisibleEnemy === 'function' && nnNearestVisibleEnemy(unit, hostile)) return false;
+    return true;
   }
 
   // ── light AI-director event scan (called from nnTick) ─────────────────

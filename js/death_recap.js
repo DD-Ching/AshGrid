@@ -76,19 +76,26 @@ function _adRevivePlayer() {
       // death stamp, so the UI lied ('FAST RESPAWN' but a 15s wait). Server
       // commit-flag does the actual early revive; this keeps the UI honest +
       // gives a SPACE/grace backstop if the request packet is lost.
-      if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue
-          && game._teamWipe.blue.wipedAtMs != null) {
-        const _bw = game._teamWipe.blue;
-        const _buffSec = (typeof RESPAWN_BUFF_CONFIG === 'object' && RESPAWN_BUFF_CONFIG.BUFFED_SEC)
-          ? RESPAWN_BUFF_CONFIG.BUFFED_SEC : 5;
-        const _newMs = _bw.wipedAtMs + _buffSec * 1000;
-        if (_bw.respawnAtMs == null || _newMs < _bw.respawnAtMs) _bw.respawnAtMs = _newMs;
-        if (_bw.wipedSince != null) {
-          const _newTick = _bw.wipedSince + Math.round(_buffSec * 60);
-          if (_bw.respawnAt == null || _newTick < _bw.respawnAt) _bw.respawnAt = _newTick;
+      // Only act on the respawn if still DEAD. A real rewarded ad resolves
+      // 15-30s later — by then the player may already be back (auto-return /
+      // earlier request). The buff above still applies; the re-stamp + request
+      // would be a no-op while alive (mpRespawnEligible/hud read respawnAtMs only
+      // while dead; the server ignores requestRespawn while alive), so skip them.
+      if (typeof player === 'undefined' || !player.alive) {
+        if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue
+            && game._teamWipe.blue.wipedAtMs != null) {
+          const _bw = game._teamWipe.blue;
+          const _buffSec = (typeof RESPAWN_BUFF_CONFIG === 'object' && RESPAWN_BUFF_CONFIG.BUFFED_SEC)
+            ? RESPAWN_BUFF_CONFIG.BUFFED_SEC : 5;
+          const _newMs = _bw.wipedAtMs + _buffSec * 1000;
+          if (_bw.respawnAtMs == null || _newMs < _bw.respawnAtMs) _bw.respawnAtMs = _newMs;
+          if (_bw.wipedSince != null) {
+            const _newTick = _bw.wipedSince + Math.round(_buffSec * 60);
+            if (_bw.respawnAt == null || _newTick < _bw.respawnAt) _bw.respawnAt = _newTick;
+          }
         }
+        if (typeof _mpRequestRespawn === 'function') _mpRequestRespawn();
       }
-      if (typeof _mpRequestRespawn === 'function') _mpRequestRespawn();
       if (typeof showSwapToast === 'function') {
         showSwapToast(_r('▶ 廣告收看完成 · 加速復活中…',
                          '▶ AD WATCHED · FAST RESPAWN INCOMING…'));
