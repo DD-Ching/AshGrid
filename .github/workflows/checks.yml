@@ -33,6 +33,9 @@ jobs:
       - name: Syntax-check client JS
         run: find js -name '*.js' -print0 | xargs -0 -n1 -P4 node --check
 
+      - name: Inline-script syntax (index.html)
+        run: node tools/check_inline.js
+
       - name: Asset version + integrity
         run: node tools/version.js check
 

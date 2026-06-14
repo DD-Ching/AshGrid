@@ -34,192 +34,197 @@
      Order matters when extractions depend on each other; today none do.
      New modules → add a <script src="js/..."> line here.
 ================================================== -->
-<script src="js/operators_log.js?v=232"></script>
-<script src="js/achievements.js?v=232"></script>
-<script src="js/audit_console.js?v=232"></script>
-<script src="js/intro_narrative.js?v=232"></script>
+<script src="js/operators_log.js?v=233"></script>
+<script src="js/achievements.js?v=233"></script>
+<script src="js/audit_console.js?v=233"></script>
+<script src="js/intro_narrative.js?v=233"></script>
 <!-- Audio (load order: positional → narrative → ambient) -->
-<script src="js/audio/positional.js?v=232"></script>
-<script src="js/audio/narrative.js?v=232"></script>
-<script src="js/audio/ambient.js?v=232"></script>
+<script src="js/audio/positional.js?v=233"></script>
+<script src="js/audio/narrative.js?v=233"></script>
+<script src="js/audio/ambient.js?v=233"></script>
 <!-- R14 — audio mute stack. Sits BETWEEN positional.js (which owns AUDIO
      object + low-level gain wiring) and consumers (ad_state, crazygames,
      pause menu). Centralises mute priority: persistent user preference
      OR transient stack-sourced mutes. -->
 <!-- Phase 144 — BALANCE: single home for tunable numbers. MUST load before
      structures.js + arena_recruitment.js (they read BALANCE at definition time). -->
-<script src="js/balance.js?v=232"></script>
-<script src="js/audio_mute.js?v=232"></script>
+<script src="js/balance.js?v=233"></script>
+<script src="js/geometry.js?v=233"></script>
+<script src="js/nn_loader.js?v=233"></script>
+<script src="js/explosions_fx.js?v=233"></script>
+<script src="js/combat_helpers.js?v=233"></script>
+<script src="js/audio_mute.js?v=233"></script>
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=232"></script>
-<script src="js/arena_recruitment.js?v=232"></script>
-<script src="js/dynamic_radio.js?v=232"></script>
-<script src="js/i18n.js?v=232"></script>
-<script src="js/touch_input.js?v=232"></script>
-<script src="js/key_bindings.js?v=232"></script>
-<script src="js/grenades.js?v=232"></script>
-<script src="js/squad_commands.js?v=232"></script>
+<script src="js/audio/sfx.js?v=233"></script>
+<script src="js/arena_recruitment.js?v=233"></script>
+<script src="js/dynamic_radio.js?v=233"></script>
+<script src="js/i18n.js?v=233"></script>
+<script src="js/touch_input.js?v=233"></script>
+<script src="js/key_bindings.js?v=233"></script>
+<script src="js/grenades.js?v=233"></script>
+<script src="js/squad_commands.js?v=233"></script>
 <!-- R12 — Player Lifecycle module. Single owner of player.alive /
      _respawnAt / _invulnUntil / _killedAtTime / _lastDeathX/Y /
      _lastRespawnAt. MUST load before multiplayer.js / death_recap.js /
      pawn_swap.js / missions/* since they all call into PlayerLifecycle.* -->
-<script src="js/player_lifecycle.js?v=232"></script>
+<script src="js/player_lifecycle.js?v=233"></script>
 <!-- Phase 136 — MP reconcile single-owner state machine. MUST load
      BEFORE multiplayer.js + pawn_swap.js because both modules look up
      window.MpReconcile at call time but the lookup happens during
      gameplay (not load), so this could technically load later too —
      keeping it here for visual ordering. -->
-<script src="js/mp_reconcile.js?v=232"></script>
-<script src="js/multiplayer.js?v=232"></script>
+<script src="js/mp_reconcile.js?v=233"></script>
+<script src="js/multiplayer.js?v=233"></script>
 <!-- Phase 159 — arena recruit, MP half. AFTER multiplayer.js (uses _mpState /
      _mpSendRaw) and after arena_recruitment.js (reuses ARENA_* gate consts). -->
-<script src="js/arena_recruit_mp.js?v=232"></script>
-<script src="js/leaderboard.js?v=232"></script>
+<script src="js/arena_recruit_mp.js?v=233"></script>
+<script src="js/leaderboard.js?v=233"></script>
 <!-- Phase 141 — unit kill/death chokepoint. Loads before bullets/structures/
      grenades (which call killUnit) and before weapon_drop.js (which subscribes
      onUnitDeath at load). -->
-<script src="js/kill.js?v=232"></script>
+<script src="js/kill.js?v=233"></script>
 <!-- Phase 176 — adaptive director (SOLO one-way DDA). MUST load AFTER kill.js
      (it subscribes onUnitDeath at load for the player-pressure signal). The
      spawn hooks (world_gen.js / arena_recruitment.js) call it at runtime, so
      order vs those is irrelevant. -->
-<script src="js/adaptive_director.js?v=232"></script>
-<script src="js/structures.js?v=232"></script>
-<script src="js/tod.js?v=232"></script>
-<script src="js/weapons.js?v=232"></script>
-<script src="js/chassis.js?v=232"></script>
-<script src="js/respawn_buff.js?v=232"></script>
-<script src="js/death_recap.js?v=232"></script>
-<script src="js/mote_affinity.js?v=232"></script>
-<script src="js/stage_hints.js?v=232"></script>
-<script src="js/pawn_swap.js?v=232"></script>
+<script src="js/adaptive_director.js?v=233"></script>
+<script src="js/structures.js?v=233"></script>
+<script src="js/mine_defuse.js?v=233"></script>
+<script src="js/tod.js?v=233"></script>
+<script src="js/weapons.js?v=233"></script>
+<script src="js/chassis.js?v=233"></script>
+<script src="js/respawn_buff.js?v=233"></script>
+<script src="js/death_recap.js?v=233"></script>
+<script src="js/mote_affinity.js?v=233"></script>
+<script src="js/stage_hints.js?v=233"></script>
+<script src="js/pawn_swap.js?v=233"></script>
 <!-- Phase 133.3 — death_decider.js extracts the death-decision logic
      out of pawn_swap.js so the auto-swap timestamp state is explicit.
      Loads AFTER pawn_swap.js so tryAutoSwapToClosestAlly is defined
      when death_decider.handleLocalDeath looks for it at call time. -->
-<script src="js/death_decider.js?v=232"></script>
-<script src="js/global_stats.js?v=232"></script>
-<script src="js/progressive_unlock.js?v=232"></script>
+<script src="js/death_decider.js?v=233"></script>
+<script src="js/global_stats.js?v=233"></script>
+<script src="js/progressive_unlock.js?v=233"></script>
 <!-- R11 Step 1 — ad dispatch registry. MUST load before the SDK adapter
      (crazygames.js) so its window.registerAdProvider is defined when CG
      tries to register on SDK_READY. Replaces the pre-R11 "override war"
      where each SDK overwrote window.requestRewardedAd in load order.
      See js/ad_dispatch.js header for the priority table.
      Phase 131 — GameMonetize adapter removed (vendor declined). -->
-<script src="js/ad_dispatch.js?v=232"></script>
+<script src="js/ad_dispatch.js?v=233"></script>
 <!-- R11 Step 2 — run_history.js absorbs the survival/defense run scores +
      share + uploadSurvivalRun from the old js/ad_stubs.js (deleted).
      Operator name (getOperatorName / setOperatorName) moved to
      js/global_stats.js above. Loads AFTER global_stats.js so its
      bumpSurvivalWave + getOperatorName lookups resolve. -->
-<script src="js/run_history.js?v=232"></script>
+<script src="js/run_history.js?v=233"></script>
 <!-- Crazy Games SDK wiring — registers itself with ad_dispatch on SDK_READY.
      In local dev SDK shows a dev-mode overlay; on the portal it serves real ads. -->
-<script src="js/crazygames.js?v=232"></script>
+<script src="js/crazygames.js?v=233"></script>
 <!-- R1 refactor — explicit ad-lifecycle state machine. Provides
      window.adState for the CG SDK adapter to forward events into.
      See js/ad_state.js header for the state diagram.
      Phase 131 — gamemonetize.js consumer removed. -->
-<script src="js/ad_state.js?v=232"></script>
+<script src="js/ad_state.js?v=233"></script>
 <!-- Phase 131b — Adsterra banner hostname-gate. Sets window.__onCrazyGames
      + __loadAdsterra / __loadAdsterraNative helpers used inline by the ad
      slot scripts in <body>. MUST load before those slots are parsed. -->
-<script src="js/banner_gate.js?v=232"></script>
+<script src="js/banner_gate.js?v=233"></script>
 <!-- R11 Step 3 — ad slot DOM toggling. Centralises _updateRespawnAdSlot /
      _updateFrameAdSlots + their cached element refs. Called per-frame by
      js/hud.js renderHUD. Phase 131b — side-rail toggler removed (rails
      were force-hidden every frame since Phase 106; DOM now deleted). -->
-<script src="js/ad_slots.js?v=232"></script>
+<script src="js/ad_slots.js?v=233"></script>
 <!-- Phase 123 — anti-adblock notice. Detects (browser adblock vs network
      firewall) and shows a polite bottom-of-screen toast. Self-suppresses
      for 7 days on dismiss. Detection runs on window.load + 5 s settle. -->
-<script src="js/adblock_notice.js?v=232"></script>
+<script src="js/adblock_notice.js?v=233"></script>
 <!-- R2 refactor — Input module. Owns ALL writes to the global `mouse`
      state + canvas-inset coord translation. See js/input.js header
      for the trigger-edge primitives. -->
-<script src="js/input.js?v=232"></script>
+<script src="js/input.js?v=233"></script>
 <!-- R3 refactor — WeaponState module. Owns every weapon-state write on
      `player` (ammo / reload / fireCooldown / swap / equip). Loads
      AFTER js/weapons.js (above) — weapons.js installs the
      window.__setPlayerWeapon setter shim at top-level so WeaponState
      can mutate `playerWeapon` even though it's a `let` in another
      classic-script file. See js/weapon_state.js header. -->
-<script src="js/weapon_state.js?v=232"></script>
+<script src="js/weapon_state.js?v=233"></script>
 <!-- Phase 140 — weapon drop + hold-to-pickup (replaces manual X-swap). Loads
      after weapons.js / weapon_state.js so applyWeaponToPlayer + WeaponState
      are defined when a pickup completes. -->
-<script src="js/weapon_drop.js?v=232"></script>
+<script src="js/weapon_drop.js?v=233"></script>
 <!-- Phase 131 — GameMonetize SDK removed. Vendor declined our submission
      ("AI-generated"), so we cut the dependency. Outside crazygames.com
      (i.e. ashgrid.io / dev.ashgrid.pages.dev) the dispatch falls through
      to the built-in stub which fail-opens the reward. See ad_dispatch.js. -->
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=232"></script>
+<script src="js/missions/nn_deathmatch.js?v=233"></script>
 <!-- Phase 138B.1 — .io-style bot names; must load before world_gen spawns -->
-<script src="js/bot_names.js?v=232"></script>
+<script src="js/bot_names.js?v=233"></script>
 <!-- Phase 139b — believable leaderboard seed (uses pickBotName); presentation-only -->
-<script src="js/leaderboard_seed.js?v=232"></script>
-<script src="js/world_gen.js?v=232"></script>
+<script src="js/leaderboard_seed.js?v=233"></script>
+<script src="js/world_gen.js?v=233"></script>
 <!-- Phase 161 — build-phase free-cover placer (placeBuildBlock). Producer
      (game._buildPhase) lives in js/missions/nn_deathmatch.js. -->
-<script src="js/build_phase.js?v=232"></script>
-<script src="js/squad.js?v=232"></script>
-<script src="js/drone_fpv.js?v=232"></script>
-<script src="js/vision_raycast.js?v=232"></script>
-<script src="js/camera.js?v=232"></script>
-<script src="js/defense_build_ui.js?v=232"></script>
-<script src="js/pause.js?v=232"></script>
+<script src="js/build_phase.js?v=233"></script>
+<script src="js/squad.js?v=233"></script>
+<script src="js/drone_fpv.js?v=233"></script>
+<script src="js/vision_raycast.js?v=233"></script>
+<script src="js/camera.js?v=233"></script>
+<script src="js/defense_build_ui.js?v=233"></script>
+<script src="js/pause.js?v=233"></script>
 <!-- R5 refactor — bullet update + collision (player + enemy loops,
      fire(), detonateRocket()). Pulled out of the 12 000-line inline
      script. Functions resolve dependencies (player, enemies, etc.) at
      call time via classic-script globals, so this file MUST load
      before the main inline script declares those globals — which is
      fine, the functions aren't called until tickPlayerCombat runs. -->
-<script src="js/bullets.js?v=232"></script>
+<script src="js/bullets.js?v=233"></script>
 <!-- R6 refactor — world render (renderFootprints, renderWorld,
      drawLowCovers, drawOverheads). Same load-time-decoupled pattern
      as bullets.js; functions resolve their globals at call time. -->
-<script src="js/world_render.js?v=232"></script>
+<script src="js/world_render.js?v=233"></script>
 <!-- R8 refactor — HUD: renderHUD + renderHUDOverlays + drawMinimapPanel
      + drawHUDPanel + getModeLabel + panel cache + 6-zone card draw
      helpers. ~1300 lines from the inline script. -->
-<script src="js/hud.js?v=232"></script>
+<script src="js/hud.js?v=233"></script>
 <!-- Phase 155 — single frame owner + FX layer registry. MUST load before the
      FX modules below (they registerFxLayer at load time) and before loop(). -->
-<script src="js/render_frame.js?v=232"></script>
+<script src="js/render_frame.js?v=233"></script>
 <!-- Phase 147 — killstreak announcer (juice). Registers an over-HUD FX layer. -->
-<script src="js/killstreak_fx.js?v=232"></script>
+<script src="js/killstreak_fx.js?v=233"></script>
 <!-- Phase 148 — recruit celebration (juice). Renders after renderHUD. -->
-<script src="js/recruit_fx.js?v=232"></script>
+<script src="js/recruit_fx.js?v=233"></script>
 <!-- Phase 152 — low-HP danger vignette (juice). Renders under the HUD. -->
-<script src="js/danger_fx.js?v=232"></script>
+<script src="js/danger_fx.js?v=233"></script>
 <!-- Phase 179 — death killcam (replay + press-SPACE respawn). Registers an
      over-HUD FX layer, so MUST load after render_frame.js (registerFxLayer)
      and after death_recap.js. Reads the SOLO replay_buffer.js ring buffer. -->
-<script src="js/killcam.js?v=232"></script>
+<script src="js/killcam.js?v=233"></script>
 <!-- R9 refactor — enemy AI + NN runtime: nnTick / nnBuildObs /
      nnApplyAction / patrol state machine / heat map / team vision /
      updateEnemies. 1145 lines from the inline script. -->
-<script src="js/enemy_ai.js?v=232"></script>
+<script src="js/enemy_ai.js?v=233"></script>
 <!-- Phase 182 — additive NPC believability layer (separation/edge-repulsion,
      interest-point goal selection, roles, corner fail-safe, event flinch, debug
      overlay ?aidebug=1). Reads enemy_ai globals at call-time; needs render_frame
      (registerFxLayer) already loaded above. Kill switch: game._npcAI=false. -->
-<script src="js/npc_director.js?v=232"></script>
+<script src="js/npc_director.js?v=233"></script>
 <!-- Phase 177 — player behaviour-cloning recorder (F9). Loads after enemy_ai.js
      so nnBuildObs is defined; called per-tick from update(). Off by default. -->
-<script src="js/player_recorder.js?v=232"></script>
+<script src="js/player_recorder.js?v=233"></script>
 <!-- Phase 179 — SOLO killcam replay ring buffer. Records a lightweight world
      snapshot per few ticks (called from update()); read by js/killcam.js on
      death. No render deps, so order vs render_frame.js is irrelevant. -->
-<script src="js/replay_buffer.js?v=232"></script>
+<script src="js/replay_buffer.js?v=233"></script>
 <!-- R10 refactor — overlay render: renderStructures + the various
      world/screen overlays (build preview, editor, themes, routes,
      landmarks, vision fog, sound indicators, unit sprites, FPV/UAV/
      command overlays). ~2200 lines from the inline script. -->
-<script src="js/render_overlays.js?v=232"></script>
+<script src="js/render_overlays.js?v=233"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -2404,44 +2409,7 @@ function _wait(ms) {
   });
 }
 
-// Wait for any of `keys` to be pressed (case-insensitive against single
-// characters; symbolic keys like 'TAB', '1-4' compare against e.key).
-// Resolves on press OR when timeoutMs elapses, whichever first. Mouse
-// click on the intro overlay also resolves (acts as "skip this beat").
-function _waitForKeyOrTimeout(keyHint, timeoutMs) {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      window.removeEventListener('keydown', onKey);
-      const intro = document.getElementById('intro');
-      intro && intro.removeEventListener('click', onClick);
-      resolve();
-    };
-    const onKey = (e) => {
-      if (_introSkipFlag) { finish(); return; }
-      const k = (e.key || '').toLowerCase();
-      const hint = (keyHint || '').toLowerCase();
-      // Match: any letter mentioned in the hint, plus 1-4 if hint
-      // contains '1-4', plus tab if hint contains 'tab'.
-      const matches =
-        (hint.includes('wasd') && 'wasd'.includes(k)) ||
-        (hint.includes('mouse')) ||                       // any key works as proxy
-        (hint === 'r' && k === 'r') ||
-        (hint === 'x' && k === 'x') ||
-        (hint === 'q' && k === 'q') ||
-        (hint.includes('1-4') && /^[1-4]$/.test(k)) ||
-        (hint.includes('tab') && k === 'tab');
-      if (matches) { e.preventDefault(); finish(); }
-    };
-    const onClick = () => finish();
-    window.addEventListener('keydown', onKey);
-    const intro = document.getElementById('intro');
-    intro && intro.addEventListener('click', onClick);
-    if (timeoutMs > 0) setTimeout(finish, timeoutMs);
-  });
-}
+// _waitForKeyOrTimeout removed (Phase 185 — dead code, zero callers).
 
 async function playIntroSequence() {
   const intro = document.getElementById('intro');
@@ -3231,9 +3199,7 @@ window.addEventListener('mousemove', e => {
     if (c) editor._dragEnd = { gx: c.gx, gy: c.gy };
   }
 });
-function _hitRect(r, x, y) {
-  return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-}
+// _hitRect → js/geometry.js (Phase 185 modularization)
 window.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   // Phase 108b — the canvas is now CSS-positioned at top: HUD_AD_TOP px
@@ -4652,36 +4618,8 @@ const COVER_HP_BY_KIND = {
 // in-game build-mode both produce these; legacy 60u FIXED_MAPS rooms
 // still use the rectangular `buildings` table unchanged.
 const wallLines = [];
-function _segPointDist(px, py, x1, y1, x2, y2) {
-  // Returns closest distance + the projected point on the segment (clamped
-  // 0..1). Used by collision (entity vs wall) and bullet hits.
-  const dx = x2 - x1, dy = y2 - y1;
-  const len2 = dx * dx + dy * dy;
-  if (len2 < 0.0001) {
-    return { dist: Math.hypot(px - x1, py - y1), cx: x1, cy: y1, t: 0 };
-  }
-  let t = ((px - x1) * dx + (py - y1) * dy) / len2;
-  if (t < 0) t = 0; else if (t > 1) t = 1;
-  const cx = x1 + t * dx, cy = y1 + t * dy;
-  return { dist: Math.hypot(px - cx, py - cy), cx, cy, t };
-}
-function _segSegHits(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2) {
-  const d = (ax2 - ax1) * (by2 - by1) - (ay2 - ay1) * (bx2 - bx1);
-  if (Math.abs(d) < 1e-9) return false;       // parallel
-  const ta = ((bx1 - ax1) * (by2 - by1) - (by1 - ay1) * (bx2 - bx1)) / d;
-  const tb = ((bx1 - ax1) * (ay2 - ay1) - (by1 - ay1) * (ax2 - ax1)) / d;
-  return ta >= 0 && ta <= 1 && tb >= 0 && tb <= 1;
-}
-// Inflate a line segment by `pad` and test if a point sits inside the capsule.
-// Capsule = segment + a half-circle on each end + a rectangle along the body.
-function _pointInCapsule(px, py, x1, y1, x2, y2, pad) {
-  const r = _segPointDist(px, py, x1, y1, x2, y2);
-  return r.dist <= pad;
-}
-
-function isInsideRect(x, y, r) {
-  return x > r.x && x < r.x+r.w && y > r.y && y < r.y+r.h;
-}
+// _segPointDist / _segSegHits / _pointInCapsule / isInsideRect
+//   → js/geometry.js (Phase 185 modularization)
 
 // ============ MAP DEFINITIONS ============
 // → Moved to js/maps.js. Declares globally:
@@ -4699,129 +4637,9 @@ function isInsideRect(x, y, r) {
 //   output "action_probs": Float32Array shape [batch, 18], softmax probs
 // Action 0..17 decoded as: move_dir = action // 2 (0..8), fire = action % 2 (0..1)
 //   move_dir 0=idle, 1=N, 2=NE, 3=E, 4=SE, 5=S, 6=SW, 7=W, 8=NW
-const NN = {
-  session: null,           // ort.InferenceSession when loaded
-  loading: false,
-  loaded: false,
-  error: null,
-  difficulty: null,        // 'easy' | 'medium' | 'hard' | 'evolved' | 'elite' | 'defensive' | 'cqb' | null
-  modelPaths: {
-    easy:      'ai_arena/onnx/model_easy.onnx',
-    medium:    'ai_arena/onnx/model_medium.onnx',
-    hard:      'ai_arena/onnx/model_hard.onnx',
-    evolved:   'ai_arena/onnx/model_evolved.onnx',
-    elite:        'ai_arena/onnx/model_elite.onnx',
-    defensive:    'ai_arena/onnx/model_norespawn.onnx',
-    warrior:      'ai_arena/onnx/model_warrior.onnx',
-    sharpshooter: 'ai_arena/onnx/model_sharpshooter.onnx',
-    cqb:          'ai_arena/onnx/model_cqb.onnx',
-    // Tactical model collapsed during PPO training — top action is always 5
-    // (move NE + fire) at p≈1.0 regardless of enemy direction. The model
-    // doesn't intercept because it doesn't even orient toward enemies. Fall
-    // back to elite until a retrained model_tactical.onnx ships. Picker
-    // still shows TAC so the unlock UX doesn't regress, just behind the
-    // elite weights.
-    tactical:     'ai_arena/onnx/model_elite.onnx',
-  },
-  modelPath: 'ai_arena/onnx/model.onnx',  // legacy fallback
-  // Constants must match the Python combat_env exactly
-  WORLD_W: 1800,                                // Phase 16: matches NN_ARENA bump
-  WORLD_H: 1800,
-  PLAYER_HP: 100,
-  PLAYER_SPEED: 2.8,
-  FIRE_CD: 8,
-  AIM_LERP: 0.30,
-  VIEW_RANGE: 960,    // matches VIEW.range — bumped from 720 to give NN units
-  VIEW_ARC: Math.PI * 0.78,   // 140°
-  OBS_DIM: 65,
-  ACTION_DIM: 18,
-  // 9 movement directions matching Python MOVE_DIRS
-  MOVE_DIRS: [
-    [0, 0],
-    [0, -1],
-    [Math.SQRT1_2, -Math.SQRT1_2],
-    [1, 0],
-    [Math.SQRT1_2, Math.SQRT1_2],
-    [0, 1],
-    [-Math.SQRT1_2, Math.SQRT1_2],
-    [-1, 0],
-    [-Math.SQRT1_2, -Math.SQRT1_2],
-  ],
-  lastSound: null,           // {x, y, tick, team} — most recent gunshot
-};
-
-// Per-difficulty session cache. Multiple difficulties can be loaded at once
-// (used by the lineup editor — different units fight with different brains).
-NN.sessions = {};
-
-// In-flight load promises so concurrent callers (e.g. 8 units booting at the
-// same time and each calling nnLoadModel('defensive')) share one create()
-// instead of stampeding the WASM runtime with 8 parallel loads of the same
-// .onnx blob. Without this we saw the model load + log 8x at match start.
-NN.loading = NN.loading || {};
-async function nnLoadModel(difficulty = 'hard') {
-  // Fast-path: already cached
-  if (NN.sessions[difficulty]) {
-    NN.session = NN.sessions[difficulty];
-    NN.loaded = true;
-    NN.difficulty = difficulty;
-    return true;
-  }
-  // Dedup in-flight loads — return the already-pending promise
-  if (NN.loading[difficulty]) {
-    return NN.loading[difficulty];
-  }
-  if (typeof ort === 'undefined') {
-    NN.error = 'onnxruntime-web not loaded';
-    console.warn(NN.error);
-    return false;
-  }
-  // ONNX WASM thread count. Defaults to 4 (one per physical core); we'd
-  // need cross-origin isolation (COOP + COEP) for SharedArrayBuffer to
-  // actually use them, and we don't ship those headers (Cloudflare Pages
-  // serves no Cross-Origin-Opener-Policy by default). So the threaded
-  // wasm-MT bundle gets downloaded + initialized then silently falls
-  // back to single-threaded with the noisy 'env.wasm.numThreads is set
-  // to 4, but this will not work unless you enable crossOriginIsolated'
-  // warning. Forcing 1 skips loading the multi-threaded wasm blob
-  // entirely — same actual inference speed, smaller initial download,
-  // clean console. Setting on ort.env is idempotent; safe to repeat if
-  // multiple difficulty sessions get created.
-  if (typeof ort.env !== 'undefined' && ort.env.wasm) {
-    ort.env.wasm.numThreads = 1;
-  }
-  const path = NN.modelPaths[difficulty] || NN.modelPath;
-  const promise = (async () => {
-    try {
-      const sess = await ort.InferenceSession.create(path, {
-        executionProviders: ['wasm'],
-        graphOptimizationLevel: 'all',
-      });
-      NN.sessions[difficulty] = sess;
-      NN.session = sess;
-      NN.loaded = true;
-      NN.difficulty = difficulty;
-      console.log('NN model loaded:', path, '(difficulty:', difficulty + ')');
-      return true;
-    } catch (e) {
-      NN.error = String(e);
-      console.error('NN load failed:', e);
-      return false;
-    } finally {
-      delete NN.loading[difficulty];
-    }
-  })();
-  NN.loading[difficulty] = promise;
-  return promise;
-}
-
-// Pre-load multiple difficulties in parallel — used by the lineup editor when
-// the user mixes different brains across units.
-async function nnLoadAll(difficulties) {
-  const uniq = [...new Set(difficulties.filter(Boolean))];
-  const results = await Promise.all(uniq.map(d => nnLoadModel(d)));
-  return results.every(Boolean);
-}
+// ============ NN AI MODULE → js/nn_loader.js (Phase 185 modularization) ======
+// NN config table + nnLoadModel/nnLoadAll moved out verbatim. Loaded early
+// (after geometry.js); all readers use NN at runtime so call sites unchanged.
 
 // NN-specific vision check: 720u range, 140° base cone (170° at point-blank
 // via effectiveArc), LoS via existing lineOfSight. Cross-team queries also
@@ -4895,7 +4713,7 @@ function updateMission() {
     // generator (the old way to accelerate income) was removed from the wheel
     // along with the power-supply mechanic, so passive trickle is now the
     // ONLY income besides kills. User: '充電太慢了' / '東西變少, 簡單一點'.
-    game._energy = Math.min(999, (game._energy || 0) + BALANCE.energy.regenPerSec / 60);
+    addEnergy(BALANCE.energy.regenPerSec / 60);
     updateStructures();
     updateAirstrikes();
   }
@@ -5329,253 +5147,7 @@ function drawMatchUnlockStrip(cx, y, maxW) {
 //     computeVisionPolys + helpers
 
 // ============ AI ============
-function lineOfSight(x1, y1, x2, y2) {
-  // Wall-line LoS — exact segment-segment intersect, no marching needed.
-  if (wallLines.length) {
-    for (const w of wallLines) {
-      if (!w.blocksLOS || w.hp <= 0) continue;
-      if (_segSegHits(x1, y1, x2, y2, w.x1, w.y1, w.x2, w.y2)) return false;
-    }
-  }
-  const steps = 28;
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    const x = x1 + (x2-x1)*t, y = y1 + (y2-y1)*t;
-    for (const b of buildings) {
-      if (x > b.x && x < b.x+b.w && y > b.y && y < b.y+b.h) return false;
-    }
-    for (const lc of lowCovers) {
-      if (x > lc.x && x < lc.x+lc.w && y > lc.y && y < lc.y+lc.h) return false;
-    }
-    // Player-built walls block sight too
-    if (game._structures) {
-      for (const s of game._structures) {
-        if (s.hp <= 0) continue;
-        const def = STRUCTURE_DEFS[s.kind];
-        if (!def || !def.blocksLOS) continue;
-        const r = def.size / 2;
-        if (x > s.x - r && x < s.x + r && y > s.y - r && y < s.y + r) return false;
-      }
-    }
-    // Smoke clouds block sight at near-full opacity in the middle, fading
-    // at the edges. Approximation: any sample point within 0.85×R blocks.
-    if (game._smokeClouds) {
-      for (const c of game._smokeClouds) {
-        const fade = c.life / c.maxLife;
-        if (fade < 0.15) continue;            // dissipating — let through
-        const blockR = c.r * 0.85;
-        if (Math.hypot(x - c.x, y - c.y) < blockR) return false;
-      }
-    }
-  }
-  return true;
-}
-
-// Footprint tracker — every N ticks while a unit is moving in defense mode,
-// drop a fading print at its position. Player can see ALL prints (incl.
-// enemies') for tactical recon. Enemies don't react to them — purely UX.
-// Was previously gated to defense mode only — now fires in every NN mode
-// (and campaign) because the player asked '以前不是還有足跡嗎'.
-function emitFootprint(unit) {
-  game._footprints = game._footprints || [];
-  game._footprints.push({
-    x: unit.x, y: unit.y,
-    angle: unit.angle || 0,
-    team: unit.team || 0,
-    life: 240, maxLife: 240,
-  });
-  // Cap to 240 to stop unbounded growth in long matches; oldest evicts first.
-  if (game._footprints.length > 240) game._footprints.shift();
-}
-
-function pushOutOfBuildings(ent, radius) {
-  for (const b of buildings) {
-    if (ent.x > b.x - radius && ent.x < b.x+b.w+radius &&
-        ent.y > b.y - radius && ent.y < b.y+b.h+radius) {
-      const cx = b.x + b.w/2, cy = b.y + b.h/2;
-      const ddx = ent.x - cx, ddy = ent.y - cy;
-      const overlapX = (b.w/2 + radius) - Math.abs(ddx);
-      const overlapY = (b.h/2 + radius) - Math.abs(ddy);
-      if (overlapX < overlapY) ent.x += ddx > 0 ? overlapX : -overlapX;
-      else ent.y += ddy > 0 ? overlapY : -overlapY;
-    }
-  }
-  // Wall-line push-out: project the entity onto each segment, push it
-  // perpendicular if it overlaps the capsule (segment ± thickness/2).
-  for (const w of wallLines) {
-    if (w.hp <= 0) continue;
-    const pad = w.thickness / 2 + radius;
-    const r = _segPointDist(ent.x, ent.y, w.x1, w.y1, w.x2, w.y2);
-    if (r.dist < pad) {
-      const dx = ent.x - r.cx, dy = ent.y - r.cy;
-      const d = Math.hypot(dx, dy) || 1;
-      const push = pad - r.dist;
-      ent.x += (dx / d) * push;
-      ent.y += (dy / d) * push;
-    }
-  }
-  // Phase 10A (user feedback '建造了很多東西 ... 牆壁 ... 沒有辦法穿越'):
-  // player-built structures in game._structures were NEVER blocking
-  // movement before — you could walk through your own walls. Iterate
-  // and push out for every structure whose def.blocks is true. Same
-  // AABB technique as the buildings[] loop. Skips dead (hp<=0) so
-  // destroyed walls don't ghost-block.
-  if (typeof game !== 'undefined' && game._structures && typeof STRUCTURE_DEFS !== 'undefined') {
-    for (const s of game._structures) {
-      const def = STRUCTURE_DEFS[s.kind];
-      if (!def || !def.blocks || s.hp <= 0) continue;
-      const r = def.size / 2;
-      if (ent.x > s.x - r - radius && ent.x < s.x + r + radius &&
-          ent.y > s.y - r - radius && ent.y < s.y + r + radius) {
-        const ddx = ent.x - s.x, ddy = ent.y - s.y;
-        const overlapX = (r + radius) - Math.abs(ddx);
-        const overlapY = (r + radius) - Math.abs(ddy);
-        if (overlapX < overlapY) ent.x += ddx > 0 ? overlapX : -overlapX;
-        else ent.y += ddy > 0 ? overlapY : -overlapY;
-      }
-    }
-  }
-}
-
-// Returns the nearest friendly (player or ally) the source can SEE right now (cone + LoS).
-function nearestVisibleFriendly(sx, sy, sAngle, range, arc) {
-  let best = null, bestD = Infinity;
-  if (player.alive) {
-    const d = Math.hypot(player.x - sx, player.y - sy);
-    if (d < range && angleInCone(sAngle, arc, sx, sy, player.x, player.y)
-        && lineOfSight(sx, sy, player.x, player.y)) {
-      best = player; bestD = d;
-    }
-  }
-  for (const a of allies) {
-    if (!a.alive) continue;
-    const d = Math.hypot(a.x - sx, a.y - sy);
-    if (d < range && angleInCone(sAngle, arc, sx, sy, a.x, a.y)
-        && lineOfSight(sx, sy, a.x, a.y)) {
-      if (d < bestD) { best = a; bestD = d; }
-    }
-  }
-  return best;
-}
-
-
-function kamikazeExplode(d) {
-  d.alive = false;
-  // Phase 7: 'big' (radius 90 / dmg 80) replaces 'medium' so the visual
-  // matches the wider blast logic. createExplosion also auto-damages any
-  // enemies / enemyDrones in the radius (friendly fire — fine for kamikaze).
-  createExplosion(d.x, d.y, 'big');
-  emitSound(d.x, d.y, 700, false);
-  // Camera kick + lower-pitched boom so the player FEELS the hit.
-  if (typeof triggerShake === 'function') triggerShake(4.5);
-  emitSound(d.x, d.y, 380, false);
-  // Damage friendlies in radius
-  // Phase 117 — respect 3s spawn invuln. User reported '復活之後瞬間就
-  // 死掉的體驗' — an enemy kamikaze drone in mid-flight at the moment
-  // they died would still be airborne when their respawn invuln
-  // started, then explode on them inside the 3s window and bypass the
-  // shield because this damage path never checked invuln. Bullets (in
-  // bullets.js:456) and rocket AOE both gate on invuln; this drone-
-  // splash path was the odd one out.
-  const pInvuln = player._invulnUntil != null && game.time < player._invulnUntil;
-  if (player.alive && !pInvuln) {
-    const pd = Math.hypot(player.x - d.x, player.y - d.y);
-    if (pd < d.explodeRadius) {
-      const dmg = Math.round(d.explodeDamage * (1 - pd / d.explodeRadius));
-      _applyDamageToUnit(player, dmg);
-      game.hitFlash = 28;
-      if (player.hp <= 0 && player.alive) {
-        // R12 — canonical state transition. Phase 117's Phase 122-style
-        // inline writes (alive=false, hp=0, _lbBumpDeath, _lastDeathX/Y)
-        // now collapse into PlayerLifecycle.killPlayer; the centralised
-        // invuln gate in _applyDamageToUnit (Phase 122) already kept this
-        // block from firing under the spawn-shield window, but defensively
-        // we also gate on `player.alive` so a re-trigger from the same
-        // splash on a dead player no-ops.
-        if (typeof PlayerLifecycle !== 'undefined') {
-          PlayerLifecycle.killPlayer({ x: player.x, y: player.y });
-        }
-        createExplosion(player.x, player.y, 'big');
-        // Player death — onMissionFailed handles retry/campaign-end
-      }
-    }
-  }
-  for (const a of allies) {
-    if (!a.alive) continue;
-    const ad = Math.hypot(a.x - d.x, a.y - d.y);
-    if (ad < d.explodeRadius) {
-      const dmg = Math.round(d.explodeDamage * (1 - ad / d.explodeRadius));
-      _applyDamageToUnit(a, dmg);
-      if (a.hp <= 0) { a.alive = false; }
-    }
-  }
-  // Mission-owned damageable entity in radius (UGV / heavy / relay)
-  if (mission && mission.onExplosion) mission.onExplosion(d.x, d.y, d.explodeRadius, d.explodeDamage);
-}
-
-function updateSoundEvents() {
-  for (let i = soundEvents.length - 1; i >= 0; i--) {
-    soundEvents[i].life--;
-    if (soundEvents[i].life <= 0) soundEvents.splice(i, 1);
-  }
-}
-
-// Phase 10C (user feedback '自殺無人機是會被散彈槍打下來的'): when an NN
-// unit is wielding SHOTGUN and a live kamikaze drone is in range + roughly
-// in front, low per-frame chance to fire at it. Player's manual shotgun
-// ALREADY hits drones (the bullets→enemyDrones loop in updateBullets), so
-// this just adds the AI flair — squadmates / NN enemies with shotguns will
-// "look up" and pop at incoming drones. Chance is low so it's not a hard
-// counter — drones still get through, just slightly less often near SGs.
-const SHOTGUN_ANTI_DRONE_RANGE       = 280;          // px
-const SHOTGUN_ANTI_DRONE_CONE        = Math.PI / 2.5;// ~72° front arc
-const SHOTGUN_ANTI_DRONE_FIRE_CHANCE = 0.025;        // ~1 shot/1.3s while drone in view
-const SHOTGUN_ANTI_DRONE_HIT_CHANCE  = 0.55;         // 55% per shot — 1 hit drops 18 HP drone
-function _tickShotgunAntiKamikaze() {
-  if (!enemyDrones || enemyDrones.length === 0) return;
-  const SG = (typeof WEAPONS !== 'undefined') ? WEAPONS.SHOTGUN : null;
-  if (!SG) return;
-  const candidates = [];
-  for (const a of allies) candidates.push(a);
-  for (const e of enemies) candidates.push(e);
-  for (const u of candidates) {
-    if (!u || !u.alive) continue;
-    if (u._weapon !== SG) continue;
-    let best = null, bestD = SHOTGUN_ANTI_DRONE_RANGE;
-    for (const d of enemyDrones) {
-      if (!d.alive) continue;
-      const dx = d.x - u.x, dy = d.y - u.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > bestD) continue;
-      let aDiff = Math.atan2(dy, dx) - (u.angle || 0);
-      while (aDiff > Math.PI) aDiff -= Math.PI * 2;
-      while (aDiff < -Math.PI) aDiff += Math.PI * 2;
-      if (Math.abs(aDiff) > SHOTGUN_ANTI_DRONE_CONE) continue;
-      if (dist < bestD) { bestD = dist; best = d; }
-    }
-    if (!best) continue;
-    if (Math.random() > SHOTGUN_ANTI_DRONE_FIRE_CHANCE) continue;
-    // Fire FX — muzzle flash pointed at drone
-    if (typeof muzzleFlashes !== 'undefined') {
-      muzzleFlashes.push({
-        x: u.x, y: u.y,
-        angle: Math.atan2(best.y - u.y, best.x - u.x),
-        life: 5,
-      });
-    }
-    if (typeof playSfx === 'function') playSfx('shoot', { freq: 410, vol: 0.5 });
-    // Roll for hit. Pellet damage = SG.damage (18). Drone HP 18 = 1 hit drops.
-    if (Math.random() < SHOTGUN_ANTI_DRONE_HIT_CHANCE) {
-      best.hp -= SG.damage;
-      if (best.hp <= 0) {
-        best.alive = false;
-        if (typeof createExplosion === 'function') createExplosion(best.x, best.y, 'small');
-        game.score += 50;
-        game.killCount++;
-      }
-    }
-  }
-}
+// lineOfSight / emitFootprint / pushOutOfBuildings / nearestVisibleFriendly / kamikazeExplode / updateSoundEvents / _tickShotgunAntiKamikaze → js/combat_helpers.js (Phase 185 modularization)
 
 // ============ UPDATE ============
 function update() {
@@ -5835,6 +5407,23 @@ function updatePlayer() {
                      && (!player._spentToZero || player.stamina >= STAMINA_RECOVERY_MIN);
   player.sprinting = wantsSprint;
 
+  // Phase 184c — Charger DASH: for a wolf with the class system on, sprinting IS
+  // the dash — it additionally drains ENERGY and grants the -70% damage window
+  // (player._dashActive, read by chassis.js _applyDamageToUnit). Out of energy →
+  // dash + its speed boost end this frame. SOLO only (MP dash → server, 184e).
+  player._dashActive = false;
+  if (player.sprinting && typeof game !== 'undefined' && game._classes
+      && player._chassis === 'wolf') {
+    const _dashPerF = ((typeof BALANCE === 'object' && BALANCE.ability)
+      ? (BALANCE.ability.dash || 0) : 0) / 60;   // per-second rate → per-frame
+    if ((game._energy || 0) >= _dashPerF) {
+      game._energy = Math.max(0, game._energy - _dashPerF);
+      player._dashActive = true;
+    } else {
+      player.sprinting = false;
+    }
+  }
+
   if (player.sprinting) {
     player.stamina = Math.max(0, player.stamina - STAMINA_DRAIN_PER_F);
     if (player.stamina === 0) player._spentToZero = true;
@@ -6061,47 +5650,7 @@ function tickPlayerCombat(isMoving) {
   if (triggerOK && !pInvuln && player.fireCooldown <= 0 && player.ammo > 0 && !player.reloading) fire();
 }
 
-function updateDroneControl() {
-  let mx = 0, my = 0;
-  if (keys['w']) my -= 1;
-  if (keys['s']) my += 1;
-  if (keys['a']) mx -= 1;
-  if (keys['d']) mx += 1;
-  if (touchInput.moveTouch) {
-    const tdx = touchInput.moveTouch.dx, tdy = touchInput.moveTouch.dy;
-    const len = Math.hypot(tdx, tdy);
-    if (len > TOUCH_STICK_DEAD) {
-      const k = Math.min(1, len / TOUCH_STICK_RADIUS);
-      mx += (tdx / len) * k;
-      my += (tdy / len) * k;
-    }
-  }
-  // Anchor model: the anchor is where the pilot WANTS the drone. Input
-  // moves the anchor; the visible drone position is anchor + a small
-  // oscillating offset so it always microbobs like a real quadcopter
-  // holding station. When you let go of input the anchor freezes — the
-  // drone keeps weaving around it ±3u instead of jittering further away.
-  if (drone._anchorX == null) { drone._anchorX = drone.x; drone._anchorY = drone.y; }
-  if (drone._hoverPhase == null) drone._hoverPhase = Math.random() * Math.PI * 2;
-  if (mx || my) {
-    const len = Math.hypot(mx, my);
-    drone._anchorX += mx/len * drone.speed;
-    drone._anchorY += my/len * drone.speed;
-  }
-  drone._anchorX = Math.max(20, Math.min(WORLD.w-20, drone._anchorX));
-  drone._anchorY = Math.max(20, Math.min(WORLD.h-20, drone._anchorY));
-  const t = game.time;
-  const ph = drone._hoverPhase;
-  // Two non-harmonic sines (different freqs / phases) draw a Lissajous-y
-  // oval ~3u wide. Plus a fast micro-jitter half a unit either side.
-  const offX = Math.sin(t * 0.040 + ph) * 3.0
-             + Math.sin(t * 0.18  + ph * 2.3) * 0.6;
-  const offY = Math.cos(t * 0.031 + ph + 1.3) * 2.6
-             + Math.cos(t * 0.21  + ph * 1.7) * 0.6;
-  drone.x = drone._anchorX + offX;
-  drone.y = drone._anchorY + offY;
-  // No battery drain — UAV stays up as long as the player keeps it out.
-}
+// updateDroneControl → js/drone_fpv.js (Phase 185 modularization)
 
 // Rocket projectile sprite — chunky black body + flame trail, oriented to
 // velocity. Called from the bullet render loop when bullet has isRocket.
@@ -6142,478 +5691,13 @@ function _drawRocket(b, isEnemy) {
 // Rocket impact: AOE damage to enemies + extra damage to player-built
 // structures and arena cover/walls (defense-mode only). The bullet's own
 // `damage` already hit whatever it stopped on — this adds the splash.
-function createExplosion(x, y, size) {
-  // Phase 110d — added 'huge' tier for FPV kamikaze detonations. User:
-  // '自殺無人機的爆炸半徑更大, 範圍更廣, 傷害更強, 也可以摧毀建築物
-  // (我說的是我再加蓋的, 不要原本的)'. Radius 90 → 140, AOE 80 → 120,
-  // and 'huge' is the ONLY size that also damages user-built structures
-  // (game._structures). Stone arena walls + original-map terrain stay
-  // untouched per user.
-  const radius = size === 'huge' ? 140 : size === 'big' ? 90 : size === 'medium' ? 65 : 35;
-  const numParts = size === 'huge' ? 32 : size === 'big' ? 24 : size === 'medium' ? 14 : 7;
-  // Phase 17: per-particle stable colour. Previously particles flickered
-  // 50/50 between black and red on every frame — looked like a single
-  // colour blur. Now each particle picks its colour once at birth from a
-  // weighted palette that reads as fire: hot cream/yellow core sparks
-  // (15%), vivid orange-red flame (45%), constructivist red embers (25%),
-  // black ash smoke (15%). User feedback: '爆炸的火焰要鮮紅一點 · 不要全部
-  // 都一個顏色'.
-  const pickParticleColor = () => {
-    const r = Math.random();
-    if (r < 0.15) return '#FFDC9A';        // hot cream-yellow spark
-    if (r < 0.60) return '#F2402E';        // vivid orange-red flame
-    if (r < 0.85) return '#C8261C';        // constructivist red ember
-    return '#1A1A1A';                      // black ash
-  };
-  explosions.push({
-    x, y, radius, life: 35, maxLife: 35,
-    particles: Array.from({length: numParts}, () => ({
-      x: 0, y: 0,
-      vx: (Math.random()-0.5)*10,
-      vy: (Math.random()-0.5)*10,
-      size: 3 + Math.random()*8,
-      angle: Math.random()*Math.PI*2,
-      color: pickParticleColor(),
-    })),
-  });
-  if (size !== 'small') {
-    const aoeDmg = size === 'huge' ? 120 : size === 'big' ? 80 : 60;
-    for (const e of enemies) {
-      if (!e.alive) continue;
-      if (Math.hypot(e.x-x, e.y-y) < radius) {
-        e.hp -= aoeDmg;
-        if (e.hp <= 0) {
-          // Phase 18: first KO → stun + freeze, second KO → real death.
-          if (typeof _tryStunOrKill === 'function' && _tryStunOrKill(e)) {
-            // stunned, no kill credit yet
-          } else {
-            killUnit(e, { source: 'aoe' });   // alive=false + score 100 + lb bump
-          }
-        }
-      }
-    }
-    for (const d of enemyDrones) {
-      if (!d.alive) continue;
-      if (Math.hypot(d.x-x, d.y-y) < radius) {
-        d.hp -= aoeDmg;
-        if (d.hp <= 0) { d.alive = false; game.score += 150; game.killCount++; }
-      }
-    }
-    // Phase 110d — 'huge' tier (FPV kamikaze) also chews through any
-    // player-built structures inside the blast. 200 dmg per hit one-shots
-    // basic walls and 2-shots reinforced ones. Smaller sizes leave
-    // structures alone so a stray grenade doesn't trash someone's base.
-    if (size === 'huge' && typeof game !== 'undefined' && game._structures) {
-      for (const s of game._structures) {
-        if (!s || s.hp <= 0) continue;
-        if (Math.hypot(s.x - x, s.y - y) < radius) {
-          s.hp -= 200;
-        }
-      }
-    }
-  }
-}
+// createExplosion / updateExplosions / spawnWreckage / tickWreckageSpawn / updateWreckages / renderWreckages → js/explosions_fx.js (Phase 185 modularization)
 
-function updateExplosions() {
-  for (let i = explosions.length-1; i >= 0; i--) {
-    const e = explosions[i];
-    e.life--;
-    for (const p of e.particles) {
-      p.x += p.vx; p.y += p.vy;
-      p.vx *= 0.94; p.vy *= 0.94;
-    }
-    if (e.life <= 0) explosions.splice(i, 1);
-  }
-  for (let i = muzzleFlashes.length-1; i >= 0; i--) {
-    muzzleFlashes[i].life--;
-    if (muzzleFlashes[i].life <= 0) muzzleFlashes.splice(i, 1);
-  }
-  for (let i = damagePopups.length-1; i >= 0; i--) {
-    const p = damagePopups[i];
-    p.y += p.vy;
-    p.vy *= 0.96;
-    p.life--;
-    if (p.life <= 0) damagePopups.splice(i, 1);
-  }
-}
+// ============ MINE DEFUSE → js/mine_defuse.js (Phase 185 modularization) ====
+// MINE_DEFUSE_RANGE / _tryDefuseMine / tickMineDefuse / renderMineDefuseRing
+// moved out verbatim; call sites (key_bindings G, update, render) unchanged.
 
-// ============ Phase 62 — BURNING WRECKAGE ============
-// Visual marker for KIA chassis units. User: '會有燃燒死亡的殘骸 然後慢慢
-// 淡出 火光慢慢變小'. Glow shrinks + dims linearly with remaining life;
-// blackened silhouette fades only in the last 33% so the body is visible
-// for most of the burn. Ember sparks spawn proportional to heat, rise +
-// drift, fade as their own short life ticks out.
-//
-// Performance budget: WRECKAGE_MAX=20 active bodies, each capped at 10
-// concurrent embers → ~200 micro draws per frame at worst. Cheaper than a
-// single createExplosion.
-
-function spawnWreckage(x, y, chassis) {
-  if (wreckages.length >= WRECKAGE_MAX) wreckages.shift();
-  const safeChassis = (chassis && WRECKAGE_CFG[chassis]) ? chassis : 'humanoid';
-  const cfg = WRECKAGE_CFG[safeChassis];
-  wreckages.push({
-    x, y,
-    chassis: safeChassis,
-    life: cfg.life,
-    maxLife: cfg.life,
-    // Random rotation so a stacked KIA pile doesn't look like a stamped grid.
-    angle: Math.random() * Math.PI * 2,
-    embers: [],
-    nextEmberAt: 0,
-    cfg,
-  });
-}
-
-// Hook: walk allies + enemies once per frame. Newly-dead chassis units get
-// a wreckage; bodies that respawn clear the flag so a second death later
-// in the match spawns a fresh one. Single-place hook so we don't have to
-// touch every `alive = false` site individually.
-function tickWreckageSpawn() {
-  if (typeof allies !== 'undefined') {
-    for (const u of allies) {
-      if (u.alive) { u._wreckageDone = false; continue; }
-      if (!u._wreckageDone) {
-        spawnWreckage(u.x, u.y, u._chassis);
-        u._wreckageDone = true;
-      }
-    }
-  }
-  if (typeof enemies !== 'undefined') {
-    for (const u of enemies) {
-      if (u.alive) { u._wreckageDone = false; continue; }
-      if (!u._wreckageDone) {
-        spawnWreckage(u.x, u.y, u._chassis);
-        u._wreckageDone = true;
-      }
-    }
-  }
-}
-
-function updateWreckages() {
-  const now = (typeof game !== 'undefined' && game.time) ? game.time : 0;
-  for (let i = wreckages.length - 1; i >= 0; i--) {
-    const w = wreckages[i];
-    w.life--;
-    if (w.life <= 0) { wreckages.splice(i, 1); continue; }
-    const heat = w.life / w.maxLife;
-    // Phase 111 — burning crackle audio. Each wreckage schedules its own
-    // crackle pops; volume scales with heat × distance attenuation so a
-    // fresh kill near the player is loud, embers across the map are
-    // quiet, and the whole thing tapers off as the fire dies. User:
-    // '接近快燃盡的這個遺殘還會從大自然燃燒聲會越來越小嘛, 然後越來越
-    // 遠的話也會越來越小嘛'. Sound emission gated on the AUDIO context
-    // being unlocked (handled inside playPositionalSound).
-    if (heat > 0.08 && now >= (w.nextCrackleAt || 0)
-        && typeof playPositionalSound === 'function') {
-      // Intensity 700 = ~ wreckage 'earshot' range (player won't hear
-      // wrecks > 700 u away, which matches the camera-visible area).
-      // volMul = heat^1.3 so cooling crackles fade fast (sounds like the
-      // fire actually dying, not just getting quieter on a flat line).
-      playPositionalSound(w.x, w.y, 700, 'crackle', false,
-        { volMul: Math.pow(heat, 1.3) });
-      // Re-schedule: 0.8-2.5 s interval, longer as it cools. Per-wreck
-      // jitter so 5 simultaneous wrecks don't crackle in sync.
-      const intervalTicks = Math.round((50 + Math.random() * 100) / Math.max(0.15, heat));
-      w.nextCrackleAt = now + intervalTicks;
-    }
-    // Ember spawn: rate scales with heat (more sparks while hot, sparse as
-    // it cools). Cap at 10 concurrent embers per wreck for perf.
-    if (heat > 0.05 && now >= w.nextEmberAt && w.embers.length < 10) {
-      w.embers.push({
-        ox: (Math.random() - 0.5) * w.cfg.silSize * 0.8,
-        oy: 0,
-        vx: (Math.random() - 0.5) * 0.8,
-        vy: -0.4 - Math.random() * 0.7,
-        life: 30 + Math.random() * 25,
-        maxLife: 55,
-        color: Math.random() < 0.6 ? '#F2402E' : '#FFDC9A',
-      });
-      // Interval: smaller when emberRateMax is HIGHER (chunkier chassis
-      // throws more sparks) and smaller while hot (more sparks at peak
-      // burn, slowing to a trickle as it cools). Hard min 2 to avoid
-      // ember-spam on a single frame.
-      const interval = Math.max(2, Math.round(20 / (w.cfg.emberRateMax * Math.max(0.1, heat))));
-      w.nextEmberAt = now + interval;
-    }
-    // Tick embers — slight gravity so they arc instead of rocketing straight.
-    for (let j = w.embers.length - 1; j >= 0; j--) {
-      const eb = w.embers[j];
-      eb.ox += eb.vx;
-      eb.oy += eb.vy;
-      eb.vy += 0.02;
-      eb.life--;
-      if (eb.life <= 0) w.embers.splice(j, 1);
-    }
-  }
-}
-
-function renderWreckages() {
-  for (const w of wreckages) {
-    const heat = w.life / w.maxLife;
-    // Silhouette only fades in the last 33% — body visible for most of burn.
-    const silA = Math.min(1, heat * 1.5) * 0.85;
-    ctx.save();
-    ctx.translate(w.x, w.y);
-    ctx.rotate(w.angle);
-
-    // Radial glow (largest + brightest at peak heat; shrinks + dims as it
-    // cools). Skip the gradient entirely once nearly out — saves the cost
-    // when 10+ wreckages are simultaneously fading.
-    const glowR = w.cfg.glowR * (0.45 + 0.55 * heat);
-    const glowA = w.cfg.glowAlpha * heat;
-    if (glowA > 0.02) {
-      const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, glowR);
-      grad.addColorStop(0,   `rgba(255, 110, 30, ${glowA})`);
-      grad.addColorStop(0.5, `rgba(200, 38, 28, ${glowA * 0.5})`);
-      grad.addColorStop(1,   'rgba(200, 38, 28, 0)');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(0, 0, glowR, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Chassis silhouette — blackened, with a warm tint while still hot
-    // (cools toward pure ash as heat → 0).
-    if (silA > 0.05) {
-      const warm = Math.round(20 + 40 * heat);
-      ctx.fillStyle = `rgba(${warm}, ${Math.round(warm * 0.6)}, ${Math.round(warm * 0.4)}, ${silA})`;
-      if (w.chassis === 'wolf') {
-        // Low-slung oval — quadruped silhouette flattened to the ground.
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 12, 5, 0, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (w.chassis === 'heavy') {
-        // Boxy chassis + a hot inner core that pulses while the burn is
-        // young (heavy carries more reactor fuel; lingers brighter longer).
-        ctx.fillRect(-10, -10, 20, 20);
-        if (heat > 0.2) {
-          ctx.fillStyle = `rgba(242, 64, 46, ${heat * 0.65})`;
-          ctx.fillRect(-4, -4, 8, 8);
-        }
-      } else {
-        // humanoid: torso slab + head dropped to one side ('slumped').
-        ctx.fillRect(-7, -4, 14, 8);
-        ctx.beginPath();
-        ctx.arc(-9, 1, 4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    // Ember sparks — small drifting dots, hex colour converted to rgba
-    // inline so we can fade with life. Tiny 2×2 fillRect is faster than
-    // arc() for sub-3px particles.
-    for (const eb of w.embers) {
-      const ea = eb.life / eb.maxLife;
-      const hex = eb.color;
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
-      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${ea})`;
-      ctx.fillRect(eb.ox - 1, eb.oy - 1, 2, 2);
-    }
-
-    ctx.restore();
-  }
-}
-
-// ============ Phase 63 — MINE DEFUSE ============
-// Hostile mines are now bulletImmune (see structures.js mine + tripmine
-// defs). The only way to clear a mine is the G-key defuse: walk within
-// MINE_DEFUSE_RANGE, press G, hold position for `defuseTicks` (5s). State
-// is per-player (player._defuse = {sid, startedAt}); leaving range or the
-// mine detonating cancels it.
-const MINE_DEFUSE_RANGE = 60;
-
-// G-key handler — try to start a defuse on the nearest mine. Returns true
-// if a defuse target was selected this press (so the caller skips its
-// fallback action — grenade throw). No-op if already defusing the same
-// mine, or if no mine is in range.
-function _tryDefuseMine() {
-  if (!player.alive || !game._structures) return false;
-  let best = null, bestD = MINE_DEFUSE_RANGE + 0.001;
-  for (const s of game._structures) {
-    const def = STRUCTURE_DEFS[s.kind];
-    if (!def || s.hp <= 0) continue;
-    if (!(s.kind === 'mine' || s.kind === 'tripmine')) continue;
-    const d = Math.hypot(s.x - player.x, s.y - player.y);
-    if (d < bestD) { best = s; bestD = d; }
-  }
-  if (!best) return false;
-  // Already defusing this one? Treat as a no-op (don't reset progress) so
-  // the player can hammer G safely.
-  if (player._defuse && player._defuse.sid === best.sid) return true;
-  player._defuse = { sid: best.sid, startedAt: game.time };
-  if (typeof showSwapToast === 'function') {
-    showSwapToast(T('▶ 拆解中 · 不要離開',
-                    '▶ DEFUSING · stay close'));
-  }
-  if (typeof playRadioBeep === 'function') playRadioBeep(440, 0.1);
-  return true;
-}
-
-// Per-frame: advance any active defuse. Cancel if player moved out of
-// range, died, or the target mine vanished (it detonated, e.g. enemy
-// walked over it mid-defuse). Complete when defuseTicks elapsed.
-function tickMineDefuse() {
-  if (!player._defuse) return;
-  const d = player._defuse;
-  if (!player.alive) { player._defuse = null; return; }
-  const target = (game._structures || []).find(s => s.sid === d.sid);
-  if (!target || target.hp <= 0) { player._defuse = null; return; }
-  const dist = Math.hypot(target.x - player.x, target.y - player.y);
-  if (dist > MINE_DEFUSE_RANGE) {
-    if (typeof showSwapToast === 'function') {
-      showSwapToast(T('▶ 拆解中斷', '▶ DEFUSE INTERRUPTED'));
-    }
-    player._defuse = null;
-    return;
-  }
-  const def = STRUCTURE_DEFS[target.kind] || {};
-  const need = def.defuseTicks || (5 * 60);
-  if (game.time - d.startedAt >= need) {
-    // Complete — remove the mine + refund a tiny chunk of energy as a
-    // 'recovered components' reward.
-    target.hp = 0;
-    game._energy = Math.min(999, (game._energy || 0) + BALANCE.energy.mineDefuse);
-    if (typeof showSwapToast === 'function') {
-      showSwapToast(T(`▶ 拆解完成 +${BALANCE.energy.mineDefuse}⚡`, `▶ DEFUSED +${BALANCE.energy.mineDefuse}⚡`));
-    }
-    if (typeof playRadioBeep === 'function') playRadioBeep(880, 0.18);
-    player._defuse = null;
-  }
-}
-
-// World-space render: ring filling around the target mine. Drawn in the
-// same coordinate space as the unit render loop, so call it AFTER ctx
-// camera transform is applied.
-function renderMineDefuseRing() {
-  if (!player._defuse || !game._structures) return;
-  const d = player._defuse;
-  const target = game._structures.find(s => s.sid === d.sid);
-  if (!target) return;
-  const def = STRUCTURE_DEFS[target.kind] || {};
-  const need = def.defuseTicks || (5 * 60);
-  const _tRaw = Math.max(0, Math.min(1, (game.time - d.startedAt) / need));
-  // Phase 67 — ease-out cubic so the ring fills fast at the start then
-  // slows into the final wedge (feels like 'almost there...' instead of
-  // a metronomic linear sweep).
-  const t = 1 - Math.pow(1 - _tRaw, 3);
-  const r = (def.size || 24) / 2 + 8;
-  ctx.save();
-  // Backdrop ring (full circle, dim) — shows the player WHERE to look.
-  ctx.strokeStyle = COLORS.cream;
-  ctx.lineWidth = 2;
-  ctx.globalAlpha = 0.30;
-  ctx.beginPath();
-  ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
-  ctx.stroke();
-  // Progress ring — bright yellow arc from −π/2 (12 o'clock) sweeping
-  // clockwise. Reads as a 'charging' loader.
-  ctx.strokeStyle = '#FFD24A';
-  ctx.lineWidth = 4;
-  ctx.globalAlpha = 1;
-  ctx.beginPath();
-  ctx.arc(target.x, target.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t);
-  ctx.stroke();
-  // Center label — countdown in seconds.
-  const secLeft = Math.max(0, Math.ceil((need - (game.time - d.startedAt)) / 60));
-  ctx.fillStyle = COLORS.cream;
-  ctx.font = 'bold 10px monospace';
-  ctx.textAlign = 'center';
-  ctx.globalAlpha = 0.9;
-  ctx.fillText(`${secLeft}s`, target.x, target.y - r - 4);
-  ctx.textAlign = 'left';
-  ctx.restore();
-}
-
-function updateFPV() {
-  if (!fpv.active) return;
-  // Phase 19: turn rate falls with the speed ramp. Fresh launch is
-  // 0.075 (close to old 0.08), committed dive drops to 0.025 — so the
-  // pilot can still steer around obstacles in the first 2 sec, but a
-  // maxed-out drone can't U-turn out of a wall it's about to hit.
-  const _rampT = Math.min(1, Math.max(0, (game.time - (fpv._launchTick || 0)) / FPV_RAMP_TICKS));
-  if (game.mode === 'fpv') {
-    const wp = screenToWorld(mouse.x, mouse.y);
-    const target = Math.atan2(wp.y - fpv.y, wp.x - fpv.x);
-    let diff = target - fpv.angle;
-    while (diff > Math.PI) diff -= Math.PI*2;
-    while (diff < -Math.PI) diff += Math.PI*2;
-    // Phase X — turn-rate floor raised so the maxed-out drone can still
-    // correct course before slamming a wall. Was 0.025 at full ramp →
-    // now 0.050. Launch rate also slightly higher (0.075 → 0.085) for
-    // crisper initial steering. Trade-off: drone feels less like a
-    // "committed missile" but user '太難操控' wins over realism.
-    const turnRate = 0.085 - 0.035 * _rampT;
-    fpv.angle += diff * turnRate;
-  }
-  // Phase 9: speed ramps from FPV_SPEED_START → FPV_SPEED_MAX over
-  // FPV_RAMP_TICKS frames, so the launch is controllable and the
-  // committed dive ramps up later. Eased linearly for simplicity.
-  fpv.speed = FPV_SPEED_START + (FPV_SPEED_MAX - FPV_SPEED_START) * _rampT;
-  fpv.x += Math.cos(fpv.angle) * fpv.speed;
-  fpv.y += Math.sin(fpv.angle) * fpv.speed;
-  fpv.trail.push({ x: fpv.x, y: fpv.y, life: 25 });
-  for (let i = fpv.trail.length-1; i >= 0; i--) {
-    fpv.trail[i].life--;
-    if (fpv.trail[i].life <= 0) fpv.trail.splice(i, 1);
-  }
-  // User '自殺式無人機要像是Q無人機一樣不受牆壁限制 要靠撞到人或是空白鍵':
-  // FPV passes through walls / buildings / overheads like the UAV — only
-  // a person-hit OR manual SPACE detonate ends the run. World bounds clamp
-  // (like UAV) instead of detonating, so the drone can't fly off forever.
-  let exploded = false;
-  for (const e of enemies) {
-    if (!e.alive) continue;
-    if (Math.hypot(fpv.x-e.x, fpv.y-e.y) < e.radius+10) { exploded = true; break; }
-  }
-  if (!exploded) for (const d of enemyDrones) {
-    if (!d.alive) continue;
-    if (Math.hypot(fpv.x-d.x, fpv.y-d.y) < d.radius+10) { exploded = true; break; }
-  }
-  // MP hit: enemy server bots (team 1) + remote humans. Without this the
-  // FPV is useless online — would fly past MP targets and only trigger on
-  // SPACE. Damage still propagates via _mpBroadcastExplosion → server AOE.
-  if (!exploded && typeof _mpState !== 'undefined' && _mpState.enabled) {
-    if (_mpState.remoteBots) {
-      for (const rb of _mpState.remoteBots.values()) {
-        if (!rb.alive || rb.team === 0) continue;
-        if (Math.hypot(fpv.x-rb.x, fpv.y-rb.y) < (rb.radius || 14)+10) { exploded = true; break; }
-      }
-    }
-    if (!exploded && _mpState.remotePlayers) {
-      for (const [pid, rp] of _mpState.remotePlayers) {
-        if (!rp || !rp.alive || pid === _mpState.myId) continue;
-        if (Math.hypot(fpv.x-rp.x, fpv.y-rp.y) < (rp.radius || 14)+10) { exploded = true; break; }
-      }
-    }
-  }
-  if (fpv.x < 20) fpv.x = 20;
-  if (fpv.x > WORLD.w-20) fpv.x = WORLD.w-20;
-  if (fpv.y < 20) fpv.y = 20;
-  if (fpv.y > WORLD.h-20) fpv.y = WORLD.h-20;
-  if (exploded) _detonateFPV(false);
-}
-
-// Phase 9: shared FPV detonation path. `manual=true` when triggered by the
-// space-key handler (lets the player blow up early on demand without
-// needing an impact condition).
-function _detonateFPV(manual) {
-  if (!fpv.active) return;
-  // Phase 110d — escalated from 'big' → 'huge' (140-radius blast,
-  // 120 AOE dmg, also vaporises any player-built structures inside the
-  // radius). User: '自殺無人機的爆炸半徑更大, 範圍更廣, 傷害更強, 也
-  // 可以摧毀建築物'.
-  createExplosion(fpv.x, fpv.y, 'huge');
-  if (typeof triggerShake === 'function') triggerShake(8);
-  // Phase 111 — boom audio kind (sub-bass sweep + crash + debris tail).
-  if (typeof emitSound === 'function') emitSound(fpv.x, fpv.y, 1700, false, false, null, 'boom');
-  fpv.active = false;
-  if (game.mode === 'fpv') game.mode = 'tactical';
-  showMessage(T(`FPV ${manual ? '手動引爆' : '命中'} · 剩余 ${fpv.available}`,
-                `FPV ${manual ? 'MANUAL DETONATE' : 'HIT'} · ${fpv.available} left`), 60);
-}
+// updateFPV / _detonateFPV → js/drone_fpv.js (Phase 185 modularization)
 
 // ============ CAMERA ============
 // → Moved to js/camera.js. Declares globally:
@@ -6705,7 +5789,7 @@ loop();
 <!-- Late-loaded modules — these have top-level .push() / .build() calls
      that reference WORLD or NN_ARENA, which the main inline <script>
      declares. Must run AFTER the inline script. -->
-<script src="js/maps.js?v=232"></script>
-<script src="js/missions/nn_arena_variants.js?v=232"></script>
+<script src="js/maps.js?v=233"></script>
+<script src="js/missions/nn_arena_variants.js?v=233"></script>
 </body>
 </html>

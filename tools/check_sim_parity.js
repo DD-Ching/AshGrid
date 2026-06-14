@@ -40,11 +40,18 @@ function loadClientWeapons() {
   return sandbox.__weaponsOut;
 }
 
-// ── Read the client OBS_DIM (inside index.html's inline script — regex it) ──
+// ── Read the client OBS_DIM (the NN config table) ──
+// Phase 185 — the NN object moved from index.html's inline script into
+// js/nn_loader.js; read it there, with index.html as a fallback for safety.
 function loadClientObsDim() {
-  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-  const m = html.match(/OBS_DIM:\s*(\d+)/);
-  return m ? parseInt(m[1], 10) : null;
+  for (const rel of ['js/nn_loader.js', 'index.html']) {
+    try {
+      const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+      const m = src.match(/OBS_DIM:\s*(\d+)/);
+      if (m) return parseInt(m[1], 10);
+    } catch (e) { /* try next */ }
+  }
+  return null;
 }
 
 function near(a, b) { return Math.abs(a - b) < 1e-9; }

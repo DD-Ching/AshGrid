@@ -159,6 +159,12 @@ const KEY_BINDINGS = {
     // Phase 159 — MP first: online targets live in remoteBots, not
     // enemies[], so the SOLO scan below finds nothing in MP. Route the
     // press to the server-authoritative recruit path when online.
+    // Phase 184c — Wolf/Dog G = DEVOUR (execute+lifesteal), tried first; self-
+    // gates to wolf + game._classes so other chassis / classes-off fall through
+    // to the recruit + grenade chain unchanged.
+    if (typeof _arenaTryDevour === 'function' && _arenaTryDevour()) {
+      return;
+    }
     if (typeof _arenaTryRecruitMP === 'function' && _arenaTryRecruitMP()) {
       return;
     }
