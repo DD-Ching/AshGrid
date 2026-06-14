@@ -108,18 +108,24 @@ function _handleNumberKey(eKey) {
   // Otherwise: 1-6 are pawn-swap (NN) or mission-jump (campaign).
   if (eKey >= '1' && eKey <= '6') {
     if (game._nnMode) {
-      const allyIdx = parseInt(eKey, 10) - 2;       // '2' → ally[0], etc.
-      if (allyIdx >= 0 && allyIdx < allies.length) {
-        swapPlayerToAlly(allyIdx);
-      } else if (eKey === '1') {
+      if (eKey === '1') {
         // '1' is reserved for self in this layout. Surface a hint so
         // the player learns the TAB+1 squad-order path.
         if (typeof showSwapToast === 'function') {
           showSwapToast(T('1 = 自己 · 按 TAB 後 1 → 集合',
                          '1 = SELF · press TAB then 1 to RALLY'));
         }
-      } else if (allyIdx >= allies.length) {
-        if (typeof showSwapToast === 'function') {
+      } else {
+        // Phase 183 — map the digit to the COMPACTED, alive-filtered squad slot
+        // (getSquadSlots), the same roster the HUD dots show, so digit '2' swaps
+        // into the unit visibly under dot '2' (the old raw allies[eKey-2] index
+        // pointed at a different/dead ally once the roster compacted).
+        const slotN = parseInt(eKey, 10) - 2;        // '2' → squad slot 0
+        const slots = (typeof getSquadSlots === 'function') ? getSquadSlots() : [];
+        const s = slots[slotN];
+        if (s && s.allyIdx != null) {
+          swapPlayerToAlly(s.allyIdx);
+        } else if (typeof showSwapToast === 'function') {
           showSwapToast(T(`沒有 ${eKey} 號隊友`, `No ally in slot ${eKey}`));
         }
       }

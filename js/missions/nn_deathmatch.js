@@ -223,7 +223,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
   // from waves / per-unit timer if relay alive).
   function _revivePlayerOnly() {
     const state = game._teamWipe.blue;
-    if (state) { state.wipedSince = null; state.respawnAt = null; }
+    if (state) { state.wipedSince = null; state.respawnAt = null; state.respawnRequested = false; }
     if (!player) return;
     // R12 — alive=true, hp=max, armor=max, _respawnAt=null, _invulnUntil=+180
     // all go through PlayerLifecycle.reviveAtSpawn. Position pops back to the
@@ -437,6 +437,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
         const state = game._teamWipe[team];
         if (aliveCount === 0 && !state.wipedSince) {
           state.wipedSince = game.time;
+          state.respawnRequested = false;   // Phase 183 — a FRESH wipe needs a FRESH SPACE
           state.respawnAt  = game.time + _wipeWaitTicks();
           // Phase 92 — also record WALL-CLOCK timestamps for the countdown
           // display + revive trigger. User reports the in-game countdown
