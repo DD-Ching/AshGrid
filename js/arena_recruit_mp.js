@@ -97,7 +97,10 @@ function _arenaTryRecruitMP() {
   // boundary where the lit 'G RECRUIT' prompt silently did nothing.
   // cls+klass tell the server which gate to re-validate. Only sent meaningfully
   // under classes; legacy recruits omit them (server takes the legacy branch).
-  if (_recruitCost > 0 && typeof spendEnergy === 'function') spendEnergy(_recruitCost);  // 184h — drain (matches SOLO)
+  // 184k — the energy is SPENT on the server's recruitOk confirmation (in
+  // multiplayer.js), NOT here: an optimistic spend lost 40 energy on a server
+  // reject (HP-boundary / reach-lag race). The canAffordEnergy gate above still
+  // blocks requesting while broke; spend-on-success matches SOLO _arenaTrySEDConvert.
   _mpSendRaw(classesBuilder
     ? { type: 'recruit', botId: best.id, seed: mySeed, cls: 1, klass: 'builder' }
     : { type: 'recruit', botId: best.id, seed: mySeed });

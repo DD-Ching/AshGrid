@@ -200,7 +200,16 @@ export function _devourStolenHp(botMaxHp) {
 // Mutates p.hp / p.armor / p._armorLastHurtTick. Returns hp damage actually dealt.
 export function _applyChassisDamage(p, dmg, tickCount) {
   if (!p || !(dmg > 0)) return 0;
-  if (p.input && p.input.dashActive) dmg = dmg * DASH_DMG_MUL;   // wolf dash -70%
+  // Wolf DASH -70%. The bit is client-asserted (energy-gated client-side, the
+  // trust model), but we reject it server-side for an ARMOURED unit (dash is
+  // wolf-only; a heavy has armour — this kills the spoofed heavy+armour+dash
+  // near-immortal compound) or a STATIONARY one (dash is a movement ability —
+  // no camping tank). A legit dashing wolf has maxArmor 0 and is moving, so this
+  // is a no-op for real play; it only bounds a modified client. (Review 184e–j #A.)
+  if (p.input && p.input.dashActive && !(p.maxArmor > 0)
+      && (Math.abs(p.input.dx) > 0.01 || Math.abs(p.input.dy) > 0.01)) {
+    dmg = dmg * DASH_DMG_MUL;
+  }
   const hpBefore = p.hp;
   if (p.maxArmor > 0) {
     p._armorLastHurtTick = tickCount | 0;
@@ -983,6 +992,7 @@ export default class AshGridRoom {
           const wasFull = p.hp >= (p.maxHp || HP_MAX);
           p.maxHp = newMax;
           if (wasFull && p.alive) p.hp = p.maxHp;
+          else if (p.hp > p.maxHp) p.hp = p.maxHp;   // 184k — shrink down-clamp (mirrors armour)
         }
       }
       // Phase 184e — wolf DASH flag (client sets it only for wolf + game._classes,

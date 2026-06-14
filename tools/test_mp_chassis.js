@@ -34,9 +34,12 @@
   if (typeof dmgFn !== 'function') { process.exit(1); }
 
   const BLEED = 0.65, DASH = 0.30;
-  // mk(maxArmor, armor, dash) → a fake server player at full hp 100/180.
-  const mk = (maxArmor = 0, armor = 0, dash = 0, hp = 100) =>
-    ({ hp, maxHp: hp, maxArmor, armor, _armorLastHurtTick: -999, alive: true, input: { dashActive: dash } });
+  // mk(maxArmor, armor, dash) → a fake server player at full hp 100/180. The dash
+  // cut (184k) requires MOVEMENT, so the fake input carries dx=1 by default; a
+  // dash test that wants the "stationary" case passes mv=0.
+  const mk = (maxArmor = 0, armor = 0, dash = 0, hp = 100, mv = 1) =>
+    ({ hp, maxHp: hp, maxArmor, armor, _armorLastHurtTick: -999, alive: true,
+       input: { dashActive: dash, dx: mv, dy: 0 } });
 
   // 1) humanoid: full damage, no armour touched.
   let p = mk(0, 0, 0);
@@ -64,11 +67,24 @@
   dmgFn(p, 10, 1002);
   check(approx(p.hp, hpBefore - 10 * BLEED), 'heavy: armour=0 still bleeds 0.65 (10 dmg → 6.5 hp)');
 
-  // 6) dash + heavy compose: dash cuts 100→30 first, then armour 60 absorbs all 30.
+  // 6) 184k anti-spoof: dash REJECTED for an armoured unit (heavy can't dash —
+  //    kills the heavy+armour+dash near-immortal compound). 100 dmg → no ×0.30 →
+  //    armour 60 absorbs 60, overflow 40 bleeds 0.65 = 26 hp.
   p = mk(60, 60, 1, 180);
   dmgFn(p, 100, 1000);
-  check(approx(p.armor, 30) && approx(p.hp, 180),
-    'dash+heavy compose: 100 →(dash) 30 →(armour) armour 60→30, hp untouched');
+  check(approx(p.armor, 0) && approx(p.hp, 180 - 40 * BLEED),
+    'anti-spoof: dash ignored when armoured (heavy+dash → armour only, hp 180→' + (180 - 40 * BLEED) + ')');
+
+  // 6b) 184k anti-spoof: dash REJECTED when stationary (dash is a movement
+  //     ability — no camping tank). 100 dmg → full damage on a no-armour wolf.
+  p = mk(0, 0, 1, 70, 0);   // dashActive but mv=0 → not moving
+  dmgFn(p, 50, 1000);
+  check(approx(p.hp, 20), 'anti-spoof: dash ignored when stationary (50 dmg → full, hp 70→20)');
+
+  // 6c) dash HONOURED for a moving, un-armoured wolf (the legit case).
+  p = mk(0, 0, 1, 70, 1);   // dashActive + moving + no armour
+  dmgFn(p, 50, 1000);
+  check(approx(p.hp, 70 - 50 * DASH), 'legit wolf dash: moving + no armour → ×0.30 (50 dmg → 15, hp 55)');
 
   // 7) records last-hurt tick on a heavy hit (drives the regen delay).
   p = mk(60, 60, 0, 180);

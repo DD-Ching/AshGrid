@@ -170,7 +170,17 @@ function _mpIsActive() { return !!_mpState.enabled; }
 // count (recruitOk handler below).
 function _mpAliveSquadCount() {
   let n = 0;
-  if (_mpState.remoteBots) for (const b of _mpState.remoteBots.values()) if (b.alive && b.team === 0) n++;
+  const myId = _mpState ? _mpState.myId : null;
+  if (_mpState.remoteBots) for (const b of _mpState.remoteBots.values()) {
+    if (!b.alive || b.team !== 0) continue;
+    // Phase 184k — count only MY recruits (parity with getSquadSlots + the server
+    // cap, which both filter on _recruitedBy). Before this the cap counted every
+    // team-0 bot — a teammate's recruits AND the i%2 neutral team-0 spawns (rby 0)
+    // — so the recruiter hit the ARENA_SQUAD_CAP after ~1 recruit. The `!= null`
+    // keeps the pre-184f fall-through for a server/peer that omits rby.
+    if (myId != null && b._recruitedBy != null && b._recruitedBy !== myId) continue;
+    n++;
+  }
   return n;
 }
 function _mpPeerCount() {
@@ -380,9 +390,22 @@ function _mpHandleMessage(data) {
       if (typeof triggerRecruitFx === 'function') triggerRecruitFx(data.callsign || 'UNIT', _mpAliveSquadCount());
       if (typeof playRadioStatic === 'function') playRadioStatic(0.55, 0.45);
       // Toast only for the recruiter (the player who pressed G).
-      if (typeof showSwapToast === 'function' && data.recruiter === _mpState.myId) {
-        showSwapToast(T('▸ 招降 · ' + (data.callsign || 'UNIT'),
-                        '▸ RECRUITED · ' + (data.callsign || 'UNIT')));
+      if (data.recruiter === _mpState.myId) {
+        // 184k — spend the classes recruit energy cost HERE, on server
+        // confirmation, not optimistically at send (no loss on a server reject).
+        // Re-derive the classes-builder mode the same way the request did; legacy
+        // recruit is free, so this is a no-op then.
+        if (typeof game !== 'undefined' && game._classes
+            && typeof player !== 'undefined' && player
+            && (!player._chassis || player._chassis === 'humanoid')
+            && typeof spendEnergy === 'function'
+            && typeof BALANCE === 'object' && BALANCE.ability) {
+          spendEnergy(BALANCE.ability.recruit || 0);
+        }
+        if (typeof showSwapToast === 'function') {
+          showSwapToast(T('▸ 招降 · ' + (data.callsign || 'UNIT'),
+                          '▸ RECRUITED · ' + (data.callsign || 'UNIT')));
+        }
       }
       break;
     }
