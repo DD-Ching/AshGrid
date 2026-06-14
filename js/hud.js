@@ -1050,16 +1050,57 @@ function _hud_drawMissionCard(x, y, w, h) {
   // Enemies + Squad
   const _remaining = enemies.filter(e=>e.alive).length
                    + (typeof enemyDrones !== 'undefined' ? enemyDrones.filter(d=>d.alive).length : 0);
-  const _sqAlive = allies.filter(a=>a.alive).length;
+  // Phase 183 — squad count from the unified roster so it agrees with the slot
+  // dots in BOTH modes (was allies-only → always 0 in MP).
+  const _sqAlive = (typeof getSquadSlots === 'function') ? getSquadSlots().length : allies.filter(a=>a.alive).length;
+  const _sqCap = (typeof ARENA_SQUAD_CAP === 'number') ? Math.max(0, ARENA_SQUAD_CAP - 1) : 4;
   ctx.fillStyle = COLORS.red;
   ctx.font = 'bold 10px sans-serif';
   ctx.fillText(`ENEMIES ${_remaining}`, x + 12, y + 72);
   ctx.fillStyle = '#aaa';
-  ctx.fillText(`SQUAD ${_sqAlive}/${allies.length}`, x + 12 + 90, y + 72);
+  ctx.fillText(`SQUAD ${_sqAlive}/${_sqCap}`, x + 12 + 90, y + 72);
   // Phase 107 — SEED gameplay temporarily removed from the HUD; the
   // mission card no longer shows a 'SEED GATE: READY [G]' line. The
   // POWER bar (formerly SEED) lives in the vitals card and the
   // recruit-ready chip is the green G cell in the action bar.
+}
+
+// Phase 183 — ONE source of truth for "who is in my squad right now", so the
+// slot dots, the SQUAD N/M text and the mission card all agree, and so the
+// roster auto-joins/auto-leaves by presence (a unit in the source array → a
+// slot; gone/dead → no slot). MP-aware: SOLO squad = recruited allies[];
+// MP squad = my team-0 remoteBots (allies[] is forced empty in MP). Returns up
+// to (cap-1) LIVE members (slot 1 is always the player). SOLO entries carry the
+// real allies index for pawn-swap click; MP entries omit it (can't swap into a
+// server-owned remote body).
+function getSquadSlots() {
+  const cap = (typeof ARENA_SQUAD_CAP === 'number') ? ARENA_SQUAD_CAP : 5;
+  const maxMembers = Math.max(0, cap - 1);   // -1: the player occupies slot 1
+  const out = [];
+  const mp = (typeof _mpIsActive === 'function' && _mpIsActive());
+  if (mp) {
+    const myId = (typeof _mpState !== 'undefined' && _mpState) ? _mpState.myId : null;
+    const bots = (typeof _mpState !== 'undefined' && _mpState && _mpState.remoteBots)
+      ? _mpState.remoteBots : null;
+    if (bots) {
+      for (const b of bots.values()) {
+        if (!b || !b.alive || b.team !== 0) continue;
+        // prefer MY recruits (server caps per-recruiter); fall back to any team-0
+        // if the server didn't stamp _recruitedBy.
+        if (myId != null && b._recruitedBy != null && b._recruitedBy !== myId) continue;
+        out.push({ alive: true, hp: Math.max(0, Math.floor(b.hp || 0)), maxHp: b.maxHp || 100 });
+        if (out.length >= maxMembers) break;
+      }
+    }
+  } else if (typeof allies !== 'undefined' && allies) {
+    for (let i = 0; i < allies.length; i++) {
+      const a = allies[i];
+      if (!a || !a.alive) continue;
+      out.push({ alive: true, hp: Math.max(0, Math.floor(a.hp || 0)), maxHp: a.maxHp || 100, allyIdx: i });
+      if (out.length >= maxMembers) break;
+    }
+  }
+  return out;
 }
 
 function _hud_drawSquadDots(x, y) {
@@ -1074,12 +1115,12 @@ function _hud_drawSquadDots(x, y) {
     label: '1', alive: player.alive,
     hp: Math.max(0, Math.floor(player.hp)), maxHp: player.maxHp, isSelf: true,
   }];
+  const _slots = getSquadSlots();   // already alive-filtered + MP-aware + capped
   for (let i = 0; i < 4; i++) {
-    const a = allies[i];
-    rows.push(a ? {
-      label: `${i+2}`, alive: a.alive,
-      hp: a.alive ? Math.max(0, Math.floor(a.hp)) : 0,
-      maxHp: a.maxHp || 100, allyIdx: i,
+    const s = _slots[i];
+    rows.push(s ? {
+      label: `${i+2}`, alive: true,
+      hp: s.hp, maxHp: s.maxHp || 100, allyIdx: s.allyIdx,
     } : { label: `${i+2}`, alive: false, hp: 0, maxHp: 100, empty: true });
   }
   for (let r = 0; r < 5; r++) {
@@ -1115,8 +1156,10 @@ function _hud_drawSquadDots(x, y) {
     ctx.textAlign = 'center';
     ctx.fillText(row.label, cx, cy + 4);
     ctx.textAlign = 'left';
-    // Click rect (not self, not empty)
-    if (!row.empty && !row.isSelf) {
+    // Click rect (not self, not empty) — only for SOLO allies (allyIdx set).
+    // MP slots are server-owned remoteBots with no allies[] index, so pawn-swap
+    // can't target them; omit the click rect rather than emit a no-op/wrong idx.
+    if (!row.empty && !row.isSelf && row.allyIdx != null) {
       game._squadChipRects.push({
         x: cx - d/2 - _touchPad, y: cy - d/2 - _touchPad,
         w: d + _touchPad*2, h: d + _touchPad*2,

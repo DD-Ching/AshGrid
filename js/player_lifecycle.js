@@ -55,6 +55,7 @@
     const _gt = _gameTime();
     player.alive = false;
     player.hp = 0;
+    player._respawnRequested = false;   // Phase 183 — a fresh death needs a fresh SPACE
     player._lastDeathX = (opts.x != null) ? opts.x : player.x;
     player._lastDeathY = (opts.y != null) ? opts.y : player.y;
     player._killedAtTime = _gt;
@@ -104,6 +105,7 @@
     player._invulnUntil = _gt + invulnTicks;
     player._lastRespawnAt = _gt;
     player._respawnAt = null;
+    player._respawnRequested = false;   // Phase 183 — served; next death needs SPACE again
     player._killedAtTime = 0;
     // Phase 180a fix — clear per-death attribution so a fresh life never shows
     // the PREVIOUS life's killer in the killcam / recap, and the recent-hits

@@ -341,19 +341,27 @@
     return false;
   }
 
-  function killcamRequestRespawn() {
-    if (!killcamCanRespawn()) return false;
-    // Collapse the EXISTING respawn deadline to now so the canonical revive
-    // path fires next tick. We never revive directly.
-    const now = _now();
+  // Phase 183 — SOLO respawn is now SPACE-GATED: the nn_deathmatch auto-revive
+  // timers only fire when these `_respawnRequested` flags are set, so doing
+  // nothing = stay dead forever (the user's '不按空白鍵就永遠不會復活'). This
+  // sets the flags AND collapses the deadline so SPACE revives promptly. Shared
+  // by the killcam SPACE path and the no-killcam SPACE fallback (key_bindings).
+  function _doSoloRespawnRequest() {
     if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue
         && game._teamWipe.blue.wipedSince) {
-      game._teamWipe.blue.respawnAtMs = now;          // wall-clock revive (nn_deathmatch:438)
-      game._teamWipe.blue.respawnAt   = game.time;    // tick fallback
+      game._teamWipe.blue.respawnRequested = true;
+      game._teamWipe.blue.respawnAtMs = _now();              // wall-clock revive
+      game._teamWipe.blue.respawnAt   = (typeof game.time === 'number') ? game.time : 0;
     }
-    if (typeof player !== 'undefined' && player && player._respawnAt != null) {
-      player._respawnAt = game.time;                  // per-player revive (nn_deathmatch:583)
+    if (typeof player !== 'undefined' && player) {
+      player._respawnRequested = true;
+      if (player._respawnAt != null) player._respawnAt = game.time;   // per-player revive
     }
+  }
+
+  function killcamRequestRespawn() {
+    if (!killcamCanRespawn()) return false;
+    _doSoloRespawnRequest();
     _requested = true;   // latch: don't re-arm the killcam before the revive lands
     _phase = 'off';
     return true;
@@ -376,6 +384,9 @@
   window.killcamCanRespawn     = killcamCanRespawn;
   window.killcamRequestRespawn = killcamRequestRespawn;
   window.killcamBlocking       = killcamBlocking;
+  // Phase 183 — exported so SPACE can request a SOLO respawn even when the
+  // killcam didn't arm (e.g. a death with no _killer), avoiding a soft-lock.
+  window.requestSoloRespawn    = _doSoloRespawnRequest;
   window.KillCam = {
     phase:          () => _phase,
     active:         () => _phase !== 'off',

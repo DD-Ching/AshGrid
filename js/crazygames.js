@@ -238,10 +238,12 @@
   // Death counter — caller increments after each player death; we fire
   // a midgame interstitial every N deaths.
   function noteDeath() {
+    // Phase 183 — telemetry only. The forced midgame interstitial used to fire
+    // here every Nth death; the user does NOT want any ad on death ('死亡會放
+    // 這也不是我要的'). Only the opt-in WATCH-AD revive button (death_recap.js)
+    // remains. crazyAd_midgame stays exported for a future NON-death trigger
+    // (e.g. menu / build-phase) if cadence is ever needed for CG certification.
     _deathCountForAds++;
-    if (_deathCountForAds % MIDGAME_AD_EVERY_N_DEATHS === 0) {
-      midgame();
-    }
   }
 
   // -------- Phase 54: Instant Multiplayer wrappers --------

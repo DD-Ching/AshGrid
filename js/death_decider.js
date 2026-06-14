@@ -105,6 +105,7 @@
     }
     if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue) {
       game._teamWipe.blue.wipedSince = _now();
+      game._teamWipe.blue.respawnRequested = false;   // Phase 183 — a FRESH wipe needs a FRESH SPACE
       game._teamWipe.blue.respawnAt  = _now() + ticks;
       // Phase 179 — ALSO stamp wall-clock deadlines so the countdown display +
       // the revive condition agree in real seconds. The OTHER wipe trigger

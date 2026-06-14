@@ -1143,13 +1143,13 @@ export default class AshGridRoom {
         // AFK_RESPAWN_MAX_TICKS); otherwise hold them dead until they return.
         // Phase 180 — the explicit requestRespawn handler is the player-driven
         // path; this stays as the auto fallback.
-        const idleTicks = this.tickCount - (p.lastInputTickAt | 0);
-        if (p.respawnRequested) {
-          // Committed via requestRespawn (SPACE / ad-revive): serve the (possibly
-          // buffed) deadline regardless of the AFK idle gate. The gate only holds
-          // players who NEVER asked to come back.
-          if (this.tickCount >= p.respawnAt) this._respawn(p);
-        } else if (_respawnDecision(p.alive, this.tickCount, p.respawnAt, idleTicks, AFK_RESPAWN_MAX_TICKS)) {
+        // Phase 183 — respawn is STRICTLY player-requested now. ONLY a player who
+        // sent requestRespawn (SPACE) is brought back, and only once the deadline
+        // elapses. The old AFK auto-respawn branch (_respawnDecision) was removed:
+        // no SPACE = stay dead forever (the user's '不按空白鍵就永遠不會復活').
+        // respawnRequested is reset on every fresh death + on _respawn, so it must
+        // be re-sent each death.
+        if (p.respawnRequested && this.tickCount >= p.respawnAt) {
           this._respawn(p);
         }
         continue;
