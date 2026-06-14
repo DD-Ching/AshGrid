@@ -43,6 +43,16 @@ function _arenaTryRecruitMP() {
     && (!player._chassis || player._chassis === 'humanoid');
   if ((typeof game !== 'undefined' && game._classes) && !classesBuilder) return false;  // non-builder doesn't recruit under classes
 
+  // Phase 184h — recruit ENERGY cost, MP mirror of SOLO _arenaTrySEDConvert
+  // (招降 '损耗能量, 慢慢恢复'). classes-on only; energy is the per-client
+  // game._energy pool (the same one that gates building in MP, so it accrues
+  // here too). Gate up-front like SOLO; spend optimistically on send below (a
+  // server reject is rare since we mirror its gates). Legacy recruit stays free
+  // (no cost in the pre-184h online path → unchanged).
+  const _recruitCost = (classesBuilder && typeof BALANCE === 'object' && BALANCE.ability)
+    ? (BALANCE.ability.recruit || 0) : 0;
+  if (_recruitCost > 0 && typeof canAffordEnergy === 'function' && !canAffordEnergy(_recruitCost)) return false;
+
   // SEED gate (skill differential) — legacy only. Bots are seed 0, so we just
   // need our own seed above the gap. Bail early; this is also why the HUD
   // 'G RECRUIT' prompt only lights up once player._seed > ARENA_SEED_GAP.
@@ -87,6 +97,7 @@ function _arenaTryRecruitMP() {
   // boundary where the lit 'G RECRUIT' prompt silently did nothing.
   // cls+klass tell the server which gate to re-validate. Only sent meaningfully
   // under classes; legacy recruits omit them (server takes the legacy branch).
+  if (_recruitCost > 0 && typeof spendEnergy === 'function') spendEnergy(_recruitCost);  // 184h — drain (matches SOLO)
   _mpSendRaw(classesBuilder
     ? { type: 'recruit', botId: best.id, seed: mySeed, cls: 1, klass: 'builder' }
     : { type: 'recruit', botId: best.id, seed: mySeed });
