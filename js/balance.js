@@ -21,6 +21,16 @@ const BALANCE = {
     mineDefuse:         10,    // finishing a hostile-mine defuse (index.html)
     recycleRefund:      60,    // scrapping a squad bot          (arena_recruitment.js)
   },
+  // Phase 184a — per-class ability energy costs for the chassis-as-classes
+  // redesign (CHASSIS_CLASSES_DESIGN.md). DATA only here; the actions that spend
+  // these land in 184b+ (humanoid recruit, wolf dash, heavy ultimate). devour is
+  // 0 because it GAINS hp+energy (lifesteal), not spends. Tunable in one place.
+  ability: {
+    recruit:  40,    // humanoid 招降 (convert weaker enemy → squad slot)
+    dash:     25,    // wolf 冲刺 (-70% dmg-taken burst)
+    devour:    0,    // wolf 处决吸血 (execute weaker enemy → gain hp+energy)
+    ultimate: 80,    // heavy 大招 (fire all stockpiled weapons at once)
+  },
   // Energy cost (⚡) per structure. The radial wheel (js/defense_build_ui.js)
   // currently exposes only the 6 ACTIVE entries; the other 10 are LEGACY —
   // dropped from the wheel but kept DEFINED so MP-broadcast / older structures

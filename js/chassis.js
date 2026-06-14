@@ -10,18 +10,25 @@
 //
 // External deps: T (label helper, called at lobby render time)
 
+// Phase 184a — class metadata for the chassis-as-classes redesign (see
+// CHASSIS_CLASSES_DESIGN.md). `klass` + `abilities` are DATA only here; the
+// per-class gating/energy that consumes them lands in 184b+ (Builder, Charger,
+// Heavy). Adding them now (read by nothing yet) keeps the redesign's single
+// source of truth in the chassis table without any behaviour change.
 const CHASSIS = {
   humanoid: {
     speedMul: 1.00, hpMul: 1.00, radiusMul: 1.00,
+    klass: 'builder', abilities: ['build', 'recruit'],   // 184b
     label: () => T('人形', 'HUMANOID'),
-    blurb: () => T('平衡 · 默认', 'Balanced · default'),
+    blurb: () => T('建造 · 招降', 'Build · recruit'),
   },
   // 機器狼: fast, low-profile, lower HP. Smaller hitbox is the real edge —
   // harder to hit while flanking. NN AI compensates by aiming aggressively.
   wolf: {
     speedMul: 1.50, hpMul: 0.70, radiusMul: 0.78,
+    klass: 'charger', abilities: ['dash', 'devour'],     // 184c
     label: () => T('机器狼', 'WOLF'),
-    blurb: () => T('快 · 低姿态 · 脆', 'Fast · low-profile · fragile'),
+    blurb: () => T('冲刺 · 处决吸血', 'Dash · devour'),
   },
   // 重甲機甲: slow tank with double HP, bigger hitbox, AND a regenerating
   // armor buffer that fully absorbs damage until depleted, then bleeds 50%
@@ -34,12 +41,13 @@ const CHASSIS = {
     // than humanoid's 100 EHP, but no longer absurd. Regen mechanic
     // preserved so the "duck behind cover and recover" gameplay loop
     // still works; just less raw absorption per encounter.
+    klass: 'arsenal', abilities: ['stockpile', 'ultimate', 'loot'],   // 184d
     armor: 60,                     // was 100 — max armor
     armorRegenDelay: 3 * 60,       // ticks of no-damage before regen starts (unchanged)
     armorRegenPerTick: 0.50,       // ~30 armor / second once regen kicks in (unchanged)
     armorBleedFactor: 0.65,        // was 0.50 — more HP damage after armor depleted
     label: () => T('重甲', 'HEAVY'),
-    blurb: () => T('慢 · 護甲再生 · 高血量', 'Slow · regen armor · tanky'),
+    blurb: () => T('多武器 · 大招 · 掠奪', 'Arsenal · ultimate · loot'),
   },
 };
 const CHASSIS_ORDER = ['humanoid', 'wolf', 'heavy'];
