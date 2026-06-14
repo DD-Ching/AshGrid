@@ -29,6 +29,9 @@ const _deathRecap = {
   lastHits: [],               // {dmg, weapon} for the 3 most recent hits
   adReviveUsed: false,        // one revive ad per match
   adReviveBtnRect: null,      // hit rect for the watch-ad button (canvas coords)
+  gen: 0,                     // Phase 182 — death generation; bumped each death so a
+                              // rewarded-ad callback from a PREVIOUS death can't act on
+                              // the current one (real ads resolve 15-30s later).
 };
 
 // Phase 3A: ad-revive ONLY when the whole blue team is wiped. A single
@@ -45,7 +48,11 @@ function _adRevivePlayer() {
   if (!_isBlueTeamWiped()) return;     // gate: team-wipe only
   _deathRecap.adReviveUsed = true;
   const _isMP = (typeof _mpIsActive === 'function' && _mpIsActive());
+  const _gen = _deathRecap.gen;   // Phase 182 — bind to THIS death (race guard below)
   const doRevive = () => {
+    // Phase 182 — a rewarded ad resolves 15-30s later; if the player already
+    // died again (new generation) this callback must NOT act on the new death.
+    if (_gen !== _deathRecap.gen) return;
     // Phase 60: bundle the 30-minute fast-respawn buff with the revive.
     // One ad watch = both benefits → higher perceived ad value, more
     // willing watches. Apply it FIRST so an MP requestRespawn carries
@@ -62,6 +69,25 @@ function _adRevivePlayer() {
       // drives _mpRespawnLocalPlayer (we 'return to the room' at the server
       // spawn with full shield). We do NOT dismiss the recap — the heaven
       // countdown stays up until the server brings us back.
+      //
+      // Phase 182 — also re-stamp the wall-clock deadline to the BUFFED time so
+      // the countdown display + mpRespawnEligible (SPACE / grace) agree with the
+      // server's shortened respawn. Without this they stay pinned to the 15s
+      // death stamp, so the UI lied ('FAST RESPAWN' but a 15s wait). Server
+      // commit-flag does the actual early revive; this keeps the UI honest +
+      // gives a SPACE/grace backstop if the request packet is lost.
+      if (typeof game !== 'undefined' && game._teamWipe && game._teamWipe.blue
+          && game._teamWipe.blue.wipedAtMs != null) {
+        const _bw = game._teamWipe.blue;
+        const _buffSec = (typeof RESPAWN_BUFF_CONFIG === 'object' && RESPAWN_BUFF_CONFIG.BUFFED_SEC)
+          ? RESPAWN_BUFF_CONFIG.BUFFED_SEC : 5;
+        const _newMs = _bw.wipedAtMs + _buffSec * 1000;
+        if (_bw.respawnAtMs == null || _newMs < _bw.respawnAtMs) _bw.respawnAtMs = _newMs;
+        if (_bw.wipedSince != null) {
+          const _newTick = _bw.wipedSince + Math.round(_buffSec * 60);
+          if (_bw.respawnAt == null || _newTick < _bw.respawnAt) _bw.respawnAt = _newTick;
+        }
+      }
       if (typeof _mpRequestRespawn === 'function') _mpRequestRespawn();
       if (typeof showSwapToast === 'function') {
         showSwapToast(_r('▶ 廣告收看完成 · 加速復活中…',
@@ -97,7 +123,13 @@ function _adRevivePlayer() {
   // R11 Step 1: single dispatch via ad_dispatch.js — handles SDK priority
   // (crazygames > gamemonetize > stub) internally, no if/else needed here.
   if (typeof requestRewardedAd === 'function') {
-    requestRewardedAd('revive', (ok) => { if (ok) doRevive(); else _deathRecap.adReviveUsed = false; });
+    requestRewardedAd('revive', (ok) => {
+      // Phase 182 — ignore a callback that resolves after the player died again;
+      // doRevive() also guards on _gen, and we only release the in-flight latch
+      // for the SAME death so a stale failure can't re-arm a newer one.
+      if (_gen !== _deathRecap.gen) return;
+      if (ok) doRevive(); else _deathRecap.adReviveUsed = false;
+    });
   } else {
     doRevive();   // dev fallback (ad_dispatch.js failed to load)
   }
@@ -172,6 +204,7 @@ function triggerDeathRecap() {
   // shorten). The flag stays as an in-flight guard against double-dispatch
   // within one death (set on click, cleared on ad failure).
   _deathRecap.adReviveUsed = false;
+  _deathRecap.gen = (_deathRecap.gen || 0) + 1;   // Phase 182 — new death generation
   _deathRecap.startTick = game.time;
   const k = player._killer;
   _deathRecap.killer = k;
@@ -221,7 +254,12 @@ function renderDeathRecap() {
   // see live allies to retarget); MP has no pawn-swap, so the full cover is
   // correct AND matches the user's '到一個世界,像是天堂一樣' waiting world.
   // Drawn at full opacity UNDER the strips / countdown / ad button below.
-  const _mpHeaven = (typeof _mpIsActive === 'function' && _mpIsActive());
+  // Phase 182 — also require the player to actually be DEAD: in the brief window
+  // where the server's alive=true snapshot arrives before _mpRespawnLocalPlayer
+  // runs dismissDeathRecap, the recap can still be active over a now-controllable
+  // player — don't blind live play with the opaque field.
+  const _mpHeaven = (typeof _mpIsActive === 'function' && _mpIsActive())
+    && (typeof player === 'undefined' || !player.alive);
   if (_mpHeaven) {
     ctx.save();
     ctx.globalAlpha = 1;

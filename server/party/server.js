@@ -412,7 +412,7 @@ export function _steerBotMoveDir(b, moveDir, friendlies) {
   // separation — push off teammates closer than SEP_R
   const R2 = _STEER.SEP_R * _STEER.SEP_R;
   for (const m of friendlies) {
-    if (m === b || !m.alive) continue;
+    if (m === b || !m || !m.alive || typeof m.x !== 'number' || typeof m.y !== 'number') continue;
     const ddx = b.x - m.x, ddy = b.y - m.y;
     const d2 = ddx * ddx + ddy * ddy;
     if (d2 > R2 || d2 < 1e-3) continue;
@@ -435,7 +435,12 @@ export function _steerBotMoveDir(b, moveDir, friendlies) {
     if (Math.hypot(sx, sy) < _STEER.IDLE_GATE) return 0;
     return _quantizeBotDir(sx, sy, 0);
   }
-  return _quantizeBotDir(base[0] * _STEER.MOVE_W + sx, base[1] * _STEER.MOVE_W + sy, moveDir);
+  // Normalize the base BEFORE blending: _NN_MOVE_DIRS diagonals are [1,1]
+  // (magnitude √2), so without this a diagonal mover's anchor would outweigh
+  // a cardinal one by ~41% and resist steering most in the diagonal-into-corner
+  // case the anti-clump fix targets.
+  const bm = Math.hypot(base[0], base[1]) || 1;
+  return _quantizeBotDir(base[0] / bm * _STEER.MOVE_W + sx, base[1] / bm * _STEER.MOVE_W + sy, moveDir);
 }
 
 // Phase 43: built structures. Mirrors the subset of STRUCTURE_DEFS the
@@ -704,17 +709,18 @@ export default class AshGridRoom {
           }
           moveDir = bestDir;
         }
+        // Phase 182 (MP port) — anti-clump steering (separation + edge/corner
+        // repulsion). Computed ON the decision tick and CACHED, so it runs at
+        // the 30Hz NN cadence (not 200Hz) and the cached, already-steered
+        // moveDir is reused on intermediate ticks — no per-tick re-steer of a
+        // stale cached vector (which would bend it off its committed line) and
+        // no 6.7x redundant work. Fire bit untouched.
+        moveDir = _steerBotMoveDir(b, moveDir, friendlies);
         b._lastAction = { moveDir, fire };
       } else {
         moveDir = b._lastAction.moveDir;
         fire = b._lastAction.fire;
       }
-
-      // Phase 182 (MP port) — anti-clump steering on EVERY tick (not just NN-
-      // decision ticks) so the cached moveDir can't re-pile bots into a corner
-      // between decisions. Separation + edge/corner repulsion; fire bit
-      // untouched (a steered bot still shoots its target).
-      moveDir = _steerBotMoveDir(b, moveDir, friendlies);
 
       const [dx, dy] = _NN_MOVE_DIRS[moveDir] || [0, 0];
       if (dx !== 0 || dy !== 0) {
@@ -922,6 +928,12 @@ export default class AshGridRoom {
             ? RESPAWN_TICKS_BUFFED : RESPAWN_TICKS_DEFAULT);
         }
         p.lastInputTickAt = this.tickCount;
+        // Phase 182 — the player explicitly asked to return (SPACE or ad-revive).
+        // Commit it: the auto loop will serve p.respawnAt regardless of the AFK
+        // idle gate. Without this, a buffed 5s deadline could never be auto-served
+        // — a dead client sends no input, so idleTicks outgrows AFK_RESPAWN_MAX
+        // (3s) before 5s elapses, and the client can't re-request until eligible.
+        p.respawnRequested = true;
         if (_respawnDecision(p.alive, this.tickCount, p.respawnAt, 0, AFK_RESPAWN_MAX_TICKS)) {
           this._respawn(p);
         }
@@ -1132,7 +1144,12 @@ export default class AshGridRoom {
         // Phase 180 — the explicit requestRespawn handler is the player-driven
         // path; this stays as the auto fallback.
         const idleTicks = this.tickCount - (p.lastInputTickAt | 0);
-        if (_respawnDecision(p.alive, this.tickCount, p.respawnAt, idleTicks, AFK_RESPAWN_MAX_TICKS)) {
+        if (p.respawnRequested) {
+          // Committed via requestRespawn (SPACE / ad-revive): serve the (possibly
+          // buffed) deadline regardless of the AFK idle gate. The gate only holds
+          // players who NEVER asked to come back.
+          if (this.tickCount >= p.respawnAt) this._respawn(p);
+        } else if (_respawnDecision(p.alive, this.tickCount, p.respawnAt, idleTicks, AFK_RESPAWN_MAX_TICKS)) {
           this._respawn(p);
         }
         continue;
@@ -1317,6 +1334,7 @@ export default class AshGridRoom {
                   }));
                   if (q.hp <= 0) {
                     q.alive = false;
+                    q.respawnRequested = false;        // Phase 182 — fresh death, must re-request
                     q.killedAtTick = this.tickCount;   // Phase 180d — buff-after-death recompute
                     q.respawnAt = this.tickCount + (q.respawnBuffActive
                       ? RESPAWN_TICKS_BUFFED
@@ -1339,6 +1357,7 @@ export default class AshGridRoom {
           }));
           if (p.hp <= 0) {
             p.alive = false;
+            p.respawnRequested = false;        // Phase 182 — fresh death, must re-request
             p.killedAtTick = this.tickCount;   // Phase 180d — buff-after-death recompute
             p.respawnAt = this.tickCount + (p.respawnBuffActive
               ? RESPAWN_TICKS_BUFFED
@@ -1562,6 +1581,7 @@ export default class AshGridRoom {
     }));
     if (bestVictim.hp <= 0) {
       bestVictim.alive = false;
+      bestVictim.respawnRequested = false;        // Phase 182 — fresh death, must re-request
       bestVictim.killedAtTick = this.tickCount;   // Phase 180d — buff-after-death recompute
       bestVictim.respawnAt = this.tickCount + (bestVictim.respawnBuffActive
         ? RESPAWN_TICKS_BUFFED
@@ -1579,6 +1599,7 @@ export default class AshGridRoom {
     p.x = spawn.x; p.y = spawn.y;
     p.hp = HP_MAX;
     p.alive = true;
+    p.respawnRequested = false;   // Phase 182 — request served; next death must re-ask
     p.invulnUntil = this.tickCount + INVULN_TICKS;
     // Phase 40: wipe history on respawn. Otherwise a lag-comp lookup right
     // after respawn could pull a sample from "before the player died at

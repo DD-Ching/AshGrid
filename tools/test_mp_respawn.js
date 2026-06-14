@@ -47,6 +47,14 @@
     check(steer({ x: 900, y: 900, alive: true }, 0, []) === 0, 'steer: idle open-field bot stays idle (0)');
     // 4) idle wedged in the bottom-right corner → forced to step out (non-zero).
     check(steer({ x: 1720, y: 1720, alive: true }, 0, []) !== 0, 'steer: idle corner-wedged bot steps out (non-zero)');
+    // 5) DIAGONAL base must get equal steering authority — guards the normalize
+    //    fix. A bot moving SE piled on a mate to its SE: with the un-normalized
+    //    base ([1,1], |√2|) the anchor would win and it stays SE; normalized, the
+    //    separation turns it off the mate.
+    const dBot = { x: 900, y: 900, alive: true };
+    const dMate = { x: 910, y: 910, alive: true };   // ~14px SE, deep inside SEP_R
+    const dOut = steer(dBot, 4, [dBot, dMate]);
+    check(dOut !== 4 && dOut !== 0, 'steer: diagonal (SE) base is steered off a piled SE mate — base normalized (got ' + dOut + ')');
   } else {
     check(false, '_steerBotMoveDir exported from server.js');
   }

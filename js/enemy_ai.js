@@ -625,6 +625,10 @@ function _nnHeatIdx(x, y) {
   const gy = Math.max(0, Math.min(NN_HEAT.GRID - 1, Math.floor(fy * NN_HEAT.GRID)));
   return gy * NN_HEAT.GRID + gx;
 }
+// Phase 182 — expose read access so the additive NPC director (js/npc_director.js)
+// reuses this tuned occupancy heatmap for its goal anti-cluster score instead of
+// maintaining a second, weaker model. _nnHeatTick keeps the grid live regardless.
+window._nnHeatAt = function (x, y) { return _nnHeatmap[_nnHeatIdx(x, y)]; };
 // Per-frame: decay everything, then deposit at each NN unit's cell.
 // Tick rate is fine at the inference cadence (every-other-frame in nnTick)
 // so we call this inside nnTick rather than the main update loop.

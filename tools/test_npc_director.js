@@ -160,6 +160,54 @@ console.log('NPC-director smoke test — separation / edge / goal / fail-safe / 
   check(sb3.npcCombatFailsafe(mv) === false, 'edge bot still making progress → NOT a fail-safe');
 }
 
+// 6b. PATROL skips edge-repulsion so wall-near goals/cover stay reachable (#2),
+//     but COMBAT still gets repelled out of the corner.
+{
+  const sb = makeSandbox();
+  const wallBot = { x: 1740, y: 900, alive: true, team: 1, radius: 14, _npcRole: 'holder', _npcNoise: 1 };
+  sb.enemies = [wallBot];
+  wallBot._aiMode = 'patrol';
+  check(sb.npcSteerMoveDir(wallBot, 3, sb.enemies) === 3,
+        'patrol: edge-repulsion skipped so a bot can reach a wall-near goal (East stays East)');
+  wallBot._aiMode = 'combat';
+  check(sb.npcSteerMoveDir(wallBot, 3, sb.enemies) !== 3,
+        'combat: edge-repulsion still turns a bot out of the wall');
+}
+
+// 6c. FAIL-SAFE must NOT fire while a live VISIBLE enemy exists (#5) and must
+//     reseed (not fire) on a STALE anchor / fresh combat entry (#7).
+{
+  const seen = makeSandbox();
+  seen.nnNearestVisibleEnemy = () => ({ x: 50, y: 900, alive: true });   // a live target
+  const u = { x: 30, y: 900, alive: true, team: 1, radius: 14 };
+  seen.npcCombatFailsafe(u, []); seen.game.time = 200;
+  check(seen.npcCombatFailsafe(u, []) === false,
+        'fail-safe holds off while a VISIBLE enemy is present (no fire-stutter)');
+
+  const stale = makeSandbox();
+  const s = { x: 30, y: 900, alive: true, team: 1, radius: 14 };
+  stale.game.time = 50;
+  s._npcProg = { x: 30, y: 900, t: -1000 };   // stale anchor (gap 1050 >> FS_WINDOW*1.5)
+  check(stale.npcCombatFailsafe(s) === false,
+        'fail-safe reseeds on a stale anchor (fresh combat entry) instead of firing');
+  check(s._npcProg.t === 50, 'stale anchor was reseeded to now');
+}
+
+// 6d. ROLE re-rolls + clears volatile state on TEAM CHANGE (recruit) (#6).
+{
+  const sb = makeSandbox();
+  const u = { x: 100, y: 100, alive: true, team: 1 };
+  sb.npcRole(u);
+  u._npcFlee = { x: 0, y: 0, until: 9999 };
+  u._npcProg = { x: 100, y: 100, t: 5 };
+  const teamWas = u._npcRoleTeam;
+  u.team = 0;                              // recruited → flips side
+  sb.npcRole(u);
+  check(u._npcRoleTeam === 0, 'role re-bound to the new team on recruit');
+  check(u._npcFlee === null && u._npcProg === null, 'volatile NPC state cleared on team change');
+  check(teamWas === 1, 'role was originally bound to the enemy team');
+}
+
 // 7. EVENT flinch — a nearby blast marks a timid bot to flee; dedups per blast.
 {
   const sb = makeSandbox({ Math: Object.assign(Object.create(Math), { random: () => 0 }) });
