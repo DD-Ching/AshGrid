@@ -147,7 +147,13 @@ const KEY_BINDINGS = {
   e:   { action: () => launchFPV() },
   h:   { action: () => _recallToSpawn() },
   tab: { action: (e) => { e.preventDefault(); _toggleCommandView(); } },
-  r:   { action: () => startReload() },
+  // Phase 184d — R cycles the Heavy chassis's stockpiled weapons (when classes
+  // on + heavy + >1 weapon); heavyCycleWeapon self-gates + returns false
+  // otherwise → normal reload. Other chassis / classes-off reload as before.
+  r:   { action: () => {
+    if (typeof heavyCycleWeapon === 'function' && heavyCycleWeapon()) return;
+    startReload();
+  } },
   g:   { action: () => {
     // Context-sensitive priority order:
     //   (1) Arena recruit SED on a downed enemy nearby (Phase 18+)
@@ -181,7 +187,10 @@ const KEY_BINDINGS = {
   b:   { action: () => toggleBuildMode() },
   // Phase 140 — manual weapon swap removed. One pawn = one weapon; you change
   // weapon by walking onto a killed enemy's dropped gun (see weapon_drop.js).
-  // X is intentionally left unbound.
+  // Phase 184d — X is the Heavy chassis ULTIMATE (fire ALL stockpiled weapons at
+  // once, costs energy). heavyUltimate self-gates (heavy + game._classes); no-op
+  // for other chassis / classes-off, so X stays effectively unbound there.
+  x:   { action: () => { if (typeof heavyUltimate === 'function') heavyUltimate(); } },
   u:   { action: () => upgradeNearestModule() },
   v:   { action: () => _toggleAimAssist() },
   // Phase 6B: recycle the lowest-SEED squad bot into +60 build energy.

@@ -99,10 +99,15 @@ function updateWeaponDrops() {
   _wpPickupProgress++;
 
   if (_wpPickupProgress >= WEAPON_PICKUP_TICKS) {
-    // Equip via the canonical entry (delegates to WeaponState.equip, with a
-    // built-in fallback if weapon_state.js didn't load).
-    if (typeof applyWeaponToPlayer === 'function') applyWeaponToPlayer(near.weapon);
-    else if (window.WeaponState && WeaponState.equip) WeaponState.equip(near.weapon);
+    // Phase 184d — Heavy ARSENAL STOCKPILES the pickup (cap 3) instead of
+    // replacing. heavyPickupWeapon self-gates (heavy + game._classes) and
+    // returns false otherwise → the normal single-weapon equip below runs.
+    if (!(typeof heavyPickupWeapon === 'function' && heavyPickupWeapon(near.weapon))) {
+      // Equip via the canonical entry (delegates to WeaponState.equip, with a
+      // built-in fallback if weapon_state.js didn't load).
+      if (typeof applyWeaponToPlayer === 'function') applyWeaponToPlayer(near.weapon);
+      else if (window.WeaponState && WeaponState.equip) WeaponState.equip(near.weapon);
+    }
     const idx = GROUND_WEAPONS.indexOf(near);
     if (idx >= 0) GROUND_WEAPONS.splice(idx, 1);
     _wpPickupTarget = null; _wpPickupProgress = 0;
