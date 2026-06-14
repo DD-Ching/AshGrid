@@ -489,7 +489,7 @@ function _mpHandleSnapshot(snap) {
           x: sp.x, y: sp.y,
           targetX: sp.x, targetY: sp.y,
           angle: sp.angle,
-          hp: sp.hp, alive: sp.alive,
+          hp: sp.hp, maxHp: (typeof sp.maxHp === 'number' ? sp.maxHp : 100), alive: sp.alive,
           name: sp.name, invuln: !!sp.invuln,
           buffer: [],   // [{t, x, y, angle}]  t = server clock at broadcast
         };
@@ -501,6 +501,7 @@ function _mpHandleSnapshot(snap) {
       if (sp.y !== undefined) rp.targetY = sp.y;
       if (sp.angle !== undefined) rp.angle = sp.angle;
       if (sp.hp !== undefined) rp.hp = sp.hp;
+      if (sp.maxHp !== undefined) rp.maxHp = sp.maxHp;   // Phase 184e — per-chassis ceiling for remote HP bars
       if (sp.alive !== undefined) rp.alive = sp.alive;
       if (sp.invuln !== undefined) rp.invuln = !!sp.invuln;
       if (sp.name) rp.name = sp.name;
@@ -1052,13 +1053,16 @@ function _mpRenderRemote() {
     // Pass walkPhase so legs swing while moving. Phase 47 swaps the body
     // colour to redBright so MP players read brighter than NPCs.
     drawHumanoid(rp.x, rp.y, rp.angle || 0, rp.walkPhase || 0, COLORS.redBright, true, rp);
-    // HP bar — matches NPC bar at index.html:7910 (30×3 @ y-26).
+    // HP bar — matches NPC bar at index.html:7910 (30×3 @ y-26). Phase 184e —
+    // use the peer's per-chassis maxHp (heavy 180 etc.) so a heavy's bar isn't
+    // pinned full; default 100 for pre-184e peers / unset.
     const hp = (typeof rp.hp === 'number') ? rp.hp : 100;
-    if (hp < 100) {
+    const maxHp = (typeof rp.maxHp === 'number' && rp.maxHp > 0) ? rp.maxHp : 100;
+    if (hp < maxHp) {
       ctx.fillStyle = COLORS.black;
       ctx.fillRect(rp.x - 15, rp.y - 22, 30, 3);
       ctx.fillStyle = COLORS.red;
-      ctx.fillRect(rp.x - 15, rp.y - 22, 30 * Math.max(0, hp) / 100, 3);
+      ctx.fillRect(rp.x - 15, rp.y - 22, 30 * Math.max(0, hp) / maxHp, 3);
     }
     // Name label — sits between chevron and HP bar.
     ctx.fillStyle = COLORS.black;

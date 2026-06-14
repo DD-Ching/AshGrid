@@ -1712,6 +1712,7 @@ export default class AshGridRoom {
         y: round1(p.y),
         angle: round3(p.angle),
         hp: p.hp,
+        maxHp: p.maxHp,                       // Phase 184e — per-chassis ceiling (remote HP bars)
         alive: p.alive,
         invuln: this.tickCount < p.invulnUntil,
         name: p.name,
@@ -1784,6 +1785,7 @@ export default class AshGridRoom {
         if (!last || last.y !== p.y) out.y = p.y;
         if (!last || last.angle !== p.angle) out.angle = p.angle;
         if (!last || last.hp !== p.hp) out.hp = p.hp;
+        if (!last || last.maxHp !== p.maxHp) out.maxHp = p.maxHp;   // Phase 184e — sent on change only (~free)
         if (!last || last.alive !== p.alive) out.alive = p.alive;
         if (!last || last.invuln !== p.invuln) {
           if (p.invuln) out.invuln = true;     // omit when false (saves bytes)
@@ -1793,7 +1795,7 @@ export default class AshGridRoom {
         playerDeltas.push(out);
         // Save the FULL state (not just delta) so next tick's diff has
         // ground truth.
-        state.players.set(p.id, { x: p.x, y: p.y, angle: p.angle, hp: p.hp, alive: p.alive, invuln: p.invuln });
+        state.players.set(p.id, { x: p.x, y: p.y, angle: p.angle, hp: p.hp, maxHp: p.maxHp, alive: p.alive, invuln: p.invuln });
       }
 
       // ── Bullets: per-receiver AOI cull + delta for known bullets ──
