@@ -853,6 +853,14 @@ function _mpSendInput() {
   // got pushed-out at humanoid 14px → continuous drag-back near walls.
   const rMul = (typeof player !== 'undefined' && typeof player._chassisRadiusMul === 'number')
     ? player._chassisRadiusMul : 1.0;
+  // Phase 184e — chassis HP multiplier. The server hard-coded 100 HP, so a heavy
+  // (hpMul 1.8) was a non-tank online — a SOLO/MP desync ('多人跟單人感覺不一樣').
+  // Send it so the server sizes maxHp per-chassis. Base stat, NOT a class ability,
+  // so it applies regardless of game._classes (parity with SOLO, where hpMul is
+  // always baked into player.maxHp by applyChassisToUnit).
+  const hMul = (typeof CHASSIS !== 'undefined' && typeof player !== 'undefined'
+    && player._chassis && CHASSIS[player._chassis] && typeof CHASSIS[player._chassis].hpMul === 'number')
+    ? CHASSIS[player._chassis].hpMul : 1.0;
   let wId = 'RIFLE';
   if (typeof WEAPONS !== 'undefined' && typeof playerWeapon !== 'undefined' && playerWeapon) {
     if (playerWeapon === WEAPONS.RIFLE)        wId = 'RIFLE';
@@ -888,7 +896,7 @@ function _mpSendInput() {
     buffActive: (typeof isRespawnBuffed === 'function') ? isRespawnBuffed() : false,
     // Per-tick loadout (see big comment above).
     sprint: sprint ? 1 : 0,
-    wMul, cMul, wId, rMul,
+    wMul, cMul, wId, rMul, hMul,
   };
   _mpSendRaw(input);
 

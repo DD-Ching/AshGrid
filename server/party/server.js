@@ -799,6 +799,7 @@ export default class AshGridRoom {
       id: conn.id,
       x: spawn.x, y: spawn.y, angle: 0,
       hp: HP_MAX,
+      maxHp: HP_MAX,           // Phase 184e — resized per-chassis from input.hMul
       alive: true,
       fireCdUntil: 0,
       invulnUntil: this.tickCount + INVULN_TICKS,
@@ -826,7 +827,7 @@ export default class AshGridRoom {
       // continuous drag-back because client moved at 2.48× while server
       // moved at 1.0×).
       input: { dx: 0, dy: 0, angle: 0, fire: false, seq: 0, vT: 0,
-               sprint: 0, wMul: 1.0, cMul: 1.0, rMul: 1.0, wId: 'RIFLE' },
+               sprint: 0, wMul: 1.0, cMul: 1.0, rMul: 1.0, hMul: 1.0, wId: 'RIFLE' },
       lastInputSeq: 0,
       // Echoed back in snapshot so client can compute RTT.
       lastInputT: 0,
@@ -884,6 +885,20 @@ export default class AshGridRoom {
       if (typeof data.wMul === 'number')      p.input.wMul   = data.wMul;
       if (typeof data.cMul === 'number')      p.input.cMul   = data.cMul;
       if (typeof data.rMul === 'number')      p.input.rMul   = data.rMul;
+      // Phase 184e — per-chassis max HP (heavy 1.8× etc.). Resize maxHp; if the
+      // unit is at full + undamaged (e.g. just spawned at the default 100), bump
+      // current hp to the new ceiling so a heavy doesn't spend its first life at
+      // 100/180. A damaged player is NOT healed. Clamp the mul to a sane range.
+      if (typeof data.hMul === 'number' && isFinite(data.hMul)) {
+        const mul = Math.max(0.25, Math.min(3, data.hMul));
+        p.input.hMul = mul;
+        const newMax = Math.max(1, Math.round(HP_MAX * mul));
+        if (newMax !== p.maxHp) {
+          const wasFull = p.hp >= (p.maxHp || HP_MAX);
+          p.maxHp = newMax;
+          if (wasFull && p.alive) p.hp = p.maxHp;
+        }
+      }
       if (typeof data.wId  === 'string')      p.input.wId    = data.wId;
       // Server-side NN bots — spawned lazily on the FIRST input from any
       // player in the room. Bots persist until the room empties (matches
@@ -1597,7 +1612,7 @@ export default class AshGridRoom {
   _respawn(p) {
     const spawn = this._pickSpawn();
     p.x = spawn.x; p.y = spawn.y;
-    p.hp = HP_MAX;
+    p.hp = p.maxHp || HP_MAX;     // Phase 184e — respawn at the per-chassis max
     p.alive = true;
     p.respawnRequested = false;   // Phase 182 — request served; next death must re-ask
     p.invulnUntil = this.tickCount + INVULN_TICKS;
