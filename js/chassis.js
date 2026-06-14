@@ -158,7 +158,16 @@ function applyChassisToUnit(u, chassisId, baseSpeed, baseHp, baseRadius) {
 //   armor = 0: damage hits HP at armorBleedFactor. Bleeds at 50% even
 //              with no armor (heavy is still tankier than humanoid).
 //   Non-heavy: full damage to HP (legacy behaviour).
-function _applyDamageToUnit(u, dmg) {
+// 184o-fix — `ignoreInvuln` lets callers that HISTORICALLY bypassed the spawn
+// shield keep that behaviour while still gaining the chassis armour/dash routing.
+// The mine / tesla-chain / drone-bay / airstrike / explosion-AOE sites used raw
+// `hp -= dmg` (no invuln check), so routing them through this gateway would have
+// SILENTLY made spawn-shielded enemies immune to those sources — an unvetted
+// defense-mode balance change. Passing ignoreInvuln:true preserves the original
+// damage-through-shield behaviour; only the armour/dash math is added. (Whether
+// the shield SHOULD block structures — per the Phase 122 "shield always holds"
+// intent below — is a deliberate balance call left to the owner.)
+function _applyDamageToUnit(u, dmg, ignoreInvuln) {
   if (!u || !u.alive || !(dmg > 0)) return;
   // Phase 122 — centralised invuln gate. Every per-caller gate (Phase 117
   // kamikaze splash, bullets.js:456, grenades.js:102 …) was a fragile
@@ -167,7 +176,8 @@ function _applyDamageToUnit(u, dmg) {
   // (which is exactly how the Phase 117 regression happened). Centralising
   // here means the shield ALWAYS holds; per-caller gates become defensive
   // double-checks but no longer load-bearing.
-  if (u._invulnUntil != null
+  if (!ignoreInvuln
+      && u._invulnUntil != null
       && typeof game !== 'undefined'
       && game.time < u._invulnUntil) {
     return;

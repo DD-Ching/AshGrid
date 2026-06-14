@@ -54,7 +54,9 @@
   // ── State tick — once per sim step (called from update()) ─────────────────
   window.updateAchievementFx = function () {
     if (typeof game === 'undefined' || !game) { current = null; queue.length = 0; return; }
-    if (game._achvFx === false) { current = null; queue.length = 0; return; }   // kill switch
+    // kill switch + 184u: clear when not in a live match (mirrors updateRecruitFx)
+    // so a card active at match-end can't leak into the next match's opening frames.
+    if (game._achvFx === false || game.state !== 'playing') { current = null; queue.length = 0; return; }
     if (!current && queue.length) {
       const q = queue.shift();
       current = { title: q.title, label: q.label, img: q.img, ttl: TTL, maxTtl: TTL };

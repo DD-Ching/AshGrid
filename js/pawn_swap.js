@@ -318,6 +318,9 @@ function showSwapToast(text, ttl = 75) {
 // State tick — once per sim step (called from update()), so the toast lasts the
 // same wall-time on every display. Mirrors updateKillstreakFx / updateRecruitFx.
 function updateSwapToast() {
+  // 184u — clear when not in a live match (mirrors updateRecruitFx) so a toast
+  // active at match-end can't freeze + leak into the next match's first frames.
+  if (typeof game !== 'undefined' && game.state !== 'playing') { game._swapToast = null; return; }
   if (game._swapToast && --game._swapToast.ttl <= 0) game._swapToast = null;
 }
 

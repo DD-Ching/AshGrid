@@ -53,7 +53,8 @@ function createExplosion(x, y, size) {
       if (!e.alive) continue;
       if (Math.hypot(e.x-x, e.y-y) < radius) {
         // 184o — chassis gateway so a heavy enemy's armour absorbs explosion AOE.
-        if (typeof _applyDamageToUnit === 'function') _applyDamageToUnit(e, aoeDmg);
+        // ignoreInvuln:true preserves the original (raw) no-shield-check behaviour.
+        if (typeof _applyDamageToUnit === 'function') _applyDamageToUnit(e, aoeDmg, true);
         else e.hp -= aoeDmg;
         if (e.hp <= 0) {
           // Phase 18: first KO → stun + freeze, second KO → real death.
