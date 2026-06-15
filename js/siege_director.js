@@ -296,3 +296,44 @@ function renderSiegeWeather() {
 if (typeof registerFxLayer === 'function') {
   registerFxLayer({ id: 'siege-weather', space: 'overlay-under-hud', draw: renderSiegeWeather });
 }
+
+// 防守关卡 indicator — a persistent top-center "DAY N" pill so the player always
+// sees which siege stage they're on + the live threat (or the regroup countdown
+// in the calm gap). The day beats are transient toasts; this is the always-on
+// readout. Registered over the HUD.
+function renderSiegeHud() {
+  if (typeof game === 'undefined' || !game._siege || game.state !== 'playing') return;
+  if (typeof ctx === 'undefined' || !ctx) return;
+  const day = game._siegeDay || 1;
+  const zh = (typeof getLang === 'function' && getLang() === 'zh');
+  const inGap = !!(game._siegeGapUntil && game._siegeT < game._siegeGapUntil);
+  const main = zh ? ('守城 · 第 ' + day + ' 天') : ('SIEGE · DAY ' + day);
+  let sub, subCol;
+  if (inGap) {
+    const left = Math.max(0, Math.ceil((game._siegeGapUntil - game._siegeT) || 0));
+    sub = zh ? ('整備 · 下一波 ' + left + 's') : ('REGROUP · NEXT ' + left + 's');
+    subCol = '#5FD6A0';
+  } else {
+    const alive = _siegeAliveEnemies();
+    sub = zh ? ('威脅 ' + alive) : ('THREAT ' + alive);
+    subCol = '#E6B22C';
+  }
+  const W_ = (typeof W === 'function') ? W() : 800;
+  const cx = W_ / 2, y = 2, h = 30;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 14px sans-serif';
+  const tw = Math.max(140, ctx.measureText(main).width + 44);
+  const cream = (typeof COLORS !== 'undefined' && COLORS.cream) ? COLORS.cream : '#F2E9D0';
+  const red = (typeof COLORS !== 'undefined' && COLORS.red) ? COLORS.red : '#C8261C';
+  ctx.fillStyle = 'rgba(16,14,20,0.82)'; ctx.fillRect(cx - tw / 2, y, tw, h);
+  ctx.fillStyle = red; ctx.fillRect(cx - tw / 2, y, 3, h);
+  ctx.strokeStyle = cream; ctx.lineWidth = 1; ctx.strokeRect(cx - tw / 2 + 0.5, y + 0.5, tw - 1, h - 1);
+  ctx.fillStyle = cream; ctx.fillText(main, cx, y + 13);
+  ctx.font = 'bold 9px monospace';
+  ctx.fillStyle = subCol; ctx.fillText(sub, cx, y + 25);
+  ctx.restore();
+}
+if (typeof registerFxLayer === 'function') {
+  registerFxLayer({ id: 'siege-hud', space: 'overlay-over-hud', draw: renderSiegeHud });
+}
