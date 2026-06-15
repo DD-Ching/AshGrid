@@ -1089,7 +1089,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   color: var(--gray); padding-left: 2px;
 }
 .diff-group.spec .diff-group-label { color: var(--red); }
-.diff-pick-inner { display: flex; gap: 0; }
+.diff-pick-inner { display: flex; gap: 0; flex-wrap: wrap; justify-content: center; }
 .diff-btn {
   background: var(--cream-dark); border: 2px solid var(--black);
   color: var(--black); font-family: inherit;
@@ -2031,7 +2031,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <div class="diff-pick-inner">
         <button data-mode="dm"       class="mode-btn diff-btn active">对抗<span>DEATHMATCH</span></button>
         <button data-mode="survival" class="mode-btn diff-btn">生存<span>SURVIVAL</span></button>
-        <button data-mode="siege"    class="mode-btn diff-btn">守城<span>SIEGE · LAST STAND</span></button>
+        <button data-mode="siege"    class="mode-btn diff-btn">守城<span>SIEGE</span></button>
         <button data-mode="defense"  class="mode-btn diff-btn">防御<span>DEFENSE</span></button>
         <button data-mode="helo"     class="mode-btn diff-btn">撤离<span>HELO EXTRACT</span></button>
         <button data-mode="convoy"   class="mode-btn diff-btn">护送<span>CONVOY</span></button>
