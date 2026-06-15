@@ -422,7 +422,28 @@ function renderWorld() {
     // some targets resist (forward-compat for PvP).
     if (game._nnMode) {
       const _ed = Math.hypot(e.x - player.x, e.y - player.y);
-      if (_ed < 200) {
+      // Phase 187 — chassis-classes G cue: highlight the SINGLE eligible target
+      // (the shared _arenaExecuteInfo, same predicate the action + action-bar use)
+      // with a per-chassis ▶G label — 招降 / 吞噬 / 夺取. Teal when actionable,
+      // grey when not affordable (e.g. builder low on energy). Replaces the
+      // retired SEED/stun cue when classes are on.
+      if (game._classes) {
+        const _exec = (typeof _arenaExecuteInfo === 'function') ? _arenaExecuteInfo() : null;
+        if (_exec && _exec.target === e) {
+          const _pulse = 0.6 + 0.4 * Math.sin(game.time * 0.2);
+          const _ready = !!_exec.affordable;
+          const _rr = (e.radius || 13) + 9 + 2 * Math.sin(game.time * 0.2);
+          ctx.strokeStyle = _ready ? `rgba(95, 214, 160, ${0.55 + 0.4 * _pulse})` : `rgba(150, 150, 150, ${0.4 * _pulse})`;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath(); ctx.arc(e.x, e.y, _rr, 0, Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = _ready ? `rgba(95, 214, 160, ${_pulse})` : `rgba(170, 170, 170, ${0.8 * _pulse})`;
+          ctx.font = 'bold 12px monospace';
+          ctx.textAlign = 'center';
+          const _zh = (typeof getLang === 'function' && getLang() === 'zh');
+          ctx.fillText('▶ G ' + (_zh ? _exec.lz : _exec.le), e.x, e.y - 48);
+          ctx.textAlign = 'left';
+        }
+      } else if (_ed < 200) {
         const _eSeed = Math.floor(e._seed || 0);
         ctx.fillStyle = COLORS.black;
         ctx.font = 'bold 9px monospace';
@@ -643,7 +664,24 @@ function renderWorld() {
       // "▶ G" once the live gates (touch range + hp<50% + our SEED > gap) pass.
       if (game._nnMode && rb.team === 1) {
         const _ed = Math.hypot(rb.x - player.x, rb.y - player.y);
-        if (_ed < 200) {
+        // Phase 187 — chassis-classes G cue for MP bots (mirrors the SOLO cue):
+        // highlight the shared _arenaExecuteInfo target with the per-chassis label.
+        if (game._classes) {
+          const _exec = (typeof _arenaExecuteInfo === 'function') ? _arenaExecuteInfo() : null;
+          if (_exec && _exec.target === rb) {
+            const _pulse = 0.6 + 0.4 * Math.sin(game.time * 0.2);
+            const _ready = !!_exec.affordable;
+            ctx.strokeStyle = _ready ? `rgba(95, 214, 160, ${0.55 + 0.4 * _pulse})` : `rgba(150, 150, 150, ${0.4 * _pulse})`;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.arc(rb.x, rb.y, (rb.radius || 14) + 9, 0, Math.PI * 2); ctx.stroke();
+            ctx.fillStyle = _ready ? `rgba(95, 214, 160, ${_pulse})` : `rgba(170, 170, 170, ${0.8 * _pulse})`;
+            ctx.font = 'bold 12px monospace';
+            ctx.textAlign = 'center';
+            const _zh = (typeof getLang === 'function' && getLang() === 'zh');
+            ctx.fillText('▶ G ' + (_zh ? _exec.lz : _exec.le), rb.x, rb.y - 48);
+            ctx.textAlign = 'left';
+          }
+        } else if (_ed < 200) {
           ctx.fillStyle = COLORS.black;
           ctx.font = 'bold 9px monospace';
           ctx.textAlign = 'center';
