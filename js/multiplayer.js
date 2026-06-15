@@ -548,6 +548,8 @@ function _mpHandleSnapshot(snap) {
           hp: sp.hp, maxHp: (typeof sp.maxHp === 'number' ? sp.maxHp : 100), alive: sp.alive,
           armor: (typeof sp.armor === 'number' ? sp.armor : 0),
           maxArmor: (typeof sp.maxArmor === 'number' ? sp.maxArmor : 0),
+          _chassis: sp.chassis || 'humanoid',          // 188b — remote silhouette (drawHumanoid reads it)
+          _dashActive: !!sp.dashActive,                // 188b — remote wolf dash aura
           name: sp.name, invuln: !!sp.invuln,
           buffer: [],   // [{t, x, y, angle}]  t = server clock at broadcast
         };
@@ -564,6 +566,8 @@ function _mpHandleSnapshot(snap) {
       if (sp.maxArmor !== undefined) rp.maxArmor = sp.maxArmor;
       if (sp.alive !== undefined) rp.alive = sp.alive;
       if (sp.invuln !== undefined) rp.invuln = !!sp.invuln;
+      if (sp.chassis !== undefined) rp._chassis = sp.chassis;          // 188b — remote silhouette
+      if (sp.dashActive !== undefined) rp._dashActive = !!sp.dashActive; // 188b — remote wolf dash aura
       if (sp.name) rp.name = sp.name;
       // Buffer the sample. With delta compression, push the MERGED state
       // (using rp's just-updated values), not raw sp.x — sp.x may be
@@ -975,6 +979,10 @@ function _mpSendInput() {
     // Per-tick loadout (see big comment above).
     sprint: sprint ? 1 : 0,
     wMul, cMul, wId, rMul, hMul, aMax, dashActive,
+    // Phase 188b — chassis id, so the server can (a) relay it + dashActive in the
+    // snapshot for the REMOTE-wolf dash VFX, and (b) grant the wolf kill-lifesteal
+    // server-side. Base field (not gated on classes — humanoid by default).
+    chassis: (typeof player !== 'undefined' && player && player._chassis) ? player._chassis : 'humanoid',
   };
   _mpSendRaw(input);
 
