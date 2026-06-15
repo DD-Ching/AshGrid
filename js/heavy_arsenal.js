@@ -123,4 +123,54 @@
     if (typeof showSwapToast === 'function') showSwapToast(T('▶ 大招 · 全武器齊射', '▶ ULTIMATE · ALL GUNS'));
     return true;
   };
+
+  // Phase 186 — Heavy G = 处决抢夺 (EXECUTE + SEIZE). On a 反白/weaker enemy in
+  // touch range, the heavy executes it and ABSORBS its whole loadout — weapon
+  // (into the stockpile), FPV ammo, grenades. This REPLACES the old 184d passive
+  // on-kill FPV-loot (now removed from bullets.js): looting is the heavy's G, the
+  // counterpart to the wolf's devour + the builder's recruit. SOLO path (enemies[]);
+  // self-gates to heavy + game._classes. Wired first in the G dispatcher.
+  window._arenaTryHeavyExecute = function () {
+    if (!_on() || !player.alive) return false;
+    if (typeof enemies === 'undefined' || !enemies) return false;
+    const myR = player.radius || 13;
+    const myHp = player.hp || 1;
+    const buf = (typeof ARENA_TOUCH_BUFFER === 'number') ? ARENA_TOUCH_BUFFER : 80;
+    let best = null, bestD = Infinity;
+    for (const e of enemies) {
+      if (!e || !e.alive || e._humanPiloted) continue;
+      const d = Math.hypot(e.x - player.x, e.y - player.y);
+      if (d > myR + (e.radius || 13) + buf) continue;
+      if (e.hp >= myHp) continue;            // must be 反白 (weaker than me)
+      if (d < bestD) { bestD = d; best = e; }
+    }
+    if (!best) return false;
+    const bx = best.x, by = best.y;
+    const looted = [];
+    // weapon → stockpile
+    if (best._weapon && typeof window.heavyPickupWeapon === 'function') {
+      if (window.heavyPickupWeapon(best._weapon)) looted.push((best._weapon.name) || (T ? T('武器','WPN') : 'WPN'));
+    }
+    // FPV self-drone ammo
+    if (typeof best._fpvAmmo === 'number' && best._fpvAmmo > 0 && typeof fpv !== 'undefined') {
+      fpv.available += best._fpvAmmo; fpv.max = Math.max(fpv.max, fpv.available);
+      looted.push('FPV×' + best._fpvAmmo); best._fpvAmmo = 0;
+    }
+    // grenades (cap at player max)
+    if (typeof best.grenades === 'number' && best.grenades > 0 && typeof player.maxGrenades === 'number') {
+      const g = Math.min(best.grenades, (player.maxGrenades || 0) - (player.grenades || 0));
+      if (g > 0) { player.grenades = (player.grenades || 0) + g; looted.push((T ? T('手雷','NADE') : 'NADE') + '×' + g); }
+    }
+    // EXECUTE — vanish the victim (no squad slot, like the wolf devour).
+    best.alive = false; best._koStunned = false;
+    const idx = enemies.indexOf(best); if (idx >= 0) enemies.splice(idx, 1);
+    if (typeof createExplosion === 'function') createExplosion(bx, by, 'small');
+    if (typeof playRadioStatic === 'function') playRadioStatic(0.5, 0.4);
+    if (typeof triggerRecruitFx === 'function') triggerRecruitFx('SEIZE');
+    if (typeof showSwapToast === 'function') {
+      const lt = looted.length ? looted.join(' · ') : (T ? T('已處決','executed') : 'executed');
+      showSwapToast(T ? T('▸ 奪取 · ' + lt, '▸ SEIZE · ' + lt) : ('▸ SEIZE · ' + lt));
+    }
+    return true;
+  };
 })();

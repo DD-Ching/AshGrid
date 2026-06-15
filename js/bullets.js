@@ -297,22 +297,11 @@ function updateBullets() {
             const _ls = (typeof BALANCE === 'object' && BALANCE.wolf) ? (BALANCE.wolf.killLifesteal || 0) : 0;
             if (_ls > 0) player.hp = Math.min(player.maxHp || 100, (player.hp || 0) + _ls);
           }
-          // Phase 184d — Heavy ARSENAL loots the victim's FPV/drone quota on a
-          // kill ('幹掉敵人之後還可以搶他們的無人機額度'). Flag-gated (game._classes
-          // off by default → no live effect), heavy-only, player's own bullet
-          // only. SOLO path; MP victims (remoteBots) are a separate path.
-          if (typeof game !== 'undefined' && game._classes && !b.fromAlly
-              && typeof player !== 'undefined' && player._chassis === 'heavy'
-              && typeof fpv !== 'undefined'
-              && typeof e._fpvAmmo === 'number' && e._fpvAmmo > 0) {
-            const looted = e._fpvAmmo;
-            fpv.available += looted;
-            fpv.max = Math.max(fpv.max, fpv.available);
-            e._fpvAmmo = 0;
-            if (typeof showSwapToast === 'function') {
-              showSwapToast(T('▶ 掠奪 · +' + looted + ' 無人機', '▶ LOOTED · +' + looted + ' FPV'));
-            }
-          }
+          // Phase 186 — the Heavy's loot moved OFF passive bullet-kills (was 184d
+          // FPV-on-kill) and onto its G = 处决抢夺 (_arenaTryHeavyExecute in
+          // heavy_arsenal.js), which seizes the victim's WHOLE loadout — weapon +
+          // FPV + grenades — on a deliberate execute. Removed the old on-kill FPV
+          // grab here so looting is the heavy's exclusive G ability, not a passive.
           // Slow-mo on 3+ killstreak — 0.55× for 1.5s, retriggers on each
           // subsequent kill so a hot streak stays in slow-mo. Tiny shake on
           // every kill so even a single shot punches.

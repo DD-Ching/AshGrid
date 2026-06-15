@@ -793,6 +793,17 @@ function toggleBuildMode() {
     showSwapToast(T('未在战场中', 'Not on the battlefield'));
     return;
   }
+  // Phase 186 — chassis-as-classes: BUILD is the Builder (humanoid) chassis's
+  // EXCLUSIVE ability. With game._classes on, a wolf/heavy cannot build (their
+  // kit is dash/devour resp. multi-weapon/ultimate). Flag off → everyone builds
+  // (unchanged). Default/no-chassis = builder.
+  if (typeof game !== 'undefined' && game._classes
+      && typeof player !== 'undefined' && player._chassis && player._chassis !== 'humanoid') {
+    if (typeof showSwapToast === 'function') {
+      showSwapToast(T('只有建造系能建造', 'Only the Builder chassis can build'));
+    }
+    return;
+  }
   // Lazy-init the build economy so B works in campaign missions that
   // didn't pre-seed via setupStructures (convoy / blackbox / capture /
   // breach / hive). Player gets a starting 100⚡ on first press.

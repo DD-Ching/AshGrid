@@ -177,6 +177,12 @@ const KEY_BINDINGS = {
     if (typeof _arenaTryDevourMP === 'function' && _arenaTryDevourMP()) {
       return;
     }
+    // Phase 186 — Heavy G = 处决抢夺 (execute + seize the victim's loadout). Self-
+    // gates to heavy + game._classes, so it no-ops for other chassis and the chain
+    // falls through. (SOLO; MP heavy-seize is a later server-authoritative phase.)
+    if (typeof _arenaTryHeavyExecute === 'function' && _arenaTryHeavyExecute()) {
+      return;
+    }
     if (typeof _arenaTryRecruitMP === 'function' && _arenaTryRecruitMP()) {
       return;
     }
