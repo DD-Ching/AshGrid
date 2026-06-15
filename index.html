@@ -1739,19 +1739,23 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     <!-- Controls drawer — collapsed by default. The user opens it from
          the '? CONTROLS' link above when they want a refresher; new
          players don't have to scan a wall of keys on every visit. -->
+    <!-- data-act hooks (NOT row position) drive the i18n overrides in js/i18n.js
+         so reordering / adding keys can never make a translation rewrite the
+         wrong row — the Shift→SPACE reorder (188I) is exactly the bug brittle
+         :nth-of-type selectors caused. Keep data-act in sync with i18n.js. -->
     <div class="controls-grid" id="controlsDrawer" style="display:none;">
-      <div class="ctrl-item"><span class="ctrl-key">WASD</span><span>Move / fly</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">Mouse</span><span>Aim / fire</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">SPACE</span><span>Chassis skill (Wolf dash / Heavy ult)</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">F</span><span>Throw grenade</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">R</span><span>Reload</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">Q</span><span>UAV recon</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">E</span><span>FPV kamikaze</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">G</span><span>Execute (recruit / devour / seize)</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">B</span><span>Build mode (Builder)</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">TAB</span><span>Command view + 1-7 orders</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">1-4</span><span>Pawn-swap (NN mode)</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">H</span><span>Recall to spawn</span></div>
+      <div class="ctrl-item" data-act="move"><span class="ctrl-key">WASD</span><span>Move / fly</span></div>
+      <div class="ctrl-item" data-act="aim"><span class="ctrl-key">Mouse</span><span>Aim / fire</span></div>
+      <div class="ctrl-item" data-act="skill"><span class="ctrl-key">SPACE</span><span>Chassis skill (Wolf dash / Heavy ult)</span></div>
+      <div class="ctrl-item" data-act="grenade"><span class="ctrl-key">F</span><span>Throw grenade</span></div>
+      <div class="ctrl-item" data-act="reload"><span class="ctrl-key">R</span><span>Reload</span></div>
+      <div class="ctrl-item" data-act="uav"><span class="ctrl-key">Q</span><span>UAV recon</span></div>
+      <div class="ctrl-item" data-act="fpv"><span class="ctrl-key">E</span><span>FPV kamikaze</span></div>
+      <div class="ctrl-item" data-act="execute"><span class="ctrl-key">G</span><span>Execute (recruit / devour / seize)</span></div>
+      <div class="ctrl-item" data-act="build"><span class="ctrl-key">B</span><span>Build mode (Builder)</span></div>
+      <div class="ctrl-item" data-act="command"><span class="ctrl-key">TAB</span><span>Command view + 1-7 orders</span></div>
+      <div class="ctrl-item" data-act="pawnswap"><span class="ctrl-key">1-4</span><span>Pawn-swap (NN mode)</span></div>
+      <div class="ctrl-item" data-act="recall"><span class="ctrl-key">H</span><span>Recall to spawn</span></div>
     </div>
 
     <!-- Phase 11: footer chips hidden — keeping nodes so DAY/CYCLE/MOTE
