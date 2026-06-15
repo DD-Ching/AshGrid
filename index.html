@@ -4972,7 +4972,14 @@ function updatePlayer() {
   // recover to STAMINA_RECOVERY_MIN before sprint re-engages (prevents
   // stuttering on/off as it dips around 0).
   const shiftHeld = !!(keys['shift']);
-  const wantsSprint = shiftHeld && moving && player.stamina > 0
+  // Phase 187 — Shift accelerate is the WOLF's signature only ("加速現在是機器人的
+  // 特性"). Under game._classes, builder + heavy get NO sprint/dash from Shift
+  // (heavy's Shift fires its ultimate via the keydown edge — key_bindings.js).
+  // Classes off → everyone sprints (legacy). player.sprinting is the single source
+  // read by both local speed AND the MP input send, so gating here keeps MP in sync.
+  const _sprintAllowed = !(typeof game !== 'undefined' && game._classes)
+                       || (typeof player !== 'undefined' && player._chassis === 'wolf');
+  const wantsSprint = _sprintAllowed && shiftHeld && moving && player.stamina > 0
                      && (!player._spentToZero || player.stamina >= STAMINA_RECOVERY_MIN);
   player.sprinting = wantsSprint;
 

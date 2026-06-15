@@ -1714,7 +1714,7 @@ function drawHumanoid(x, y, angle, walkPhase, color, isEnemy, unitOrChassis) {
   const chassisId = (typeof unitOrChassis === 'string')
     ? unitOrChassis
     : (unitOrChassis && unitOrChassis._chassis) || 'humanoid';
-  if (chassisId === 'wolf')  { _drawWolfChassis(x, y, angle, walkPhase, color, isEnemy); return; }
+  if (chassisId === 'wolf')  { _drawWolfChassis(x, y, angle, walkPhase, color, isEnemy, unitOrChassis); return; }
   if (chassisId === 'heavy') { _drawHeavyChassis(x, y, angle, walkPhase, color, isEnemy); return; }
   // Humanoid (default)
   ctx.save();
@@ -1751,9 +1751,24 @@ function drawHumanoid(x, y, angle, walkPhase, color, isEnemy, unitOrChassis) {
 // Wolf: quadruped silhouette — longer + lower than humanoid, four short
 // stubby legs that alternate-pair gait. Smaller hitbox communicated by the
 // thin elliptical shadow.
-function _drawWolfChassis(x, y, angle, walkPhase, color, isEnemy) {
+function _drawWolfChassis(x, y, angle, walkPhase, color, isEnemy, u) {
   ctx.save();
   ctx.translate(x, y);
+  // Phase 187 — DASH aura: cyan glow + motion-trail ghosts behind, so the wolf's
+  // 90% damage-reduction window is VISIBLE ("加速時應該要有特效/減傷我沒看到"). Only
+  // when actively dashing (u._dashActive). Drawn pre-rotate, under the body.
+  if (u && u._dashActive) {
+    ctx.save();
+    ctx.fillStyle = '#42B7E8';
+    ctx.globalAlpha = 0.45;
+    ctx.beginPath(); ctx.ellipse(0, 0, 21, 13, 0, 0, Math.PI*2); ctx.fill();
+    const _tx = -Math.cos(angle) * 11, _ty = -Math.sin(angle) * 11;
+    ctx.globalAlpha = 0.22;
+    ctx.beginPath(); ctx.ellipse(_tx, _ty, 15, 8, 0, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 0.12;
+    ctx.beginPath(); ctx.ellipse(_tx * 1.9, _ty * 1.9, 12, 6, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
   ctx.fillStyle = COLORS.creamDark;
   ctx.beginPath();
   ctx.ellipse(0, 4, 14, 5, 0, 0, Math.PI*2);

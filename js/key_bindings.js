@@ -199,10 +199,8 @@ const KEY_BINDINGS = {
   b:   { action: () => toggleBuildMode() },
   // Phase 140 — manual weapon swap removed. One pawn = one weapon; you change
   // weapon by walking onto a killed enemy's dropped gun (see weapon_drop.js).
-  // Phase 184d — X is the Heavy chassis ULTIMATE (fire ALL stockpiled weapons at
-  // once, costs energy). heavyUltimate self-gates (heavy + game._classes); no-op
-  // for other chassis / classes-off, so X stays effectively unbound there.
-  x:   { action: () => { if (typeof heavyUltimate === 'function') heavyUltimate(); } },
+  // Phase 187 — Heavy ULTIMATE moved OFF X onto SHIFT (each chassis's signature
+  // key; fired on the keydown edge in the listener below). X is no longer bound.
   u:   { action: () => upgradeNearestModule() },
   v:   { action: () => _toggleAimAssist() },
   // Phase 6B: recycle the lowest-SEED squad bot into +60 build energy.
@@ -328,7 +326,20 @@ window.addEventListener('keydown', e => {
   // (arena-mp: FTUE key-lock check stripped — arena never locks keys.)
   // All gameplay key paths require state=playing.
   if (game.state !== 'playing') return;
-  // Single-key bindings (Q/E/H/TAB/R/G/B/X/U/V) — table-driven.
+  // Phase 187 — Shift = each chassis's signature key. HEAVY fires its ULTIMATE on
+  // the keydown edge (one-shot all-weapons burst; e.repeat guard so a held Shift
+  // doesn't re-fire/drain). WOLF/builder fall through: keys['shift'] was already
+  // set above for the wolf-dash poll in updatePlayer (builder gets no sprint,
+  // gated there). Classes-off → Shift is just universal sprint (poll), so skip.
+  if (k === 'shift') {
+    if (typeof game !== 'undefined' && game._classes
+        && typeof player !== 'undefined' && player._chassis === 'heavy'
+        && !e.repeat && typeof heavyUltimate === 'function') {
+      heavyUltimate();
+    }
+    return;
+  }
+  // Single-key bindings (Q/E/H/TAB/R/G/B/U/V) — table-driven.
   const binding = KEY_BINDINGS[k];
   if (binding) { binding.action(e); return; }
   // Number keys (1-7): squad orders / pawn-swap / mission-jump.
