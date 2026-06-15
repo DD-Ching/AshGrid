@@ -27,9 +27,18 @@ const BALANCE = {
   // 0 because it GAINS hp+energy (lifesteal), not spends. Tunable in one place.
   ability: {
     recruit:  40,    // humanoid 招降 (convert weaker enemy → squad slot)
-    dash:     25,    // wolf 冲刺 (-70% dmg-taken burst)
-    devour:    0,    // wolf 处决吸血 (execute weaker enemy → gain hp+energy)
+    dash:     25,    // wolf 冲刺 (energy/sec drain while dashing)
+    devour:    0,    // wolf 处决吸血 (execute weaker enemy → gain hp + regen stack)
     ultimate: 80,    // heavy 大招 (fire all stockpiled weapons at once)
+  },
+  // Phase 186 — per-chassis identity tunables for the "abilities are EXCLUSIVE"
+  // redesign (each chassis only has its own kit; G = a chassis-specific execute
+  // on a 反白/低血 target). One home for the feel numbers.
+  wolf: {
+    dashDmgMul:        0.10,  // 90% damage reduction while dashing (was 0.30 = 70%)
+    killLifesteal:     18,    // HP restored per wolf kill (击杀回血), clamped to maxHp
+    devourRegenPerStack: 1.0, // +energy/sec added per successful devour (累加能量回复速度)
+    devourRegenStackCap: 10,  // max devour regen stacks (→ +10/s ceiling)
   },
   // Energy cost (⚡) per structure. The radial wheel (js/defense_build_ui.js)
   // currently exposes only the 6 ACTIVE entries; the other 10 are LEGACY —

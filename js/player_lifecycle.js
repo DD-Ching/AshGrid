@@ -59,6 +59,10 @@
     player._lastDeathX = (opts.x != null) ? opts.x : player.x;
     player._lastDeathY = (opts.y != null) ? opts.y : player.y;
     player._killedAtTime = _gt;
+    // 187 — discard any half-placed build / drag-line at the death chokepoint, so
+    // a build-in-progress can't survive death → respawn/swap (the "建到一半死掉
+    // 状态残留" bug). killPlayer is the single death path (death_decider routes here).
+    if (typeof exitBuildMode === 'function') exitBuildMode();
     if (typeof _lbBumpDeath === 'function') _lbBumpDeath();
     return true;
   }

@@ -86,6 +86,21 @@ function updateWeaponDrops() {
   if (typeof player === 'undefined' || !player || !player.alive) {
     _wpPickupTarget = null; _wpPickupProgress = 0; return;
   }
+  // Phase 187b — the HEAVY auto-collects EVERY gun it walks over, instantly,
+  // duplicates included ("每到一个枪上面,即便是重复的枪械…还是会把它捡起来"). Each
+  // adds to the arsenal COUNT (heavyPickupWeapon). No 1.5s hold, no same-gun skip.
+  if (typeof game !== 'undefined' && game._classes && player._chassis === 'heavy'
+      && typeof heavyPickupWeapon === 'function') {
+    for (let i = GROUND_WEAPONS.length - 1; i >= 0; i--) {
+      const g = GROUND_WEAPONS[i];
+      if (Math.hypot(g.x - player.x, g.y - player.y) <= WEAPON_PICKUP_R) {
+        heavyPickupWeapon(g.weapon);
+        GROUND_WEAPONS.splice(i, 1);
+      }
+    }
+    _wpPickupTarget = null; _wpPickupProgress = 0;
+    return;
+  }
   const cur = _wpCurrentWeapon();
   let near = null, nearD = WEAPON_PICKUP_R;
   for (const g of GROUND_WEAPONS) {

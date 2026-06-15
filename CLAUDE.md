@@ -1,36 +1,48 @@
-# AshGrid — project rules
+# AshGrid — project rules (root)
 
-## Git workflow
+Online top-down .io tactical shooter. Live at **ashgrid.io** (GitHub Pages from `main`).
+Architecture: one big inline `<script>` in `index.html` (game loop / update / render / player)
++ `js/*.js` **classic-script** modules (top-level `function`/`const`/`let` are cross-file
+globals) + `server/party/server.js` (PartyKit, server-authoritative multiplayer).
 
-- **必須在 `dev` 分支開發,完成後再 `merge dev → main`。**
-- **嚴禁直接 commit / push 到 `main`。**
+> Folder-scoped rules live next to the code — read the nearest one when you work there:
+> [`js/CLAUDE.md`](js/CLAUDE.md) · [`js/missions/CLAUDE.md`](js/missions/CLAUDE.md) ·
+> [`server/CLAUDE.md`](server/CLAUDE.md) · [`tools/CLAUDE.md`](tools/CLAUDE.md).
+> Keep each file LEAN + about ITS folder. Repo-wide rules + the tunables map stay here.
 
-任何修改都先進 `dev`:`git checkout dev` → 改 → `git commit` → `git push origin dev`。`main` 只接受從 `dev` 的 merge,不接受直接修改。
+## Cardinal rules (do not break)
 
-## Coding standard — modular-first
+1. **Branch:** develop on `dev`; ship by `merge dev → main` only. NEVER commit/push `main` directly.
+2. **Timing unit:** the global `*60` / `*84` "tick-second" scaling is intentional and **off-limits** — never "fix" it.
+3. **Before shipping `dev → main`:** stamp the cache version (`node tools/version.js stamp <N>`)
+   and the CI gate must be green. See [`tools/CLAUDE.md`](tools/CLAUDE.md).
+4. **MP server changes** (`server/`) need `cd server && npx partykit deploy` + a 2-client smoke
+   **and the owner's OK** before they count as shipped. See [`server/CLAUDE.md`](server/CLAUDE.md).
+5. **No autonomous multi-file big refactors** — propose scope/commits/risk first, get a yes.
+   Small edits + new-feature-in-a-new-file are fine without asking.
+6. **Behaviour-preserving by default** ("不能降低遊玩體驗"): gate every new/risky behaviour behind a
+   flag (`game._classes`, `game._siege`, `game._npcAI`) so the old path stays byte-identical.
 
-**指標不是「index.html 多短」,是「同一塊 state 有幾個地方能寫」。** 12,000 行不是病,9 個地方都能戳 `mouse.down` 才是病。改動前要先看:這塊 state 還有誰在寫?
+## Tunables map — "want to change X? edit ONE place"
 
-### 五個熱點(回歸 bug 都從這冒)
+Tune by editing the named constant; don't scatter magic numbers. (★ = client **and** server copy
+must match — `tools/check_sim_parity.js` enforces it.)
 
-| 熱點 | 已抽? | 模組 |
+| Want to change… | Edit | Where |
 |---|---|---|
-| Input(`mouse.*`, `keys[]`, hit-rect, 觸控)| ✅ R2 | `js/input.js` |
-| Weapon state(swap / fire / reload / cd)| ✅ R3 | `js/weapon_state.js` |
-| Ad lifecycle(reward gate, overlay timer)| ✅ R1 | `js/ad_state.js` |
-| Pawn-swap state(manual + auto-on-death)| ✅ R4 | `js/pawn_swap.js`(整合完) |
-| Bullet update + collision | ✅ R5 | `js/bullets.js` |
-| World render(renderWorld / lowCovers / overheads / footprints)| ✅ R6 | `js/world_render.js` |
-| World GENERATION helpers(addBuilding / addLowCover / addWallLine / ...)| ✅ R7 | `js/world_gen.js`(整合完) |
-| HUD driver + cache + helpers | ✅ R8 | `js/hud.js` |
-| Enemy AI + NN runtime + updateEnemies | ✅ R9 | `js/enemy_ai.js` |
-| Overlay render(structures, themes, landmarks, FPV/UAV/CMD overlays, unit sprites)| ✅ R10 | `js/render_overlays.js` |
-| MAPS table + theme constants | ⚠️ | 還在 index 跟 js/maps.js,沒明顯耦合問題 |
+| Energy economy (regen, per-kill, ability costs) | `BALANCE.energy` / `BALANCE.ability` | `js/balance.js` |
+| Wolf feel (dash DR, kill-lifesteal, devour regen) | `BALANCE.wolf` | `js/balance.js` |
+| Chassis stats (hp/armour/speed/radius/abilities) | `CHASSIS` | `js/chassis.js` |
+| Heavy arsenal size / ultimate fan | `ARSENAL_CAP`, `ULT_FAN_STEP` ★ | `js/heavy_arsenal.js` (+ server) |
+| Weapon stats ★ | `WEAPONS` ↔ `_BASE_30HZ` | `js/weapons.js` ↔ `server/party/sim/weapons.js` |
+| Recruit / devour / seize gates ★ | `ARENA_SEED_GAP`/`HP_GATE`/`SQUAD_CAP`/`TOUCH_BUFFER` | `js/arena_recruitment.js` (+ server) |
+| Structure cost / HP | `BALANCE.buildCost` + `STRUCTURE_DEFS` | `js/balance.js` + `js/structures.js` |
+| Wave scaling (survival/siege) | `_waveInterval` / `_waveSize` | `js/missions/nn_deathmatch.js` |
+| Maps / arena variants | `NN_MAP_VARIANTS` | `js/missions/nn_arena_variants.js` |
+| Which modes are unlocked when | `MODE_UNLOCK_TIER` | `js/progressive_unlock.js` |
 
-### 紀律
+## Mode / feature flags
 
-1. **碰到上面任何熱點前**,先用一兩句話提議抽模組,問用戶 yes / no。同意才做;說 inline 就 inline,但在檔案頂端加 TODO + 該檔的累積 bug 計數。
-2. **新功能預設寫新檔** `js/<feature>.js`。只有「修改既有 < 50 行小區段」才 inline 進 index.html。
-3. **不能 autonomously 發起多檔大重構** — 大重構要先跟用戶提案、得到同意才動手。提案要講清楚 scope、commit 數、風險。
-4. **預防性重構(無 bug 也抽)是歡迎的** — 用戶主動要求、或重構提案被用戶同意,就照做(R4/R5/R6/R7 都是這樣)。不再強制「等 bug 出現才抽」 — 有些耦合會等到出 bug 才修就太晚。
-5. 每次 bug 修完問自己:這個 fix 有沒有讓某塊 state 多了第 7 個寫入點?有的話就抽。
+`game._classes` chassis-classes (builder/wolf/heavy; default ON in dev) · `game._siege` siege
+last-stand mode · `game._npcAI` NPC director (on unless `=== false`) · `game._achvFx` achievement
+card. Default a new flag ON only in dev; decide explicitly before it reaches `main`.

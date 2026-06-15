@@ -191,7 +191,10 @@ function _applyDamageToUnit(u, dmg, ignoreInvuln) {
   // Applied at this single chokepoint BEFORE armor/HP so it covers bullets/AOE/
   // melee alike. SOLO only for now (MP must server-validate — deferred to 184e).
   if (u._dashActive && (typeof game === 'undefined' || game._classes)) {
-    dmg = dmg * 0.30;
+    // Phase 186 — wolf dash now 90% DR (was 70%). Tunable in BALANCE.wolf.dashDmgMul.
+    const _dm = (typeof BALANCE === 'object' && BALANCE.wolf && typeof BALANCE.wolf.dashDmgMul === 'number')
+      ? BALANCE.wolf.dashDmgMul : 0.10;
+    dmg = dmg * _dm;
   }
   const c = CHASSIS[u._chassis];
   if (c && c.armor != null) {

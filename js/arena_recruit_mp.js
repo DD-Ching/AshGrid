@@ -141,3 +141,29 @@ function _arenaTryDevourMP() {
   _mpSendRaw({ type: 'executeRequest', botId: best.id });
   return true;
 }
+
+// Phase 188 — MP HEAVY SEIZE (处决抢夺), the heavy's G online — mirror of the wolf
+// devour but kind:'seize' (server executes the bot WITHOUT the hp lifesteal; the
+// seizer's consumable loot is granted client-side on executeOk). Same weaker +
+// reach gate. Self-gates to heavy + classes + online.
+function _arenaTryHeavySeizeMP() {
+  if (typeof _mpState === 'undefined' || !_mpState.enabled) return false;
+  if (typeof player === 'undefined' || !player || !player.alive) return false;
+  if (!(typeof game !== 'undefined' && game._classes)) return false;
+  if (player._chassis !== 'heavy') return false;
+  if (!_mpState.remoteBots || _mpState.remoteBots.size === 0) return false;
+  const myR = player.radius || 13;
+  const myHp = player.hp || 1;
+  let best = null, bestD = Infinity;
+  for (const rb of _mpState.remoteBots.values()) {
+    if (!rb.alive || rb.team === 0) continue;
+    const reach = myR + (rb.radius || 14) + ARENA_TOUCH_BUFFER;
+    const d = Math.hypot(rb.x - player.x, rb.y - player.y);
+    if (d > reach) continue;
+    if (typeof rb.hp === 'number' && rb.hp >= myHp) continue;
+    if (d < bestD) { bestD = d; best = rb; }
+  }
+  if (!best) return false;
+  _mpSendRaw({ type: 'executeRequest', botId: best.id, kind: 'seize' });
+  return true;
+}

@@ -242,7 +242,7 @@ const RESPAWN_TICKS_BUFFED  = 5  * TICK_HZ;  // 5 s
 //   DASH_DMG_MUL  : incoming damage ×0.30 while a wolf is dashing (input.dashActive)
 //   ARMOR_BLEED   : fraction of post-armour overflow that leaks to HP (heavy)
 //   ARMOR_REGEN_* : top-up rate / no-damage delay for the heavy armour buffer
-const DASH_DMG_MUL            = 0.30;
+const DASH_DMG_MUL            = 0.10;   // Phase 186 — wolf dash 90% DR (was 0.30/70%); matches client BALANCE.wolf.dashDmgMul
 const ARMOR_BLEED             = 0.65;
 const ARMOR_REGEN_DELAY_TICKS = 3 * TICK_HZ;   // 3 s of no damage before regen
 const ARMOR_REGEN_PER_TICK    = 30 / TICK_HZ;  // 30 armour / second (=0.15 @ 200Hz)
@@ -254,6 +254,8 @@ const ARMOR_MAX_CAP           = 500;           // clamp on client-sent aMax (san
 // rate-limit so a spoofed client can't machine-gun bursts (energy is the real
 // client-side gate; this is just abuse protection).
 const HEAVY_STOCKPILE_MAX = 3;
+const ULT_BURST_MAX       = 50;            // Phase 188 — full-arsenal ultimate fires up to N guns (matches client ARSENAL_CAP); bounds the one-tick burst
+const WOLF_KILL_LIFESTEAL = 18;            // Phase 188b — wolf 击杀回血 (matches client BALANCE.wolf.killLifesteal)
 const ULT_COOLDOWN_TICKS  = 1 * TICK_HZ;   // ≥1 s between server-accepted bursts
 const ULT_FAN_STEP        = 0.14;          // radians between barrels — matches js/heavy_arsenal.js
 // Arena recruit gates — authoritative server copies of the client constants in
@@ -999,6 +1001,8 @@ export default class AshGridRoom {
       // so it's self-gated; the server just trusts the bit). Read in
       // _applyChassisDamage to cut incoming damage 70%.
       if (typeof data.dashActive !== 'undefined') p.input.dashActive = data.dashActive ? 1 : 0;
+      // Phase 188b — chassis id (for the remote dash VFX relay + wolf kill-lifesteal).
+      if (typeof data.chassis === 'string' && data.chassis.length <= 12) p.chassis = data.chassis;
       // Phase 184e — heavy ARMOUR capacity (CHASSIS[chassis].armor, 0 for others).
       // Size maxArmor; top a full-armour unit to the new cap (mirrors the hMul
       // bump) so a just-spawned heavy starts with its buffer. Clamp sane.
@@ -1219,14 +1223,18 @@ export default class AshGridRoom {
       if (Math.hypot(bot.x - p.x, bot.y - p.y) > reach) return;   // out of reach
       if (bot.hp >= p.hp) return;                // must be WEAKER than me
       const bx = bot.x, by = bot.y;
-      const healed = _devourStolenHp(bot.maxHp || HP_MAX);
+      // Phase 188 — kind:'seize' = the HEAVY's G (处决抢夺): execute the bot but NO
+      // hp lifesteal (the heavy's loot — FPV/grenades — is client-side on
+      // executeOk). Default / kind:'devour' = the WOLF's G: execute + hp lifesteal.
+      const seize = (data.kind === 'seize');
+      const healed = seize ? 0 : _devourStolenHp(bot.maxHp || HP_MAX);
       bot.alive = false;                         // vanish — normal bot death + respawn
       bot.hp = 0;
       bot._respawnAt = this.tickCount + BOT_RESPAWN_TICKS;
-      p.hp = Math.min(p.maxHp || HP_MAX, p.hp + healed);   // lifesteal (rides snapshot)
+      if (healed) p.hp = Math.min(p.maxHp || HP_MAX, p.hp + healed);   // lifesteal (rides snapshot)
       this.party.broadcast(JSON.stringify({
         type: 'executeOk', botId, by: sender.id,
-        x: round1(bx), y: round1(by), healed,
+        x: round1(bx), y: round1(by), healed, kind: seize ? 'seize' : 'devour',
       }));
       return;
     }
@@ -1240,7 +1248,7 @@ export default class AshGridRoom {
     if (data.type === 'ultimateBurst') {
       if (!p.alive) return;
       if (p._lastUltTick != null && (this.tickCount - p._lastUltTick) < ULT_COOLDOWN_TICKS) return;
-      const list = Array.isArray(data.weapons) ? data.weapons.slice(0, HEAVY_STOCKPILE_MAX) : [];
+      const list = Array.isArray(data.weapons) ? data.weapons.slice(0, ULT_BURST_MAX) : [];
       if (!list.length) return;
       p._lastUltTick = this.tickCount;
       const baseAngle = num(data.angle);
@@ -1533,6 +1541,7 @@ export default class AshGridRoom {
                       type: 'kill', shooter: b.shooterId, victim: q.id, weapon: b.weapon,
                       x: round1(b.x), y: round1(b.y),
                     }));
+                    this._wolfKillHeal(b.shooterId);   // 188b — wolf 击杀回血
                   }
                 }
               }
@@ -1556,6 +1565,7 @@ export default class AshGridRoom {
               type: 'kill', shooter: b.shooterId, victim: p.id, weapon: b.weapon,
               x: round1(p.x), y: round1(p.y),
             }));
+            this._wolfKillHeal(b.shooterId);   // 188b — wolf 击杀回血
           }
           break;
         }
@@ -1599,6 +1609,7 @@ export default class AshGridRoom {
                 x: round1(bot.x), y: round1(bot.y),
                 isBot: 1,
               }));
+              this._wolfKillHeal(b.shooterId);   // 188b — wolf 击杀回血 (bot kill)
             }
             break;
           }
@@ -1781,6 +1792,17 @@ export default class AshGridRoom {
         weapon: lcWeapon, lc: 1,   // 184s — was hardcoded 'RIFLE'; the hit event above already used lcWeapon, so a sniper/rocket lag-comp KILL mislabelled in the feed/recap
         x: round1(impactX), y: round1(impactY),
       }));
+      this._wolfKillHeal(shooter.id);   // 188b — wolf 击杀回血 (lag-comp kill)
+    }
+  }
+
+  // Phase 188b — wolf 击杀回血: when a WOLF player gets a kill, heal it server-side
+  // (player.hp is authoritative online). Called at every kill-credit site. No-op
+  // for non-wolf / dead / unknown shooter.
+  _wolfKillHeal(shooterId) {
+    const s = this.players.get(shooterId);
+    if (s && s.alive && s.chassis === 'wolf') {
+      s.hp = Math.min(s.maxHp || HP_MAX, s.hp + WOLF_KILL_LIFESTEAL);
     }
   }
 
@@ -1894,6 +1916,8 @@ export default class AshGridRoom {
         maxArmor: p.maxArmor,
         alive: p.alive,
         invuln: this.tickCount < p.invulnUntil,
+        chassis: p.chassis || 'humanoid',     // Phase 188b — remote silhouette + dash VFX
+        dashActive: (p.input && p.input.dashActive) ? 1 : 0,   // Phase 188b — remote wolf dash aura
         name: p.name,
         _includeName: includeName,            // hint for diff path
         lastInputSeq: p.lastInputSeq,
@@ -1979,10 +2003,12 @@ export default class AshGridRoom {
           else if (last && last.invuln) out.invuln = false;
         }
         if (p._includeName || !last) out.name = p.name;
+        if (!last || last.chassis !== p.chassis) out.chassis = p.chassis;     // 188b — on change (~free)
+        if (!last || last.dashActive !== p.dashActive) out.dashActive = p.dashActive;   // 188b — wolf dash window
         playerDeltas.push(out);
         // Save the FULL state (not just delta) so next tick's diff has
         // ground truth.
-        state.players.set(p.id, { x: p.x, y: p.y, angle: p.angle, hp: p.hp, maxHp: p.maxHp, armor: p.armor, maxArmor: p.maxArmor, alive: p.alive, invuln: p.invuln });
+        state.players.set(p.id, { x: p.x, y: p.y, angle: p.angle, hp: p.hp, maxHp: p.maxHp, armor: p.armor, maxArmor: p.maxArmor, alive: p.alive, invuln: p.invuln, chassis: p.chassis, dashActive: p.dashActive });
       }
 
       // ── Bullets: per-receiver AOI cull + delta for known bullets ──

@@ -23,8 +23,13 @@
 #   # opens http://localhost:8765/
 
 import http.server
-import socketserver
 import sys
+import os
+
+# Always serve THIS script's directory (the repo), regardless of the cwd it was
+# launched from — SimpleHTTPRequestHandler otherwise serves os.getcwd(), so
+# launching from elsewhere served the wrong folder (or 404'd index.html).
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
 
@@ -37,8 +42,13 @@ class CrossOriginIsolatedHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
 if __name__ == '__main__':
-    with socketserver.TCPServer(('', PORT), CrossOriginIsolatedHandler) as httpd:
-        print(f'AshGrid dev server on http://localhost:{PORT}/ (crossOriginIsolated enabled)')
+    # ThreadingHTTPServer (not the old single-threaded TCPServer): a real browser
+    # opens MANY parallel/keep-alive connections for index.html + ~80 js files +
+    # the ONNX wasm/models. Single-threaded served them one-at-a-time and stalled
+    # ("no reply" on load). Threaded handles them concurrently. daemon_threads is
+    # on by default so Ctrl-C exits cleanly.
+    with http.server.ThreadingHTTPServer(('', PORT), CrossOriginIsolatedHandler) as httpd:
+        print(f'AshGrid dev server on http://localhost:{PORT}/ (crossOriginIsolated, threaded)')
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

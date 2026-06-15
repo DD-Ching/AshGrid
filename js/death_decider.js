@@ -96,6 +96,15 @@
       return 'swapped';
     }
 
+    // Phase 188 — SIEGE: NO respawn. With no swap target left (your last unit
+    // fell), the last-stand is OVER → end the run with the loss card (score =
+    // waves/days survived). Skips the respawn scheduling the other modes do.
+    if (typeof game !== 'undefined' && game._siege) {
+      if (typeof onMissionFailed === 'function') onMissionFailed();
+      else if (typeof showNNEndCard === 'function') showNNEndCard('loss');
+      return 'ended';
+    }
+
     // No swap target → full team-wipe path.
     const respawnSec = (typeof getRespawnSeconds === 'function')
       ? getRespawnSeconds() : 3;

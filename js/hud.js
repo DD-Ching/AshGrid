@@ -1269,25 +1269,26 @@ function _hud_drawVitalsCard(x, y, w, h) {
   ctx.fillStyle = player.hp > player.maxHp * 0.3 ? '#C8261C' : '#7A1A14';
   ctx.fillRect(barX, by, barW * Math.max(0, player.hp) / player.maxHp, barH);
   by += barH + 10;
-  // POWER bar (Phase 107 — formerly SEED INTEGRITY. The SEED-as-recruit-
-  // gate gameplay is temporarily shelved, so the bar is now branded
-  // 'POWER' and the recruit-gate notch is removed. The underlying
-  // player._seed value still ticks since the action bar 'G RECRUIT'
-  // cell uses it for ready/lock, but it's not shown as a hard threshold
-  // on this bar anymore.)
+  // Phase 187 — unified ENERGY bar (replaced the stale 'POWER'/player._seed bar).
+  // ONE bar for every chassis, reading game._energy — the single ability pool:
+  // builder build/recruit, wolf dash, heavy ultimate all draw from it, and it
+  // regenerates. Display cap 100 (energy clamps at 999 in addEnergy; the bar
+  // shows the low-end where you can't afford an ability). Tints cyan while a wolf
+  // is dashing (energy drains live) so you SEE the dash cost.
   if (game._nnMode) {
-    const sv = Math.floor(player._seed || 0);
-    const sFrac = Math.max(0, Math.min(1, sv / ARENA_SEED_MAX));
+    const _ev = Math.floor(game._energy || 0);
+    const _eFrac = Math.max(0, Math.min(1, _ev / 100));
+    const _ezh = (typeof getLang === 'function' && getLang() === 'zh');
     ctx.fillStyle = '#aaa';
     ctx.font = 'bold 8px monospace';
-    ctx.fillText('POWER', barX, by - 1);
+    ctx.fillText(_ezh ? '能源' : 'ENERGY', barX, by - 1);
     ctx.textAlign = 'right';
-    ctx.fillText(`${sv}/${ARENA_SEED_MAX}`, barX + barW, by - 1);
+    ctx.fillText(_ev + '⚡', barX + barW, by - 1);
     ctx.textAlign = 'left';
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(barX, by, barW, barH);
-    ctx.fillStyle = '#E67A2C';
-    ctx.fillRect(barX, by, barW * sFrac, barH);
+    ctx.fillStyle = (player._dashActive) ? '#42B7E8' : '#E6B22C';
+    ctx.fillRect(barX, by, barW * _eFrac, barH);
     by += barH + 10;
   }
   // AIM ASSIST chip
@@ -1310,14 +1311,26 @@ function _hud_drawVitalsCard(x, y, w, h) {
 function _hud_drawActionBar(x, y, w, h) {
   // 6 dark cells: R / F / Q / E / B / G
   const cellW = Math.floor(w / 6);
-  const _gOver = game._nnMode && (player._seed || 0) > ARENA_SEED_GAP;
+  // Phase 187 — G + B cells are chassis-aware under game._classes (drive off the
+  // SHARED _arenaExecuteInfo so the cell + the world prompt + the G action agree).
+  const _classes = (typeof game !== 'undefined' && game._classes && typeof player !== 'undefined');
+  const _cx = _classes ? (player._chassis || 'humanoid') : null;
+  const _exec = (_classes && typeof _arenaExecuteInfo === 'function') ? _arenaExecuteInfo() : null;
+  let gName = 'RECRUIT', gReady;
+  if (_classes && _exec) {            // RECRUIT / DEVOUR / SEIZE by chassis
+    gName = _exec.le;
+    gReady = !!(_exec.target && _exec.affordable);
+  } else {                            // legacy SEED economy
+    gReady = game._nnMode && (player._seed || 0) > ARENA_SEED_GAP;
+  }
+  const bBuilder = !_classes || _cx === 'humanoid';   // build is builder-only under classes
   const cells = [
     { hk: 'R', name: 'RELOAD',  big: `${player.ammo}`,         sub: `/${player.reserve}` },
     { hk: 'F', name: 'FRAG',    big: `${player.grenades}`,     sub: `/${player.maxGrenades}` },
     { hk: 'Q', name: 'UAV',     big: `${drone.battery.toFixed(0)}`, sub: '%' },
     { hk: 'E', name: 'FPV',     big: `${fpv.available}`,       sub: `/${fpv.max}` },
-    { hk: 'B', name: 'BUILD',   big: 'READY', sub: null },
-    { hk: 'G', name: 'RECRUIT', big: _gOver ? 'READY' : 'LOCK', sub: null },
+    { hk: 'B', name: 'BUILD',   big: bBuilder ? 'READY' : 'LOCK', sub: null },
+    { hk: 'G', name: gName,     big: gReady ? 'READY' : 'LOCK', sub: null },
   ];
   // Dark panel
   ctx.fillStyle = 'rgba(20, 22, 28, 0.94)';

@@ -475,7 +475,10 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       // Phase 9: red waves. Independent of wipe — even during a red team-wipe
       // countdown, the wave clock keeps ticking so the player is overwhelmed
       // either by surviving red or by incoming reinforcements.
-      if (game.time >= _nextWaveAt) {
+      // Phase 188B — in SIEGE the siege_director's TIMELINE owns all spawns, so
+      // suppress the random reinforcement clock here (else two systems fight over
+      // the spawn pacing). Every other mode is unchanged.
+      if (!(typeof game !== 'undefined' && game._siege) && game.time >= _nextWaveAt) {
         _spawnRedWave();
         _nextWaveAt = game.time + _waveInterval(_waveNum);
       }
@@ -483,7 +486,13 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       // Phase 161 — BUILD PHASE producer (SOLO only). Open a fortify window on
       // the periodic clock; close it when its timer (endsAt) runs out. The two
       // ad buttons can extend endsAt (_extendBreather) / end it (trySkipWave).
-      const _soloBuild = (typeof _mpState === 'undefined' || !_mpState.enabled);
+      // 187 — the auto "BUILD PHASE" handed EVERY chassis 3 free big covers a
+      // little into the match (owner: "不管誰都能放兩三個很大的掩體…什麼鬼"). It
+      // predates chassis-classes, where building is builder-EXCLUSIVE, so disable
+      // it entirely under game._classes (close any open one). Legacy mode keeps it.
+      const _soloBuild = (typeof _mpState === 'undefined' || !_mpState.enabled)
+                      && !(typeof game !== 'undefined' && game._classes);
+      if (typeof game !== 'undefined' && game._classes && game._buildPhase) game._buildPhase = null;
       if (_soloBuild) {
         if (!game._buildPhase && game.time >= _nextBuildPhaseAt && player.alive) {
           game._buildPhase = {

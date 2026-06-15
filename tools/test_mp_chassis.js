@@ -33,7 +33,7 @@
   check(typeof dmgFn === 'function', '_applyChassisDamage exported from server.js');
   if (typeof dmgFn !== 'function') { process.exit(1); }
 
-  const BLEED = 0.65, DASH = 0.30;
+  const BLEED = 0.65, DASH = 0.10;   // Phase 186 — wolf dash now 90% DR (was 0.30/70%)
   // mk(maxArmor, armor, dash) → a fake server player at full hp 100/180. The dash
   // cut (184k) requires MOVEMENT, so the fake input carries dx=1 by default; a
   // dash test that wants the "stationary" case passes mv=0.
@@ -46,10 +46,10 @@
   let dealt = dmgFn(p, 25, 1000);
   check(approx(p.hp, 75) && approx(dealt, 25), 'humanoid: 25 dmg → hp 75, full damage (legacy identity)');
 
-  // 2) wolf dash: 100 dmg → 30 effective on hp.
+  // 2) wolf dash: 100 dmg → 10 effective on hp (90% DR).
   p = mk(0, 0, 1);
   dmgFn(p, 100, 1000);
-  check(approx(p.hp, 70), 'wolf dash: 100 dmg → 30 to hp (×0.30), hp 70');
+  check(approx(p.hp, 100 - 100 * DASH), 'wolf dash: 100 dmg → ' + (100 * DASH) + ' to hp (×' + DASH + '), hp ' + (100 - 100 * DASH));
 
   // 3) heavy armour absorb (no bleed): 40 dmg vs 60 armour → armour 20, hp full.
   p = mk(60, 60, 0, 180);
@@ -84,7 +84,7 @@
   // 6c) dash HONOURED for a moving, un-armoured wolf (the legit case).
   p = mk(0, 0, 1, 70, 1);   // dashActive + moving + no armour
   dmgFn(p, 50, 1000);
-  check(approx(p.hp, 70 - 50 * DASH), 'legit wolf dash: moving + no armour → ×0.30 (50 dmg → 15, hp 55)');
+  check(approx(p.hp, 70 - 50 * DASH), 'legit wolf dash: moving + no armour → ×' + DASH + ' (50 dmg → ' + (50 * DASH) + ', hp ' + (70 - 50 * DASH) + ')');
 
   // 7) records last-hurt tick on a heavy hit (drives the regen delay).
   p = mk(60, 60, 0, 180);
