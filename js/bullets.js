@@ -289,6 +289,14 @@ function updateBullets() {
           if (game._nnMode) {
             addEnergy(BALANCE.energy.perKill);
           }
+          // Phase 186 — Wolf 击杀回血: a wolf restores HP on its own kills (flag-
+          // gated, wolf-only, player's own bullet). Stacks with devour's bigger
+          // execute-steal. No-op for other chassis / classes off.
+          if (typeof game !== 'undefined' && game._classes && !b.fromAlly
+              && typeof player !== 'undefined' && player._chassis === 'wolf') {
+            const _ls = (typeof BALANCE === 'object' && BALANCE.wolf) ? (BALANCE.wolf.killLifesteal || 0) : 0;
+            if (_ls > 0) player.hp = Math.min(player.maxHp || 100, (player.hp || 0) + _ls);
+          }
           // Phase 184d — Heavy ARSENAL loots the victim's FPV/drone quota on a
           // kill ('幹掉敵人之後還可以搶他們的無人機額度'). Flag-gated (game._classes
           // off by default → no live effect), heavy-only, player's own bullet

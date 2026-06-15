@@ -4202,6 +4202,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   // works anywhere on the battlefield. Per-kill +20 / passive +0.5/sec
   // payouts come from updateStructures' generator tick.
   game._energy = 100;
+  game._wolfRegenStacks = 0;   // Phase 186 — wolf devour regen stacks, fresh each match
   game._structures = [];
   game._airstrikes = [];
   game._smokeClouds = [];

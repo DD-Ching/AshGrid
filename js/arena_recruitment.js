@@ -178,23 +178,26 @@ function _arenaTryDevour() {
     if (d < bestD) { bestD = d; best = e; }
   }
   if (!best) return false;
-  // Execute + lifesteal: vanish (no squad slot), steal ~half the victim's max HP
-  // + a flat energy chunk into the dog.
+  // Execute + lifesteal: vanish (no squad slot), steal ~half the victim's max HP.
   const stolenHp = Math.max(20, Math.round((best.maxHp || 80) * 0.5));
-  const stolenEnergy = 25;
   const bx = best.x, by = best.y;
   best.alive = false;
   best._koStunned = false;
   const idx = enemies.indexOf(best);
   if (idx >= 0) enemies.splice(idx, 1);
   player.hp = Math.min(player.maxHp || 100, (player.hp || 0) + stolenHp);
-  if (typeof game !== 'undefined') game._energy = (game._energy || 0) + stolenEnergy;
+  // Phase 186 — devour now ACCUMULATES energy-regen RATE (累加能量回复速度) instead of
+  // a flat +25 energy: each successful devour adds a stack (capped), read by the
+  // energy-regen loop (mission_runtime.js). Stacks reset at match start.
+  const _cap = (typeof BALANCE === 'object' && BALANCE.wolf) ? (BALANCE.wolf.devourRegenStackCap || 10) : 10;
+  if (typeof game !== 'undefined') game._wolfRegenStacks = Math.min(_cap, (game._wolfRegenStacks || 0) + 1);
+  const _stacks = (typeof game !== 'undefined') ? (game._wolfRegenStacks || 0) : 0;
   if (typeof createExplosion === 'function') createExplosion(bx, by, 'small');
   if (typeof playRadioStatic === 'function') playRadioStatic(0.55, 0.45);
   if (typeof triggerRecruitFx === 'function') triggerRecruitFx('DEVOUR');
   if (typeof showSwapToast === 'function') {
-    showSwapToast(T('▸ 吞噬 · +' + stolenHp + ' 血 +' + stolenEnergy + ' 能量',
-                    '▸ DEVOUR · +' + stolenHp + ' HP +' + stolenEnergy + ' energy'));
+    showSwapToast(T('▸ 吞噬 · +' + stolenHp + ' 血 · 能量回复 ×' + _stacks,
+                    '▸ DEVOUR · +' + stolenHp + ' HP · regen ×' + _stacks));
   }
   return true;
 }

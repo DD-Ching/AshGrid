@@ -242,7 +242,7 @@ const RESPAWN_TICKS_BUFFED  = 5  * TICK_HZ;  // 5 s
 //   DASH_DMG_MUL  : incoming damage ×0.30 while a wolf is dashing (input.dashActive)
 //   ARMOR_BLEED   : fraction of post-armour overflow that leaks to HP (heavy)
 //   ARMOR_REGEN_* : top-up rate / no-damage delay for the heavy armour buffer
-const DASH_DMG_MUL            = 0.30;
+const DASH_DMG_MUL            = 0.10;   // Phase 186 — wolf dash 90% DR (was 0.30/70%); matches client BALANCE.wolf.dashDmgMul
 const ARMOR_BLEED             = 0.65;
 const ARMOR_REGEN_DELAY_TICKS = 3 * TICK_HZ;   // 3 s of no damage before regen
 const ARMOR_REGEN_PER_TICK    = 30 / TICK_HZ;  // 30 armour / second (=0.15 @ 200Hz)
