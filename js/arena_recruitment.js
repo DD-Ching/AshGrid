@@ -202,6 +202,65 @@ function _arenaTryDevour() {
   return true;
 }
 
+// Phase 187 — ONE shared per-chassis G-execute cue, so the on-screen prompt, the
+// action-bar cell, and the actual G handler can never drift ("prompt says G but
+// nothing happens"). Returns null when classes off / dead / no eligible target,
+// else { kind, lz, le, target, affordable }. Eligibility mirrors the three G
+// handlers exactly: weaker (hp < player.hp) + touch range + !_humanPiloted.
+// Builder also needs recruit energy + to be under the squad cap. Cached per tick
+// (HUD + world render both call it every frame).
+let _execCueTick = -1, _execCueVal = null;
+function _arenaExecuteInfo() {
+  const now = (typeof game !== 'undefined' && game) ? game.time : 0;
+  if (now === _execCueTick) return _execCueVal;
+  _execCueTick = now;
+  _execCueVal = _computeExecuteInfo();
+  return _execCueVal;
+}
+function _computeExecuteInfo() {
+  if (!(typeof game !== 'undefined' && game._classes)) return null;
+  if (typeof player === 'undefined' || !player || !player.alive) return null;
+  const chassis = player._chassis || 'humanoid';
+  let kind, lz, le, needEnergy = 0;
+  if (chassis === 'humanoid') {
+    kind = 'recruit'; lz = '招降'; le = 'RECRUIT';
+    needEnergy = (typeof BALANCE === 'object' && BALANCE.ability) ? (BALANCE.ability.recruit || 0) : 0;
+  } else if (chassis === 'wolf')  { kind = 'devour'; lz = '吞噬'; le = 'DEVOUR'; }
+  else if (chassis === 'heavy')   { kind = 'seize';  lz = '夺取'; le = 'SEIZE';  }
+  else return null;
+  const myR = player.radius || 13, myHp = player.hp || 1;
+  const buf = (typeof ARENA_TOUCH_BUFFER === 'number') ? ARENA_TOUCH_BUFFER : 80;
+  let best = null, bestD = Infinity;
+  if (typeof enemies !== 'undefined' && enemies) {
+    for (const e of enemies) {
+      if (!e || !e.alive || e._humanPiloted) continue;
+      const d = Math.hypot(e.x - player.x, e.y - player.y);
+      if (d > myR + (e.radius || 13) + buf) continue;
+      if (e.hp >= myHp) continue;
+      if (d < bestD) { bestD = d; best = e; }
+    }
+  }
+  if (!best && typeof _mpState !== 'undefined' && _mpState && _mpState.remoteBots) {
+    for (const rb of _mpState.remoteBots.values()) {
+      if (!rb || !rb.alive || rb.team === 0) continue;
+      const d = Math.hypot(rb.x - player.x, rb.y - player.y);
+      if (d > myR + (rb.radius || 14) + buf) continue;
+      if (typeof rb.hp === 'number' && rb.hp >= myHp) continue;
+      if (d < bestD) { bestD = d; best = rb; }
+    }
+  }
+  // Builder also gates on squad cap (the recruit handler bails there too).
+  let capped = false;
+  if (kind === 'recruit' && typeof ARENA_SQUAD_CAP === 'number') {
+    const sq = (typeof _mpAliveSquadCount === 'function')
+      ? _mpAliveSquadCount()
+      : ((typeof allies !== 'undefined' && allies) ? allies.filter(a => a && a.alive).length : 0);
+    capped = sq >= ARENA_SQUAD_CAP;
+  }
+  const affordable = (needEnergy <= 0 || (game._energy || 0) >= needEnergy) && !capped;
+  return { kind, lz, le, target: best, affordable, needEnergy };
+}
+
 // G-key handler. Returns true if we converted (so the dispatcher skips grenade).
 // Phase 18: TWO recruit paths now:
 //   (a) STUNNED targets — player walks up to a KO-stunned enemy (white, frozen)
