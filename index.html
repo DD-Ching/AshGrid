@@ -2755,6 +2755,12 @@ try { window.AG = AG; } catch (e) {}
 // ============ STATE ============
 const game = {
   state: 'menu',
+  // Phase 186 — chassis-as-classes EXCLUSIVE abilities default ON (dev). Each
+  // chassis only has its own kit (builder=build+recruit, wolf=dash/devour/heal,
+  // heavy=arsenal/seize); G is a per-chassis execute. Set to false to play the
+  // old "everyone has everything" mode. ⚠️ This is a DEV default — decide
+  // explicitly before any dev→main ship (it changes live gameplay).
+  _classes: true,
   mode: 'tactical',
   wave: 0,
   score: 0,
