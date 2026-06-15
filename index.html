@@ -164,6 +164,7 @@
      to the built-in stub which fail-opens the reward. See ad_dispatch.js. -->
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
 <script src="js/missions/nn_deathmatch.js?v=235"></script>
+<script src="js/siege_director.js?v=235"></script>
 <!-- Phase 138B.1 — .io-style bot names; must load before world_gen spawns -->
 <script src="js/bot_names.js?v=235"></script>
 <!-- Phase 139b — believable leaderboard seed (uses pickBotName); presentation-only -->
@@ -4132,6 +4133,8 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   if (gameMode === 'siege') {
     blueSize = 1; redSize = 3;
     if (typeof _forceVariantId !== 'undefined') _forceVariantId = 'survival_fort';
+    game._siegeDay = null;          // 188B — director re-inits to Day 1 for this run
+    game._siegeWeather = 'clear';
     gameMode = 'survival';   // reuse the survival factory + wave spawning verbatim
   } else if (typeof _forceVariantId !== 'undefined') {
     _forceVariantId = null;  // clear the fort force for every non-siege match
@@ -4940,6 +4943,7 @@ function update() {
   // banners last the same wall-time on every display refresh. render() only
   // reads them. Runs after updateSoundEvents() so this tick's kills are seen.
   if (typeof updateKillstreakFx === 'function') updateKillstreakFx();
+  if (typeof updateSiegeDirector === 'function') updateSiegeDirector();   // 188B — siege timeline director
   if (typeof updateAchievementFx === 'function') updateAchievementFx();   // 184n — unlock card
   if (typeof updateSwapToast === 'function') updateSwapToast();           // 184p — display-rate-safe toast
   if (typeof updateRecruitFx === 'function') updateRecruitFx();
