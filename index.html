@@ -2030,6 +2030,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <div class="diff-pick-inner">
         <button data-mode="dm"       class="mode-btn diff-btn active">对抗<span>DEATHMATCH</span></button>
         <button data-mode="survival" class="mode-btn diff-btn">生存<span>SURVIVAL</span></button>
+        <button data-mode="siege"    class="mode-btn diff-btn">守城<span>SIEGE · LAST STAND</span></button>
         <button data-mode="defense"  class="mode-btn diff-btn">防御<span>DEFENSE</span></button>
         <button data-mode="helo"     class="mode-btn diff-btn">撤离<span>HELO EXTRACT</span></button>
         <button data-mode="convoy"   class="mode-btn diff-btn">护送<span>CONVOY</span></button>
@@ -4122,6 +4123,19 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   // SURVIVAL + HELO spawn enemies per-wave; initial redSize is overridden
   // by the mission factory anyway. Just set a sane initial squad size.
   if (gameMode === 'survival') { redSize = 3; }
+  // Phase 188 — SIEGE / 守城: a no-respawn last-stand at the BASTION fort. Reuses
+  // the survival wave engine wholesale (escalating reinforcements), but: SOLO (no
+  // auto-ally bots → blueSize 1), the run ENDS on team-wipe (game._siege → no
+  // respawn, handled in death_decider), and the map is forced to the fort. Score
+  // = waves/days survived. Additive; everything else is the survival path.
+  game._siege = (gameMode === 'siege');
+  if (gameMode === 'siege') {
+    blueSize = 1; redSize = 3;
+    if (typeof _forceVariantId !== 'undefined') _forceVariantId = 'survival_fort';
+    gameMode = 'survival';   // reuse the survival factory + wave spawning verbatim
+  } else if (typeof _forceVariantId !== 'undefined') {
+    _forceVariantId = null;  // clear the fort force for every non-siege match
+  }
   if (gameMode === 'helo')     { redSize = 0; blueSize = Math.max(blueSize, 3); }
   if (gameMode === 'convoy')   { redSize = 0; blueSize = Math.max(blueSize, 3); }
   if (gameMode === 'sniper')   { weaponId = 'SNIPER'; }
