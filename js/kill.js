@@ -51,5 +51,14 @@ function killUnit(unit, opts) {
   for (let i = 0; i < _unitDeathHooks.length; i++) {
     try { _unitDeathHooks[i](unit, opts); } catch (e) { /* a bad hook can't break a kill */ }
   }
+  // Phase 187b — every dead ENEMY drops its gun on the ground ("敵人死掉了都會噴
+  // 裝備…槍都會掉地上"), so the Heavy can walk over + collect it (stacking). Gated
+  // on game._classes (the heavy-collection loop is a classes feature); enemies
+  // only (team !== 0, not the player). Ground-weapon list self-caps.
+  if (typeof game !== 'undefined' && game._classes
+      && typeof player !== 'undefined' && unit !== player && unit.team !== 0
+      && unit._weapon && typeof _spawnGroundWeapon === 'function') {
+    _spawnGroundWeapon(unit.x, unit.y, unit._weapon);
+  }
   return true;
 }
