@@ -44,6 +44,7 @@ const SIEGE_SCRIPT = [
   { day: 2, at: 3,  kind: 'spawn',   unit: 'infantry', n: 6 },
   { day: 2, at: 13, kind: 'camera',  fx: 'shake', mag: 7, dur: 16 },   // 運鏡 — the tank arrives
   { day: 2, at: 14, kind: 'spawn',   unit: 'tank',     n: 1 },
+  { day: 2, at: 14, kind: 'camera',  fx: 'focus', on: 'tank', dur: 50 },   // 運鏡 — armour reveal
   { day: 2, at: 22, kind: 'beat',    zh: '無人機!保持移動', en: 'DRONES! KEEP MOVING' },
   { day: 2, at: 23, kind: 'drone',   n: 3 },                       // first drone probe — forces kiting
   { day: 2, at: 30, kind: 'spawn',   unit: 'infantry', n: 6 },
@@ -55,6 +56,7 @@ const SIEGE_SCRIPT = [
   { day: 3, at: 2,  kind: 'spawn',   unit: 'infantry', n: 8 },
   { day: 3, at: 15, kind: 'camera',  fx: 'shake', mag: 8, dur: 18 },
   { day: 3, at: 16, kind: 'spawn',   unit: 'tank',     n: 2 },
+  { day: 3, at: 16, kind: 'camera',  fx: 'focus', on: 'tank', dur: 50 },   // 運鏡 — twin armour reveal
   { day: 3, at: 10, kind: 'drone',   n: 4 },                       // drone SWARM — sustained pressure
   { day: 3, at: 26, kind: 'drone',   n: 5 },
   { day: 3, at: 34, kind: 'spawn',   unit: 'infantry', n: 8 },
@@ -83,7 +85,20 @@ const _SIEGE_CUE = {
   },
   tod(c)     { if (typeof TOD !== 'undefined' && c.name) TOD.setTOD(c.name); },
   weather(c) { if (typeof game !== 'undefined') game._siegeWeather = c.w || 'clear'; },
-  camera(c)  { if (c.fx === 'shake' && typeof triggerShake === 'function') triggerShake(c.mag || 6, c.dur || 14); },
+  // 運鏡 — camera cues. fx:'shake' = impact; fx:'focus' = a brief cinematic
+  // look-at (sets game._cineFocus; the top-priority 'siegeCine' CAMERA_MODE glides
+  // there + back). Focus target: explicit {x,y}, or on:'tank'/'enemies' (the
+  // centroid of that threat), else the player. dur is in ticks (~60 ≈ 1s).
+  camera(c) {
+    if (c.fx === 'shake') { if (typeof triggerShake === 'function') triggerShake(c.mag || 6, c.dur || 14); return; }
+    if (c.fx === 'focus') {
+      const pt = _siegeFocusPoint(c);
+      if (pt && typeof game !== 'undefined') {
+        const sc = (c.scale != null) ? c.scale : (typeof camera !== 'undefined' ? camera.scale : 1);
+        game._cineFocus = { x: pt.x, y: pt.y, scale: sc, until: (game.time || 0) + (c.dur || 60) };
+      }
+    }
+  },
   beat(c)    {
     if (typeof showSwapToast === 'function') {
       const zh = (typeof getLang === 'function' && getLang() === 'zh');
@@ -130,6 +145,25 @@ function _siegeTankBreach() {
   }
 }
 
+// Resolve a 'camera focus' cue's target point: explicit {x,y}; else the centroid
+// of the threat (on:'tank' → tanks only, else all enemies + drones); else player.
+function _siegeFocusPoint(c) {
+  if (typeof c.x === 'number' && typeof c.y === 'number') return { x: c.x, y: c.y };
+  const wantTank = (c.on === 'tank');
+  let sx = 0, sy = 0, n = 0;
+  if (typeof enemies !== 'undefined' && enemies) for (const e of enemies) {
+    if (!e || !e.alive) continue;
+    if (wantTank && !e._isTank) continue;
+    sx += e.x; sy += e.y; n++;
+  }
+  if (!wantTank && typeof enemyDrones !== 'undefined' && enemyDrones) for (const d of enemyDrones) {
+    if (d && d.alive) { sx += d.x; sy += d.y; n++; }
+  }
+  if (n) return { x: sx / n, y: sy / n };
+  if (typeof player !== 'undefined' && player) return { x: player.x, y: player.y };
+  return null;
+}
+
 // ── Runtime ─────────────────────────────────────────────────────────────────
 function _siegeAliveEnemies() {
   let n = 0;
@@ -154,6 +188,7 @@ function _siegeProcDay(day) {
     { day, at: 10, kind: 'drone',   n: drones },
     { day, at: 16, kind: 'camera',  fx: 'shake', mag: 8, dur: 16 },
     { day, at: 17, kind: 'spawn',   unit: 'tank',     n: tanks },
+    { day, at: 17, kind: 'camera',  fx: 'focus', on: 'tank', dur: 50 },
     { day, at: 26, kind: 'drone',   n: drones + 2 },
     { day, at: 34, kind: 'spawn',   unit: 'infantry', n: inf },
   ];
@@ -219,11 +254,26 @@ function updateSiegeDirector() {
 function renderSiegeWeather() {
   if (typeof game === 'undefined' || !game._siege || game.state !== 'playing') return;
   const w = game._siegeWeather;
-  if (w !== 'rain' && w !== 'storm') return;
+  if (w !== 'rain' && w !== 'storm' && w !== 'wind') return;
   if (typeof ctx === 'undefined' || !ctx) return;
   const W_ = (typeof W === 'function') ? W() : 800, H_ = (typeof H === 'function') ? H() : 600;
   const t = (typeof game.time === 'number') ? game.time : 0;
   ctx.save();
+  // WIND — faint fast near-horizontal dust streaks (lighter than rain), no flash.
+  if (w === 'wind') {
+    ctx.strokeStyle = 'rgba(200, 195, 175, 0.14)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < 30; i++) {
+      const seed = i * 51.7;
+      const x = (seed * 17 + t * 34) % (W_ + 60) - 30;
+      const y = (seed * 37) % H_;
+      ctx.moveTo(x, y); ctx.lineTo(x - 18, y + 2);
+    }
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
   // Rain streaks — count + slant scale with intensity. Phase-scrolled by game.time.
   const count = (w === 'storm') ? 90 : 55;
   ctx.strokeStyle = 'rgba(170, 190, 210, 0.28)';
