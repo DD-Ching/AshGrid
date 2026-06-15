@@ -44,6 +44,8 @@ const SIEGE_SCRIPT = [
   { day: 2, at: 3,  kind: 'spawn',   unit: 'infantry', n: 6 },
   { day: 2, at: 13, kind: 'camera',  fx: 'shake', mag: 7, dur: 16 },   // 運鏡 — the tank arrives
   { day: 2, at: 14, kind: 'spawn',   unit: 'tank',     n: 1 },
+  { day: 2, at: 22, kind: 'beat',    zh: '無人機!保持移動', en: 'DRONES! KEEP MOVING' },
+  { day: 2, at: 23, kind: 'drone',   n: 3 },                       // first drone probe — forces kiting
   { day: 2, at: 30, kind: 'spawn',   unit: 'infantry', n: 6 },
 
   // ── DAY 3 — night, storm, tanks + a crush ──
@@ -53,6 +55,8 @@ const SIEGE_SCRIPT = [
   { day: 3, at: 2,  kind: 'spawn',   unit: 'infantry', n: 8 },
   { day: 3, at: 15, kind: 'camera',  fx: 'shake', mag: 8, dur: 18 },
   { day: 3, at: 16, kind: 'spawn',   unit: 'tank',     n: 2 },
+  { day: 3, at: 10, kind: 'drone',   n: 4 },                       // drone SWARM — sustained pressure
+  { day: 3, at: 26, kind: 'drone',   n: 5 },
   { day: 3, at: 34, kind: 'spawn',   unit: 'infantry', n: 8 },
 ];
 const SIEGE_SCRIPT_MAX_DAY = SIEGE_SCRIPT.reduce((m, c) => Math.max(m, c.day), 0);
@@ -66,6 +70,15 @@ const _SIEGE_CUE = {
       if (!sp || typeof _arenaSpawnFactoryBot !== 'function') continue;
       _arenaSpawnFactoryBot('red', sp.x, sp.y);
       if (c.unit === 'tank') _siegeMakeTank(enemies[enemies.length - 1]);
+    }
+  },
+  // 無人機群 — spawn N kamikaze drones (they track the player + detonate, and are
+  // shootable: hp 18, fast + turning, so downing them is a skill "chance" and a
+  // swarm forces kiting/迂迴, even inside the fort). Reuses spawnDroneEnemy.
+  drone(c) {
+    const n = c.n || 1;
+    for (let i = 0; i < n; i++) {
+      if (typeof spawnDroneEnemy === 'function') spawnDroneEnemy(c.from ? { droneBias: c.from } : null);
     }
   },
   tod(c)     { if (typeof TOD !== 'undefined' && c.name) TOD.setTOD(c.name); },
@@ -119,8 +132,10 @@ function _siegeTankBreach() {
 
 // ── Runtime ─────────────────────────────────────────────────────────────────
 function _siegeAliveEnemies() {
-  if (typeof enemies === 'undefined' || !enemies) return 0;
-  let n = 0; for (const e of enemies) if (e && e.alive && !e._koStunned) n++;
+  let n = 0;
+  if (typeof enemies !== 'undefined' && enemies) for (const e of enemies) if (e && e.alive && !e._koStunned) n++;
+  // Drones count too — a Day isn't "held" while the swarm is still in the air.
+  if (typeof enemyDrones !== 'undefined' && enemyDrones) for (const d of enemyDrones) if (d && d.alive) n++;
   return n;
 }
 function _siegeDayLabel() {   // for the HUD / end-card ("survived N days")
@@ -130,13 +145,16 @@ function _siegeDayLabel() {   // for the HUD / end-card ("survived N days")
 function _siegeProcDay(day) {
   const inf = 6 + day * 2;
   const tanks = Math.max(1, Math.floor((day - SIEGE_SCRIPT_MAX_DAY) / 2) + 1);
+  const drones = 3 + (day - SIEGE_SCRIPT_MAX_DAY);   // swarm grows each day
   const cues = [
     { day, at: 0,  kind: 'tod',     name: (day % 2 ? 'night' : 'dusk') },
     { day, at: 0,  kind: 'weather', w: 'storm' },
     { day, at: 0,  kind: 'beat',    zh: '第 ' + day + ' 天 · 死守', en: 'DAY ' + day + ' · LAST STAND' },
     { day, at: 2,  kind: 'spawn',   unit: 'infantry', n: inf },
+    { day, at: 10, kind: 'drone',   n: drones },
     { day, at: 16, kind: 'camera',  fx: 'shake', mag: 8, dur: 16 },
     { day, at: 17, kind: 'spawn',   unit: 'tank',     n: tanks },
+    { day, at: 26, kind: 'drone',   n: drones + 2 },
     { day, at: 34, kind: 'spawn',   unit: 'infantry', n: inf },
   ];
   return cues;
