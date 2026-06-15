@@ -201,8 +201,10 @@ const KEY_BINDINGS = {
   b:   { action: () => toggleBuildMode() },
   // Phase 140 — manual weapon swap removed. One pawn = one weapon; you change
   // weapon by walking onto a killed enemy's dropped gun (see weapon_drop.js).
-  // Phase 187 — Heavy ULTIMATE moved OFF X onto SHIFT (each chassis's signature
-  // key; fired on the keydown edge in the listener below). X is no longer bound.
+  // Phase 187/188I — Heavy ULTIMATE (and the wolf dash toggle) is each chassis's
+  // signature, now bound to SPACE (was X→Shift). Fired on the keydown edge in the
+  // listener below, gated on player.alive so it never collides with SPACE=respawn
+  // (which only fires while dead). X is no longer bound.
   u:   { action: () => upgradeNearestModule() },
   v:   { action: () => _toggleAimAssist() },
   // Phase 6B: recycle the lowest-SEED squad bot into +60 build energy.
@@ -328,20 +330,24 @@ window.addEventListener('keydown', e => {
   // (arena-mp: FTUE key-lock check stripped — arena never locks keys.)
   // All gameplay key paths require state=playing.
   if (game.state !== 'playing') return;
-  // Phase 187 — Shift = each chassis's signature key. HEAVY fires its ULTIMATE on
-  // the keydown edge (one-shot all-weapons burst; e.repeat guard so a held Shift
-  // doesn't re-fire/drain). WOLF/builder fall through: keys['shift'] was already
-  // set above for the wolf-dash poll in updatePlayer (builder gets no sprint,
-  // gated there). Classes-off → Shift is just universal sprint (poll), so skip.
-  if (k === 'shift') {
-    if (typeof game !== 'undefined' && game._classes && typeof player !== 'undefined') {
-      if (player._chassis === 'heavy' && !e.repeat && typeof heavyUltimate === 'function') {
-        heavyUltimate();                                   // heavy 大招
-      } else if (player._chassis === 'wolf' && !e.repeat) {
-        player._dashOn = !player._dashOn;                  // 188E — wolf dash is a TOGGLE (on/off)
-        if (typeof showSwapToast === 'function') {
-          showSwapToast(player._dashOn ? T('▶ 衝刺 開', '▶ DASH ON') : T('◀ 衝刺 關', '◀ DASH OFF'));
-        }
+  // Phase 188I — SPACE is now EACH chassis's signature key (moved off Shift, per
+  // owner "Shift 改成全部都用空白鍵"). HEAVY fires its ULTIMATE; WOLF toggles its
+  // dash on/off. This only fires when ALIVE: the dead-state SPACE paths (killcam
+  // / SOLO / MP respawn) all returned above before we ever reach here, and the
+  // FPV-detonate SPACE returned earlier too — so there is no collision. Builder
+  // and classes-off get no signature (branch is wolf/heavy-only → SPACE falls
+  // through harmlessly). e.repeat guard so a held SPACE doesn't re-fire/drain.
+  if ((e.key === ' ' || e.code === 'Space')
+      && typeof game !== 'undefined' && game._classes
+      && typeof player !== 'undefined' && player && player.alive
+      && (player._chassis === 'heavy' || player._chassis === 'wolf')) {
+    e.preventDefault();
+    if (player._chassis === 'heavy' && !e.repeat && typeof heavyUltimate === 'function') {
+      heavyUltimate();                                     // heavy 大招（空白鍵）
+    } else if (player._chassis === 'wolf' && !e.repeat) {
+      player._dashOn = !player._dashOn;                    // 188E — wolf dash is a TOGGLE (on/off)
+      if (typeof showSwapToast === 'function') {
+        showSwapToast(player._dashOn ? T('▶ 衝刺 開', '▶ DASH ON') : T('◀ 衝刺 關', '◀ DASH OFF'));
       }
     }
     return;
