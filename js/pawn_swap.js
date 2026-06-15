@@ -32,6 +32,10 @@ function swapPlayerToAlly(idx) {
     }
     return;
   }
+  // 187 — discard any in-flight build BEFORE we change identity/chassis. An
+  // alive→alive swap never hits killPlayer, so this is the path that fixed the
+  // "换人 build 状态残留 / 别的载具还能继续建" bug.
+  if (typeof exitBuildMode === 'function') exitBuildMode();
   // Phase 102 (server-side support shipped) — Phase 83's peers-present
   // block is REMOVED. The server now has a 'swap' message handler that
   // accepts an authoritative position update + clears lag-comp history +

@@ -201,6 +201,13 @@ function canAffordStructure(kind) { return canAffordEnergy(getStructureCost(kind
 // success. Caller checks build-mode + line-of-sight as needed.
 function placeStructure(kind, wx, wy) {
   const def = STRUCTURE_DEFS[kind]; if (!def) return false;
+  // 187 — belt-and-braces: build is builder-only under game._classes. Drag-release
+  // callsites call placeStructure directly with leftover _dragStart/_dragEnd, so a
+  // stale mouseup from a non-builder can't slip a structure past _canBuildPlace.
+  if (typeof game !== 'undefined' && game._classes
+      && typeof player !== 'undefined' && player._chassis && player._chassis !== 'humanoid') {
+    return false;
+  }
   if (!canAffordStructure(kind)) {
     showSwapToast(T(`能源不足 (需 ${def.cost})`, `Insufficient energy (need ${def.cost})`));
     return false;
@@ -838,6 +845,7 @@ function exitBuildMode() {
   buildMode.radialOpen = false;
   buildMode._dragStart = null;
   buildMode._dragEnd   = null;
+  buildMode.radialCat  = null;   // 187 — full teardown (was leaking the category)
 }
 
 // ============ BUILD PLACEMENT HELPERS (deduped) ============
@@ -883,7 +891,13 @@ function _canBuildPlace() {
   return buildMode.active
       && game.state === 'playing'
       && !game._paused
-      && game.mode === 'tactical';     // §A.4 — UAV / FPV view doesn't place
+      && game.mode === 'tactical'      // §A.4 — UAV / FPV view doesn't place
+      // 187 — continuous gate (not just at toggle): dead players + non-builder
+      // chassis (under game._classes) can never place. One source of truth read
+      // by preview / mouse / touch / number-key, so all fail closed instantly.
+      && (typeof player !== 'undefined' && player && player.alive)
+      && !(typeof game !== 'undefined' && game._classes
+           && player._chassis && player._chassis !== 'humanoid');
 }
 
 // Snap a screen pixel to the build grid + check it's within reach of the
