@@ -25,6 +25,7 @@
 const SIEGE_TICKS_PER_SEC = 60;   // sim ticks per script-second (the tick-second unit)
 const SIEGE_DAY_GAP_SEC   = 8;    // calm between days (build / heal / breathe)
 const SIEGE_CLEAR_GRACE   = 2;    // sec after the last cue before a day can end
+const SIEGE_TANK_BREACH_DMG = 2.2; // wall HP a tank chews per tick while touching it (坦克轰墙)
 
 // ── THE TIMELINE (edit this to author the siege) ────────────────────────────
 const SIEGE_SCRIPT = [
@@ -91,6 +92,31 @@ function _siegeMakeTank(e) {
   e.callsign = 'TANK';
 }
 
+// 坦克轰墙 — a tank touching a fort wall chews through it (reuses the destructible
+// buildings[] model: bullets already splice buildings at hp<=0; this lets a tank
+// pressed against a wall punch a hole even when its rocket isn't aimed there).
+function _siegeTankBreach() {
+  if (typeof enemies === 'undefined' || !enemies || typeof buildings === 'undefined' || !buildings) return;
+  for (const e of enemies) {
+    if (!e || !e.alive || !e._isTank) continue;
+    const r = e.radius || 26;
+    for (let bi = buildings.length - 1; bi >= 0; bi--) {
+      const b = buildings[bi];
+      if (b.kind !== 'building') continue;
+      // AABB-vs-circle proximity (tank centre within r of the wall rect).
+      const cx = Math.max(b.x, Math.min(e.x, b.x + b.w));
+      const cy = Math.max(b.y, Math.min(e.y, b.y + b.h));
+      if ((e.x - cx) ** 2 + (e.y - cy) ** 2 > r * r) continue;
+      b.hp -= SIEGE_TANK_BREACH_DMG;
+      if (b.hp <= 0) {
+        if (typeof createExplosion === 'function') createExplosion(b.x + b.w / 2, b.y + b.h / 2, 'small');
+        buildings.splice(bi, 1);       // hole punched (collision + render gap)
+        if (typeof triggerShake === 'function') triggerShake(5, 10);
+      }
+    }
+  }
+}
+
 // ── Runtime ─────────────────────────────────────────────────────────────────
 function _siegeAliveEnemies() {
   if (typeof enemies === 'undefined' || !enemies) return 0;
@@ -132,6 +158,7 @@ function updateSiegeDirector() {
   if (typeof game === 'undefined' || !game._siege || game.state !== 'playing') return;
   if (typeof player !== 'undefined' && player && !player.alive) return;   // run ending — no new spawns
   if (game._siegeDay == null) _siegeStartDay(1);
+  _siegeTankBreach();   // 坦克轰墙 — tanks chew through fort walls on contact
 
   // In the calm gap between days, just count down.
   if (game._siegeGapUntil && game._siegeT < game._siegeGapUntil) {
@@ -166,4 +193,38 @@ function updateSiegeDirector() {
       showSwapToast(zh ? ('▶ 第 ' + game._siegeDay + ' 天 守住了 · 整備') : ('▶ DAY ' + game._siegeDay + ' HELD · REGROUP'));
     }
   }
+}
+
+// ── Weather VISUAL (背景的改變) — a cheap screen-space overlay the 'weather' cue
+// drives via game._siegeWeather. rain/storm = diagonal streaks; storm adds an
+// occasional lightning flash. Registered as an FX layer (under the HUD).
+function renderSiegeWeather() {
+  if (typeof game === 'undefined' || !game._siege || game.state !== 'playing') return;
+  const w = game._siegeWeather;
+  if (w !== 'rain' && w !== 'storm') return;
+  if (typeof ctx === 'undefined' || !ctx) return;
+  const W_ = (typeof W === 'function') ? W() : 800, H_ = (typeof H === 'function') ? H() : 600;
+  const t = (typeof game.time === 'number') ? game.time : 0;
+  ctx.save();
+  // Rain streaks — count + slant scale with intensity. Phase-scrolled by game.time.
+  const count = (w === 'storm') ? 90 : 55;
+  ctx.strokeStyle = 'rgba(170, 190, 210, 0.28)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i < count; i++) {
+    const seed = i * 73.13;
+    const x = (seed * 13 + t * 9) % (W_ + 40) - 20;
+    const y = (seed * 29 + t * 26) % (H_ + 40) - 20;
+    ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 14);
+  }
+  ctx.stroke();
+  // Storm: a brief lightning flash on a slow pseudo-random cadence.
+  if (w === 'storm') {
+    const f = Math.sin(t * 0.013) * Math.sin(t * 0.071);   // sparse peaks
+    if (f > 0.985) { ctx.fillStyle = 'rgba(230,240,255,' + ((f - 0.985) / 0.015 * 0.35).toFixed(3) + ')'; ctx.fillRect(0, 0, W_, H_); }
+  }
+  ctx.restore();
+}
+if (typeof registerFxLayer === 'function') {
+  registerFxLayer({ id: 'siege-weather', space: 'overlay-under-hud', draw: renderSiegeWeather });
 }
