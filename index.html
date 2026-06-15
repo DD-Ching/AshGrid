@@ -3681,6 +3681,25 @@ function _startEntryCountdown() {
     if (secsLeft <= 0) _finishEntryCountdown();
   }, 1000);
 }
+// Phase 188J — open the COMBAT SETUP mode picker (#nnLobby). The "one big
+// START button" simplification (ENTER ARENA → _startEntryCountdown → match)
+// left the mode picker — survival / 守城 SIEGE / defense / helo / convoy /
+// duel / sniper — ORPHANED: nothing un-hid #nnLobby anymore (the old path was
+// the tutorial 'done' button, and the tutorial card is never shown), so every
+// non-default mode was unreachable on BOTH dev and live. SOLO now routes here
+// so you can actually choose the mode. #nnLobby already has its own launch
+// (lobbyStartBtn → startNNSkirmish(_lobby.mode)) + back (lobbyCancelBtn).
+function _openCombatSetup() {
+  const input = document.getElementById('callsignInput');
+  if (input && typeof setOperatorName === 'function') {
+    const typed = input.value && input.value.trim();
+    if (typed) setOperatorName(typed);
+  }
+  document.getElementById('start').classList.add('hidden');
+  document.getElementById('nnLobby').classList.remove('hidden');
+  // Re-apply unlock gating now the picker is visible (no-op when all unlocked).
+  if (typeof applyUnlockGating === 'function') applyUnlockGating();
+}
 // Phase 20d — SOLO / MULTI toggle. Tracks which mode the player is about
 // to drop into. SOLO is the default (single-player vs NN bots, no peers,
 // no Firebase load). MULTI re-enters with ?mp=1&room=... so the next page
@@ -3729,7 +3748,21 @@ function _refreshModeButtons() {
   if (roomEl && _entryRoom) roomEl.value = _entryRoom;
 })();
 const _modeSoloBtn = document.getElementById('modeSoloBtn');
-if (_modeSoloBtn) _modeSoloBtn.onclick = () => { _entryMode = 'solo'; _refreshModeButtons(); };
+if (_modeSoloBtn) _modeSoloBtn.onclick = () => {
+  _entryMode = 'solo';
+  _refreshModeButtons();
+  // SOLO opens the COMBAT SETUP picker directly (choose mode incl. 守城/SIEGE).
+  // If we're inside an MP session (?mp=1), drop it and reload into pure solo
+  // first, then auto-open the picker after the reload (ag.autoSetup).
+  const p = new URLSearchParams(location.search);
+  if (p.get('mp') === '1') {
+    p.delete('mp'); p.delete('room'); p.set('nn', '1');
+    try { sessionStorage.setItem('ag.autoSetup', '1'); } catch (e) {}
+    location.search = p.toString();
+    return;
+  }
+  _openCombatSetup();
+};
 const _modeMpBtn = document.getElementById('modeMpBtn');
 if (_modeMpBtn) _modeMpBtn.onclick = () => {
   _entryMode = 'mp';
@@ -3789,10 +3822,12 @@ if (_nnBtn) {
       return;
     }
     if (_entryMode === 'solo' && inMp) {
-      // Drop mp param so the next match is pure single-player
+      // Drop mp param so the next match is pure single-player, then auto-open
+      // the COMBAT SETUP picker after the reload (ag.autoSetup, not autoEnter —
+      // SOLO chooses a mode rather than quick-launching the default).
       p.delete('mp'); p.delete('room');
       p.set('nn', '1');
-      try { sessionStorage.setItem('ag.autoEnter', '1'); } catch (e) {}
+      try { sessionStorage.setItem('ag.autoSetup', '1'); } catch (e) {}
       location.search = p.toString();
       return;
     }
@@ -3809,7 +3844,9 @@ if (_nnBtn) {
         return;
       }
     }
-    _startEntryCountdown();
+    // SOLO → COMBAT SETUP picker (choose mode); MP → quick-match countdown.
+    if (_entryMode === 'solo') _openCombatSetup();
+    else _startEntryCountdown();
   };
 }
 // If we just reloaded with ag.autoEnter set, fire the countdown immediately.
@@ -3818,6 +3855,10 @@ if (_nnBtn) {
     if (sessionStorage.getItem('ag.autoEnter') === '1') {
       sessionStorage.removeItem('ag.autoEnter');
       setTimeout(_startEntryCountdown, 200);
+    } else if (sessionStorage.getItem('ag.autoSetup') === '1') {
+      // SOLO reload finished → open the COMBAT SETUP mode picker (Phase 188J).
+      sessionStorage.removeItem('ag.autoSetup');
+      setTimeout(_openCombatSetup, 150);
     }
   } catch (e) {}
 })();
