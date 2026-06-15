@@ -1277,13 +1277,14 @@ function _hud_drawVitalsCard(x, y, w, h) {
   // is dashing (energy drains live) so you SEE the dash cost.
   if (game._nnMode) {
     const _ev = Math.floor(game._energy || 0);
-    const _eFrac = Math.max(0, Math.min(1, _ev / 100));
+    const _emax = (typeof game._energyMax === 'number' && game._energyMax > 0) ? game._energyMax : 100;
+    const _eFrac = Math.max(0, Math.min(1, _ev / _emax));   // 188E — bar tracks the growable max (wolf devour 总量变大)
     const _ezh = (typeof getLang === 'function' && getLang() === 'zh');
     ctx.fillStyle = '#aaa';
     ctx.font = 'bold 8px monospace';
     ctx.fillText(_ezh ? '能源' : 'ENERGY', barX, by - 1);
     ctx.textAlign = 'right';
-    ctx.fillText(_ev + '⚡', barX + barW, by - 1);
+    ctx.fillText(_ev + '/' + _emax + '⚡', barX + barW, by - 1);
     ctx.textAlign = 'left';
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(barX, by, barW, barH);

@@ -4225,8 +4225,8 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   // works anywhere on the battlefield. Per-kill +20 / passive +0.5/sec
   // payouts come from updateStructures' generator tick.
   game._energy = 100;
-  game._wolfRegenStacks = 0;   // Phase 186 — wolf devour regen stacks, fresh each match
-  if (typeof player !== 'undefined' && player) player._arsenal = null;   // 187b — heavy multiset, fresh each match
+  game._energyMax = 100;       // Phase 188E — energy pool ceiling; wolf devour grows it (总量变大), fresh each match
+  if (typeof player !== 'undefined' && player) { player._arsenal = null; player._dashOn = false; }   // 187b/188E — fresh each match
   game._structures = [];
   game._airstrikes = [];
   game._smokeClouds = [];
@@ -4991,35 +4991,37 @@ function updatePlayer() {
   // recover to STAMINA_RECOVERY_MIN before sprint re-engages (prevents
   // stuttering on/off as it dips around 0).
   const shiftHeld = !!(keys['shift']);
-  // Phase 187 — Shift accelerate is the WOLF's signature only ("加速現在是機器人的
-  // 特性"). Under game._classes, builder + heavy get NO sprint/dash from Shift
-  // (heavy's Shift fires its ultimate via the keydown edge — key_bindings.js).
-  // Classes off → everyone sprints (legacy). player.sprinting is the single source
-  // read by both local speed AND the MP input send, so gating here keeps MP in sync.
-  const _sprintAllowed = !(typeof game !== 'undefined' && game._classes)
-                       || (typeof player !== 'undefined' && player._chassis === 'wolf');
-  const wantsSprint = _sprintAllowed && shiftHeld && moving && player.stamina > 0
-                     && (!player._spentToZero || player.stamina >= STAMINA_RECOVERY_MIN);
-  player.sprinting = wantsSprint;
-
-  // Phase 184c — Charger DASH: for a wolf with the class system on, sprinting IS
-  // the dash — it additionally drains ENERGY and grants the -70% damage window
-  // (player._dashActive, read by chassis.js _applyDamageToUnit). Out of energy →
-  // dash + its speed boost end this frame. SOLO only (MP dash → server, 184e).
+  const _cls = (typeof game !== 'undefined' && game._classes);
+  const _isWolf = _cls && typeof player !== 'undefined' && player._chassis === 'wolf';
+  let wantsSprint;
   player._dashActive = false;
-  if (player.sprinting && typeof game !== 'undefined' && game._classes
-      && player._chassis === 'wolf') {
-    const _dashPerF = ((typeof BALANCE === 'object' && BALANCE.ability)
-      ? (BALANCE.ability.dash || 0) : 0) / 60;   // per-second rate → per-frame
-    if ((game._energy || 0) >= _dashPerF) {
+  if (_isWolf) {
+    // Phase 188E — WOLF dash is a TOGGLE (player._dashOn, flipped by Shift keydown
+    // in key_bindings). While ON it drains ENERGY (not stamina) + grants the dash
+    // DR (player._dashActive) + the speed boost while moving. Out of energy / dead
+    // → auto-off. Kills REFILL energy (extend the dash) + devour grows its max —
+    // so aggressive play sustains it. "shift 開關 · 能量損耗 · 擊殺恢復/延長".
+    const _dashPerF = ((typeof BALANCE === 'object' && BALANCE.ability) ? (BALANCE.ability.dash || 0) : 0) / 60;
+    if (player._dashOn && player.alive && (game._energy || 0) >= _dashPerF) {
       game._energy = Math.max(0, game._energy - _dashPerF);
       player._dashActive = true;
+      wantsSprint = !!moving;          // speed boost only when actually moving
     } else {
-      player.sprinting = false;
+      player._dashOn = false;          // out of energy / dead → toggle resets off
+      wantsSprint = false;
     }
+  } else if (!_cls) {
+    // Legacy (classes off): hold-Shift sprint, stamina-gated, everyone.
+    wantsSprint = shiftHeld && moving && player.stamina > 0
+                && (!player._spentToZero || player.stamina >= STAMINA_RECOVERY_MIN);
+  } else {
+    wantsSprint = false;               // classes-on builder/heavy: no sprint
   }
+  player.sprinting = wantsSprint;
 
-  if (player.sprinting) {
+  // Stamina drain/regen — only the LEGACY hold-sprint spends stamina; the wolf
+  // toggle dash spends ENERGY (above), so it must NOT also drain stamina.
+  if (player.sprinting && !_isWolf) {
     player.stamina = Math.max(0, player.stamina - STAMINA_DRAIN_PER_F);
     if (player.stamina === 0) player._spentToZero = true;
     player.staminaRegenLockUntil = game.time + STAMINA_REGEN_DELAY;

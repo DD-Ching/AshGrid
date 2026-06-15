@@ -66,14 +66,7 @@ function updateMission() {
     // generator (the old way to accelerate income) was removed from the wheel
     // along with the power-supply mechanic, so passive trickle is now the
     // ONLY income besides kills. User: '充電太慢了' / '東西變少, 簡單一點'.
-    // Phase 186 — wolf devour stacks add to the regen RATE (累加能量回复速度).
-    // _wolfRegenStacks is set by the wolf's devour (arena_recruitment.js), 0 for
-    // every other chassis / when classes off → no effect.
-    let _regen = BALANCE.energy.regenPerSec;
-    if (game._wolfRegenStacks && typeof BALANCE.wolf === 'object') {
-      _regen += game._wolfRegenStacks * (BALANCE.wolf.devourRegenPerStack || 0);
-    }
-    addEnergy(_regen / 60);
+    addEnergy(BALANCE.energy.regenPerSec / 60);   // passive trickle (188E: wolf devour now grows the MAX, not the regen rate)
     updateStructures();
     updateAirstrikes();
   }

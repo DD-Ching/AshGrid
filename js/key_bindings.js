@@ -334,10 +334,15 @@ window.addEventListener('keydown', e => {
   // set above for the wolf-dash poll in updatePlayer (builder gets no sprint,
   // gated there). Classes-off → Shift is just universal sprint (poll), so skip.
   if (k === 'shift') {
-    if (typeof game !== 'undefined' && game._classes
-        && typeof player !== 'undefined' && player._chassis === 'heavy'
-        && !e.repeat && typeof heavyUltimate === 'function') {
-      heavyUltimate();
+    if (typeof game !== 'undefined' && game._classes && typeof player !== 'undefined') {
+      if (player._chassis === 'heavy' && !e.repeat && typeof heavyUltimate === 'function') {
+        heavyUltimate();                                   // heavy 大招
+      } else if (player._chassis === 'wolf' && !e.repeat) {
+        player._dashOn = !player._dashOn;                  // 188E — wolf dash is a TOGGLE (on/off)
+        if (typeof showSwapToast === 'function') {
+          showSwapToast(player._dashOn ? T('▶ 衝刺 開', '▶ DASH ON') : T('◀ 衝刺 關', '◀ DASH OFF'));
+        }
+      }
     }
     return;
   }
