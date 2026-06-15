@@ -419,15 +419,25 @@ function _mpHandleMessage(data) {
       // up-front so min() agrees and the heal isn't swallowed.
       const bx = data.x, by = data.y;
       if (typeof createExplosion === 'function' && typeof bx === 'number') createExplosion(bx, by, 'small');
-      if (typeof triggerRecruitFx === 'function') triggerRecruitFx('DEVOUR');
+      // Phase 188 — kind:'seize' = the HEAVY's G (处决抢夺), kind:'devour'/absent =
+      // the WOLF's G. VFX on every client; the loot is applied for the actor only.
+      const _seize = (data.kind === 'seize');
+      if (typeof triggerRecruitFx === 'function') triggerRecruitFx(_seize ? 'SEIZE' : 'DEVOUR');
       if (typeof playRadioStatic === 'function') playRadioStatic(0.55, 0.45);
       if (data.by === _mpState.myId && typeof player !== 'undefined' && player) {
-        const healed = (typeof data.healed === 'number') ? data.healed : 0;
-        if (healed > 0) player.hp = Math.min(player.maxHp || 100, (player.hp || 0) + healed);
-        if (typeof addEnergy === 'function') addEnergy(25);   // stolenEnergy — matches SOLO flat 25
-        if (typeof showSwapToast === 'function') {
-          showSwapToast(T('▸ 吞噬 · +' + healed + ' 血 +25 能量',
-                          '▸ DEVOUR · +' + healed + ' HP +25 energy'));
+        if (_seize) {
+          // Heavy seizes a consumable. MP bots carry no loadout, so a fixed FPV
+          // charge stands in for the SOLO weapon/FPV/grenade loot.
+          if (typeof fpv !== 'undefined') { fpv.available += 1; fpv.max = Math.max(fpv.max, fpv.available); }
+          if (typeof showSwapToast === 'function') showSwapToast(T('▸ 奪取 · +1 FPV', '▸ SEIZE · +1 FPV'));
+        } else {
+          const healed = (typeof data.healed === 'number') ? data.healed : 0;
+          if (healed > 0) player.hp = Math.min(player.maxHp || 100, (player.hp || 0) + healed);
+          if (typeof addEnergy === 'function') addEnergy(25);   // stolenEnergy — matches SOLO flat 25
+          if (typeof showSwapToast === 'function') {
+            showSwapToast(T('▸ 吞噬 · +' + healed + ' 血 +25 能量',
+                            '▸ DEVOUR · +' + healed + ' HP +25 energy'));
+          }
         }
       }
       break;

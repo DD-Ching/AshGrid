@@ -254,6 +254,7 @@ const ARMOR_MAX_CAP           = 500;           // clamp on client-sent aMax (san
 // rate-limit so a spoofed client can't machine-gun bursts (energy is the real
 // client-side gate; this is just abuse protection).
 const HEAVY_STOCKPILE_MAX = 3;
+const ULT_BURST_MAX       = 50;            // Phase 188 — full-arsenal ultimate fires up to N guns (matches client ARSENAL_CAP); bounds the one-tick burst
 const ULT_COOLDOWN_TICKS  = 1 * TICK_HZ;   // ≥1 s between server-accepted bursts
 const ULT_FAN_STEP        = 0.14;          // radians between barrels — matches js/heavy_arsenal.js
 // Arena recruit gates — authoritative server copies of the client constants in
@@ -1219,14 +1220,18 @@ export default class AshGridRoom {
       if (Math.hypot(bot.x - p.x, bot.y - p.y) > reach) return;   // out of reach
       if (bot.hp >= p.hp) return;                // must be WEAKER than me
       const bx = bot.x, by = bot.y;
-      const healed = _devourStolenHp(bot.maxHp || HP_MAX);
+      // Phase 188 — kind:'seize' = the HEAVY's G (处决抢夺): execute the bot but NO
+      // hp lifesteal (the heavy's loot — FPV/grenades — is client-side on
+      // executeOk). Default / kind:'devour' = the WOLF's G: execute + hp lifesteal.
+      const seize = (data.kind === 'seize');
+      const healed = seize ? 0 : _devourStolenHp(bot.maxHp || HP_MAX);
       bot.alive = false;                         // vanish — normal bot death + respawn
       bot.hp = 0;
       bot._respawnAt = this.tickCount + BOT_RESPAWN_TICKS;
-      p.hp = Math.min(p.maxHp || HP_MAX, p.hp + healed);   // lifesteal (rides snapshot)
+      if (healed) p.hp = Math.min(p.maxHp || HP_MAX, p.hp + healed);   // lifesteal (rides snapshot)
       this.party.broadcast(JSON.stringify({
         type: 'executeOk', botId, by: sender.id,
-        x: round1(bx), y: round1(by), healed,
+        x: round1(bx), y: round1(by), healed, kind: seize ? 'seize' : 'devour',
       }));
       return;
     }
@@ -1240,7 +1245,7 @@ export default class AshGridRoom {
     if (data.type === 'ultimateBurst') {
       if (!p.alive) return;
       if (p._lastUltTick != null && (this.tickCount - p._lastUltTick) < ULT_COOLDOWN_TICKS) return;
-      const list = Array.isArray(data.weapons) ? data.weapons.slice(0, HEAVY_STOCKPILE_MAX) : [];
+      const list = Array.isArray(data.weapons) ? data.weapons.slice(0, ULT_BURST_MAX) : [];
       if (!list.length) return;
       p._lastUltTick = this.tickCount;
       const baseAngle = num(data.angle);
