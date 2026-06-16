@@ -16,6 +16,7 @@
 const BALANCE = {
   energy: {
     regenPerSec:        3.0,   // passive trickle, per second   (index.html updateMission)
+    siegeBonusPerSec:   3.0,   // SIEGE-only extra trickle on top (build-centric mode; siege_mission)
     perKill:            20,    // each NN-mode kill              (bullets.js)
     spawnBeaconDestroy: 60,    // destroying an enemy spawn beacon (bullets.js, ×2 paths)
     mineDefuse:         10,    // finishing a hostile-mine defuse (index.html)

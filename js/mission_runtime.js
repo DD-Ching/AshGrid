@@ -179,7 +179,7 @@ function showNNEndCard(result) {
   if (accent) accent.style.background = result === 'win' ? 'var(--red)' : 'var(--black)';
   // Subtitle: mode + operator name
   const modeLabel = ({
-    dm: 'DEATHMATCH', survival: 'SURVIVAL', defense: 'DEFENSE',
+    dm: 'DEATHMATCH', survival: 'SURVIVAL', defense: 'DEFENSE', siege: 'SIEGE',
     helo: 'HELO EXTRACT', convoy: 'CONVOY', duel: 'DUEL', sniper: 'SNIPER',
   })[game._nnGameMode] || 'SKIRMISH';
   const opName = (typeof getOperatorName === 'function') ? getOperatorName() : '0451';

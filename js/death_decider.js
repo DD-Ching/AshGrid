@@ -81,6 +81,16 @@
     //
     // SP NN-mode unchanged — auto-swap was always the rule there since
     // there's no authoritative server.
+    // SIEGE — no respawn. Your garrison (a positional roster of lives) wakes at
+    // the Heart; an empty roster drops the fort into AUTOPILOT. Takes priority
+    // over the survival auto-swap below so death is a positional setback (yanked
+    // back to centre), never an in-place body-hop. Gated on the state object.
+    if (typeof game !== 'undefined' && game._siege && typeof _siegeTryRevive === 'function') {
+      const r = _siegeTryRevive();
+      _lastAutoSwapAt = _now();
+      return r;
+    }
+
     const _isMP = (typeof _mpIsActive === 'function' && _mpIsActive());
     if (typeof tryAutoSwapToClosestAlly === 'function'
         && tryAutoSwapToClosestAlly()) {
@@ -94,15 +104,6 @@
         MpReconcile.setForcedIgnoreWindow(60);
       }
       return 'swapped';
-    }
-
-    // Phase 188 — SIEGE: NO respawn. With no swap target left (your last unit
-    // fell), the last-stand is OVER → end the run with the loss card (score =
-    // waves/days survived). Skips the respawn scheduling the other modes do.
-    if (typeof game !== 'undefined' && game._siege) {
-      if (typeof onMissionFailed === 'function') onMissionFailed();
-      else if (typeof showNNEndCard === 'function') showNNEndCard('loss');
-      return 'ended';
     }
 
     // No swap target → full team-wipe path.

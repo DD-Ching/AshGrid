@@ -145,6 +145,11 @@ function _arenaConvertEnemyToAlly(e) {
   if (typeof e._seed !== 'number') e._seed = 0;
   e._humanPiloted = false;
   allies.push(e);
+  // SIEGE — recruiting a downed enemy earns back a garrison life (the only mid-run
+  // roster growth; makes recruitment load-bearing). Additive + state-gated.
+  if (typeof game !== 'undefined' && game._siege && typeof _siegeAddGarrisonLife === 'function') {
+    _siegeAddGarrisonLife();
+  }
   // Feedback
   if (typeof showSwapToast === 'function') {
     showSwapToast(T('▸ 招降 · ' + (e.callsign || 'UNIT'),
