@@ -26,10 +26,10 @@
 // ── Fort tunables (all HP / radius knobs in one place) ───────────────────────
 const SIEGE_FORT = {
   cx: 900, cy: 900,                 // arena centre = the Heart
-  curtainHp:   350,                 // OUTER CURTAIN — low HP, meant to fall
-  gateLeafHp:  200,                 // NORTH GATE leaf — weakest, weldable shut
-  innerHp:     600,                 // INNER WALL — the real defensive line
-  keepHp:      700,                 // INNER KEEP — bunker-grade last fallback
+  curtainHp:   160,                 // OUTER CURTAIN — fragile, MEANT to fall fast under a mass
+  gateLeafHp:  110,                 // NORTH GATE leaf — weakest, weldable shut
+  innerHp:     380,                 // INNER WALL — the real line (holds longer, but yields)
+  keepHp:      700,                 // INNER KEEP — bunker-grade last fallback (the last stand)
   heartHp:    1200,                 // REACTOR CORE / the HEART (lose condition)
   armoryHp:    500,                 // ARMORY (factory — clamps to 1, never dies)
   curtainR:    340,                 // half-extent of the outer curtain square
@@ -92,6 +92,7 @@ function buildSiegeFort() {
   const y0 = (typeof NN_ARENA !== 'undefined') ? NN_ARENA.y0 : 0;
   const cx = F.cx, cy = F.cy;
   const gray   = (typeof COLORS !== 'undefined' && COLORS.gray) ? COLORS.gray : '#3A3A3A';
+  const charred = '#2A2520';                 // scorched dark — the fort reads as burnt-out ruins (廢墟)
   const accentC = (typeof COLORS !== 'undefined' && COLORS.red) ? COLORS.red : '#C8261C';
 
   const segs = {};
@@ -100,7 +101,7 @@ function buildSiegeFort() {
   // seg(): place a named, breachable building wall + stamp _segId on it.
   function seg(id, x, y, w, h, hp, opts) {
     opts = opts || {};
-    addBuilding(x0 + x, y0 + y, w, h, opts.color || gray,
+    addBuilding(x0 + x, y0 + y, w, h, opts.color || charred,
                 { kind: opts.kind || 'building', accent: !!opts.accent, hp });
     const b = buildings[buildings.length - 1];
     if (b) {
@@ -200,14 +201,37 @@ function buildSiegeFort() {
     seg('keepS_e', cx + doorHalf, B - t, R - (cx + doorHalf), t, hp, { ring: 'keep' });
   }
 
-  // ── COURTYARD rubble — scattered low cover in the killzone donut ────────────
+  // ── COURTYARD RUINS — rubble piles + cracked/scorched ground + drifting debris
+  //    (廢墟/斷垣殘壁), all procedural (no sprite assets). Deterministic so the fort
+  //    is identical every run. ──────────────────────────────────────────────────
   if (typeof addLowCover === 'function') {
-    const rub = (rx, ry) => addLowCover(x0 + rx - 22, y0 + ry - 22, 44, 44,
-      (typeof COLORS !== 'undefined' && COLORS.creamDark) ? COLORS.creamDark : '#8A7E63',
-      { kind: 'crate' });
-    rub(cx - 250, cy - 250); rub(cx + 250, cy - 250);
-    rub(cx - 250, cy + 250); rub(cx + 250, cy + 250);
+    const rubCol = (typeof COLORS !== 'undefined' && COLORS.creamDark) ? COLORS.creamDark : '#8A7E63';
+    const rub = (rx, ry, sz) => { sz = sz || 22; addLowCover(x0 + rx - sz, y0 + ry - sz, sz * 2, sz * 2, rubCol, { kind: 'crate' }); };
+    rub(cx - 250, cy - 250); rub(cx + 250, cy - 250); rub(cx - 250, cy + 250); rub(cx + 250, cy + 250);
     rub(cx, cy - 270); rub(cx, cy + 270);
+    rub(cx - 90, cy - 110, 16); rub(cx + 95, cy - 130, 18); rub(cx - 130, cy + 85, 15);
+    rub(cx + 115, cy + 120, 17); rub(cx - 45, cy + 30, 14); rub(cx + 55, cy - 55, 16);
+  }
+  if (typeof addTheme === 'function') {
+    try {
+      const black = (typeof COLORS !== 'undefined' && COLORS.black) ? COLORS.black : '#1A1A1A';
+      addTheme({ kind: 'rect', x: x0 + cx - 150, y: y0 + cy - 150, w: 300, h: 300, color: black, alpha: 0.10 });
+      for (let i = 0; i < 9; i++) {
+        const a0 = (Math.PI * 2 / 9) * i;
+        addTheme({ kind: 'arc-stroke', cx: x0 + cx, cy: y0 + cy, r: 150 + (i % 3) * 55, a0, a1: a0 + 0.4, color: 'rgba(0,0,0,0.14)' });
+      }
+    } catch (e) { /* theme shapes are decorative */ }
+  }
+  if (typeof addDecoration === 'function') {
+    try {
+      const dcol = (typeof COLORS !== 'undefined' && COLORS.creamDark) ? COLORS.creamDark : '#8A7E63';
+      for (let i = 0; i < 22; i++) {
+        const ang = i * 2.39996;                 // golden-angle spread (deterministic)
+        const dd = 70 + (i * 37 % 230);
+        addDecoration(x0 + cx + Math.cos(ang) * dd, y0 + cy + Math.sin(ang) * dd,
+                      (i % 2 ? 'triangle' : 'square'), 4 + (i % 4) * 3, dcol, 0.18 + (i % 3) * 0.06, ang);
+      }
+    } catch (e) { /* debris is decorative */ }
   }
 
   // ── CATWALKS — visual high-ground ringing the inner wall (optional) ─────────

@@ -826,6 +826,71 @@ function updateTeamVision() {
 }
 
 let _nnInferring = false;
+// ── SIEGE steering overrides (replace patrol when game._siege) ───────────────
+// In siege the player is walled inside the keep, so the NN never sees a target →
+// _nnUpdateAiMode parks every bot in 'patrol' and they wander/freeze in the open
+// (owner: "敵人跟笨蛋一樣...走到地圖外面"). These two overrides give patrol-mode
+// siege units a real objective. Walls block LoS, not movement-toward-a-point, so
+// bots press the gates; tanks breach the wall they touch (siege_director.
+// _siegeTankBreach), and the moment LoS opens _nnUpdateAiMode flips them to combat
+// and the NN fires. All gated on game._siege → zero effect on other modes.
+
+// RED enemies: march the fort core with a DIRECT axis-decoupled step (not the
+// moveDir NN pipeline — its stuck-breaker rotates a bot OFF the wall before the
+// breach tick can grind it). Axis-decoupling slides a blocked bot ALONG the wall
+// toward a gap; when fully wedged it just presses (no rotate-away) and the
+// _siegeTankBreach tick chews the wall open. Honors _speedMul for the tank crawl.
+function _nnRunSiegeAssault(unit, friendly, hostile) {
+  const base = (typeof NN !== 'undefined' && NN.PLAYER_SPEED) ? NN.PLAYER_SPEED : 2.5;
+  const sm = (unit._speedMul != null && unit._speedMul > 0) ? unit._speedMul : 1;
+  const speed = base * sm;
+  const ax = (typeof NN_ARENA !== 'undefined') ? NN_ARENA.x0 : 0;
+  const ay = (typeof NN_ARENA !== 'undefined') ? NN_ARENA.y0 : 0;
+  const tx = ax + 900, ty = ay + 900;           // the Heart
+  let dx = tx - unit.x, dy = ty - unit.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 80) return;                         // at the Heart — hold (combat mode fires)
+  dx /= dist; dy /= dist;
+  // Each bot presses straight at the core, so a mass SPREADS across the wall in its
+  // way and each grinds its own hole (siege_director._siegeTankBreach) → the fragile
+  // curtain crumbles into a wide breach and they flood through, rather than all
+  // funnelling single-file through one gate. Axis-decoupled so a blocked bot slides
+  // along the wall toward the nearest opening; fully wedged it just presses + chews.
+  const r = unit.radius || 13;
+  const oldX = unit.x, oldY = unit.y;
+  unit.x = oldX + dx * speed;
+  if (typeof nnUnitOverlapsBuilding === 'function' && nnUnitOverlapsBuilding(unit, r)) unit.x = oldX;
+  unit.y = oldY + dy * speed;
+  if (typeof nnUnitOverlapsBuilding === 'function' && nnUnitOverlapsBuilding(unit, r)) unit.y = oldY;
+  unit.angle = Math.atan2(ty - unit.y, tx - unit.x);
+  unit.walkPhase = (unit.walkPhase || 0) + 0.18;
+  if (typeof clampToArenaX === 'function') unit.x = clampToArenaX(unit.x, 20, 20);
+  if (typeof clampToArenaY === 'function') unit.y = clampToArenaY(unit.y, 20, 20);
+}
+
+// BLUE allies: HOLD a defensive ring around the Heart (owner: "維持防守型態").
+let _siegeHoldSlot = 0;
+function _nnRunSiegeHold(unit, friendly, hostile) {
+  if (!unit._siegeHold) {
+    const ax = (typeof NN_ARENA !== 'undefined') ? NN_ARENA.x0 : 0;
+    const ay = (typeof NN_ARENA !== 'undefined') ? NN_ARENA.y0 : 0;
+    const ang = (_siegeHoldSlot++ % 4) * (Math.PI / 2);
+    unit._siegeHold = { x: ax + 900 + Math.cos(ang) * 150, y: ay + 900 + Math.sin(ang) * 150 };
+  }
+  const dx = unit._siegeHold.x - unit.x, dy = unit._siegeHold.y - unit.y;
+  if (dx * dx + dy * dy > 35 * 35) {
+    nnApplyAction(unit, _vectorToMoveDir(dx, dy) << 1, friendly, hostile);  // march back to post
+  } else {                                     // at post — face the nearest threat, hold
+    let best = null, bd = Infinity;
+    for (const h of hostile) {
+      if (!h || !h.alive) continue;
+      const d2 = (h.x - unit.x) ** 2 + (h.y - unit.y) ** 2;
+      if (d2 < bd) { bd = d2; best = h; }
+    }
+    if (best) unit.angle = Math.atan2(best.y - unit.y, best.x - unit.x);
+  }
+}
+
 async function nnTick() {
   if (!NN.loaded || _nnInferring) return;
   if (game.state !== 'playing') return;
@@ -871,7 +936,8 @@ async function nnTick() {
     if (!a._useNN || !a.alive) continue;
     _nnUpdateAiMode(a, enemies);
     if (a._aiMode === 'patrol') {
-      _nnRunPatrol(a, allies, enemies);
+      if (game._siege) _nnRunSiegeHold(a, allies, enemies);   // defend the Heart, don't roam
+      else _nnRunPatrol(a, allies, enemies);
       continue;   // skip inference batch
     }
     nnUnits.push({u: a, friendly: allies, hostile: enemies, flipX: false,
@@ -887,7 +953,8 @@ async function nnTick() {
     if (e._koStunned) continue;
     _nnUpdateAiMode(e, _hostileForEnemy);
     if (e._aiMode === 'patrol') {
-      _nnRunPatrol(e, enemies, _hostileForEnemy);
+      if (game._siege) _nnRunSiegeAssault(e, enemies, _hostileForEnemy);   // march the core
+      else _nnRunPatrol(e, enemies, _hostileForEnemy);
       continue;
     }
     nnUnits.push({u: e, friendly: enemies, hostile: _hostileForEnemy, flipX: true,

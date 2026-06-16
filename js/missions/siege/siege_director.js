@@ -20,13 +20,47 @@
 const SIEGE_TPS         = 84;    // sim ticks per script-second (reuses the *84 convention)
 const SIEGE_DAY_GAP_SEC = 8;     // calm gap between nights (build / heal / breathe)
 const SIEGE_CLEAR_GRACE = 3;     // sec after the last cue before a night may auto-end
-const SIEGE_TANK_BREACH_DMG = 2.2; // wall HP a breacher chews per tick on contact (坦克轰墙)
+const SIEGE_TANK_BREACH_DMG = 2.2; // wall HP a breacher TANK chews per tick on contact (坦克轰墙)
+const SIEGE_SAPPER_BREACH_DMG = 1.5; // wall HP a SAPPER chews per tick (a mass breaches a gate in ~1-2s)
 
 // ── i18n toast helper ────────────────────────────────────────────────────────
 function _siegeToast(zh, en, ttl) {
   if (typeof showSwapToast !== 'function') return;
   const txt = (typeof T === 'function') ? T(zh || en || '', en || zh || '') : (en || zh || '');
   showSwapToast(txt, ttl || 150);
+}
+
+// ── Atmosphere — weather as a real COLOR-TONE shift of the scene palette (背景),
+//    NOT a translucent overlay mask. TOD already recolours the scene keys in
+//    COLORS live each frame; weather layers a desaturate + cool/dark shift ON TOP.
+//    Driven from the tod + weather cues so they always compose: TOD resets the
+//    baseline, then the weather tint applies once. ─────────────────────────────
+function _siegeShiftColor(hex, desat, cool, darken) {
+  const m = /^#?([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(hex || '');
+  if (!m) return hex;
+  let r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+  const lum = 0.3 * r + 0.59 * g + 0.11 * b;       // desaturate toward luminance grey
+  r += (lum - r) * desat; g += (lum - g) * desat; b += (lum - b) * desat;
+  r -= 28 * cool; g += 4 * cool; b += 26 * cool;   // cool → pull toward cold blue
+  r *= (1 - darken); g *= (1 - darken); b *= (1 - darken);
+  const h = v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+  return '#' + h(r) + h(g) + h(b);
+}
+function _siegeTintForWeather(w) {
+  if (typeof COLORS === 'undefined') return;
+  // [desaturate, cool, darken] per weather — the WHOLE scene retints (floor, walls,
+  // grid) because the renderer reads COLORS live; no overlay needed.
+  const P = ({ clear: [0, 0, 0], wind: [0.10, 0.06, 0.02],
+               rain: [0.34, 0.30, 0.06], storm: [0.52, 0.46, 0.14] })[w] || [0, 0, 0];
+  if (!P[0] && !P[1] && !P[2]) return;
+  for (const k of ['gray', 'lightGray', 'creamDark', 'floor', 'floorAccent']) {
+    if (COLORS[k]) COLORS[k] = _siegeShiftColor(COLORS[k], P[0], P[1], P[2]);
+  }
+}
+function _siegeApplyAtmosphere() {
+  const s = game._siege; if (!s) return;
+  if (typeof TOD !== 'undefined' && TOD.setTOD) TOD.setTOD(s.tod || 'night');  // baseline (clears prior tint)
+  _siegeTintForWeather(s.weather || 'clear');
 }
 
 // ── Geometry helpers for camera + spawns ─────────────────────────────────────
@@ -106,40 +140,44 @@ function _siegeSpliceSeg(seg) {
 // second camera punch so the player SEES their fort change.
 function _siegeTankBreach() {
   if (typeof enemies === 'undefined' || !enemies || typeof buildings === 'undefined' || !buildings) return;
-  const s = game._siege;
-  if (s && s._breacherCount === 0) return;             // no live tanks → skip the per-tick scan
-  let live = 0;
+  // Every RED attacker pressed against a fort wall chews it — TANKS fast, SAPPERS
+  // slow. This is what gets the assault IN: bots march the core (enemy_ai
+  // _nnRunSiegeAssault), pile on the wall in the way, and grind a gate open; once a
+  // segment splices (permanent gap) they pour through and engage the Heart/player.
   for (const e of enemies) {
-    if (!e || !e.alive || !e._siegeBreacher) continue;
-    live++;
-    const r = (e.radius || 26) + 6;
+    if (!e || !e.alive || e.team !== 1) continue;        // red attackers only
+    const isBreacher = !!e._siegeBreacher;
+    const dmg = isBreacher ? SIEGE_TANK_BREACH_DMG : SIEGE_SAPPER_BREACH_DMG;
+    const r = (e.radius || 13) + 6;
     for (let bi = buildings.length - 1; bi >= 0; bi--) {
       const b = buildings[bi];
       if (!b || !b._siegeWall || b._siegeIndestructible) continue;
       const cx = Math.max(b.x, Math.min(e.x, b.x + b.w));
       const cy = Math.max(b.y, Math.min(e.y, b.y + b.h));
       if ((e.x - cx) ** 2 + (e.y - cy) ** 2 > r * r) continue;
-      b.hp -= SIEGE_TANK_BREACH_DMG;
+      b.hp -= dmg;
       if (b.hp <= 0) {
         const px = b.x + b.w / 2, py = b.y + b.h / 2;
         if (typeof createExplosion === 'function') createExplosion(px, py, 'small');
         buildings.splice(bi, 1);                         // permanent gap (collision + render)
-        if (typeof triggerShake === 'function') triggerShake(5, 12);
-        const sc = (typeof camera !== 'undefined' ? camera.scale : 1) * 0.95;
-        game._cineFocus = { x: px, y: py, scale: sc, until: (game.time || 0) + 40 };  // breach punch
+        if (typeof triggerShake === 'function') triggerShake(isBreacher ? 5 : 3, 10);
+        if (isBreacher) {                                // only the dramatic tank breach grabs the camera
+          const sc = (typeof camera !== 'undefined' ? camera.scale : 1) * 0.95;
+          game._cineFocus = { x: px, y: py, scale: sc, until: (game.time || 0) + 40 };
+        }
         if (typeof buildCoverPoints === 'function') { try { buildCoverPoints(); } catch (e2) {} }
       }
+      if (!isBreacher) break;                            // a sapper grinds one wall per tick (cheap)
     }
   }
-  if (s) s._breacherCount = live;                       // recount for next tick's early-out
 }
 
 // ── THE CUE DISPATCH TABLE — the timeline's complete vocabulary ───────────────
 const _SIEGE_CUE = {
   beat(c)    { _siegeToast(c.zh, c.en, c.ttl || 160); },
   goal(c)    { if (game._siege) game._siege.goal = { zh: c.zh || '', en: c.en || '' }; },
-  tod(c)     { if (typeof TOD !== 'undefined' && c.name) TOD.setTOD(c.name); },
-  weather(c) { if (game._siege) game._siege.weather = c.w || 'clear'; },
+  tod(c)     { if (game._siege && c.name) { game._siege.tod = c.name; _siegeApplyAtmosphere(); } },
+  weather(c) { if (game._siege) { game._siege.weather = c.w || 'clear'; _siegeApplyAtmosphere(); } },
 
   telegraph(c) {
     const gate = _siegeResolveGate(c.gate);
@@ -248,7 +286,7 @@ function _siegeDawn(c) {
   const s = game._siege;
   if (!s) return;
   s.phase = 'dawn';
-  if (typeof TOD !== 'undefined') TOD.setTOD('dawn');
+  s.tod = 'dawn'; _siegeApplyAtmosphere();
   const salvage = c.salvage || 0;
   if (salvage) { if (typeof addEnergy === 'function') addEnergy(salvage); s.salvage = (s.salvage || 0) + salvage; }
   const finalNight = (typeof DIRECTOR_PARAMS !== 'undefined' && DIRECTOR_PARAMS.finalDawnNight) || 5;

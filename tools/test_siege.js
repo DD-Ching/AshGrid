@@ -126,10 +126,10 @@ console.log('\n[fort] buildSiegeFort + named segments + Heart/Armory:');
     for (const id of want) check(ids.indexOf(id) >= 0, 'segment "' + id + '" exists');
 
     const byId = (id) => sb.buildings.find(b => b._segId === id);
-    check(byId('gateLeafN') && byId('gateLeafN').hp === 200, 'north gate-leaf hp 200 (weakest, weldable)');
+    check(byId('gateLeafN') && byId('gateLeafN').hp === 110, 'north gate-leaf hp 110 (weakest, weldable)');
     check(byId('gateLeafN') && byId('gateLeafN')._siegeWeldable === true, 'gate-leaf is weldable');
-    check(byId('curtainN_w') && byId('curtainN_w').hp === 350, 'outer curtain hp 350 (meant to fall)');
-    check(byId('innerN_w') && byId('innerN_w').hp === 600, 'inner wall hp 600 (the real line)');
+    check(byId('curtainN_w') && byId('curtainN_w').hp === 160, 'outer curtain hp 160 (fragile, meant to fall)');
+    check(byId('innerN_w') && byId('innerN_w').hp === 380, 'inner wall hp 380 (the real line)');
     check(byId('keepN') && byId('keepN').hp === 700, 'keep hp 700 (bunker-grade)');
 
     // Gate anchors for director-biased spawns

@@ -11,8 +11,7 @@
 // Classic-script. Call-time deps: game · ctx · W · H · COLORS · T · getLang ·
 //   siegeFort · camera
 
-// ── WEATHER (背景) ────────────────────────────────────────────────────────────
-let _siegeDawnGrad = null, _siegeDawnGradH = -1;   // cached dawn sunrise gradient (rebuilt on resize)
+// ── WEATHER (背景) — light motion streaks only; the TONE is the palette ───────
 function renderSiegeWeather() {
   if (typeof game === 'undefined' || !game._siege || game.state !== 'playing') return;
   if (typeof ctx === 'undefined' || !ctx) return;
@@ -21,32 +20,24 @@ function renderSiegeWeather() {
   const W_ = (typeof W === 'function') ? W() : 800;
   const H_ = (typeof H === 'function') ? H() : 600;
   const t = (typeof game.time === 'number') ? game.time : 0;
+  if (w === 'clear') return;          // the scene TONE is the palette's job — nothing to overlay
   ctx.save();
-
-  // Dawn sunrise wash — a warm tint that blooms while the dawn beat plays.
-  if (s.phase === 'dawn') {
-    if (!_siegeDawnGrad || _siegeDawnGradH !== H_) {
-      _siegeDawnGrad = ctx.createLinearGradient(0, 0, 0, H_);
-      _siegeDawnGrad.addColorStop(0, 'rgba(255, 210, 150, 0.14)');
-      _siegeDawnGrad.addColorStop(1, 'rgba(255, 170, 120, 0.04)');
-      _siegeDawnGradH = H_;
-    }
-    ctx.fillStyle = _siegeDawnGrad; ctx.fillRect(0, 0, W_, H_);
-  }
-
+  // WIND/RAIN/STORM here is light MOTION only (thin streaks). The cool/desaturated/
+  // dark TONE is carried by the scene palette via siege_director._siegeApplyAtmosphere
+  // (the whole scene retints), NOT a translucent tone mask — per the owner's ask.
   if (w === 'wind') {
-    ctx.strokeStyle = 'rgba(200, 195, 175, 0.14)'; ctx.lineWidth = 1; ctx.beginPath();
-    for (let i = 0; i < 30; i++) {
+    ctx.strokeStyle = 'rgba(200, 195, 175, 0.10)'; ctx.lineWidth = 1; ctx.beginPath();
+    for (let i = 0; i < 26; i++) {
       const seed = i * 51.7;
       const x = (seed * 17 + t * 34) % (W_ + 60) - 30;
       const y = (seed * 37) % H_;
       ctx.moveTo(x, y); ctx.lineTo(x - 18, y + 2);
     }
-    ctx.stroke(); ctx.restore(); return;
-  }
-  if (w === 'rain' || w === 'storm') {
-    const count = (w === 'storm') ? 90 : 55;
-    ctx.strokeStyle = 'rgba(170, 190, 210, 0.28)'; ctx.lineWidth = 1; ctx.beginPath();
+    ctx.stroke();
+  } else if (w === 'rain' || w === 'storm') {
+    const count = (w === 'storm') ? 80 : 50;
+    ctx.strokeStyle = (w === 'storm') ? 'rgba(190,205,225,0.16)' : 'rgba(175,195,215,0.13)';
+    ctx.lineWidth = 1; ctx.beginPath();
     for (let i = 0; i < count; i++) {
       const seed = i * 73.13;
       const x = (seed * 13 + t * 9) % (W_ + 40) - 20;
@@ -54,10 +45,10 @@ function renderSiegeWeather() {
       ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 14);
     }
     ctx.stroke();
-    if (w === 'storm') {
-      const f = Math.sin(t * 0.013) * Math.sin(t * 0.071);     // sparse lightning peaks
+    if (w === 'storm') {                // lightning — a brief flash, not a steady mask
+      const f = Math.sin(t * 0.013) * Math.sin(t * 0.071);
       if (f > 0.985) {
-        ctx.fillStyle = 'rgba(230,240,255,' + ((f - 0.985) / 0.015 * 0.35).toFixed(3) + ')';
+        ctx.fillStyle = 'rgba(230,240,255,' + ((f - 0.985) / 0.015 * 0.30).toFixed(3) + ')';
         ctx.fillRect(0, 0, W_, H_);
       }
     }

@@ -343,7 +343,10 @@ window.addEventListener('keydown', e => {
       && (player._chassis === 'heavy' || player._chassis === 'wolf')) {
     e.preventDefault();
     if (player._chassis === 'heavy' && !e.repeat && typeof heavyUltimate === 'function') {
-      heavyUltimate();                                     // heavy 大招（空白鍵）
+      const _ultOn = heavyUltimate();                      // 188K — heavy ULTIMATE is a TOGGLE (sustained 全武器齊射)
+      if (typeof showSwapToast === 'function') {
+        showSwapToast(_ultOn ? T('▶ 大招 開 · 火力全開', '▶ ULTIMATE ON · all guns') : T('◀ 大招 關', '◀ ULTIMATE OFF'));
+      }
     } else if (player._chassis === 'wolf' && !e.repeat) {
       player._dashOn = !player._dashOn;                    // 188E — wolf dash is a TOGGLE (on/off)
       if (typeof showSwapToast === 'function') {

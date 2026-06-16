@@ -30,7 +30,8 @@ const BALANCE = {
     recruit:  40,    // humanoid 招降 (convert weaker enemy → squad slot)
     dash:     25,    // wolf 冲刺 (energy/sec drain while dashing)
     devour:    0,    // wolf 处决吸血 (execute weaker enemy → gain hp + regen stack)
-    ultimate: 80,    // heavy 大招 (fire all stockpiled weapons at once)
+    ultimate: 80,    // heavy 大招 (legacy one-shot cost; 188K the ultimate is now a sustained toggle)
+    ultimateDrainPerFrame: 0.6,  // 188K — ⚡ drained per sim-tick while the heavy ULTIMATE toggle is ON
   },
   // Phase 186 — per-chassis identity tunables for the "abilities are EXCLUSIVE"
   // redesign (each chassis only has its own kit; G = a chassis-specific execute
