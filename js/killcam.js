@@ -296,8 +296,17 @@
     ctx.textAlign = 'center';
     ctx.globalAlpha = pulse;
     ctx.fillStyle = '#3FE63F';
-    ctx.font = 'bold 20px sans-serif';
+    // opt R4 — first-death coachmark: a brand-new player was never told SPACE
+    // respawns. On match 1, oversize the prompt + add a one-line teach.
+    const _firstTime = (typeof getGlobalStats === 'function') && (getGlobalStats().matchesPlayed || 0) === 0;
+    ctx.font = 'bold ' + (_firstTime ? 30 : 20) + 'px sans-serif';
     ctx.fillText(_t('▶ 按空白鍵復活', '▶ PRESS SPACE TO RESPAWN'), W_ / 2, H_ / 2 + 120);
+    if (_firstTime) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = (typeof COLORS !== 'undefined' && COLORS.cream) ? COLORS.cream : '#F2E9D0';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText(_t('（按一下空白鍵就能回到戰場）', '(tap SPACE to get back in the fight)'), W_ / 2, H_ / 2 + 148);
+    }
     ctx.globalAlpha = 1;
     ctx.textAlign = 'left';
   }

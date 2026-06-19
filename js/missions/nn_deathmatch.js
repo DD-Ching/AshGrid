@@ -468,6 +468,18 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       // End-of-wipe team revive — Phase 92 uses wall-clock to match the
       // displayed countdown exactly.
       const _blueWipe = game._teamWipe.blue;
+      // opt R4 — session-1 no-input floor: a brand-new player doesn't yet know
+      // SPACE respawns, so the strict gate could strand them dead forever (the
+      // worst first impression). If the deadline has elapsed and they STILL
+      // haven't pressed SPACE, auto-grant it — but ONLY for the first match or two
+      // (matchesPlayed<=1) and only in SOLO. Veterans keep the explicit SPACE-gate.
+      if (_blueWipe.wipedSince && !_blueWipe.respawnRequested
+          && (_blueWipe.respawnAtMs ? Date.now() >= _blueWipe.respawnAtMs
+                                    : game.time >= _blueWipe.respawnAt)
+          && !(typeof _mpIsActive === 'function' && _mpIsActive())
+          && typeof getGlobalStats === 'function' && (getGlobalStats().matchesPlayed || 0) <= 1) {
+        _blueWipe.respawnRequested = true;
+      }
       // Phase 183 — SPACE-gated: only revive the wiped squad once the player has
       // explicitly requested it (killcam SPACE → respawnRequested). No request =
       // stay dead (the user's '不按空白鍵就永遠不會復活'). The deadline still acts
