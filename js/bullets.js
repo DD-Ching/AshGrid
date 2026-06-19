@@ -150,7 +150,11 @@ function detonateRocket(b) {
       const def = STRUCTURE_DEFS[s.kind]; if (!def || s.hp <= 0) continue;
       if (def.bulletImmune) continue;   // Phase 63: mines/tripmines no-clear
       const dist = Math.hypot(s.x - b.x, s.y - b.y);
-      if (dist < r) s.hp -= splashDmg * structMul;
+      if (dist < r) {
+        let _sd = splashDmg * structMul;
+        if (game._siege && s._isHeart) _sd *= (typeof SIEGE_FORT !== 'undefined' ? (SIEGE_FORT.heartDmgMul || 1) : 0.18);
+        s.hp -= _sd;
+      }
     }
   }
   // Arena buildings + lowCovers are now destructible in EVERY NN mode
@@ -637,8 +641,12 @@ function updateBullets() {
         if (def.bulletImmune) continue;
         const r = def.size / 2;
         if (Math.abs(b.x - s.x) <= r && Math.abs(b.y - s.y) <= r) {
-          s.hp -= b.damage || 12;
-          spawnDamagePopup(b.x, b.y - 6, b.damage || 12, false);
+          let _dmg = b.damage || 12;
+          // SIEGE: the Heart is a hardened reactor core — incoming dmg is scaled
+          // down so it can't be cratered in seconds (see SIEGE_FORT.heartDmgMul).
+          if (game._siege && s._isHeart) _dmg *= (typeof SIEGE_FORT !== 'undefined' ? (SIEGE_FORT.heartDmgMul || 1) : 0.18);
+          s.hp -= _dmg;
+          spawnDamagePopup(b.x, b.y - 6, _dmg, false);
           hit = true; break;
         }
       }

@@ -94,23 +94,36 @@ function renderSiegeHud() {
   ctx.strokeStyle = cream; ctx.lineWidth = 1; ctx.strokeRect(cx - tw / 2 + 0.5, y + 0.5, tw - 1, h - 1);
   ctx.fillStyle = cream; ctx.fillText(main, cx, y + 14);
 
-  // Sub-line — HEART HP bar + garrison pips
-  const f = (typeof siegeFort === 'function') ? siegeFort() : null;
+  // Sub-line — HEART HP bar + garrison pips.
+  // Read the PER-RUN fort (game._siege.fort), NEVER the stale module-global
+  // siegeFort() — a fresh siege's fort is null until buildSiegeFort runs, and a
+  // null heart must read as 100% (full), not last run's depleted value.
+  const f = s.fort || null;
   const heart = f ? f.heart : null;
-  const hpPct = heart ? Math.max(0, Math.min(1, heart.hp / (heart.maxHp || 1200))) : 1;
-  const barW = Math.min(tw - 14, 200), barH = 7, barX = cx - barW / 2, barY = y + h + 4;
+  const heartMax = (heart && heart.maxHp) ? heart.maxHp : 1200;
+  const hpPct = heart ? Math.max(0, Math.min(1, heart.hp / heartMax)) : 1;
+  const barW = Math.min(tw - 14, 200), barH = 12, barX = cx - barW / 2, barY = y + h + 4;
+  const low = hpPct <= 0.3;
+  // Urgency pulse below 30% — the lose-condition bar must read as "core dying", not a bug.
+  const pulseA = low ? (0.55 + 0.45 * Math.abs(Math.sin(t * 0.18))) : 1;
   ctx.fillStyle = 'rgba(16,14,20,0.7)'; ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
-  ctx.fillStyle = hpPct > 0.35 ? '#5FD6A0' : red;
+  ctx.globalAlpha = pulseA;
+  ctx.fillStyle = hpPct > 0.5 ? '#5FD6A0' : (hpPct > 0.3 ? '#E8B84B' : red);
   ctx.fillRect(barX, barY, barW * hpPct, barH);
-  ctx.strokeStyle = cream; ctx.lineWidth = 1; ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
-  ctx.font = 'bold 8px monospace'; ctx.fillStyle = cream; ctx.textAlign = 'left';
-  ctx.fillText((zh ? '核心 ' : 'HEART ') + Math.round(hpPct * 100) + '%', barX, barY + barH + 9);
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = low ? red : cream; ctx.lineWidth = low ? 2 : 1;
+  ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+  // Absolute value + % so the readout is trustworthy (a bare % read like a glitch).
+  const heartLabel = (zh ? '核心 ' : 'HEART ') + Math.round(hpPct * 100) + '%'
+    + (heart ? '  ' + Math.max(0, Math.round(heart.hp)) + '/' + Math.round(heartMax) : '');
+  ctx.font = 'bold 9px monospace'; ctx.fillStyle = low ? red : cream; ctx.textAlign = 'left';
+  ctx.fillText(heartLabel, barX, barY + barH + 10);
   // garrison-life pips
   const lives = (s.livesLeft != null) ? s.livesLeft : 0;
   ctx.textAlign = 'right';
   const pips = '◆'.repeat(Math.min(Math.max(0, lives), 8));
-  if (s.autopilot) { ctx.fillStyle = red; ctx.fillText(zh ? '自動防禦' : 'AUTOPILOT', barX + barW, barY + barH + 9); }
-  else { ctx.fillStyle = '#5FD6A0'; ctx.fillText((zh ? '駐軍 ' : 'GARRISON ') + pips, barX + barW, barY + barH + 9); }
+  if (s.autopilot) { ctx.fillStyle = red; ctx.fillText(zh ? '自動防禦' : 'AUTOPILOT', barX + barW, barY + barH + 10); }
+  else { ctx.fillStyle = '#5FD6A0'; ctx.fillText((zh ? '駐軍 ' : 'GARRISON ') + pips, barX + barW, barY + barH + 10); }
 
   // INTENT telegraph banner — pulsing red, names the threat axis.
   if (s.intent && t < s.intent.until) {

@@ -31,6 +31,10 @@ const SIEGE_FORT = {
   innerHp:     380,                 // INNER WALL — the real line (holds longer, but yields)
   keepHp:      700,                 // INNER KEEP — bunker-grade last fallback (the last stand)
   heartHp:    1200,                 // REACTOR CORE / the HEART (lose condition)
+  heartDmgMul: 0.18,                // the Heart is HARDENED — incoming dmg ×this (tower-defense
+                                    //   core durability). Raw it cratered ~86%/25s undefended on
+                                    //   Night 1; ×0.18 → ~160s of grace so a new player can orient,
+                                    //   while breach-heavy late nights still threaten it. Tune here.
   armoryHp:    500,                 // ARMORY (factory — clamps to 1, never dies)
   curtainR:    340,                 // half-extent of the outer curtain square
   innerR:      200,                 // half-extent of the inner wall square
@@ -44,6 +48,12 @@ const SIEGE_FORT = {
 let _siegeFort = null;
 
 function siegeFort() { return _siegeFort; }
+
+// Null the module-global fort so a NEW siege never paints the PREVIOUS run's
+// depleted registry (the "HEART 14% on a fresh Night 1" bug: the HUD read this
+// stale object in the window between state→'playing' and setupStructures →
+// buildSiegeFort). Called from the startNNSkirmish siege branch before play.
+function siegeResetFort() { _siegeFort = null; }
 
 // Find a named wall segment in buildings[] by exact id, then logical alias,
 // then prefix (so a director cue target:'curtainN' resolves to the gate-leaf

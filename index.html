@@ -4242,6 +4242,9 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   if (gameMode === 'siege') {
     blueSize = 1; redSize = 0;
     if (typeof _forceVariantId !== 'undefined') _forceVariantId = 'siege_bastion';
+    // Clear last run's fort registry so the HUD can't paint a stale, depleted
+    // HEART before this run's fort is rebuilt (the "14% on Night 1" first-impression bug).
+    if (typeof siegeResetFort === 'function') siegeResetFort();
     game._siege = (typeof _siegeInitState === 'function') ? _siegeInitState()
       : { night: 0, t: 0, phase: 'lull', weather: 'clear', intent: null, fort: null };
   } else {
