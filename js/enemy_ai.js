@@ -92,20 +92,30 @@ function nnBuildObs(me, friendlies, enemies, outBuf, flipX = false) {
   // would let the PPO model still 'see' a stunned silhouette at the
   // wrong slot and decide to fire toward it. Single filter here keeps
   // the trained behaviour aligned with the no-friendly-fire intent.
-  const enemySorted = enemies.filter(e => e.alive && !e._koStunned).sort((a, b) => {   // 184q — .filter() already copies; .slice() was redundant
-    const va = nnIsVisible(me, a) ? 1 : 0;
-    const vb = nnIsVisible(me, b) ? 1 : 0;
-    if (va !== vb) return vb - va;
-    return Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y);
+  // opt R8 — compute visibility + squared-distance ONCE per enemy (cached on a
+  // transient field), then sort by the cache and read it in the fill. The old
+  // comparator ran nnIsVisible (a lineOfSight ray-march) TWICE per compare plus
+  // once more per slot in the fill → O(N log N) ray-marches per inference, worst
+  // exactly in a busy firefight. Behaviour-identical: same order (d2 orders like
+  // hypot), same obs values (sqrt(d2) === hypot).
+  const enemyList = enemies.filter(e => e.alive && !e._koStunned);
+  for (const e of enemyList) {
+    e._obsVis = nnIsVisible(me, e) ? 1 : 0;
+    const _dx = e.x - me.x, _dy = e.y - me.y;
+    e._obsD2 = _dx * _dx + _dy * _dy;
+  }
+  const enemySorted = enemyList.sort((a, b) => {
+    if (a._obsVis !== b._obsVis) return b._obsVis - a._obsVis;
+    return a._obsD2 - b._obsD2;
   });
   for (let k = 0; k < 3; k++) {
     if (k < enemySorted.length) {
       const e = enemySorted[k];
       obs[i++] = (e.x - me.x) / W * 2 * flipDX;
       obs[i++] = (e.y - me.y) / H * 2;
-      obs[i++] = Math.hypot(e.x - me.x, e.y - me.y) / W;
+      obs[i++] = Math.sqrt(e._obsD2) / W;
       obs[i++] = e.hp / NN.PLAYER_HP;
-      obs[i++] = nnIsVisible(me, e) ? 1 : 0;
+      obs[i++] = e._obsVis;
       obs[i++] = 0;
     } else {
       i += 6; // zero-padded
@@ -113,14 +123,16 @@ function nnBuildObs(me, friendlies, enemies, outBuf, flipX = false) {
   }
 
   // --- Friendly teammates × 2 (6 each = 12) ---
-  const teammates = friendlies.filter(f => f !== me).sort((a, b) =>
-    Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y));
+  // opt R8 — same cache-then-sort (squared distance orders identically to hypot).
+  const teammates = friendlies.filter(f => f !== me);
+  for (const t of teammates) { const _tx = t.x - me.x, _ty = t.y - me.y; t._obsD2 = _tx * _tx + _ty * _ty; }
+  teammates.sort((a, b) => a._obsD2 - b._obsD2);
   for (let k = 0; k < 2; k++) {
     if (k < teammates.length) {
       const t = teammates[k];
       obs[i++] = (t.x - me.x) / W * 2 * flipDX;
       obs[i++] = (t.y - me.y) / H * 2;
-      obs[i++] = Math.hypot(t.x - me.x, t.y - me.y) / W;
+      obs[i++] = Math.sqrt(t._obsD2) / W;
       obs[i++] = t.alive ? t.hp / NN.PLAYER_HP : 0;
       obs[i++] = t.alive ? 1 : 0;
       obs[i++] = nnIsVisible(me, t) ? 1 : 0;

@@ -227,7 +227,10 @@ function updateBullets() {
         if (_t < 0) _t = 0; else if (_t > 1) _t = 1;
       }
       const _cx = _prevX + _segVx * _t, _cy = _prevY + _segVy * _t;
-      if (Math.hypot(_cx - e.x, _cy - e.y) < e.radius) {
+      // opt R8 — squared-distance compare (no sqrt) in the hottest inner loop
+      // (per bullet × per enemy). Identical result to hypot < radius.
+      const _hx = _cx - e.x, _hy = _cy - e.y;
+      if (_hx * _hx + _hy * _hy < e.radius * e.radius) {
         // Spawn invuln: still consume the bullet so it doesn't pass through,
         // but don't apply damage. Visually the bullet vanishes on impact.
         if (e._invulnUntil != null && game.time < e._invulnUntil) { hit = true; break; }
