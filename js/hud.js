@@ -419,12 +419,18 @@ function drawMinimapPanel(mx, my, mw, mh) {
   // alpha) OR seen recently (faded memory). Minimap must NOT leak enemy
   // positions ahead of the friendly team's actual line of sight, even in
   // NN mode where the arena is small.
+  // opt R11 — enemies are TRIANGLES, friendlies (ally/player) are SQUARES, so
+  // friend/foe survives greyscale / red-green CVD (was red-vs-cream squares =
+  // hue alone). The legend swatch (below) matches.
   ctx.fillStyle = COLORS.red;
   for (const e of enemies) {
     if (!e.alive) continue;
     if (e._lastSeen == null || game.time - e._lastSeen > 180) continue;
     ctx.globalAlpha = e._lastSeen === game.time ? 1 : 0.4;
-    ctx.fillRect(wx(e.x) - 2, wy(e.y) - 2, 4, 4);
+    const ex = wx(e.x), ey = wy(e.y);
+    ctx.beginPath();
+    ctx.moveTo(ex, ey - 3.5); ctx.lineTo(ex + 3.5, ey + 2.5); ctx.lineTo(ex - 3.5, ey + 2.5);
+    ctx.closePath(); ctx.fill();
   }
   ctx.globalAlpha = 1;
   for (const d of enemyDrones) {
@@ -1462,9 +1468,11 @@ function _hud_drawMinimapLegend(mx, my, mw, mh) {
   ctx.fillStyle = black;
   ctx.fillRect(mx + 10, ly + 4, 6, 6);
   ctx.fillStyle = _label; ctx.fillText('YOU', mx + 20, ly + 10);
-  // ENEMY — red square
+  // ENEMY — red triangle (opt R11 — shape-distinct from the friendly squares)
   ctx.fillStyle = red;
-  ctx.fillRect(mx + 50, ly + 5, 5, 5);
+  ctx.beginPath();
+  ctx.moveTo(mx + 52, ly + 3); ctx.lineTo(mx + 55.5, ly + 9); ctx.lineTo(mx + 48.5, ly + 9);
+  ctx.closePath(); ctx.fill();
   ctx.fillStyle = _label; ctx.fillText('ENEMY', mx + 58, ly + 10);
   // ALLY — creamDark square w/ black outline
   ctx.fillStyle = creamD;

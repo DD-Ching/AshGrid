@@ -565,6 +565,12 @@ function renderWorld() {
     // Phase 149 — allies flash white on hit too (same tactile read).
     const _aHit = (typeof game !== 'undefined') && game.time < (a._hitFlashUntil || 0);
     drawHumanoid(a.x, a.y, a.angle, a.walkPhase, _aHit ? '#FFFFFF' : COLORS.creamDark, false, a);
+    // opt R11 — a bright cream ring marks every FRIENDLY (allies + the player's
+    // R6 rim). Friend/foe was signalled by red-vs-cream body fill ALONE (same
+    // silhouette) — unusable for red-green CVD. "Has a bright ring = friendly"
+    // survives greyscale, independent of body hue.
+    ctx.lineWidth = 1.5; ctx.strokeStyle = (typeof COLORS !== 'undefined' && COLORS.cream) ? COLORS.cream : '#F2E9D0';
+    ctx.beginPath(); ctx.arc(a.x, a.y, (a.radius || 13) + 1.5, 0, Math.PI * 2); ctx.stroke();
     if (aInvuln) ctx.globalAlpha = 1;
     // Phase 98 — same "!" alert for friendly NN units. Same combat trigger,
     // same visual rule. Confirms ONNX-state on the team you actually
