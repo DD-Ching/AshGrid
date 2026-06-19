@@ -50,8 +50,10 @@ MISSION_FACTORIES.siege = function(mapDef) {
     title: '守城', titleEn: 'SIEGE',
     objective: T('守住巴斯提昂-7 · 撐到第五夜黎明', 'Hold Bastion-7 · survive to Dawn of Night 5'),
     teamKills,
-    // Start AT the objective (just south of the Heart, inside the keep).
-    playerSpawn: { x: _ax + _F.cx, y: _ay + _F.cy + 55 },
+    // Start just south of the Heart, inside the keep — off the core's bbox (opt R9)
+    // so the player isn't spawned on the reactor. AUTHORITATIVE spawn: initMission
+    // reads this BEFORE setupStructures; the fort registry's copy is unread (kept at +72).
+    playerSpawn: { x: _ax + _F.cx, y: _ay + _F.cy + 72 },
 
     // Pre-place the fort (walls + Heart + Armory + footings). The director,
     // garrison + FX read the registry it stores on game._siege.fort.
