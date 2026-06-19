@@ -31,6 +31,13 @@
 //   across the classic-script load. _updateSideAdSlots removed Phase 131b
 //   alongside the deleted #sideAdLeft / #sideAdRight DOM.)
 
+// 188N — single source for the "R switches the Heavy's active weapon" gate, read by
+// BOTH HUD render sites (mobile button column + desktop action bar) so the SWITCH-vs-
+// RELOAD label can't disagree between them.
+function _rIsHeavySwitch() {
+  return typeof heavyCanCycle === 'function' && heavyCanCycle();
+}
+
 function renderHUD() {
   // Full HUD: HP / ammo / minimap / mission / energy all visible.
   const showMin = true, showMsn = true;
@@ -807,7 +814,7 @@ function renderHUDOverlays() {
       { id: 'q', label: 'Q',   sub: 'UAV' },
       { id: 'e', label: 'E',   sub: 'FPV' },
       { id: 'v', label: 'V',   sub: '助', active: !!player._aimAssist },
-      { id: 'r', label: 'R',   sub: '弹' },
+      { id: 'r', label: 'R',   sub: _rIsHeavySwitch() ? T('换', 'SW') : '弹' },
     ];
     if (game._nnMode) {
       buttons.push({ id: 'b', label: 'B', sub: T('建', 'BUILD'), active: buildMode.active });
@@ -1358,8 +1365,12 @@ function _hud_drawActionBar(x, y, w, h) {
       else                                     gReason = T('隊伍滿', 'SQUAD FULL');
     } else                                     gReason = T('需種子', 'NO SEED');
   }
+  // 188N — for the Heavy with ≥2 stockpiled gun types, R SWITCHES the active weapon
+  // (重裝專屬) instead of reloading; label it so the switch is discoverable.
+  const _rSwitch = _rIsHeavySwitch();
   const cells = [
-    { hk: 'R', name: 'RELOAD',  big: `${player.ammo}`,         sub: `/${player.reserve}` },
+    _rSwitch ? { hk: 'R', name: T('切換', 'SWITCH'), big: `×${(typeof heavyArsenalTotal === 'function') ? heavyArsenalTotal() : ''}`, sub: T('武器', 'WPN') }
+             : { hk: 'R', name: 'RELOAD',  big: `${player.ammo}`,         sub: `/${player.reserve}` },
     { hk: 'F', name: 'FRAG',    big: `${player.grenades}`,     sub: `/${player.maxGrenades}` },
     { hk: 'Q', name: 'UAV',     big: `${drone.battery.toFixed(0)}`, sub: '%' },
     { hk: 'E', name: 'FPV',     big: `${fpv.available}`,       sub: `/${fpv.max}` },

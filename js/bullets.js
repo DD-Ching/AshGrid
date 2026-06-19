@@ -35,13 +35,43 @@
 //   triggerShake · _mpIsActive · _mpBroadcastExplosion · _maybeStumble ·
 //   WeaponState · Input · _wallSegHitBullet · etc.
 
+// Kill-streak chain window (ticks). Promoted to a top-level global (was a block-local
+// in the kill path below) so the wolf-frenzy buff (js/wolf_frenzy.js) can DECAY on the
+// same window — one source of truth for "連殺 = a 4 s chain".
+const KS_WINDOW = 240;
+
+// Phase 188N — RANGE FAIRNESS. Bug: 敵人子彈射程有時後比我們遠. A bullet's effective
+// range is bulletSpeed × life, and both sides despawn identically (life-- → 0), so an
+// enemy assigned a longer-range gun (NN pool has SNIPER 2200 / LMG 980 vs the player's
+// RIFLE 840) literally out-ranges the player. Clamp a HOSTILE bullet's life so its range
+// can never exceed what the player can shoot back with RIGHT NOW (their current weapon) —
+// "you can always return fire as far as they reach you". SOLO PvE only: these are the
+// locally-simulated enemy bullets (MP bullets are server-spawned). Returns the (possibly
+// shortened) life; a no-op when there's no player weapon to compare against.
+//
+// Gated behind game._rangeFair (default ON): set game._rangeFair = false to restore the
+// byte-identical legacy full-range path (cardinal rule 6 — old behaviour stays reachable).
+function hostileBulletLife(bulletSpeed, life) {
+  if (typeof game !== 'undefined' && game && game._rangeFair === false) return life;   // legacy path
+  const w = (typeof playerWeapon !== 'undefined' && playerWeapon) ? playerWeapon : null;
+  if (!w || !(bulletSpeed > 0)) return life;
+  const playerRange = (w.bulletSpeed || 0) * (w.bulletLife || 0);
+  if (!(playerRange > 0)) return life;
+  const cap = Math.max(1, Math.floor(playerRange / bulletSpeed));
+  return life > cap ? cap : life;
+}
+
 function fire() {
   const w = playerWeapon;
   // R3 — WeaponState owns ammo + cooldown mutations
   if (typeof WeaponState !== 'undefined' && WeaponState.consumeShot) {
     WeaponState.consumeShot(w);
   } else {
-    player.fireCooldown = w.fireCd;
+    // Mirror WeaponState.consumeShot so the wolf-frenzy RoF buff still applies on this
+    // defensive fallback (used only if weapon_state.js fails to load). frenzy===1 keeps
+    // the assignment byte-identical for every non-wolf / classes-off / MP path.
+    const _frenzy = (typeof wolfFrenzyFireCdMul === 'function') ? wolfFrenzyFireCdMul() : 1;
+    player.fireCooldown = (_frenzy === 1) ? w.fireCd : Math.max(1, Math.round(w.fireCd * _frenzy));
     player.ammo--;
   }
   const baseAngle = player.gunAngle + player.gunRecoil;
@@ -291,8 +321,8 @@ function updateBullets() {
           // for good (burnt by '把那個叮咚鈴聲移除'); this one is
           // noise-only, no melodic tone.
           if (typeof playSfx === 'function') playSfx('kill_crackle');
-          // Kill streak — chain kills within 4s bump the counter
-          const KS_WINDOW = 240;
+          // Kill streak — chain kills within 4s bump the counter (KS_WINDOW is the
+          // shared top-level const so the wolf-frenzy decay reads the same window).
           const last = player._lastKillTick || -9999;
           if (game.time - last < KS_WINDOW) {
             player._killStreak = (player._killStreak || 1) + 1;

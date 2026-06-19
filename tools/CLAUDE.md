@@ -18,6 +18,7 @@ node tools/test_mp_ad_revive.js # MP ad-revive is server-authoritative
 node tools/test_npc_director.js # NPC anti-clump / goals / fail-safe
 node tools/test_mp_chassis.js   # server _applyChassisDamage (armour/dash/bleed) + recruit gate
 node tools/test_squad_slots.js  # getSquadSlots roster predicate
+node tools/test_wolf_frenzy.js  # wolf killstreak buff: identity-when-off / scaling / decay
 ```
 
 When you add a guarded behaviour, add/extend a `test_*.js` here and wire it into BOTH

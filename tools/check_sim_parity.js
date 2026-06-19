@@ -151,6 +151,14 @@ function near(a, b) { return Math.abs(a - b) < 1e-9; }
     if (sv == null) fail('ULT_FAN_STEP: not found in server/party/server.js');
     if (cv != null && sv != null && cv !== sv) fail(`ULT_FAN_STEP mismatch: client=${cv} server=${sv}`);
     else if (cv != null) console.log(`Heavy ultimate fan parity: ULT_FAN_STEP=${cv} checked client↔server.`);
+    // 188N — the fan is also CAPPED by ULT_FAN_MAX so a big arsenal stays concentrated;
+    // if the two caps drift, the client ghost cone and the authoritative cone diverge.
+    const cm = constOf('js/heavy_arsenal.js', 'ULT_FAN_MAX');
+    const sm = constOf('server/party/server.js', 'ULT_FAN_MAX');
+    if (cm == null) fail('ULT_FAN_MAX: not found in js/heavy_arsenal.js');
+    if (sm == null) fail('ULT_FAN_MAX: not found in server/party/server.js');
+    if (cm != null && sm != null && cm !== sm) fail(`ULT_FAN_MAX mismatch: client=${cm} server=${sm}`);
+    else if (cm != null) console.log(`Heavy ultimate fan cap parity: ULT_FAN_MAX=${cm} checked client↔server.`);
   }
 
   // ── Verdict ──────────────────────────────────────────────────────────────

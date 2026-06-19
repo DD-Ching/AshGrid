@@ -139,7 +139,12 @@
     const p = _player();
     if (!p || !w) return;
     p.ammo--;
-    p.fireCooldown = w.fireCd;
+    // Phase 188N — Wolf 越殺越強: killstreak shortens the fire cooldown (faster RoF).
+    // wolfFrenzyFireCdMul() is 1.0 for non-wolf / classes-off / MP; the frenzy===1 guard
+    // keeps the assignment byte-identical there (exact w.fireCd, no round/floor). Floor at
+    // 1 tick when the buff IS active (can't fire instantly).
+    const frenzy = (typeof wolfFrenzyFireCdMul === 'function') ? wolfFrenzyFireCdMul() : 1;
+    p.fireCooldown = (frenzy === 1) ? w.fireCd : Math.max(1, Math.round(w.fireCd * frenzy));
   }
 
   // ─── Swap ───────────────────────────────────────────────────────
