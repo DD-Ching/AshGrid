@@ -83,8 +83,13 @@ function fire() {
       _mpGhost: _mpActive,
     });
   }
-  // One muzzle flash per shot (not per pellet) — spread looks like a cloud
-  muzzleFlashes.push({ x: player.x + Math.cos(baseAngle)*22, y: player.y + Math.sin(baseAngle)*22, angle: baseAngle, life: 5 });
+  // One muzzle flash per shot (not per pellet) — spread looks like a cloud.
+  // opt R5 — a touch longer-lived + a white-hot core (rendered in world_render)
+  // so shooting reads as "punchy", not a dark-red puff on a near-black floor.
+  muzzleFlashes.push({ x: player.x + Math.cos(baseAngle)*22, y: player.y + Math.sin(baseAngle)*22, angle: baseAngle, life: 7, _hot: true });
+  // opt R5 — every shot kicks the screen a little (scaled by the gun's recoil),
+  // so the most-repeated action finally has weight. SHAKE_CAP(5) bounds rapid fire.
+  if (typeof triggerShake === 'function') triggerShake(Math.min(3.5, 1 + (w.recoilPerShot || 0.4) * 3), 4);
   applyRecoil(player, w);
   emitSound(player.x, player.y, w.soundIntensity, true, true, w.soundProfile);
   // MP fire intent travels via the per-tick input packet (`fire: true` in
@@ -266,7 +271,16 @@ function updateBullets() {
           // VFX, damage popup (isKill=true → bigger red), score bump,
           // killCount tick. KIA + hurt callouts on FRIENDLY losses still
           // fire (different cooldown keys, those work correctly).
-          createExplosion(e.x, e.y, 'small');
+          // opt R5 — make YOUR kills land: a bigger burst + a ~3-tick hit-stop
+          // (crisp, not the laggy 90-tick streak slow-mo) + a punch. Ally/chain
+          // kills stay a small puff so firefights don't turn to mush. (Visual
+          // only — kill SOUND stays removed per the user's '移除擊殺音效'.)
+          const _byPlayer = (b.fromUnit === player);
+          createExplosion(e.x, e.y, _byPlayer ? 'big' : 'small');
+          if (_byPlayer) {
+            if (typeof triggerShake === 'function') triggerShake(3.5, 7);
+            if (typeof triggerSlowMo === 'function') triggerSlowMo(0.18, 3);
+          }
           // Phase 56 — subtle debris/scatter cue on kill. Quiet (vol
           // 0.18) + brief (60ms) so it doesn't crowd the explosion VFX
           // or repeat into mush during streaks. User: '可能再加一些微

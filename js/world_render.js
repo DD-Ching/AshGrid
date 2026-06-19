@@ -299,7 +299,7 @@ function renderWorld() {
     ctx.translate(m.x, m.y);
     ctx.rotate(m.angle);
     ctx.fillStyle = COLORS.red;
-    ctx.globalAlpha = m.life / 5;
+    ctx.globalAlpha = Math.min(1, m.life / 5);
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(22, -7);
@@ -307,6 +307,18 @@ function renderWorld() {
     ctx.lineTo(22, 7);
     ctx.closePath();
     ctx.fill();
+    // opt R5 — white-hot inner core so the flash pops against the dark floor
+    // (a red triangle alone vanished on the near-black SIEGE ground).
+    if (m._hot) {
+      ctx.fillStyle = '#FFF3D0';
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(15, -3.5);
+      ctx.lineTo(20, 0);
+      ctx.lineTo(15, 3.5);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.restore();
   }
   ctx.globalAlpha = 1;

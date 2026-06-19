@@ -185,7 +185,7 @@ function _applyDamageToUnit(u, dmg, ignoreInvuln) {
   // Phase 149 — brief white body hit-flash so every landed hit reads tactilely
   // (world_render flashes the humanoid white while game.time < this). Set here,
   // the one damage chokepoint, so it fires for bullets / AOE / melee alike.
-  u._hitFlashUntil = ((typeof game !== 'undefined') ? game.time : 0) + 5;
+  u._hitFlashUntil = ((typeof game !== 'undefined') ? game.time : 0) + 8;  // opt R5 — +5→+8 so non-fatal hits register tactilely
   // Phase 184c — Charger DASH damage reduction: while dashing (set by the sprint
   // logic for a wolf when game._classes is on), incoming damage is cut 70%.
   // Applied at this single chokepoint BEFORE armor/HP so it covers bullets/AOE/
