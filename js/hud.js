@@ -1325,13 +1325,26 @@ function _hud_drawActionBar(x, y, w, h) {
     gReady = game._nnMode && (player._seed || 0) > ARENA_SEED_GAP;
   }
   const bBuilder = !_classes || _cx === 'humanoid';   // build is builder-only under classes
+  // Phase 188-opt R2 — a bare grey "LOCK" reads as "broken"; derive WHY each
+  // action is locked so the player can learn the rule (reuses the same _exec the
+  // action + world-prompt read, so the caption can't disagree with them).
+  const bReason = bBuilder ? null : T('工程兵', 'BUILDER');
+  let gReason = null;
+  if (!gReady) {
+    if (_classes && _exec) {
+      if (!_exec.target)                       gReason = T('無目標', 'NO TARGET');
+      else if ((_exec.needEnergy || 0) > 0 && (game._energy || 0) < _exec.needEnergy)
+                                               gReason = T('需', 'NEED ') + Math.round(_exec.needEnergy) + '⚡';
+      else                                     gReason = T('隊伍滿', 'SQUAD FULL');
+    } else                                     gReason = T('需種子', 'NO SEED');
+  }
   const cells = [
     { hk: 'R', name: 'RELOAD',  big: `${player.ammo}`,         sub: `/${player.reserve}` },
     { hk: 'F', name: 'FRAG',    big: `${player.grenades}`,     sub: `/${player.maxGrenades}` },
     { hk: 'Q', name: 'UAV',     big: `${drone.battery.toFixed(0)}`, sub: '%' },
     { hk: 'E', name: 'FPV',     big: `${fpv.available}`,       sub: `/${fpv.max}` },
-    { hk: 'B', name: 'BUILD',   big: bBuilder ? 'READY' : 'LOCK', sub: null },
-    { hk: 'G', name: gName,     big: gReady ? 'READY' : 'LOCK', sub: null },
+    { hk: 'B', name: 'BUILD',   big: bBuilder ? 'READY' : 'LOCK', sub: null, lockReason: bReason },
+    { hk: 'G', name: gName,     big: gReady ? 'READY' : 'LOCK', sub: null, lockReason: gReason },
   ];
   // Dark panel
   ctx.fillStyle = 'rgba(20, 22, 28, 0.94)';
@@ -1365,6 +1378,12 @@ function _hud_drawActionBar(x, y, w, h) {
       ctx.fillStyle = (c.big === 'READY') ? '#3CD46A' : '#666';
       ctx.font = 'bold 12px sans-serif';
       ctx.fillText(c.big, cx + 12, y + 44);
+      // Lock reason caption — teaches WHY (BUILDER / NO TARGET / NEED N⚡ / SQUAD FULL)
+      if (c.big !== 'READY' && c.lockReason) {
+        ctx.fillStyle = '#9a8f6a';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(c.lockReason, cx + 12, y + h - 6);
+      }
     } else {
       ctx.fillStyle = COLORS.cream;
       ctx.font = 'bold 18px sans-serif';

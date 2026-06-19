@@ -517,14 +517,17 @@ function _siegeWeld() {
   return true;
 }
 
-// Passive weld during the calm — a builder near a breach mends it (no new UI; the
-// "weld at dawn" loop). Builder-only under chassis-classes.
+// Passive weld during the calm — standing near a breach mends it (no new UI; the
+// "weld at dawn" loop). Weld is the MODE's core verb ("out-engineer the siege"),
+// NOT a class perk — every chassis welds in siege, else the terrain spine is
+// silently dead for 2/3 of loadouts. (Build/turrets stay a builder perk.)
 function _siegeTickWeld() {
   const s = game._siege;
   if (!s || (s.phase !== 'lull' && s.phase !== 'dawn')) return;
-  if (typeof game !== 'undefined' && game._classes && typeof player !== 'undefined'
-      && player && player._chassis && player._chassis !== 'humanoid') return;
-  _siegeWeld();
+  if (_siegeWeld() && !s._weldTaught) {
+    s._weldTaught = true;   // one-time teach: the breach-mend mechanic is invisible otherwise
+    _siegeToast('焊接中 — 靠近缺口即可修補城牆', 'WELDING — stand by a breach to mend the wall', 150);
+  }
 }
 
 // Player-death poll for the siege factory (siege uses its own factory, not
