@@ -286,7 +286,9 @@ function buildSiegeFort() {
   _siegeFort = {
     heart, armory, segs, footings,
     center: { x: x0 + cx, y: y0 + cy },
-    playerSpawn: { x: x0 + cx, y: y0 + cy + 55 },   // just south of the Heart, in the keep
+    playerSpawn: { x: x0 + cx, y: y0 + cy + 72 },   // south of the Heart, in the keep — off the
+                                                    // core's bbox (opt R9) so the player isn't
+                                                    // spawned standing on top of the reactor.
     gateAnchors: {
       N: { x: x0 + cx,       y: y0 + cy - 400 },
       E: { x: x0 + cx + 400, y: y0 + cy },

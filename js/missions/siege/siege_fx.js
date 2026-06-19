@@ -125,8 +125,25 @@ function renderSiegeHud() {
   if (s.autopilot) { ctx.fillStyle = red; ctx.fillText(zh ? '自動防禦' : 'AUTOPILOT', barX + barW, barY + barH + 10); }
   else { ctx.fillStyle = '#5FD6A0'; ctx.fillText((zh ? '駐軍 ' : 'GARRISON ') + pips, barX + barW, barY + barH + 10); }
 
+  // opt R9 — CORE UNDER ATTACK telegraph: a red unit is ON the Heart. The
+  // lose-condition under threat is the most urgent read, so it pre-empts the
+  // INTENT axis banner below.
+  const _heartThreatened = s._heartThreatUntil && t < s._heartThreatUntil;
+  if (_heartThreatened) {
+    const cp = 0.45 + 0.55 * Math.abs(Math.sin(t * 0.3));
+    const warn = zh ? '⚠ 核心受襲 — 守住核心！' : '⚠ CORE UNDER ATTACK';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 15px sans-serif';
+    const ww = ctx.measureText(warn).width + 32;
+    const wy = barY + barH + 18;
+    ctx.globalAlpha = cp;
+    ctx.fillStyle = 'rgba(40,8,6,0.92)'; ctx.fillRect(cx - ww / 2, wy, ww, 22);
+    ctx.fillStyle = red; ctx.fillText(warn, cx, wy + 15);
+    ctx.globalAlpha = 1;
+  }
+
   // INTENT telegraph banner — pulsing red, names the threat axis.
-  if (s.intent && t < s.intent.until) {
+  if (!_heartThreatened && s.intent && t < s.intent.until) {
     const gl = _SIEGE_GATE_LABEL[s.intent.gate] || _SIEGE_GATE_LABEL.N;
     const th = _SIEGE_THREAT_LABEL[s.intent.threat] || _SIEGE_THREAT_LABEL.mass;
     const warn = '⚠ ' + (zh ? (th.zh + ' · ' + gl.zh) : (th.en + ' · ' + gl.en));

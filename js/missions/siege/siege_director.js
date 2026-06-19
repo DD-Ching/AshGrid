@@ -343,6 +343,7 @@ function updateSiegeDirector() {
   if (s._won || s._failed) return;
 
   _siegeTankBreach();                       // 坦克轰墙 — tanks chew walls every tick
+  _siegeTickHeartThreat();                   // detect enemies on the core → telegraph (opt R9)
 
   if (s.night === 0) { _siegeStartNight(1); return; }       // boot → Night 1
 
@@ -527,6 +528,22 @@ function _siegeTickWeld() {
   if (_siegeWeld() && !s._weldTaught) {
     s._weldTaught = true;   // one-time teach: the breach-mend mechanic is invisible otherwise
     _siegeToast('焊接中 — 靠近缺口即可修補城牆', 'WELDING — stand by a breach to mend the wall', 150);
+  }
+}
+
+// opt R9 — make the threat to the lose-condition READABLE: when any red unit is
+// on the Heart, raise a telegraph flag (lingers ~0.4s so it doesn't flicker) that
+// renderSiegeHud paints as a pulsing "CORE UNDER ATTACK" banner. Detection only —
+// no balance change; the Heart's durability is owned by SIEGE_FORT.heartDmgMul (R1).
+function _siegeTickHeartThreat() {
+  const s = game._siege;
+  const f = s && s.fort; const heart = f && f.heart;
+  if (!heart || typeof enemies === 'undefined' || !enemies) return;
+  const R2 = 78 * 78;
+  for (const e of enemies) {
+    if (!e || !e.alive || e.team !== 1) continue;
+    const dx = e.x - heart.x, dy = e.y - heart.y;
+    if (dx * dx + dy * dy < R2) { s._heartThreatUntil = (game.time || 0) + 30; return; }
   }
 }
 
