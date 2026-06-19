@@ -481,17 +481,27 @@ function updateBullets() {
         // multiplayer.js' snapshot handler — local NN damage is preserved
         // because the server's higher hp doesn't overwrite our lower
         // local hp.
-        _applyDamageToUnit(player, b.damage);
+        // opt R3 — SOLO PvE survivability: scale AI→player damage and cap a single
+        // hit so the bot SNIPER/DMR can't one-shot a 100-HP player. SOLO only
+        // (!_mpIsActive) so MP PvP + server parity are byte-identical; player→bot
+        // damage is untouched (asymmetric PvE).
+        let _pd = b.damage;
+        if (!(typeof _mpIsActive === 'function' && _mpIsActive()) && typeof BALANCE !== 'undefined' && BALANCE.combat) {
+          _pd *= (BALANCE.combat.aiDmgMul != null ? BALANCE.combat.aiDmgMul : 1);
+          const _cap = (player.maxHp || 100) * (BALANCE.combat.aiMaxHitFrac != null ? BALANCE.combat.aiMaxHitFrac : 1);
+          if (_pd > _cap) _pd = _cap;
+        }
+        _applyDamageToUnit(player, _pd);
         game.hitFlash = 12;
         playSfx('hit');
-        triggerShake(Math.min(6, b.damage * 0.25), 8);
+        triggerShake(Math.min(6, _pd * 0.25), 8);
         // Track most recent damage source for the killer-info banner
         player._lastDamageBy = b.fromUnit || null;
         player._lastDamageWeapon = b.weaponName || '';
         // Phase 179 — recent-hits log for the death recap / killcam (was read
         // by death_recap.js but never populated). Keep the last 6, cheap.
         if (!player._recentHits) player._recentHits = [];
-        player._recentHits.push({ dmg: b.damage, weapon: b.weaponName || '' });
+        player._recentHits.push({ dmg: _pd, weapon: b.weaponName || '' });
         if (player._recentHits.length > 6) player._recentHits.shift();
         // Directional hurt indicator — angle FROM player TO bullet source.
         // Decays over ~30 frames; render in renderHUDOverlays as edge glow.

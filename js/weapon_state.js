@@ -127,7 +127,11 @@
     const pInvuln = p._invulnUntil != null
                   && typeof game !== 'undefined'
                   && game.time < p._invulnUntil;
-    if (pInvuln) return false;
+    // opt R3 — let the player FIRE during their spawn shield in SOLO so a 3s shield
+    // is a head-start, not 3s of helplessness (break a spawn-camp). MP keeps the
+    // mute (no shoot-while-invuln exploit, server-authoritative).
+    const _mpMute = (typeof _mpIsActive === 'function' && _mpIsActive());
+    if (pInvuln && _mpMute) return false;
     return true;
   }
 

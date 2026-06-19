@@ -91,7 +91,11 @@
     opts = opts || {};
     if (typeof player === 'undefined') return false;
     const _gt = _gameTime();
-    const invulnTicks = (opts.invulnTicks != null) ? opts.invulnTicks : 180;
+    // opt R3 — SOLO PvE defaults to a true 3s shield (252t @84Hz, the owner's
+    // '三秒的無敵時間'); MP keeps the server-matched 180 for parity. Explicit
+    // opts.invulnTicks always wins.
+    const _soloDefault = (typeof _mpIsActive === 'function' && _mpIsActive()) ? 180 : 252;
+    const invulnTicks = (opts.invulnTicks != null) ? opts.invulnTicks : _soloDefault;
     player.alive = true;
     player.hp = (opts.hp != null) ? opts.hp : (player.maxHp || 100);
     if (opts.x != null) player.x = opts.x;

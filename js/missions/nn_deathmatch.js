@@ -111,7 +111,13 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
     // 3 → 8 over the first 10 waves, then capped.
     return Math.min(8, 3 + Math.floor(n / 2));
   }
-  const ENEMY_HARD_CAP = 16;              // simultaneous live red enemies
+  const ENEMY_HARD_CAP = 16;              // simultaneous live red enemies (late-game ceiling)
+  // opt R3 — ramp the simultaneous-enemy cap so the first minute isn't a brick
+  // wall: a learning player faces ≤8, climbing to 16 by ~wave 8.
+  function _enemyHardCap() {
+    const w = _waveNum || 0;
+    return w < 4 ? 8 : (w < 8 ? 12 : ENEMY_HARD_CAP);
+  }
   function _spawnRedWave() {
     if (typeof _arenaSpawnFactoryBot !== 'function') return;
     if (typeof game._nnSpawnRed === 'undefined' || !game._nnSpawnRed) return;
@@ -125,8 +131,9 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
     // frozen / neutralized and waiting to be recruited, so we shouldn't
     // let the wave system see them as 'active threats' or it'd stall.
     const alive = enemies.filter(e => e && e.alive && !e._koStunned).length;
-    if (alive >= ENEMY_HARD_CAP) return;
-    const room = ENEMY_HARD_CAP - alive;
+    const _cap = _enemyHardCap();
+    if (alive >= _cap) return;
+    const room = _cap - alive;
     const n = Math.min(_waveSize(_waveNum), room);
     // Phase 135.1 — instead of cycling _nnSpawnRedList (typically 1-2
     // anchors all on the right side, which produced the user's '一堆
@@ -594,7 +601,14 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       // User '復活要復活是要有三秒的無敵時間, 不要一復活就被秒殺,
       // 再重新倒數'. Standardised across every respawn / swap / revive
       // path; matches server INVULN_TICKS so client/server stay in sync.
-      const SPAWN_INVULN_TICKS = 180;
+      const SPAWN_INVULN_TICKS = 180;   // server-matched (MP parity — DO NOT change)
+      // opt R3 — in SOLO PvE, decouple the spawn shield so it actually grants a
+      // head start: the player/allies get a true 3s (252t @84Hz, the owner's
+      // '三秒的無敵時間'), enemies only 0.5s so they're vulnerable while you orient.
+      // MP keeps the server-matched 180 for both (byte-identical, no desync).
+      const _soloInvuln = !(typeof _mpIsActive === 'function' && _mpIsActive());
+      const PLAYER_INVULN_TICKS = _soloInvuln ? 252 : SPAWN_INVULN_TICKS;
+      const ENEMY_INVULN_TICKS  = _soloInvuln ? 42  : SPAWN_INVULN_TICKS;
       // Clamp respawn positions to the playable interior of the NN_ARENA box
       // so a unit never spawns OUTSIDE the red border, regardless of jitter.
       const SP_PAD = 30;
@@ -627,7 +641,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           PlayerLifecycle.reviveAtSpawn({
             x: _spX(psp.x),
             y: _spY(psp.y + (Math.random() - 0.5) * 60),
-            invulnTicks: SPAWN_INVULN_TICKS,
+            invulnTicks: PLAYER_INVULN_TICKS,
           });
         }
         // SP-NN weapon-specific ammo override (reviveAtSpawn defaults to
@@ -648,7 +662,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           a.y = _spY(asp.y + (Math.random() - 0.5) * 60);
           a._respawnAt = null;
           a._nnFireCd = 0; a._nnRecentDmg = 0;
-          a._invulnUntil = game.time + SPAWN_INVULN_TICKS;
+          a._invulnUntil = game.time + PLAYER_INVULN_TICKS;   // allies are on the player's team
           if (!a._nnDifficulty) a._weapon = WEAPONS[pickRandomNNWeaponId()];
         }
       }
@@ -661,7 +675,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
           e.y = _spY(esp.y + (Math.random() - 0.5) * 60);
           e._respawnAt = null;
           e._nnFireCd = 0; e._nnRecentDmg = 0;
-          e._invulnUntil = game.time + SPAWN_INVULN_TICKS;
+          e._invulnUntil = game.time + ENEMY_INVULN_TICKS;   // SOLO: enemies vulnerable fast → real head start
           if (!e._nnDifficulty) e._weapon = WEAPONS[pickRandomNNWeaponId()];
         }
       }
