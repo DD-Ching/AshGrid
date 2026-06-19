@@ -419,12 +419,18 @@ function drawMinimapPanel(mx, my, mw, mh) {
   // alpha) OR seen recently (faded memory). Minimap must NOT leak enemy
   // positions ahead of the friendly team's actual line of sight, even in
   // NN mode where the arena is small.
+  // opt R11 — enemies are TRIANGLES, friendlies (ally/player) are SQUARES, so
+  // friend/foe survives greyscale / red-green CVD (was red-vs-cream squares =
+  // hue alone). The legend swatch (below) matches.
   ctx.fillStyle = COLORS.red;
   for (const e of enemies) {
     if (!e.alive) continue;
     if (e._lastSeen == null || game.time - e._lastSeen > 180) continue;
     ctx.globalAlpha = e._lastSeen === game.time ? 1 : 0.4;
-    ctx.fillRect(wx(e.x) - 2, wy(e.y) - 2, 4, 4);
+    const ex = wx(e.x), ey = wy(e.y);
+    ctx.beginPath();
+    ctx.moveTo(ex, ey - 3.5); ctx.lineTo(ex + 3.5, ey + 2.5); ctx.lineTo(ex - 3.5, ey + 2.5);
+    ctx.closePath(); ctx.fill();
   }
   ctx.globalAlpha = 1;
   for (const d of enemyDrones) {
@@ -586,16 +592,30 @@ function renderHUDOverlays() {
     cxY = (dx * s + dy * c) * camera.scale + H() / 2;
     locked = true;
   }
-  ctx.strokeStyle = COLORS.red;
+  // opt R6 — two-pass contrast reticle: a dark halo UNDER a bright red cross so
+  // it survives BOTH the near-black floor AND the red mob (a bare red hairline
+  // vanished against both), plus a cream centre dot with a dark ring.
+  const _xArm = 14, _xGap = 5;
+  const _xpath = () => {
+    ctx.beginPath();
+    ctx.moveTo(cxX - _xArm, cxY); ctx.lineTo(cxX - _xGap, cxY);
+    ctx.moveTo(cxX + _xGap, cxY); ctx.lineTo(cxX + _xArm, cxY);
+    ctx.moveTo(cxX, cxY - _xArm); ctx.lineTo(cxX, cxY - _xGap);
+    ctx.moveTo(cxX, cxY + _xGap); ctx.lineTo(cxX, cxY + _xArm);
+    ctx.stroke();
+  };
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(10,8,8,0.92)';     // dark halo (underneath, wider)
+  ctx.lineWidth = (locked ? 2 : 1.5) + 2.5;
+  _xpath();
+  ctx.strokeStyle = '#FF3B2F';               // bright red cross on top
   ctx.lineWidth = locked ? 2 : 1.5;
-  ctx.beginPath();
-  ctx.moveTo(cxX - 14, cxY); ctx.lineTo(cxX - 5, cxY);
-  ctx.moveTo(cxX + 5, cxY); ctx.lineTo(cxX + 14, cxY);
-  ctx.moveTo(cxX, cxY - 14); ctx.lineTo(cxX, cxY - 5);
-  ctx.moveTo(cxX, cxY + 5); ctx.lineTo(cxX, cxY + 14);
-  ctx.stroke();
-  ctx.fillStyle = COLORS.red;
-  ctx.fillRect(cxX - 1, cxY - 1, 2, 2);
+  _xpath();
+  ctx.lineCap = 'butt';
+  ctx.fillStyle = 'rgba(10,8,8,0.92)';        // dark ring behind the dot
+  ctx.fillRect(cxX - 2.5, cxY - 2.5, 5, 5);
+  ctx.fillStyle = '#F2E9D0';                  // cream centre dot (always readable)
+  ctx.fillRect(cxX - 1.5, cxY - 1.5, 3, 3);
   if (locked) {
     // Lock corner brackets so the player can tell the reticle is "stuck"
     ctx.lineWidth = 2;
@@ -1325,13 +1345,26 @@ function _hud_drawActionBar(x, y, w, h) {
     gReady = game._nnMode && (player._seed || 0) > ARENA_SEED_GAP;
   }
   const bBuilder = !_classes || _cx === 'humanoid';   // build is builder-only under classes
+  // Phase 188-opt R2 — a bare grey "LOCK" reads as "broken"; derive WHY each
+  // action is locked so the player can learn the rule (reuses the same _exec the
+  // action + world-prompt read, so the caption can't disagree with them).
+  const bReason = bBuilder ? null : T('工程兵', 'BUILDER');
+  let gReason = null;
+  if (!gReady) {
+    if (_classes && _exec) {
+      if (!_exec.target)                       gReason = T('無目標', 'NO TARGET');
+      else if ((_exec.needEnergy || 0) > 0 && (game._energy || 0) < _exec.needEnergy)
+                                               gReason = T('需', 'NEED ') + Math.round(_exec.needEnergy) + '⚡';
+      else                                     gReason = T('隊伍滿', 'SQUAD FULL');
+    } else                                     gReason = T('需種子', 'NO SEED');
+  }
   const cells = [
     { hk: 'R', name: 'RELOAD',  big: `${player.ammo}`,         sub: `/${player.reserve}` },
     { hk: 'F', name: 'FRAG',    big: `${player.grenades}`,     sub: `/${player.maxGrenades}` },
     { hk: 'Q', name: 'UAV',     big: `${drone.battery.toFixed(0)}`, sub: '%' },
     { hk: 'E', name: 'FPV',     big: `${fpv.available}`,       sub: `/${fpv.max}` },
-    { hk: 'B', name: 'BUILD',   big: bBuilder ? 'READY' : 'LOCK', sub: null },
-    { hk: 'G', name: gName,     big: gReady ? 'READY' : 'LOCK', sub: null },
+    { hk: 'B', name: 'BUILD',   big: bBuilder ? 'READY' : 'LOCK', sub: null, lockReason: bReason },
+    { hk: 'G', name: gName,     big: gReady ? 'READY' : 'LOCK', sub: null, lockReason: gReason },
   ];
   // Dark panel
   ctx.fillStyle = 'rgba(20, 22, 28, 0.94)';
@@ -1365,6 +1398,12 @@ function _hud_drawActionBar(x, y, w, h) {
       ctx.fillStyle = (c.big === 'READY') ? '#3CD46A' : '#666';
       ctx.font = 'bold 12px sans-serif';
       ctx.fillText(c.big, cx + 12, y + 44);
+      // Lock reason caption — teaches WHY (BUILDER / NO TARGET / NEED N⚡ / SQUAD FULL)
+      if (c.big !== 'READY' && c.lockReason) {
+        ctx.fillStyle = '#9a8f6a';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(c.lockReason, cx + 12, y + h - 6);
+      }
     } else {
       ctx.fillStyle = COLORS.cream;
       ctx.font = 'bold 18px sans-serif';
@@ -1429,9 +1468,11 @@ function _hud_drawMinimapLegend(mx, my, mw, mh) {
   ctx.fillStyle = black;
   ctx.fillRect(mx + 10, ly + 4, 6, 6);
   ctx.fillStyle = _label; ctx.fillText('YOU', mx + 20, ly + 10);
-  // ENEMY — red square
+  // ENEMY — red triangle (opt R11 — shape-distinct from the friendly squares)
   ctx.fillStyle = red;
-  ctx.fillRect(mx + 50, ly + 5, 5, 5);
+  ctx.beginPath();
+  ctx.moveTo(mx + 52, ly + 3); ctx.lineTo(mx + 55.5, ly + 9); ctx.lineTo(mx + 48.5, ly + 9);
+  ctx.closePath(); ctx.fill();
   ctx.fillStyle = _label; ctx.fillText('ENEMY', mx + 58, ly + 10);
   // ALLY — creamDark square w/ black outline
   ctx.fillStyle = creamD;

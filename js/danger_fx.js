@@ -11,6 +11,19 @@
 
 const _DANGER_TH = 0.35;     // vignette starts when hp drops under this fraction
 
+// opt R11 — single reduce-motion / reduce-flash gate. Honours the OS-level
+// prefers-reduced-motion setting (a photosensitivity/vestibular a11y signal).
+// Cached: the OS setting is stable per session, and this is read per frame.
+// Other strobe/flash effects can gate on this one helper.
+let _reduceMotionCache = null;
+function reduceMotionOn() {
+  if (_reduceMotionCache !== null) return _reduceMotionCache;
+  let on = false;
+  try { if (typeof window !== 'undefined' && window.matchMedia) on = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+  _reduceMotionCache = on;
+  return on;
+}
+
 function renderDangerVignette() {
   if (typeof game === 'undefined' || game.state !== 'playing') return;
   if (typeof player === 'undefined' || !player || !player.alive) return;
@@ -19,9 +32,11 @@ function renderDangerVignette() {
   if (frac >= _DANGER_TH) return;
 
   const intensity = Math.min(1, (_DANGER_TH - frac) / _DANGER_TH);  // 0 → 1 as hp drops to 0
-  // Heartbeat — beats faster and harder the worse it gets.
+  // Heartbeat — beats faster and harder the worse it gets. With reduce-motion on,
+  // hold it STEADY (no accelerating ~2Hz red strobe) so it's still a "you're
+  // dying" read without the photosensitivity hazard.
   const speed = 0.12 + intensity * 0.20;
-  const pulse = 0.55 + 0.45 * Math.sin((game.time || 0) * speed);
+  const pulse = reduceMotionOn() ? 0.85 : (0.55 + 0.45 * Math.sin((game.time || 0) * speed));
   const a = intensity * pulse * 0.46;                               // cap edge alpha
 
   const w = W(), h = H();

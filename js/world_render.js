@@ -299,7 +299,7 @@ function renderWorld() {
     ctx.translate(m.x, m.y);
     ctx.rotate(m.angle);
     ctx.fillStyle = COLORS.red;
-    ctx.globalAlpha = m.life / 5;
+    ctx.globalAlpha = Math.min(1, m.life / 5);
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(22, -7);
@@ -307,6 +307,18 @@ function renderWorld() {
     ctx.lineTo(22, 7);
     ctx.closePath();
     ctx.fill();
+    // opt R5 — white-hot inner core so the flash pops against the dark floor
+    // (a red triangle alone vanished on the near-black SIEGE ground).
+    if (m._hot) {
+      ctx.fillStyle = '#FFF3D0';
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(15, -3.5);
+      ctx.lineTo(20, 0);
+      ctx.lineTo(15, 3.5);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.restore();
   }
   ctx.globalAlpha = 1;
@@ -388,6 +400,16 @@ function renderWorld() {
     // Phase 149 — flash the body white for a few frames when freshly hit.
     const _eHit = (typeof game !== 'undefined') && game.time < (e._hitFlashUntil || 0);
     const _bodyColor = _eHit ? '#FFFFFF' : (e._koStunned ? COLORS.cream : COLORS.red);
+    // opt R6 — in the dark SIEGE fort a red body on charred ground has no edge
+    // contrast; lay a faint warm ember-glow under live enemies so the threat
+    // separates from the floor. Warm (not cream) so it never reads as an ally.
+    if (game._siege && !e._koStunned && !_eHit) {
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.32;
+      ctx.fillStyle = '#FF6A4D';
+      ctx.beginPath(); ctx.arc(e.x, e.y, (e.radius || 13) + 4, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
     drawHumanoid(e.x, e.y, e.angle, e.walkPhase, _bodyColor, true, e);
     // Phase 98 — "!" alert indicator. Visible above any NN unit currently
     // in ONNX combat state from a recent damage trigger (1.5s window).
@@ -543,6 +565,10 @@ function renderWorld() {
     // Phase 149 — allies flash white on hit too (same tactile read).
     const _aHit = (typeof game !== 'undefined') && game.time < (a._hitFlashUntil || 0);
     drawHumanoid(a.x, a.y, a.angle, a.walkPhase, _aHit ? '#FFFFFF' : COLORS.creamDark, false, a);
+    // (opt R11 friend/foe note: allies are ALREADY cream-ringed below at the
+    // "Cream outline highlight to distinguish from enemies" block — a bright ring
+    // = friendly already holds in greyscale. The R11 a11y win is the minimap
+    // ENEMY-triangle-vs-friendly-square shape cue + the reduce-motion gate.)
     if (aInvuln) ctx.globalAlpha = 1;
     // Phase 98 — same "!" alert for friendly NN units. Same combat trigger,
     // same visual rule. Confirms ONNX-state on the team you actually
@@ -605,9 +631,23 @@ function renderWorld() {
     // Phase 154 — draw the player at the interpolated position (same source the
     // camera follows) so the player stays screen-centred and the ground scrolls
     // smoothly between sim ticks. Sim/aim/bullets still use player.x/y.
-    drawHumanoid(player._drawX != null ? player._drawX : player.x,
-                 player._drawY != null ? player._drawY : player.y,
-                 player.angle, player.walkPhase, COLORS.black, false, player);
+    const _pX = player._drawX != null ? player._drawX : player.x;
+    const _pY = player._drawY != null ? player._drawY : player.y;
+    drawHumanoid(_pX, _pY, player.angle, player.walkPhase, COLORS.black, false, player);
+    // opt R6 — high-contrast cream rim so "you" (a black-bodied avatar) never
+    // vanish into the near-black SIEGE floor, plus a thin red accent for identity.
+    const _pRad = (player.radius || 13) + 2;
+    ctx.lineWidth = 2.5; ctx.strokeStyle = (typeof COLORS !== 'undefined' && COLORS.cream) ? COLORS.cream : '#F2E9D0';
+    ctx.beginPath(); ctx.arc(_pX, _pY, _pRad, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = (typeof COLORS !== 'undefined' && COLORS.red) ? COLORS.red : '#C8261C';
+    ctx.beginPath(); ctx.arc(_pX, _pY, _pRad - 1.6, 0, Math.PI * 2); ctx.stroke();
+    // Spawn-shield is otherwise near-invisible (a subtle alpha flicker) — draw an
+    // explicit pulsing cyan ring so a new player SEES "I'm protected right now".
+    if (pInvuln) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(120,200,255,' + (0.35 + 0.4 * Math.abs(Math.sin(game.time * 0.2))) + ')';
+      ctx.beginPath(); ctx.arc(_pX, _pY, _pRad + 6, 0, Math.PI * 2); ctx.stroke();
+    }
     if (pInvuln) ctx.globalAlpha = 1;
   }
 

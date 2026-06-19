@@ -400,7 +400,11 @@ function renderDeathRecap() {
       const btnY = Math.min(_maxBtnY, _preferredBtnY);
       _deathRecap.adReviveBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
       const pulse2 = 0.85 + 0.15 * Math.sin(game.time * 0.22);
-      ctx.fillStyle = `rgba(63, 230, 63, ${pulse2})`;
+      // opt R4 — GOLD, not green: the free "PRESS SPACE TO RESPAWN" (killcam) is
+      // green; a same-green paid ad button next to it made the free action
+      // indistinguishable from the paid one at the highest-stress moment. Gold =
+      // premium/optional, green = the free default. (a11y: also a luminance split.)
+      ctx.fillStyle = `rgba(232, 184, 75, ${pulse2})`;
       ctx.fillRect(btnX, btnY, btnW, btnH);
       ctx.strokeStyle = COLORS.black;
       ctx.lineWidth = 2;

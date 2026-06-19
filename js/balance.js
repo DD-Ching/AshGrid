@@ -33,6 +33,15 @@ const BALANCE = {
     ultimate: 80,    // heavy 大招 (legacy one-shot cost; 188K the ultimate is now a sustained toggle)
     ultimateDrainPerFrame: 0.6,  // 188K — ⚡ drained per sim-tick while the heavy ULTIMATE toggle is ON
   },
+  // SOLO PvE survivability (opt R3). Bots use the same WEAPONS table as the player,
+  // which made TTK sub-second and the SNIPER a literal one-shot on a 100-HP player —
+  // "unfair/unwinnable" on session 1. These scale AI→PLAYER damage ONLY (player→bot
+  // stays full = asymmetric PvE), and ONLY in SOLO (gated on !_mpIsActive() so MP PvP
+  // and server parity are untouched). Tune the feel here.
+  combat: {
+    aiDmgMul:     0.6,   // enemy(AI) bullet damage to the player ×this → LMG ~168/s, RIFLE ~140/s
+    aiMaxHitFrac: 0.55,  // …and no single AI hit exceeds this fraction of player max HP (no one-shot)
+  },
   // Phase 186 — per-chassis identity tunables for the "abilities are EXCLUSIVE"
   // redesign (each chassis only has its own kit; G = a chassis-specific execute
   // on a 反白/低血 target). One home for the feel numbers.

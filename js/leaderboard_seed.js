@@ -89,6 +89,42 @@
     const byName = new Map();
     lbSeedRoster().forEach(function (e) { byName.set(String(e.name).toLowerCase(), e); });
     real.forEach(function (e) { byName.set(String(e.name).toLowerCase(), e); });
+    // opt R12 — pin the LOCAL player's real progress (getGlobalStats) as a YOU row
+    // so the board is a genuine progression hook (your kills climb the ladder),
+    // not 100% strangers, even before any server sync. Merge with any existing
+    // real row (take the higher kills) and stamp _you/uuid so the render highlights.
+    try {
+      if (typeof getGlobalStats === 'function') {
+        var gs = getGlobalStats();
+        var youName = (typeof getOperatorName === 'function') ? getOperatorName() : 'YOU';
+        var youKey = String(youName).toLowerCase();
+        if (!_isJunkName(youName) || (gs.totalKills || 0) > 0) {
+          // Collapse EVERY pre-existing self-row into one merged YOU row — both by
+          // current name AND by uuid (a server row under an OLD callsign shares
+          // myUuid). Without the uuid sweep, a name change left two red-highlighted
+          // "YOU" rows (the render highlights e.uuid===myUuid OR e._you).
+          var selfKills = 0, selfUuid = null;
+          var entries = [...byName];
+          for (var pi = 0; pi < entries.length; pi++) {
+            var k = entries[pi][0], v = entries[pi][1];
+            if (v && ((myUuid && v.uuid === myUuid) || k === youKey)) {
+              selfKills = Math.max(selfKills, v.kills || 0);
+              selfUuid = selfUuid || v.uuid;
+              byName.delete(k);
+            }
+          }
+          var kills = Math.max(gs.totalKills || 0, selfKills);
+          var deaths = Math.max(1, Math.round(kills / 1.6));
+          byName.set(youKey, {
+            uuid: myUuid || selfUuid || '_you_local',
+            name: youName, kills: kills, deaths: deaths,
+            bestStreak: gs.bestStreak || 0,
+            matches: gs.matchesPlayed || 0,
+            kd: deaths > 0 ? kills / deaths : kills, _you: true,
+          });
+        }
+      }
+    } catch (e) {}
     return [...byName.values()].sort(function (a, b) {
       if (b.kills !== a.kills) return b.kills - a.kills;
       return _kdOf(b) - _kdOf(a);

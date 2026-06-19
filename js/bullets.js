@@ -83,8 +83,13 @@ function fire() {
       _mpGhost: _mpActive,
     });
   }
-  // One muzzle flash per shot (not per pellet) — spread looks like a cloud
-  muzzleFlashes.push({ x: player.x + Math.cos(baseAngle)*22, y: player.y + Math.sin(baseAngle)*22, angle: baseAngle, life: 5 });
+  // One muzzle flash per shot (not per pellet) — spread looks like a cloud.
+  // opt R5 — a touch longer-lived + a white-hot core (rendered in world_render)
+  // so shooting reads as "punchy", not a dark-red puff on a near-black floor.
+  muzzleFlashes.push({ x: player.x + Math.cos(baseAngle)*22, y: player.y + Math.sin(baseAngle)*22, angle: baseAngle, life: 7, _hot: true });
+  // opt R5 — every shot kicks the screen a little (scaled by the gun's recoil),
+  // so the most-repeated action finally has weight. SHAKE_CAP(5) bounds rapid fire.
+  if (typeof triggerShake === 'function') triggerShake(Math.min(3.5, 1 + (w.recoilPerShot || 0.4) * 3), 4);
   applyRecoil(player, w);
   emitSound(player.x, player.y, w.soundIntensity, true, true, w.soundProfile);
   // MP fire intent travels via the per-tick input packet (`fire: true` in
@@ -150,7 +155,11 @@ function detonateRocket(b) {
       const def = STRUCTURE_DEFS[s.kind]; if (!def || s.hp <= 0) continue;
       if (def.bulletImmune) continue;   // Phase 63: mines/tripmines no-clear
       const dist = Math.hypot(s.x - b.x, s.y - b.y);
-      if (dist < r) s.hp -= splashDmg * structMul;
+      if (dist < r) {
+        let _sd = splashDmg * structMul;
+        if (game._siege && s._isHeart) _sd *= (typeof SIEGE_FORT !== 'undefined' ? (SIEGE_FORT.heartDmgMul || 1) : 0.18);
+        s.hp -= _sd;
+      }
     }
   }
   // Arena buildings + lowCovers are now destructible in EVERY NN mode
@@ -218,7 +227,10 @@ function updateBullets() {
         if (_t < 0) _t = 0; else if (_t > 1) _t = 1;
       }
       const _cx = _prevX + _segVx * _t, _cy = _prevY + _segVy * _t;
-      if (Math.hypot(_cx - e.x, _cy - e.y) < e.radius) {
+      // opt R8 — squared-distance compare (no sqrt) in the hottest inner loop
+      // (per bullet × per enemy). Identical result to hypot < radius.
+      const _hx = _cx - e.x, _hy = _cy - e.y;
+      if (_hx * _hx + _hy * _hy < e.radius * e.radius) {
         // Spawn invuln: still consume the bullet so it doesn't pass through,
         // but don't apply damage. Visually the bullet vanishes on impact.
         if (e._invulnUntil != null && game.time < e._invulnUntil) { hit = true; break; }
@@ -262,7 +274,16 @@ function updateBullets() {
           // VFX, damage popup (isKill=true → bigger red), score bump,
           // killCount tick. KIA + hurt callouts on FRIENDLY losses still
           // fire (different cooldown keys, those work correctly).
-          createExplosion(e.x, e.y, 'small');
+          // opt R5 — make YOUR kills land: a bigger burst + a ~3-tick hit-stop
+          // (crisp, not the laggy 90-tick streak slow-mo) + a punch. Ally/chain
+          // kills stay a small puff so firefights don't turn to mush. (Visual
+          // only — kill SOUND stays removed per the user's '移除擊殺音效'.)
+          const _byPlayer = (b.fromUnit === player);
+          createExplosion(e.x, e.y, _byPlayer ? 'big' : 'small');
+          if (_byPlayer) {
+            if (typeof triggerShake === 'function') triggerShake(3.5, 7);
+            if (typeof triggerSlowMo === 'function') triggerSlowMo(0.18, 3);
+          }
           // Phase 56 — subtle debris/scatter cue on kill. Quiet (vol
           // 0.18) + brief (60ms) so it doesn't crowd the explosion VFX
           // or repeat into mush during streaks. User: '可能再加一些微
@@ -477,17 +498,27 @@ function updateBullets() {
         // multiplayer.js' snapshot handler — local NN damage is preserved
         // because the server's higher hp doesn't overwrite our lower
         // local hp.
-        _applyDamageToUnit(player, b.damage);
+        // opt R3 — SOLO PvE survivability: scale AI→player damage and cap a single
+        // hit so the bot SNIPER/DMR can't one-shot a 100-HP player. SOLO only
+        // (!_mpIsActive) so MP PvP + server parity are byte-identical; player→bot
+        // damage is untouched (asymmetric PvE).
+        let _pd = b.damage;
+        if (!(typeof _mpIsActive === 'function' && _mpIsActive()) && typeof BALANCE !== 'undefined' && BALANCE.combat) {
+          _pd *= (BALANCE.combat.aiDmgMul != null ? BALANCE.combat.aiDmgMul : 1);
+          const _cap = (player.maxHp || 100) * (BALANCE.combat.aiMaxHitFrac != null ? BALANCE.combat.aiMaxHitFrac : 1);
+          if (_pd > _cap) _pd = _cap;
+        }
+        _applyDamageToUnit(player, _pd);
         game.hitFlash = 12;
         playSfx('hit');
-        triggerShake(Math.min(6, b.damage * 0.25), 8);
+        triggerShake(Math.min(6, _pd * 0.25), 8);
         // Track most recent damage source for the killer-info banner
         player._lastDamageBy = b.fromUnit || null;
         player._lastDamageWeapon = b.weaponName || '';
         // Phase 179 — recent-hits log for the death recap / killcam (was read
         // by death_recap.js but never populated). Keep the last 6, cheap.
         if (!player._recentHits) player._recentHits = [];
-        player._recentHits.push({ dmg: b.damage, weapon: b.weaponName || '' });
+        player._recentHits.push({ dmg: _pd, weapon: b.weaponName || '' });
         if (player._recentHits.length > 6) player._recentHits.shift();
         // Directional hurt indicator — angle FROM player TO bullet source.
         // Decays over ~30 frames; render in renderHUDOverlays as edge glow.
@@ -637,8 +668,12 @@ function updateBullets() {
         if (def.bulletImmune) continue;
         const r = def.size / 2;
         if (Math.abs(b.x - s.x) <= r && Math.abs(b.y - s.y) <= r) {
-          s.hp -= b.damage || 12;
-          spawnDamagePopup(b.x, b.y - 6, b.damage || 12, false);
+          let _dmg = b.damage || 12;
+          // SIEGE: the Heart is a hardened reactor core — incoming dmg is scaled
+          // down so it can't be cratered in seconds (see SIEGE_FORT.heartDmgMul).
+          if (game._siege && s._isHeart) _dmg *= (typeof SIEGE_FORT !== 'undefined' ? (SIEGE_FORT.heartDmgMul || 1) : 0.18);
+          s.hp -= _dmg;
+          spawnDamagePopup(b.x, b.y - 6, _dmg, false);
           hit = true; break;
         }
       }

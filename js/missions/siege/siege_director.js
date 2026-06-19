@@ -294,10 +294,12 @@ function _siegeDawn(c) {
     s._won = true;
     _siegeLogUnlock('dawn_holds');
     _siegeToast('破曉守住了', 'DAWN HOLDS', 260);
+    if (typeof playSfx === 'function') playSfx('match_win');   // opt R10 — you survived to dawn
   } else {
     s._gapUntil = (game.time || 0) + (c.windowSec || SIEGE_DAY_GAP_SEC) * SIEGE_TPS;
     _siegeToast('▶ 第 ' + s.night + ' 夜 守住了 · 整備 ' + (c.windowSec || SIEGE_DAY_GAP_SEC) + 's',
                 '▶ NIGHT ' + s.night + ' HELD · REGROUP ' + (c.windowSec || SIEGE_DAY_GAP_SEC) + 's', 200);
+    if (typeof playSfx === 'function') playSfx('respawn', { vol: 0.4 });   // opt R10 — softer "night held" beat
   }
 }
 
@@ -319,6 +321,10 @@ function _siegeStartNight(n) {
   s.intent = null;
   s._nightCues = _siegeCuesForNight(n);
   s._cuesFired = new Array(s._nightCues.length).fill(false);
+  // opt R10 — the headline mode was silent on its own events. A klaxon as each
+  // night's assault begins (uses the existing 'match_start' up-tone). One per
+  // night — atmospheric, not the per-kill spam the user removed.
+  if (typeof playSfx === 'function') playSfx('match_start', { vol: 0.5 });
 }
 
 // Memoized per tick — both updateSiegeDirector and _siegeTickAutopilot can ask in
@@ -343,6 +349,7 @@ function updateSiegeDirector() {
   if (s._won || s._failed) return;
 
   _siegeTankBreach();                       // 坦克轰墙 — tanks chew walls every tick
+  _siegeTickHeartThreat();                   // detect enemies on the core → telegraph (opt R9)
 
   if (s.night === 0) { _siegeStartNight(1); return; }       // boot → Night 1
 
@@ -517,14 +524,43 @@ function _siegeWeld() {
   return true;
 }
 
-// Passive weld during the calm — a builder near a breach mends it (no new UI; the
-// "weld at dawn" loop). Builder-only under chassis-classes.
+// Passive weld during the calm — standing near a breach mends it (no new UI; the
+// "weld at dawn" loop). Weld is the MODE's core verb ("out-engineer the siege"),
+// NOT a class perk — every chassis welds in siege, else the terrain spine is
+// silently dead for 2/3 of loadouts. (Build/turrets stay a builder perk.)
 function _siegeTickWeld() {
   const s = game._siege;
   if (!s || (s.phase !== 'lull' && s.phase !== 'dawn')) return;
-  if (typeof game !== 'undefined' && game._classes && typeof player !== 'undefined'
-      && player && player._chassis && player._chassis !== 'humanoid') return;
-  _siegeWeld();
+  if (_siegeWeld() && !s._weldTaught) {
+    s._weldTaught = true;   // one-time teach: the breach-mend mechanic is invisible otherwise
+    _siegeToast('焊接中 — 靠近缺口即可修補城牆', 'WELDING — stand by a breach to mend the wall', 150);
+  }
+}
+
+// opt R9 — make the threat to the lose-condition READABLE: when any red unit is
+// on the Heart, raise a telegraph flag (lingers ~0.4s so it doesn't flicker) that
+// renderSiegeHud paints as a pulsing "CORE UNDER ATTACK" banner. Detection only —
+// no balance change; the Heart's durability is owned by SIEGE_FORT.heartDmgMul (R1).
+function _siegeTickHeartThreat() {
+  const s = game._siege;
+  const f = s && s.fort; const heart = f && f.heart;
+  if (!heart || typeof enemies === 'undefined' || !enemies) return;
+  const R2 = 78 * 78;
+  for (const e of enemies) {
+    if (!e || !e.alive || e.team !== 1) continue;
+    const dx = e.x - heart.x, dy = e.y - heart.y;
+    if (dx * dx + dy * dy < R2) {
+      const now = (game.time || 0);
+      s._heartThreatUntil = now + 30;
+      // opt R10 — a low alarm thump while the core is under attack, rate-limited
+      // to ~1.2s so it pulses with tension instead of buzzing every tick.
+      if (typeof playSfx === 'function' && now - (s._heartAlarmAt || -999) > 100) {
+        s._heartAlarmAt = now;
+        playSfx('lowhp', { vol: 0.4 });
+      }
+      return;
+    }
+  }
 }
 
 // Player-death poll for the siege factory (siege uses its own factory, not
