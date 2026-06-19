@@ -42,7 +42,14 @@ function _touchTriggerAction(id) {
     case 'q':     toggleDrone(); break;
     case 'e':     launchFPV(); break;
     case 'g':     throwGrenade(); break;
-    case 'r':     startReload(); break;
+    case 'r':
+      // 188N — R is the Heavy chassis's weapon-switch (重裝專屬): cycle the stockpiled
+      // arsenal's active gun. heavyCycleWeapon self-gates (heavy + classes + >1 type)
+      // and returns false otherwise → normal reload. Mirrors the desktop r binding
+      // (key_bindings.js) so the touch action-bar isn't switch-blind for the Heavy.
+      if (typeof heavyCycleWeapon === 'function' && heavyCycleWeapon()) break;
+      startReload();
+      break;
     case 'v':
       player._aimAssist = !player._aimAssist;
       try { localStorage.setItem('ag.aimAssist', player._aimAssist ? '1' : '0'); } catch (err) {}

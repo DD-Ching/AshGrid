@@ -53,6 +53,14 @@ const BALANCE = {
     killEnergyRefill:  25,    // ⚡ restored per wolf kill — sustains/extends the dash
     devourMaxGain:     25,    // +max ⚡ per successful devour (the pool 总量 grows)
     energyMaxCap:      300,   // ceiling the devour-grown max can reach
+    // Phase 188N — 越殺越強 "frenzy": the wolf's killstreak (連殺 = player._killStreak,
+    // a 4 s window in bullets.js) ramps MOVE speed + fire-rate so it snowballs into a
+    // blur. steps = clamp(killStreak − 1, 0, frenzyMaxSteps). SOLO-only (client state;
+    // MP move/fire are server-gated). Tuned in js/wolf_frenzy.js. (root tunables map.)
+    frenzyMaxSteps:    6,     // streak past which scaling stops (streak ≥ 7 = full power)
+    frenzySpeedStep:   0.05,  // +5% move speed per step → up to +30% at full frenzy
+    frenzyFireStep:    0.075, // −7.5% fire-cooldown per step (faster RoF)
+    frenzyFireFloor:   0.55,  // cooldown never below 55% of base (≈1.8× max fire-rate)
   },
   // Energy cost (⚡) per structure. The radial wheel (js/defense_build_ui.js)
   // currently exposes only the 6 ACTIVE entries; the other 10 are LEGACY —

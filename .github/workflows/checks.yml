@@ -12,6 +12,7 @@
 #   8. node tools/test_mp_ad_revive.js          (MP ad-revive is server-authoritative, no local revive)
 #   9. node tools/test_mp_chassis.js            (MP server chassis-damage routing: armour + dash + bleed)
 #  10. node tools/test_squad_slots.js           (squad roster: SOLO + MP my-recruits-only filter + cap)
+#  11. node tools/test_wolf_frenzy.js            (wolf killstreak buff: identity-when-off / scaling / decay)
 #
 # No npm install needed: the parity test's server imports are local-only
 # (./constants.js), and the tools have zero dependencies (the reconcile test
@@ -70,3 +71,6 @@ jobs:
 
       - name: Siege (fort / director / breach / win) smoke test
         run: node tools/test_siege.js
+
+      - name: Wolf-frenzy (killstreak buff identity / scaling / decay) smoke test
+        run: node tools/test_wolf_frenzy.js

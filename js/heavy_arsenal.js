@@ -26,6 +26,13 @@
   // the server-authoritative burst fan identically — tools/check_sim_parity.js
   // asserts the two literals match (184m: was a bare 0.14 on both sides).
   const ULT_FAN_STEP = 0.14;
+  // 188N — CONCENTRATE the barrage. A flat per-barrel splay makes a big arsenal
+  // spray a full circle (50 guns × 0.14 ≈ 7 rad → bullets fly every direction and
+  // miss what you aim at — "火力不集中"). Cap the TOTAL fan to ±ULT_FAN_MAX so the
+  // whole volley stays a focused cone on the crosshair no matter how many guns are
+  // stockpiled (small arsenals ≤7 are unaffected → byte-identical old feel).
+  // ★ MUST equal the server's ULT_FAN_MAX — tools/check_sim_parity.js asserts it.
+  const ULT_FAN_MAX  = 0.45;     // ≈±26° → a ≈52° barrage cone at full stockpile
 
   function _on() {
     return typeof game !== 'undefined' && game && game._classes
@@ -66,6 +73,15 @@
     return true;
   };
 
+  // True when R will SWITCH the active weapon (heavy + classes on + ≥2 unique types
+  // stockpiled) rather than fall through to reload. Lets the HUD label R as 切換/SWITCH
+  // so the heavy's weapon-switch (重裝專屬) is discoverable, not hidden behind '弹'.
+  window.heavyCanCycle = function () {
+    if (!_on()) return false;
+    const a = _arsenal();
+    return !!a && a.size >= 2;
+  };
+
   // R: cycle the ACTIVE (normal-fire) weapon among the unique types held.
   // Returns false when not applicable so the caller falls back to reload.
   window.heavyCycleWeapon = function () {
@@ -100,9 +116,13 @@
     if (n === 0) return 0;
     const baseAngle = (player.gunAngle != null ? player.gunAngle : (player.angle || 0));
     const mpGhost = (typeof _mpIsActive === 'function' && _mpIsActive());
+    // Shrink the per-barrel splay once the total fan would exceed ±ULT_FAN_MAX, so the
+    // firepower stays concentrated on the aim regardless of arsenal size (★ mirror server).
+    const half = (n - 1) / 2;
+    const fanStep = half > 0 ? Math.min(ULT_FAN_STEP, ULT_FAN_MAX / half) : 0;
     for (let wi = 0; wi < n; wi++) {
       const w = fireList[wi];
-      const fanBase = baseAngle + (wi - (n - 1) / 2) * ULT_FAN_STEP;   // splay the barrels
+      const fanBase = baseAngle + (wi - half) * fanStep;   // splay, capped at ±ULT_FAN_MAX
       const pellets = w.pellets || 1;
       for (let i = 0; i < pellets; i++) {
         const barrel = fanBase + (Math.random() - 0.5) * (w.spread || 0);

@@ -258,6 +258,7 @@ const ULT_BURST_MAX       = 50;            // Phase 188 — full-arsenal ultimat
 const WOLF_KILL_LIFESTEAL = 18;            // Phase 188b — wolf 击杀回血 (matches client BALANCE.wolf.killLifesteal)
 const ULT_COOLDOWN_TICKS  = 1 * TICK_HZ;   // ≥1 s between server-accepted bursts
 const ULT_FAN_STEP        = 0.14;          // radians between barrels — matches js/heavy_arsenal.js
+const ULT_FAN_MAX         = 0.45;          // cap the total fan so a big arsenal stays concentrated — matches js/heavy_arsenal.js
 // Arena recruit gates — authoritative server copies of the client constants in
 // js/arena_recruitment.js (ARENA_SEED_GAP / ARENA_SQUAD_CAP / ARENA_HP_GATE /
 // ARENA_TOUCH_BUFFER). Kept as named constants (not bare literals) so a balance
@@ -1253,10 +1254,14 @@ export default class AshGridRoom {
       p._lastUltTick = this.tickCount;
       const baseAngle = num(data.angle);
       const n = list.length;
+      // Concentrate the barrage: shrink the splay so the fan never exceeds ±ULT_FAN_MAX
+      // off the aim (mirrors js/heavy_arsenal.js _heavyFireAll — parity-checked).
+      const half = (n - 1) / 2;
+      const fanStep = half > 0 ? Math.min(ULT_FAN_STEP, ULT_FAN_MAX / half) : 0;
       for (let wi = 0; wi < n; wi++) {
         const wid = (typeof list[wi] === 'string') ? list[wi] : 'RIFLE';
         const wsim = getWeaponSim(wid);
-        const fan = baseAngle + (wi - (n - 1) / 2) * ULT_FAN_STEP;
+        const fan = baseAngle + (wi - half) * fanStep;
         const nb = spawnBulletsFromUnit({ x: p.x, y: p.y, id: p.id, team: 0 }, { ...wsim, weaponId: wid }, fan);
         for (const b of nb) { b.id = this.nextBulletId++; b.shooterId = p.id; b.weapon = wid; this.bullets.push(b); }
       }

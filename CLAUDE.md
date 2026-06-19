@@ -31,9 +31,9 @@ must match — `tools/check_sim_parity.js` enforces it.)
 | Want to change… | Edit | Where |
 |---|---|---|
 | Energy economy (regen, per-kill, ability costs) | `BALANCE.energy` / `BALANCE.ability` | `js/balance.js` |
-| Wolf feel (dash DR, kill-lifesteal, devour regen) | `BALANCE.wolf` | `js/balance.js` |
+| Wolf feel (dash DR, kill-lifesteal, devour regen, killstreak frenzy) | `BALANCE.wolf` | `js/balance.js` |
 | Chassis stats (hp/armour/speed/radius/abilities) | `CHASSIS` | `js/chassis.js` |
-| Heavy arsenal size / ultimate fan | `ARSENAL_CAP`, `ULT_FAN_STEP` ★ | `js/heavy_arsenal.js` (+ server) |
+| Heavy arsenal size / ultimate fan (spread + concentration cap) | `ARSENAL_CAP`, `ULT_FAN_STEP`, `ULT_FAN_MAX` ★ | `js/heavy_arsenal.js` (+ server) |
 | Weapon stats ★ | `WEAPONS` ↔ `_BASE_30HZ` | `js/weapons.js` ↔ `server/party/sim/weapons.js` |
 | Recruit / devour / seize gates ★ | `ARENA_SEED_GAP`/`HP_GATE`/`SQUAD_CAP`/`TOUCH_BUFFER` | `js/arena_recruitment.js` (+ server) |
 | Structure cost / HP | `BALANCE.buildCost` + `STRUCTURE_DEFS` | `js/balance.js` + `js/structures.js` |
@@ -45,4 +45,6 @@ must match — `tools/check_sim_parity.js` enforces it.)
 
 `game._classes` chassis-classes (builder/wolf/heavy; default ON in dev) · `game._siege` siege
 last-stand mode · `game._npcAI` NPC director (on unless `=== false`) · `game._achvFx` achievement
-card. Default a new flag ON only in dev; decide explicitly before it reaches `main`.
+card · `game._rangeFair` hostile-bullet range cap (on unless `=== false`; set `false` for the
+byte-identical legacy full-range path — `hostileBulletLife` in `js/bullets.js`). Default a new
+flag ON only in dev; decide explicitly before it reaches `main`.

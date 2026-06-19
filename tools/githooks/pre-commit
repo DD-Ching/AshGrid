@@ -26,6 +26,7 @@ node tools/test_npc_director.js || fail=1
 node tools/test_mp_chassis.js  || fail=1
 node tools/test_squad_slots.js || fail=1
 node tools/test_siege.js       || fail=1
+node tools/test_wolf_frenzy.js || fail=1
 
 if [ "$fail" -ne 0 ]; then
   echo ""

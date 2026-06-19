@@ -423,7 +423,11 @@ function nnApplyAction(unit, action, friendlies, enemies) {
           y: unit.y + Math.sin(a) * 16,
           vx: Math.cos(a) * w.bulletSpeed,
           vy: Math.sin(a) * w.bulletSpeed,
-          life: w.bulletLife,
+          // Range fairness — cap a hostile bullet's range to the player's current weapon
+          // ONLY when it's actually aimed at the player (see hostileBulletLife). Allied NN
+          // bullets, and hostile NN bullets fired at ANOTHER NN unit, keep full range so an
+          // NN-vs-NN firefight isn't distorted by what the distant player happens to hold.
+          life: (!isFriendlyTeam && tgt === player) ? hostileBulletLife(w.bulletSpeed, w.bulletLife) : w.bulletLife,
           damage: w.damage,
           fromAlly: isAlly,
           fromUnit: unit,
@@ -1237,7 +1241,9 @@ function updateEnemies() {
         x: e.x + Math.cos(ang)*16,
         y: e.y + Math.sin(ang)*16,
         vx: Math.cos(ang)*w.bulletSpeed, vy: Math.sin(ang)*w.bulletSpeed,
-        life: w.bulletLife, damage: w.damage,
+        // Range fairness — rule-based enemies are always hostile, so clamp their
+        // bullet range to the player's current weapon (see hostileBulletLife).
+        life: hostileBulletLife(w.bulletSpeed, w.bulletLife), damage: w.damage,
         fromUnit: e,
         weaponName: w.name,
       });
