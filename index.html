@@ -3944,7 +3944,7 @@ async function _renderLeaderboardPanel(force = false) {
     return;
   }
   const rows = display.map((e, i) => {
-    const me = (e.uuid === myUuid);
+    const me = (e.uuid === myUuid) || e._you;   // opt R12 — also highlight the local YOU row
     const rank = String(i + 1).padStart(2, ' ');
     const name = (e.name || '?').padEnd(12, ' ').slice(0, 12);
     const kd = (e.deaths > 0) ? (e.kills / e.deaths).toFixed(2) : (e.kills + '.0');
@@ -3953,7 +3953,17 @@ async function _renderLeaderboardPanel(force = false) {
       ? `<div style="color:var(--red); background:rgba(200,38,28,0.12); padding:1px 4px;"><b>▶ ${row}</b></div>`
       : `<div style="padding:1px 4px;">${row}</div>`;
   }).join('');
-  listEl.innerHTML = rows;
+  // opt R12 — a "next rank in N kills" hook so the board gives the player a
+  // concrete thing to grind toward (was a static wall of strangers).
+  let chip = '';
+  const myIdx = display.findIndex(e => e._you || e.uuid === myUuid);
+  if (myIdx > 0) {
+    const gap = Math.max(1, (display[myIdx - 1].kills || 0) - (display[myIdx].kills || 0) + 1);
+    chip = `<div style="margin-top:5px; color:var(--cream); font:bold 10px monospace; letter-spacing:1px;">▲ ${T('再 ' + gap + ' 殺晉級', 'NEXT RANK IN ' + gap + ' KILLS')}</div>`;
+  } else if (myIdx === 0) {
+    chip = `<div style="margin-top:5px; color:#5FD6A0; font:bold 10px monospace; letter-spacing:1px;">★ ${T('榜首 — 守住！', "YOU'RE #1 — HOLD IT")}</div>`;
+  }
+  listEl.innerHTML = rows + chip;
 }
 _renderLeaderboardPanel().catch(() => {});
 // Phase 52 — Crazy Games SDK: signal "loading complete" once the start

@@ -89,6 +89,29 @@
     const byName = new Map();
     lbSeedRoster().forEach(function (e) { byName.set(String(e.name).toLowerCase(), e); });
     real.forEach(function (e) { byName.set(String(e.name).toLowerCase(), e); });
+    // opt R12 — pin the LOCAL player's real progress (getGlobalStats) as a YOU row
+    // so the board is a genuine progression hook (your kills climb the ladder),
+    // not 100% strangers, even before any server sync. Merge with any existing
+    // real row (take the higher kills) and stamp _you/uuid so the render highlights.
+    try {
+      if (typeof getGlobalStats === 'function') {
+        var gs = getGlobalStats();
+        var youName = (typeof getOperatorName === 'function') ? getOperatorName() : 'YOU';
+        var youKey = String(youName).toLowerCase();
+        if (!_isJunkName(youName) || (gs.totalKills || 0) > 0) {
+          var existing = byName.get(youKey);
+          var kills = Math.max(gs.totalKills || 0, existing ? existing.kills : 0);
+          var deaths = Math.max(1, Math.round(kills / 1.6));
+          byName.set(youKey, {
+            uuid: (existing && existing.uuid) || myUuid || '_you_local',
+            name: youName, kills: kills, deaths: deaths,
+            bestStreak: gs.bestStreak || (existing && existing.bestStreak) || 0,
+            matches: gs.matchesPlayed || 0,
+            kd: deaths > 0 ? kills / deaths : kills, _you: true,
+          });
+        }
+      }
+    } catch (e) {}
     return [...byName.values()].sort(function (a, b) {
       if (b.kills !== a.kills) return b.kills - a.kills;
       return _kdOf(b) - _kdOf(a);
