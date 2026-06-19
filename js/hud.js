@@ -586,16 +586,30 @@ function renderHUDOverlays() {
     cxY = (dx * s + dy * c) * camera.scale + H() / 2;
     locked = true;
   }
-  ctx.strokeStyle = COLORS.red;
+  // opt R6 — two-pass contrast reticle: a dark halo UNDER a bright red cross so
+  // it survives BOTH the near-black floor AND the red mob (a bare red hairline
+  // vanished against both), plus a cream centre dot with a dark ring.
+  const _xArm = 14, _xGap = 5;
+  const _xpath = () => {
+    ctx.beginPath();
+    ctx.moveTo(cxX - _xArm, cxY); ctx.lineTo(cxX - _xGap, cxY);
+    ctx.moveTo(cxX + _xGap, cxY); ctx.lineTo(cxX + _xArm, cxY);
+    ctx.moveTo(cxX, cxY - _xArm); ctx.lineTo(cxX, cxY - _xGap);
+    ctx.moveTo(cxX, cxY + _xGap); ctx.lineTo(cxX, cxY + _xArm);
+    ctx.stroke();
+  };
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(10,8,8,0.92)';     // dark halo (underneath, wider)
+  ctx.lineWidth = (locked ? 2 : 1.5) + 2.5;
+  _xpath();
+  ctx.strokeStyle = '#FF3B2F';               // bright red cross on top
   ctx.lineWidth = locked ? 2 : 1.5;
-  ctx.beginPath();
-  ctx.moveTo(cxX - 14, cxY); ctx.lineTo(cxX - 5, cxY);
-  ctx.moveTo(cxX + 5, cxY); ctx.lineTo(cxX + 14, cxY);
-  ctx.moveTo(cxX, cxY - 14); ctx.lineTo(cxX, cxY - 5);
-  ctx.moveTo(cxX, cxY + 5); ctx.lineTo(cxX, cxY + 14);
-  ctx.stroke();
-  ctx.fillStyle = COLORS.red;
-  ctx.fillRect(cxX - 1, cxY - 1, 2, 2);
+  _xpath();
+  ctx.lineCap = 'butt';
+  ctx.fillStyle = 'rgba(10,8,8,0.92)';        // dark ring behind the dot
+  ctx.fillRect(cxX - 2.5, cxY - 2.5, 5, 5);
+  ctx.fillStyle = '#F2E9D0';                  // cream centre dot (always readable)
+  ctx.fillRect(cxX - 1.5, cxY - 1.5, 3, 3);
   if (locked) {
     // Lock corner brackets so the player can tell the reticle is "stuck"
     ctx.lineWidth = 2;
