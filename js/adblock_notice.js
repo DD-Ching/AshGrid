@@ -95,12 +95,17 @@
     if (adsLoaded) return { blocked: false };
     // No ads in DOM. Why?
     if (elementHidden) {
-      // CSS hid our bait → browser-level adblock confirmed
+      // CSS hid our bait → browser-level adblock confirmed (a RELIABLE signal).
       return { blocked: true, reason: 'adblock' };
     }
-    // Bait survived but ads didn't → most likely network-level filter
-    // (Fortinet doing TLS interception on Adsterra domains)
-    return { blocked: true, reason: 'network' };
+    // Bait survived but no ad iframe loaded. This is AMBIGUOUS and was the source of
+    // FALSE "your network blocks ads" notices: it ALSO fires when our own COEP headers
+    // block the third-party ad scripts (see the ERR_BLOCKED_BY_RESPONSE...Coep console
+    // errors), when the ad network no-fills, or when it's just slow — none of which is
+    // the user's network. The owner reported this false positive at home with no
+    // firewall, so we no longer guess "network": only genuine browser adblock (bait
+    // hidden, above) ever surfaces a notice.
+    return { blocked: false };
   }
 
   // ─── UI ─────────────────────────────────────────────────────────────

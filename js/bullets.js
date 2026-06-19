@@ -294,8 +294,10 @@ function updateBullets() {
           // execute-steal. No-op for other chassis / classes off.
           if (typeof game !== 'undefined' && game._classes && !b.fromAlly
               && typeof player !== 'undefined' && player._chassis === 'wolf') {
-            const _ls = (typeof BALANCE === 'object' && BALANCE.wolf) ? (BALANCE.wolf.killLifesteal || 0) : 0;
-            if (_ls > 0) player.hp = Math.min(player.maxHp || 100, (player.hp || 0) + _ls);
+            const _w = (typeof BALANCE === 'object' && BALANCE.wolf) ? BALANCE.wolf : null;
+            if (_w && _w.killLifesteal > 0) player.hp = Math.min(player.maxHp || 100, (player.hp || 0) + _w.killLifesteal);
+            // 188E — kills also REFILL energy → extend/sustain the toggle dash.
+            if (_w && _w.killEnergyRefill > 0 && typeof addEnergy === 'function') addEnergy(_w.killEnergyRefill);
           }
           // Phase 186 — the Heavy's loot moved OFF passive bullet-kills (was 184d
           // FPV-on-kill) and onto its G = 处决抢夺 (_arenaTryHeavyExecute in

@@ -475,10 +475,7 @@ MISSION_FACTORIES.nnDeathmatch = function(mapDef) {
       // Phase 9: red waves. Independent of wipe — even during a red team-wipe
       // countdown, the wave clock keeps ticking so the player is overwhelmed
       // either by surviving red or by incoming reinforcements.
-      // Phase 188B — in SIEGE the siege_director's TIMELINE owns all spawns, so
-      // suppress the random reinforcement clock here (else two systems fight over
-      // the spawn pacing). Every other mode is unchanged.
-      if (!(typeof game !== 'undefined' && game._siege) && game.time >= _nextWaveAt) {
+      if (game.time >= _nextWaveAt) {
         _spawnRedWave();
         _nextWaveAt = game.time + _waveInterval(_waveNum);
       }

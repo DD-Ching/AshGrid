@@ -18,7 +18,7 @@
 const MODE_UNLOCK_TIER = {
   dm: 0,         // always
   survival: 1,   // after first match
-  siege:    1,   // 守城 last-stand — alongside survival (Phase 188)
+  siege:    1,   // 守城 last-stand — purpose-built mode (SIEGE_BLUEPRINT)
   defense:  2,   // after 3 matches
   helo:     3,   // after 5 matches
   convoy:   3,   // after 5 matches

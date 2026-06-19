@@ -89,22 +89,15 @@
   // X (ULTIMATE): fire ALL stockpiled weapons at once, for an energy cost. Each
   // weapon fans slightly off the aim; bypasses per-weapon ammo/cooldown (it's a
   // burst, not normal fire). No-op (with a toast) when not enough energy.
-  window.heavyUltimate = function () {
-    if (!_on() || !player.alive) return false;
-    _seed();
-    const a = _arsenal(); if (!a || a.size === 0) return false;
-    // Flatten the multiset → a fire list with each gun repeated by its COUNT, so
-    // 10 shotguns really fire 10 shotgun volleys ("十把就是十把").
+  // Fire EVERY collected gun once — the full arsenal in one volley (each gun
+  // repeated by its COUNT, so 10 shotguns really fire 10 volleys "十把就是十把").
+  // Shared by the toggle's per-frame sustain below. Returns the gun count fired.
+  function _heavyFireAll() {
+    const a = _arsenal(); if (!a || a.size === 0) return 0;
     const fireList = [];
     for (const [w, c] of a.entries()) for (let i = 0; i < c; i++) fireList.push(w);
     const n = fireList.length;
-    if (n === 0) return false;
-    const cost = (typeof BALANCE === 'object' && BALANCE.ability) ? (BALANCE.ability.ultimate || 0) : 0;
-    if ((game._energy || 0) < cost) {
-      if (typeof showSwapToast === 'function') showSwapToast(T('能量不足', 'NOT ENOUGH ENERGY'));
-      return false;
-    }
-    game._energy = Math.max(0, (game._energy || 0) - cost);
+    if (n === 0) return 0;
     const baseAngle = (player.gunAngle != null ? player.gunAngle : (player.angle || 0));
     const mpGhost = (typeof _mpIsActive === 'function' && _mpIsActive());
     for (let wi = 0; wi < n; wi++) {
@@ -126,9 +119,7 @@
       }
       if (wi % 3 === 0 || n <= 12) muzzleFlashes.push({ x: player.x + Math.cos(fanBase) * 22, y: player.y + Math.sin(fanBase) * 22, angle: fanBase, life: 6 });
     }
-    // Phase 184j/187b — MP: the local bullets above are _mpGhost (visual only);
-    // send an ultimateBurst so the SERVER spawns the FULL arsenal authoritatively
-    // (each gun repeated by count). Map each weapon object → its wId.
+    // MP: local bullets are _mpGhost (visual); the server spawns the authoritative arsenal.
     if (mpGhost && typeof _mpSendRaw === 'function' && typeof WEAPONS !== 'undefined') {
       const ids = [];
       for (const w of fireList) {
@@ -138,10 +129,54 @@
       }
       _mpSendRaw({ type: 'ultimateBurst', weapons: ids, angle: baseAngle });
     }
-    if (typeof triggerShake === 'function') triggerShake(Math.min(10, 5 + n * 0.2), 14);
+    if (typeof triggerShake === 'function') triggerShake(Math.min(10, 5 + n * 0.2), 10);
     if (typeof emitSound === 'function') emitSound(player.x, player.y, 1800, true, true, null);
-    if (typeof showSwapToast === 'function') showSwapToast(T('▶ 大招 · 全武器齊射 ×' + n, '▶ ULTIMATE · ALL GUNS ×' + n));
-    return true;
+    return n;
+  }
+
+  // 188K — SPACE TOGGLES the ultimate (not a one-shot). While ON, heavyUltimateFrame
+  // (ticked from the loop) sustains the full-arsenal volley on a burst cadence and
+  // DRAINS energy per frame until it runs dry OR you toggle off. Returns the new
+  // on/off state so the key binding can toast it.
+  window.heavyUltimate = function () {
+    if (!_on() || !player.alive) return false;
+    if (!player._ultimateOn) {                 // turning ON — require an arsenal first
+      _seed();
+      const a = _arsenal();
+      if (!a || a.size === 0) {
+        if (typeof showSwapToast === 'function') showSwapToast(T('還沒有武器庫存 · 先擊殺搶槍', 'No arsenal yet — get kills to loot guns'));
+        return false;
+      }
+    }
+    player._ultimateOn = !player._ultimateOn;
+    return player._ultimateOn;
+  };
+
+  // Per-frame tick — call once per sim tick from the game loop. Sustains the volley
+  // while ON; auto-stops when the arsenal empties or energy runs dry.
+  window.heavyUltimateFrame = function () {
+    if (!_on() || !player || !player.alive || !player._ultimateOn) return;
+    _seed();
+    const a = _arsenal();
+    if (!a || a.size === 0) { player._ultimateOn = false; return; }
+    const B = (typeof BALANCE === 'object' && BALANCE.ability) ? BALANCE.ability : {};
+    const drain = (B.ultimateDrainPerFrame != null) ? B.ultimateDrainPerFrame : 0.6;
+    if ((game._energy || 0) < drain) {
+      player._ultimateOn = false;
+      if (typeof showSwapToast === 'function') showSwapToast(T('能量耗盡 · 大招結束', 'ENERGY DEPLETED · ULTIMATE OFF'), 110);
+      return;
+    }
+    game._energy = Math.max(0, (game._energy || 0) - drain);
+    // Burst cadence — fire the whole arsenal every ~8 ticks (≈10 volleys/sec), not
+    // every tick (that's thousands of bullets/sec). Energy drains every tick regardless.
+    player._ultBurstCd = (player._ultBurstCd || 0) - 1;
+    if (player._ultBurstCd <= 0) {
+      const n = _heavyFireAll();
+      player._ultBurstCd = 8;
+      if (n > 0 && (game.time & 31) === 0 && typeof showSwapToast === 'function') {
+        showSwapToast(T('▶ 大招 · 火力全開 ×' + n, '▶ ULTIMATE · ALL GUNS ×' + n), 50);
+      }
+    }
   };
 
   // Phase 187b — Heavy G = 处决抢夺 (EXECUTE + SEIZE). On a 反白/weaker enemy in

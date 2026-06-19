@@ -433,10 +433,16 @@ function _mpHandleMessage(data) {
         } else {
           const healed = (typeof data.healed === 'number') ? data.healed : 0;
           if (healed > 0) player.hp = Math.min(player.maxHp || 100, (player.hp || 0) + healed);
-          if (typeof addEnergy === 'function') addEnergy(25);   // stolenEnergy — matches SOLO flat 25
+          // 188E — devour GROWS the energy max (总量变大) + refills, matching SOLO
+          // (was a flat +25). game._energyMax is client-side, so this lives here.
+          const _w = (typeof BALANCE === 'object' && BALANCE.wolf) ? BALANCE.wolf : null;
+          if (_w && typeof game !== 'undefined') {
+            game._energyMax = Math.min(_w.energyMaxCap || 300, (game._energyMax || 100) + (_w.devourMaxGain || 25));
+            game._energy = game._energyMax;
+          }
           if (typeof showSwapToast === 'function') {
-            showSwapToast(T('▸ 吞噬 · +' + healed + ' 血 +25 能量',
-                            '▸ DEVOUR · +' + healed + ' HP +25 energy'));
+            showSwapToast(T('▸ 吞噬 · +' + healed + ' 血 · 能量上限 ' + (game._energyMax || 100),
+                            '▸ DEVOUR · +' + healed + ' HP · max ⚡' + (game._energyMax || 100)));
           }
         }
       }
@@ -828,6 +834,13 @@ function _mpHandleKill(data) {
   // KILL popup at victim.
   if (data.shooter === _mpState.myId) {
     if (typeof _lbBumpKill === 'function') _lbBumpKill();
+    // Phase 188E — wolf kill ENERGY refill in MP (parity with SOLO bullets.js;
+    // energy is client-side so this lives here). HP lifesteal is server-side (188b).
+    if (typeof game !== 'undefined' && game._classes && typeof player !== 'undefined'
+        && player._chassis === 'wolf' && typeof BALANCE === 'object' && BALANCE.wolf
+        && BALANCE.wolf.killEnergyRefill > 0 && typeof addEnergy === 'function') {
+      addEnergy(BALANCE.wolf.killEnergyRefill);
+    }
     // Phase 68 — MP parity for the Phase 66 score count-up animation.
     // SP kill handler at index.html:6418/6540 increments game.score+100
     // and game.killCount+1 on every kill. MP was only bumping the

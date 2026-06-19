@@ -16,6 +16,7 @@
 const BALANCE = {
   energy: {
     regenPerSec:        3.0,   // passive trickle, per second   (index.html updateMission)
+    siegeBonusPerSec:   3.0,   // SIEGE-only extra trickle on top (build-centric mode; siege_mission)
     perKill:            20,    // each NN-mode kill              (bullets.js)
     spawnBeaconDestroy: 60,    // destroying an enemy spawn beacon (bullets.js, ×2 paths)
     mineDefuse:         10,    // finishing a hostile-mine defuse (index.html)
@@ -29,7 +30,8 @@ const BALANCE = {
     recruit:  40,    // humanoid 招降 (convert weaker enemy → squad slot)
     dash:     25,    // wolf 冲刺 (energy/sec drain while dashing)
     devour:    0,    // wolf 处决吸血 (execute weaker enemy → gain hp + regen stack)
-    ultimate: 80,    // heavy 大招 (fire all stockpiled weapons at once)
+    ultimate: 80,    // heavy 大招 (legacy one-shot cost; 188K the ultimate is now a sustained toggle)
+    ultimateDrainPerFrame: 0.6,  // 188K — ⚡ drained per sim-tick while the heavy ULTIMATE toggle is ON
   },
   // Phase 186 — per-chassis identity tunables for the "abilities are EXCLUSIVE"
   // redesign (each chassis only has its own kit; G = a chassis-specific execute
@@ -37,8 +39,11 @@ const BALANCE = {
   wolf: {
     dashDmgMul:        0.10,  // 90% damage reduction while dashing (was 0.30 = 70%)
     killLifesteal:     18,    // HP restored per wolf kill (击杀回血), clamped to maxHp
-    devourRegenPerStack: 1.0, // +energy/sec added per successful devour (累加能量回复速度)
-    devourRegenStackCap: 10,  // max devour regen stacks (→ +10/s ceiling)
+    // Phase 188E — dash is a TOGGLE that drains energy; kills REFILL it (extend the
+    // dash) + devour grows the energy MAX (总量变大). One home for the feel numbers.
+    killEnergyRefill:  25,    // ⚡ restored per wolf kill — sustains/extends the dash
+    devourMaxGain:     25,    // +max ⚡ per successful devour (the pool 总量 grows)
+    energyMaxCap:      300,   // ceiling the devour-grown max can reach
   },
   // Energy cost (⚡) per structure. The radial wheel (js/defense_build_ui.js)
   // currently exposes only the 6 ACTIVE entries; the other 10 are LEGACY —
@@ -62,7 +67,11 @@ const BALANCE = {
 // repeated everywhere). Behaviour-identical; the shared pool clamps at 999.
 function addEnergy(amount) {
   if (typeof game === 'undefined' || !game) return;
-  game._energy = Math.min(999, (game._energy || 0) + amount);
+  // Phase 188E — clamp to game._energyMax (default 100; the wolf's devour grows it,
+  // BALANCE.wolf.devourMaxGain → energyMaxCap). Makes the bar honest (full = full)
+  // and is what the wolf's "总量变大" tunes. Falls back to 100 if unset.
+  const cap = (typeof game._energyMax === 'number' && game._energyMax > 0) ? game._energyMax : 100;
+  game._energy = Math.min(cap, (game._energy || 0) + amount);
 }
 // Phase 185 — energy SPEND helpers, the counterparts to addEnergy. canAffordEnergy
 // is the repeated `(game._energy||0) >= cost` check; spendEnergy pairs the check +

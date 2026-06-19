@@ -67,3 +67,6 @@ jobs:
 
       - name: Squad-slot roster smoke test
         run: node tools/test_squad_slots.js
+
+      - name: Siege (fort / director / breach / win) smoke test
+        run: node tools/test_siege.js

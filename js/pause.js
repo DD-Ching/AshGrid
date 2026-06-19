@@ -89,7 +89,7 @@ function drawPauseOverlay() {
   const cats = [
     [T('移动 MOVE', 'MOVE'), [
       ['WASD',  T('移动 / 飞行', 'Move / fly')],
-      ['Shift', T('冲刺 SPRINT', 'Sprint')],
+      ['Space', T('载具技能 · 狼冲刺/重型大招', 'Chassis skill · dash / ult')],
       [T('鼠标', 'Mouse'),  T('瞄准', 'Aim')],
       [T('左键', 'L-click'), T('射击', 'Fire')],
       ['V',     T('自动瞄准 AIM-ASSIST', 'Aim-assist')],
@@ -97,7 +97,8 @@ function drawPauseOverlay() {
     [T('装备 GEAR', 'GEAR'), [
       ['R',     T('装填弹药', 'Reload')],
       [T('踩武器', 'Step on'), T('踩敌人掉落的枪换武器', 'Pick up dropped weapon')],
-      ['G',     T('投掷手雷', 'Throw grenade')],
+      ['F',     T('投掷手雷', 'Throw grenade')],
+      ['G',     T('处决 · 招募/吞噬/夺取', 'Execute · recruit/devour/seize')],
       ['Q',     T('UAV 无人机', 'UAV recon')],
       ['E',     T('FPV 自杀无人机', 'FPV kamikaze')],
       ['B',     T('建造模式 BUILD', 'Build mode')],

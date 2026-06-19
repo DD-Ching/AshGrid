@@ -49,19 +49,25 @@ const I18N = {
   '#settingsMuteLabel':              { zh: '靜音 · Mute', en: 'Mute · 靜音' },
   '#settingsAimAssistLabel':         { zh: '自動瞄準 · Aim Assist', en: 'Aim Assist · 自動瞄準' },
   '#settingsTutorialLabel':          { zh: '階段式解鎖 · Tutorial mode', en: 'Tutorial mode · 階段式解鎖' },
-  // Controls drawer (collapsed by default; opens via #controlsBtn)
-  '#controlsDrawer .ctrl-item:nth-of-type(1) span:last-child': { zh: '移動 / 飛行', en: 'Move / fly' },
-  '#controlsDrawer .ctrl-item:nth-of-type(2) span:last-child': { zh: '瞄準 / 射擊', en: 'Aim / fire' },
-  '#controlsDrawer .ctrl-item:nth-of-type(2) .ctrl-key':       { zh: '鼠標', en: 'Mouse' },
-  '#controlsDrawer .ctrl-item:nth-of-type(3) span:last-child': { zh: '裝填彈藥', en: 'Reload' },
-  '#controlsDrawer .ctrl-item:nth-of-type(4) span:last-child': { zh: '切換武器', en: 'Swap weapon' },
-  '#controlsDrawer .ctrl-item:nth-of-type(5) span:last-child': { zh: 'UAV 偵察', en: 'UAV recon' },
-  '#controlsDrawer .ctrl-item:nth-of-type(6) span:last-child': { zh: 'FPV 自殺無人機', en: 'FPV kamikaze' },
-  '#controlsDrawer .ctrl-item:nth-of-type(7) span:last-child': { zh: '投擲手雷', en: 'Throw grenade' },
-  '#controlsDrawer .ctrl-item:nth-of-type(8) span:last-child': { zh: '建造模式', en: 'Build mode' },
-  '#controlsDrawer .ctrl-item:nth-of-type(9) span:last-child': { zh: '戰術指揮 + 1-7 下令', en: 'Command view + 1-7 orders' },
-  '#controlsDrawer .ctrl-item:nth-of-type(10) span:last-child': { zh: '接管隊友 (NN 模式)', en: 'Pawn-swap (NN mode)' },
-  '#controlsDrawer .ctrl-item:nth-of-type(11) span:last-child': { zh: '回到出生點 (卡關時)', en: 'Recall to spawn (if stuck)' },
+  // Controls drawer (collapsed by default; opens via #controlsBtn). Keyed by
+  // [data-act] on each .ctrl-item — NOT :nth-of-type — so reordering or adding
+  // a row can never rewrite the wrong row's text. (188I: the Shift→SPACE remap
+  // inserted SPACE/F near the top; the old positional selectors then silently
+  // pushed stale labels onto every shifted row.) Keep these keys in sync with
+  // the data-act attributes in index.html's #controlsDrawer.
+  '#controlsDrawer [data-act="move"] span:last-child':     { zh: '移動 / 飛行', en: 'Move / fly' },
+  '#controlsDrawer [data-act="aim"] span:last-child':      { zh: '瞄準 / 射擊', en: 'Aim / fire' },
+  '#controlsDrawer [data-act="aim"] .ctrl-key':            { zh: '鼠標', en: 'Mouse' },
+  '#controlsDrawer [data-act="skill"] span:last-child':    { zh: '載具技能 · 狼衝刺 / 重型大招', en: 'Chassis skill (Wolf dash / Heavy ult)' },
+  '#controlsDrawer [data-act="grenade"] span:last-child':  { zh: '投擲手雷', en: 'Throw grenade' },
+  '#controlsDrawer [data-act="reload"] span:last-child':   { zh: '裝填彈藥', en: 'Reload' },
+  '#controlsDrawer [data-act="uav"] span:last-child':      { zh: 'UAV 偵察', en: 'UAV recon' },
+  '#controlsDrawer [data-act="fpv"] span:last-child':      { zh: 'FPV 自殺無人機', en: 'FPV kamikaze' },
+  '#controlsDrawer [data-act="execute"] span:last-child':  { zh: '處決 · 招募 / 吞噬 / 奪取', en: 'Execute (recruit / devour / seize)' },
+  '#controlsDrawer [data-act="build"] span:last-child':    { zh: '建造模式 (工程)', en: 'Build mode (Builder)' },
+  '#controlsDrawer [data-act="command"] span:last-child':  { zh: '戰術指揮 + 1-7 下令', en: 'Command view + 1-7 orders' },
+  '#controlsDrawer [data-act="pawnswap"] span:last-child': { zh: '接管隊友 (NN 模式)', en: 'Pawn-swap (NN mode)' },
+  '#controlsDrawer [data-act="recall"] span:last-child':   { zh: '回到出生點', en: 'Recall to spawn' },
 
   // ---- Tutorial card ----
   '#tutorial .lobby-tag':   { zh: '首次提示 · QUICK BRIEFING', en: 'QUICK BRIEFING' },

@@ -23,13 +23,13 @@ const camera = { x: 0, y: 0, scale: 1, targetScale: 1, rotation: 0, targetRotati
 // at the end. Adding a new mode meant inserting a branch in the middle
 // and carefully reordering, easy to break.
 const CAMERA_MODES = [
-  // Phase 188D — SIEGE cinematic FOCUS (運鏡). The siege director's 'camera focus'
-  // cue sets game._cineFocus = { x, y, scale, until }; this top-priority mode lerps
-  // the view there for a beat (the existing dd>60 ease in updateCamera handles the
-  // glide in + back to the player when it expires). Only active during a cue, so
-  // it's inert everywhere else.
+  // SIEGE cinematic FOCUS (運鏡). The siege director's `camera focus` cue + the
+  // breach punch set game._cineFocus = { x, y, scale, until }; this top-priority
+  // mode lerps the view there for a beat (the dd>60 ease below glides in + back to
+  // the player when it expires). Gated on game._siege so it's inert in every other
+  // mode (the only writers of _cineFocus are siege cues / the tank-breach).
   { id: 'siegeCine',
-    when:     () => typeof game !== 'undefined' && game._cineFocus
+    when:     () => typeof game !== 'undefined' && game._siege && game._cineFocus
                     && typeof game.time === 'number' && game.time < game._cineFocus.until,
     target:   () => ({ x: game._cineFocus.x, y: game._cineFocus.y }),
     scale:    () => game._cineFocus.scale || camera.scale,

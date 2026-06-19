@@ -145,6 +145,11 @@ function _arenaConvertEnemyToAlly(e) {
   if (typeof e._seed !== 'number') e._seed = 0;
   e._humanPiloted = false;
   allies.push(e);
+  // SIEGE — recruiting a downed enemy earns back a garrison life (the only mid-run
+  // roster growth; makes recruitment load-bearing). Additive + state-gated.
+  if (typeof game !== 'undefined' && game._siege && typeof _siegeAddGarrisonLife === 'function') {
+    _siegeAddGarrisonLife();
+  }
   // Feedback
   if (typeof showSwapToast === 'function') {
     showSwapToast(T('▸ 招降 · ' + (e.callsign || 'UNIT'),
@@ -186,18 +191,21 @@ function _arenaTryDevour() {
   const idx = enemies.indexOf(best);
   if (idx >= 0) enemies.splice(idx, 1);
   player.hp = Math.min(player.maxHp || 100, (player.hp || 0) + stolenHp);
-  // Phase 186 — devour now ACCUMULATES energy-regen RATE (累加能量回复速度) instead of
-  // a flat +25 energy: each successful devour adds a stack (capped), read by the
-  // energy-regen loop (mission_runtime.js). Stacks reset at match start.
-  const _cap = (typeof BALANCE === 'object' && BALANCE.wolf) ? (BALANCE.wolf.devourRegenStackCap || 10) : 10;
-  if (typeof game !== 'undefined') game._wolfRegenStacks = Math.min(_cap, (game._wolfRegenStacks || 0) + 1);
-  const _stacks = (typeof game !== 'undefined') ? (game._wolfRegenStacks || 0) : 0;
+  // Phase 188E — a successful devour GROWS the energy pool's MAX (总量变大): more
+  // ceiling = a longer sustainable dash. Capped at BALANCE.wolf.energyMaxCap. Also
+  // tops the bar up so the gain is immediate. (Replaces the 186 regen-rate stack.)
+  const _w = (typeof BALANCE === 'object' && BALANCE.wolf) ? BALANCE.wolf : { devourMaxGain: 25, energyMaxCap: 300 };
+  if (typeof game !== 'undefined') {
+    game._energyMax = Math.min(_w.energyMaxCap || 300, (game._energyMax || 100) + (_w.devourMaxGain || 25));
+    game._energy = game._energyMax;   // refill to the new ceiling
+  }
+  const _emax = (typeof game !== 'undefined') ? (game._energyMax || 100) : 100;
   if (typeof createExplosion === 'function') createExplosion(bx, by, 'small');
   if (typeof playRadioStatic === 'function') playRadioStatic(0.55, 0.45);
   if (typeof triggerRecruitFx === 'function') triggerRecruitFx('DEVOUR');
   if (typeof showSwapToast === 'function') {
-    showSwapToast(T('▸ 吞噬 · +' + stolenHp + ' 血 · 能量回复 ×' + _stacks,
-                    '▸ DEVOUR · +' + stolenHp + ' HP · regen ×' + _stacks));
+    showSwapToast(T('▸ 吞噬 · +' + stolenHp + ' 血 · 能量上限 ' + _emax,
+                    '▸ DEVOUR · +' + stolenHp + ' HP · max ⚡' + _emax));
   }
   return true;
 }

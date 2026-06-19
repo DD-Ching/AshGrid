@@ -36,7 +36,9 @@ else writes this state?
 ## Chassis-classes (`game._classes`)
 
 Abilities are chassis-EXCLUSIVE. `G` = one key, a per-chassis execute on a weaker (`hp<player.hp`)
-target — builder=招降 (`arena_recruitment.js`), wolf=吞噬 (devour), heavy=夺取 (seize). `Shift` =
-signature: wolf dash, heavy ultimate, builder none. Shared eligibility lives in ONE predicate
+target — builder=招降 (`arena_recruitment.js`), wolf=吞噬 (devour), heavy=夺取 (seize). `Space` =
+signature: wolf dash (toggle on/off), heavy ultimate, builder none — gated on `player.alive` in
+`key_bindings.js` so it can't collide with `Space`=respawn (dead-only) (188I, was `Shift`).
+Shared eligibility lives in ONE predicate
 `_arenaExecuteInfo()` (`arena_recruitment.js`) used by the HUD, the world prompt, AND the action —
 keep all three reading it so a cue can't disagree with the action. Tunables → see root tunables map.

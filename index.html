@@ -34,201 +34,200 @@
      Order matters when extractions depend on each other; today none do.
      New modules → add a <script src="js/..."> line here.
 ================================================== -->
-<script src="js/operators_log.js?v=236"></script>
-<script src="js/achievements.js?v=236"></script>
-<script src="js/audit_console.js?v=236"></script>
-<script src="js/intro_narrative.js?v=236"></script>
+<script src="js/operators_log.js?v=242"></script>
+<script src="js/achievements.js?v=242"></script>
+<script src="js/audit_console.js?v=242"></script>
+<script src="js/intro_narrative.js?v=242"></script>
 <!-- Audio (load order: positional → narrative → ambient) -->
-<script src="js/audio/positional.js?v=236"></script>
-<script src="js/audio/narrative.js?v=236"></script>
-<script src="js/audio/ambient.js?v=236"></script>
+<script src="js/audio/positional.js?v=242"></script>
+<script src="js/audio/narrative.js?v=242"></script>
+<script src="js/audio/ambient.js?v=242"></script>
 <!-- R14 — audio mute stack. Sits BETWEEN positional.js (which owns AUDIO
      object + low-level gain wiring) and consumers (ad_state, crazygames,
      pause menu). Centralises mute priority: persistent user preference
      OR transient stack-sourced mutes. -->
 <!-- Phase 144 — BALANCE: single home for tunable numbers. MUST load before
      structures.js + arena_recruitment.js (they read BALANCE at definition time). -->
-<script src="js/balance.js?v=236"></script>
-<script src="js/geometry.js?v=236"></script>
-<script src="js/nn_loader.js?v=236"></script>
-<script src="js/explosions_fx.js?v=236"></script>
-<script src="js/combat_helpers.js?v=236"></script>
-<script src="js/mission_runtime.js?v=236"></script>
-<script src="js/audio_mute.js?v=236"></script>
+<script src="js/balance.js?v=242"></script>
+<script src="js/geometry.js?v=242"></script>
+<script src="js/nn_loader.js?v=242"></script>
+<script src="js/explosions_fx.js?v=242"></script>
+<script src="js/combat_helpers.js?v=242"></script>
+<script src="js/mission_runtime.js?v=242"></script>
+<script src="js/audio_mute.js?v=242"></script>
 <!-- Cache-bust: single ?v=BUILD on every JS — bump together each release.
      SW is auto-unregistered for this fork (see <script> below), so this
      query string IS the only browser-cache invalidation in play. -->
-<script src="js/audio/sfx.js?v=236"></script>
-<script src="js/arena_recruitment.js?v=236"></script>
-<script src="js/dynamic_radio.js?v=236"></script>
-<script src="js/i18n.js?v=236"></script>
-<script src="js/touch_input.js?v=236"></script>
-<script src="js/key_bindings.js?v=236"></script>
-<script src="js/grenades.js?v=236"></script>
-<script src="js/squad_commands.js?v=236"></script>
+<script src="js/audio/sfx.js?v=242"></script>
+<script src="js/arena_recruitment.js?v=242"></script>
+<script src="js/dynamic_radio.js?v=242"></script>
+<script src="js/i18n.js?v=242"></script>
+<script src="js/touch_input.js?v=242"></script>
+<script src="js/key_bindings.js?v=242"></script>
+<script src="js/grenades.js?v=242"></script>
+<script src="js/squad_commands.js?v=242"></script>
 <!-- R12 — Player Lifecycle module. Single owner of player.alive /
      _respawnAt / _invulnUntil / _killedAtTime / _lastDeathX/Y /
      _lastRespawnAt. MUST load before multiplayer.js / death_recap.js /
      pawn_swap.js / missions/* since they all call into PlayerLifecycle.* -->
-<script src="js/player_lifecycle.js?v=236"></script>
+<script src="js/player_lifecycle.js?v=242"></script>
 <!-- Phase 136 — MP reconcile single-owner state machine. MUST load
      BEFORE multiplayer.js + pawn_swap.js because both modules look up
      window.MpReconcile at call time but the lookup happens during
      gameplay (not load), so this could technically load later too —
      keeping it here for visual ordering. -->
-<script src="js/mp_reconcile.js?v=236"></script>
-<script src="js/multiplayer.js?v=236"></script>
+<script src="js/mp_reconcile.js?v=242"></script>
+<script src="js/multiplayer.js?v=242"></script>
 <!-- Phase 159 — arena recruit, MP half. AFTER multiplayer.js (uses _mpState /
      _mpSendRaw) and after arena_recruitment.js (reuses ARENA_* gate consts). -->
-<script src="js/arena_recruit_mp.js?v=236"></script>
-<script src="js/leaderboard.js?v=236"></script>
+<script src="js/arena_recruit_mp.js?v=242"></script>
+<script src="js/leaderboard.js?v=242"></script>
 <!-- Phase 141 — unit kill/death chokepoint. Loads before bullets/structures/
      grenades (which call killUnit) and before weapon_drop.js (which subscribes
      onUnitDeath at load). -->
-<script src="js/kill.js?v=236"></script>
+<script src="js/kill.js?v=242"></script>
 <!-- Phase 176 — adaptive director (SOLO one-way DDA). MUST load AFTER kill.js
      (it subscribes onUnitDeath at load for the player-pressure signal). The
      spawn hooks (world_gen.js / arena_recruitment.js) call it at runtime, so
      order vs those is irrelevant. -->
-<script src="js/adaptive_director.js?v=236"></script>
-<script src="js/structures.js?v=236"></script>
-<script src="js/mine_defuse.js?v=236"></script>
-<script src="js/tod.js?v=236"></script>
-<script src="js/weapons.js?v=236"></script>
-<script src="js/chassis.js?v=236"></script>
-<script src="js/heavy_arsenal.js?v=236"></script>
-<script src="js/respawn_buff.js?v=236"></script>
-<script src="js/death_recap.js?v=236"></script>
-<script src="js/mote_affinity.js?v=236"></script>
-<script src="js/stage_hints.js?v=236"></script>
-<script src="js/pawn_swap.js?v=236"></script>
+<script src="js/adaptive_director.js?v=242"></script>
+<script src="js/structures.js?v=242"></script>
+<script src="js/mine_defuse.js?v=242"></script>
+<script src="js/tod.js?v=242"></script>
+<script src="js/weapons.js?v=242"></script>
+<script src="js/chassis.js?v=242"></script>
+<script src="js/heavy_arsenal.js?v=242"></script>
+<script src="js/respawn_buff.js?v=242"></script>
+<script src="js/death_recap.js?v=242"></script>
+<script src="js/mote_affinity.js?v=242"></script>
+<script src="js/stage_hints.js?v=242"></script>
+<script src="js/pawn_swap.js?v=242"></script>
 <!-- Phase 133.3 — death_decider.js extracts the death-decision logic
      out of pawn_swap.js so the auto-swap timestamp state is explicit.
      Loads AFTER pawn_swap.js so tryAutoSwapToClosestAlly is defined
      when death_decider.handleLocalDeath looks for it at call time. -->
-<script src="js/death_decider.js?v=236"></script>
-<script src="js/global_stats.js?v=236"></script>
-<script src="js/progressive_unlock.js?v=236"></script>
+<script src="js/death_decider.js?v=242"></script>
+<script src="js/global_stats.js?v=242"></script>
+<script src="js/progressive_unlock.js?v=242"></script>
 <!-- R11 Step 1 — ad dispatch registry. MUST load before the SDK adapter
      (crazygames.js) so its window.registerAdProvider is defined when CG
      tries to register on SDK_READY. Replaces the pre-R11 "override war"
      where each SDK overwrote window.requestRewardedAd in load order.
      See js/ad_dispatch.js header for the priority table.
      Phase 131 — GameMonetize adapter removed (vendor declined). -->
-<script src="js/ad_dispatch.js?v=236"></script>
+<script src="js/ad_dispatch.js?v=242"></script>
 <!-- R11 Step 2 — run_history.js absorbs the survival/defense run scores +
      share + uploadSurvivalRun from the old js/ad_stubs.js (deleted).
      Operator name (getOperatorName / setOperatorName) moved to
      js/global_stats.js above. Loads AFTER global_stats.js so its
      bumpSurvivalWave + getOperatorName lookups resolve. -->
-<script src="js/run_history.js?v=236"></script>
+<script src="js/run_history.js?v=242"></script>
 <!-- Crazy Games SDK wiring — registers itself with ad_dispatch on SDK_READY.
      In local dev SDK shows a dev-mode overlay; on the portal it serves real ads. -->
-<script src="js/crazygames.js?v=236"></script>
+<script src="js/crazygames.js?v=242"></script>
 <!-- R1 refactor — explicit ad-lifecycle state machine. Provides
      window.adState for the CG SDK adapter to forward events into.
      See js/ad_state.js header for the state diagram.
      Phase 131 — gamemonetize.js consumer removed. -->
-<script src="js/ad_state.js?v=236"></script>
+<script src="js/ad_state.js?v=242"></script>
 <!-- Phase 131b — Adsterra banner hostname-gate. Sets window.__onCrazyGames
      + __loadAdsterra / __loadAdsterraNative helpers used inline by the ad
      slot scripts in <body>. MUST load before those slots are parsed. -->
-<script src="js/banner_gate.js?v=236"></script>
+<script src="js/banner_gate.js?v=242"></script>
 <!-- R11 Step 3 — ad slot DOM toggling. Centralises _updateRespawnAdSlot /
      _updateFrameAdSlots + their cached element refs. Called per-frame by
      js/hud.js renderHUD. Phase 131b — side-rail toggler removed (rails
      were force-hidden every frame since Phase 106; DOM now deleted). -->
-<script src="js/ad_slots.js?v=236"></script>
+<script src="js/ad_slots.js?v=242"></script>
 <!-- Phase 123 — anti-adblock notice. Detects (browser adblock vs network
      firewall) and shows a polite bottom-of-screen toast. Self-suppresses
      for 7 days on dismiss. Detection runs on window.load + 5 s settle. -->
-<script src="js/adblock_notice.js?v=236"></script>
+<script src="js/adblock_notice.js?v=242"></script>
 <!-- R2 refactor — Input module. Owns ALL writes to the global `mouse`
      state + canvas-inset coord translation. See js/input.js header
      for the trigger-edge primitives. -->
-<script src="js/input.js?v=236"></script>
+<script src="js/input.js?v=242"></script>
 <!-- R3 refactor — WeaponState module. Owns every weapon-state write on
      `player` (ammo / reload / fireCooldown / swap / equip). Loads
      AFTER js/weapons.js (above) — weapons.js installs the
      window.__setPlayerWeapon setter shim at top-level so WeaponState
      can mutate `playerWeapon` even though it's a `let` in another
      classic-script file. See js/weapon_state.js header. -->
-<script src="js/weapon_state.js?v=236"></script>
+<script src="js/weapon_state.js?v=242"></script>
 <!-- Phase 140 — weapon drop + hold-to-pickup (replaces manual X-swap). Loads
      after weapons.js / weapon_state.js so applyWeaponToPlayer + WeaponState
      are defined when a pickup completes. -->
-<script src="js/weapon_drop.js?v=236"></script>
+<script src="js/weapon_drop.js?v=242"></script>
 <!-- Phase 131 — GameMonetize SDK removed. Vendor declined our submission
      ("AI-generated"), so we cut the dependency. Outside crazygames.com
      (i.e. ashgrid.io / dev.ashgrid.pages.dev) the dispatch falls through
      to the built-in stub which fail-opens the reward. See ad_dispatch.js. -->
 <!-- Mission factories — each file registers MISSION_FACTORIES.<modeId> -->
-<script src="js/missions/nn_deathmatch.js?v=236"></script>
+<script src="js/missions/nn_deathmatch.js?v=242"></script>
 <!-- Phase 138B.1 — .io-style bot names; must load before world_gen spawns -->
-<script src="js/bot_names.js?v=236"></script>
+<script src="js/bot_names.js?v=242"></script>
 <!-- Phase 139b — believable leaderboard seed (uses pickBotName); presentation-only -->
-<script src="js/leaderboard_seed.js?v=236"></script>
-<script src="js/world_gen.js?v=236"></script>
+<script src="js/leaderboard_seed.js?v=242"></script>
+<script src="js/world_gen.js?v=242"></script>
 <!-- Phase 161 — build-phase free-cover placer (placeBuildBlock). Producer
      (game._buildPhase) lives in js/missions/nn_deathmatch.js. -->
-<script src="js/build_phase.js?v=236"></script>
-<script src="js/squad.js?v=236"></script>
-<script src="js/drone_fpv.js?v=236"></script>
-<script src="js/vision_raycast.js?v=236"></script>
-<script src="js/camera.js?v=236"></script>
-<script src="js/defense_build_ui.js?v=236"></script>
-<script src="js/pause.js?v=236"></script>
+<script src="js/build_phase.js?v=242"></script>
+<script src="js/squad.js?v=242"></script>
+<script src="js/drone_fpv.js?v=242"></script>
+<script src="js/vision_raycast.js?v=242"></script>
+<script src="js/camera.js?v=242"></script>
+<script src="js/defense_build_ui.js?v=242"></script>
+<script src="js/pause.js?v=242"></script>
 <!-- R5 refactor — bullet update + collision (player + enemy loops,
      fire(), detonateRocket()). Pulled out of the 12 000-line inline
      script. Functions resolve dependencies (player, enemies, etc.) at
      call time via classic-script globals, so this file MUST load
      before the main inline script declares those globals — which is
      fine, the functions aren't called until tickPlayerCombat runs. -->
-<script src="js/bullets.js?v=236"></script>
+<script src="js/bullets.js?v=242"></script>
 <!-- R6 refactor — world render (renderFootprints, renderWorld,
      drawLowCovers, drawOverheads). Same load-time-decoupled pattern
      as bullets.js; functions resolve their globals at call time. -->
-<script src="js/world_render.js?v=236"></script>
+<script src="js/world_render.js?v=242"></script>
 <!-- R8 refactor — HUD: renderHUD + renderHUDOverlays + drawMinimapPanel
      + drawHUDPanel + getModeLabel + panel cache + 6-zone card draw
      helpers. ~1300 lines from the inline script. -->
-<script src="js/hud.js?v=236"></script>
+<script src="js/hud.js?v=242"></script>
 <!-- Phase 155 — single frame owner + FX layer registry. MUST load before the
      FX modules below (they registerFxLayer at load time) and before loop(). -->
-<script src="js/render_frame.js?v=236"></script>
-<script src="js/siege_director.js?v=236"></script>
+<script src="js/render_frame.js?v=242"></script>
 <!-- Phase 147 — killstreak announcer (juice). Registers an over-HUD FX layer. -->
-<script src="js/killstreak_fx.js?v=236"></script>
-<script src="js/achievement_fx.js?v=236"></script>
+<script src="js/killstreak_fx.js?v=242"></script>
+<script src="js/achievement_fx.js?v=242"></script>
 <!-- Phase 148 — recruit celebration (juice). Renders after renderHUD. -->
-<script src="js/recruit_fx.js?v=236"></script>
+<script src="js/recruit_fx.js?v=242"></script>
 <!-- Phase 152 — low-HP danger vignette (juice). Renders under the HUD. -->
-<script src="js/danger_fx.js?v=236"></script>
+<script src="js/danger_fx.js?v=242"></script>
 <!-- Phase 179 — death killcam (replay + press-SPACE respawn). Registers an
      over-HUD FX layer, so MUST load after render_frame.js (registerFxLayer)
      and after death_recap.js. Reads the SOLO replay_buffer.js ring buffer. -->
-<script src="js/killcam.js?v=236"></script>
+<script src="js/killcam.js?v=242"></script>
 <!-- R9 refactor — enemy AI + NN runtime: nnTick / nnBuildObs /
      nnApplyAction / patrol state machine / heat map / team vision /
      updateEnemies. 1145 lines from the inline script. -->
-<script src="js/enemy_ai.js?v=236"></script>
+<script src="js/enemy_ai.js?v=242"></script>
 <!-- Phase 182 — additive NPC believability layer (separation/edge-repulsion,
      interest-point goal selection, roles, corner fail-safe, event flinch, debug
      overlay ?aidebug=1). Reads enemy_ai globals at call-time; needs render_frame
      (registerFxLayer) already loaded above. Kill switch: game._npcAI=false. -->
-<script src="js/npc_director.js?v=236"></script>
+<script src="js/npc_director.js?v=242"></script>
 <!-- Phase 177 — player behaviour-cloning recorder (F9). Loads after enemy_ai.js
      so nnBuildObs is defined; called per-tick from update(). Off by default. -->
-<script src="js/player_recorder.js?v=236"></script>
+<script src="js/player_recorder.js?v=242"></script>
 <!-- Phase 179 — SOLO killcam replay ring buffer. Records a lightweight world
      snapshot per few ticks (called from update()); read by js/killcam.js on
      death. No render deps, so order vs render_frame.js is irrelevant. -->
-<script src="js/replay_buffer.js?v=236"></script>
+<script src="js/replay_buffer.js?v=242"></script>
 <!-- R10 refactor — overlay render: renderStructures + the various
      world/screen overlays (build preview, editor, themes, routes,
      landmarks, vision fog, sound indicators, unit sprites, FPV/UAV/
      command overlays). ~2200 lines from the inline script. -->
-<script src="js/render_overlays.js?v=236"></script>
+<script src="js/render_overlays.js?v=242"></script>
 <!-- maps.js + nn_arena_variants.js MUST load AFTER the main inline <script>
      below — their MAPS.push / NN_MAP_VARIANTS entries reference WORLD +
      NN_ARENA at top-level, which the main script declares. See bottom of
@@ -1089,7 +1088,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
   color: var(--gray); padding-left: 2px;
 }
 .diff-group.spec .diff-group-label { color: var(--red); }
-.diff-pick-inner { display: flex; gap: 0; }
+.diff-pick-inner { display: flex; gap: 0; flex-wrap: wrap; justify-content: center; }
 .diff-btn {
   background: var(--cream-dark); border: 2px solid var(--black);
   color: var(--black); font-family: inherit;
@@ -1739,18 +1738,23 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     <!-- Controls drawer — collapsed by default. The user opens it from
          the '? CONTROLS' link above when they want a refresher; new
          players don't have to scan a wall of keys on every visit. -->
+    <!-- data-act hooks (NOT row position) drive the i18n overrides in js/i18n.js
+         so reordering / adding keys can never make a translation rewrite the
+         wrong row — the Shift→SPACE reorder (188I) is exactly the bug brittle
+         :nth-of-type selectors caused. Keep data-act in sync with i18n.js. -->
     <div class="controls-grid" id="controlsDrawer" style="display:none;">
-      <div class="ctrl-item"><span class="ctrl-key">WASD</span><span>Move / fly</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">Mouse</span><span>Aim / fire</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">R</span><span>Reload</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">X</span><span>Swap weapon</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">Q</span><span>UAV recon</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">E</span><span>FPV kamikaze</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">G</span><span>Throw grenade</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">B</span><span>Build mode</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">TAB</span><span>Command view + 1-7 orders</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">1-4</span><span>Pawn-swap (NN mode)</span></div>
-      <div class="ctrl-item"><span class="ctrl-key">H</span><span>Recall to spawn</span></div>
+      <div class="ctrl-item" data-act="move"><span class="ctrl-key">WASD</span><span>Move / fly</span></div>
+      <div class="ctrl-item" data-act="aim"><span class="ctrl-key">Mouse</span><span>Aim / fire</span></div>
+      <div class="ctrl-item" data-act="skill"><span class="ctrl-key">SPACE</span><span>Chassis skill (Wolf dash / Heavy ult)</span></div>
+      <div class="ctrl-item" data-act="grenade"><span class="ctrl-key">F</span><span>Throw grenade</span></div>
+      <div class="ctrl-item" data-act="reload"><span class="ctrl-key">R</span><span>Reload</span></div>
+      <div class="ctrl-item" data-act="uav"><span class="ctrl-key">Q</span><span>UAV recon</span></div>
+      <div class="ctrl-item" data-act="fpv"><span class="ctrl-key">E</span><span>FPV kamikaze</span></div>
+      <div class="ctrl-item" data-act="execute"><span class="ctrl-key">G</span><span>Execute (recruit / devour / seize)</span></div>
+      <div class="ctrl-item" data-act="build"><span class="ctrl-key">B</span><span>Build mode (Builder)</span></div>
+      <div class="ctrl-item" data-act="command"><span class="ctrl-key">TAB</span><span>Command view + 1-7 orders</span></div>
+      <div class="ctrl-item" data-act="pawnswap"><span class="ctrl-key">1-4</span><span>Pawn-swap (NN mode)</span></div>
+      <div class="ctrl-item" data-act="recall"><span class="ctrl-key">H</span><span>Recall to spawn</span></div>
     </div>
 
     <!-- Phase 11: footer chips hidden — keeping nodes so DAY/CYCLE/MOTE
@@ -2031,7 +2035,7 @@ body.lang-en .lang-toggle .on { color: var(--black); }
       <div class="diff-pick-inner">
         <button data-mode="dm"       class="mode-btn diff-btn active">对抗<span>DEATHMATCH</span></button>
         <button data-mode="survival" class="mode-btn diff-btn">生存<span>SURVIVAL</span></button>
-        <button data-mode="siege"    class="mode-btn diff-btn">守城<span>SIEGE · LAST STAND</span></button>
+        <button data-mode="siege"    class="mode-btn diff-btn">守城<span>SIEGE</span></button>
         <button data-mode="defense"  class="mode-btn diff-btn">防御<span>DEFENSE</span></button>
         <button data-mode="helo"     class="mode-btn diff-btn">撤离<span>HELO EXTRACT</span></button>
         <button data-mode="convoy"   class="mode-btn diff-btn">护送<span>CONVOY</span></button>
@@ -2092,6 +2096,42 @@ body.lang-en .lang-toggle .on { color: var(--black); }
     </div>
   </div>
 </div>
+
+<!-- SOLO quick-pick — a clean TWO-CHOICE (正常模式 + 守城) instead of the full
+     COMBAT SETUP grid. SOLO routes here (the grid stays for MP / dev). -->
+<div class="overlay nn-lobby hidden" id="nnSoloPick">
+  <div class="lobby-card" style="max-width:540px;">
+    <div class="lobby-tag">SOLO</div>
+    <h2 style="margin:6px 0;">选择模式 · CHOOSE MODE</h2>
+    <div class="solo-pick-grid">
+      <button class="solo-mode-card" data-solo-mode="dm">
+        <div class="smc-title">正常模式</div>
+        <div class="smc-en">NORMAL · DEATHMATCH</div>
+        <div class="smc-desc">连环竞技场 · 招降你的小队</div>
+      </button>
+      <button class="solo-mode-card solo-mode-siege" data-solo-mode="siege">
+        <div class="smc-title">守城</div>
+        <div class="smc-en">SIEGE · LAST STAND</div>
+        <div class="smc-desc">死守巴斯提昂-7 · 撑到黎明</div>
+      </button>
+    </div>
+    <div class="lobby-actions">
+      <button class="lobby-cancel" id="soloCancelBtn">返回 BACK</button>
+    </div>
+  </div>
+</div>
+<style>
+  #nnSoloPick .solo-pick-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:22px 0; }
+  #nnSoloPick .solo-mode-card { padding:30px 18px; background:rgba(26,26,26,0.05); border:3px solid var(--black,#1A1A1A); cursor:pointer; text-align:center; transition:transform .12s, box-shadow .12s; }
+  #nnSoloPick .solo-mode-card:hover { transform:translate(-3px,-3px); box-shadow:6px 6px 0 var(--black,#1A1A1A); }
+  #nnSoloPick .solo-mode-card:active { transform:translate(2px,2px); box-shadow:2px 2px 0 var(--black,#1A1A1A); }
+  #nnSoloPick .solo-mode-siege { background:rgba(200,38,28,0.14); border-color:var(--red,#C8261C); }
+  #nnSoloPick .solo-mode-siege:hover { box-shadow:6px 6px 0 var(--red,#C8261C); }
+  #nnSoloPick .smc-title { font:bold 22px sans-serif; letter-spacing:3px; color:var(--black,#1A1A1A); }
+  #nnSoloPick .solo-mode-siege .smc-title { color:var(--red,#C8261C); }
+  #nnSoloPick .smc-en { font:11px monospace; color:var(--gray,#9a958a); margin-top:8px; letter-spacing:2px; }
+  #nnSoloPick .smc-desc { font:11px sans-serif; color:var(--gray,#9a958a); margin-top:10px; opacity:0.85; }
+</style>
 
 <!-- Map editor: thin toolbar at top, canvas remains visible below -->
 <!-- NN model loading overlay — visible while ort.InferenceSession.create()
@@ -3676,6 +3716,35 @@ function _startEntryCountdown() {
     if (secsLeft <= 0) _finishEntryCountdown();
   }, 1000);
 }
+// Phase 188J — open the COMBAT SETUP mode picker (#nnLobby). The "one big
+// START button" simplification (ENTER ARENA → _startEntryCountdown → match)
+// left the mode picker — survival / 守城 SIEGE / defense / helo / convoy /
+// duel / sniper — ORPHANED: nothing un-hid #nnLobby anymore (the old path was
+// the tutorial 'done' button, and the tutorial card is never shown), so every
+// non-default mode was unreachable on BOTH dev and live. SOLO now routes here
+// so you can actually choose the mode. #nnLobby already has its own launch
+// (lobbyStartBtn → startNNSkirmish(_lobby.mode)) + back (lobbyCancelBtn).
+function _openCombatSetup() {
+  const input = document.getElementById('callsignInput');
+  if (input && typeof setOperatorName === 'function') {
+    const typed = input.value && input.value.trim();
+    if (typed) setOperatorName(typed);
+  }
+  document.getElementById('start').classList.add('hidden');
+  // SOLO → the clean two-choice picker (正常模式 + 守城). The full COMBAT SETUP grid
+  // is ONLY for an actual multiplayer session (?mp=1). We key off the URL, NOT
+  // _entryMode: _entryMode defaults to 'mp' and resets to 'mp' after the SOLO-switch
+  // page reload, which made the autoSetup path wrongly show the grid in SOLO. SOLO
+  // never has ?mp=1, so "not an mp session" === SOLO → always the clean pick.
+  const _inMpSession = (typeof location !== 'undefined')
+    && new URLSearchParams(location.search).get('mp') === '1';
+  if (!_inMpSession) {
+    document.getElementById('nnSoloPick').classList.remove('hidden');
+  } else {
+    document.getElementById('nnLobby').classList.remove('hidden');
+    if (typeof applyUnlockGating === 'function') applyUnlockGating();
+  }
+}
 // Phase 20d — SOLO / MULTI toggle. Tracks which mode the player is about
 // to drop into. SOLO is the default (single-player vs NN bots, no peers,
 // no Firebase load). MULTI re-enters with ?mp=1&room=... so the next page
@@ -3724,7 +3793,21 @@ function _refreshModeButtons() {
   if (roomEl && _entryRoom) roomEl.value = _entryRoom;
 })();
 const _modeSoloBtn = document.getElementById('modeSoloBtn');
-if (_modeSoloBtn) _modeSoloBtn.onclick = () => { _entryMode = 'solo'; _refreshModeButtons(); };
+if (_modeSoloBtn) _modeSoloBtn.onclick = () => {
+  _entryMode = 'solo';
+  _refreshModeButtons();
+  // SOLO opens the COMBAT SETUP picker directly (choose mode incl. 守城/SIEGE).
+  // If we're inside an MP session (?mp=1), drop it and reload into pure solo
+  // first, then auto-open the picker after the reload (ag.autoSetup).
+  const p = new URLSearchParams(location.search);
+  if (p.get('mp') === '1') {
+    p.delete('mp'); p.delete('room'); p.set('nn', '1');
+    try { sessionStorage.setItem('ag.autoSetup', '1'); } catch (e) {}
+    location.search = p.toString();
+    return;
+  }
+  _openCombatSetup();
+};
 const _modeMpBtn = document.getElementById('modeMpBtn');
 if (_modeMpBtn) _modeMpBtn.onclick = () => {
   _entryMode = 'mp';
@@ -3778,16 +3861,20 @@ if (_nnBtn) {
       if (input && typeof setOperatorName === 'function' && input.value.trim()) {
         setOperatorName(input.value.trim());
       }
-      // Also auto-start countdown after reload — set a flag in sessionStorage
-      try { sessionStorage.setItem('ag.autoEnter', '1'); } catch (e) {}
+      // After the reload into the ?mp=1 session, open the full COMBAT SETUP board
+      // (ag.autoSetup → _openCombatSetup → #nnLobby for mp=1). MP gets the complete
+      // setup board (teams/mode/style/weapon/chassis), NOT the one-button quick-match.
+      try { sessionStorage.setItem('ag.autoSetup', '1'); } catch (e) {}
       location.search = p.toString();
       return;
     }
     if (_entryMode === 'solo' && inMp) {
-      // Drop mp param so the next match is pure single-player
+      // Drop mp param so the next match is pure single-player, then auto-open
+      // the COMBAT SETUP picker after the reload (ag.autoSetup, not autoEnter —
+      // SOLO chooses a mode rather than quick-launching the default).
       p.delete('mp'); p.delete('room');
       p.set('nn', '1');
-      try { sessionStorage.setItem('ag.autoEnter', '1'); } catch (e) {}
+      try { sessionStorage.setItem('ag.autoSetup', '1'); } catch (e) {}
       location.search = p.toString();
       return;
     }
@@ -3799,12 +3886,15 @@ if (_nnBtn) {
       const typedRoom = (roomEl && roomEl.value.trim()) || '';
       if (typedRoom !== currentRoom) {
         if (typedRoom) p.set('room', typedRoom); else p.delete('room');
-        try { sessionStorage.setItem('ag.autoEnter', '1'); } catch (e) {}
+        try { sessionStorage.setItem('ag.autoSetup', '1'); } catch (e) {}
         location.search = p.toString();
         return;
       }
     }
-    _startEntryCountdown();
+    // Both routes open the setup screen: SOLO → the clean 2-choice (#nnSoloPick),
+    // MP (already in the ?mp=1 session) → the full COMBAT SETUP board (#nnLobby).
+    // _openCombatSetup branches by URL.
+    _openCombatSetup();
   };
 }
 // If we just reloaded with ag.autoEnter set, fire the countdown immediately.
@@ -3813,6 +3903,10 @@ if (_nnBtn) {
     if (sessionStorage.getItem('ag.autoEnter') === '1') {
       sessionStorage.removeItem('ag.autoEnter');
       setTimeout(_startEntryCountdown, 200);
+    } else if (sessionStorage.getItem('ag.autoSetup') === '1') {
+      // SOLO reload finished → open the COMBAT SETUP mode picker (Phase 188J).
+      sessionStorage.removeItem('ag.autoSetup');
+      setTimeout(_openCombatSetup, 150);
     }
   } catch (e) {}
 })();
@@ -3946,6 +4040,23 @@ document.querySelectorAll('#nnLobby .mode-btn').forEach(btn => {
     _saveLobbyConfig();
   };
 });
+// SOLO quick-pick cards → launch directly with sensible defaults (clean 2-choice).
+document.querySelectorAll('#nnSoloPick .solo-mode-card').forEach(btn => {
+  btn.onclick = () => {
+    const mode = btn.dataset.soloMode;
+    _lobby.mode = mode;
+    _saveLobbyConfig();
+    document.getElementById('nnSoloPick').classList.add('hidden');
+    startNNSkirmish(1, 3, _lobby.difficulty, _lobby.weapon, null, mode);
+  };
+});
+(function () {
+  const sc = document.getElementById('soloCancelBtn');
+  if (sc) sc.onclick = () => {
+    document.getElementById('nnSoloPick').classList.add('hidden');
+    document.getElementById('start').classList.remove('hidden');
+  };
+})();
 document.querySelectorAll('#nnLobby .weap-btn').forEach(btn => {
   btn.onclick = () => {
     _lobby.weapon = btn.dataset.weapon;
@@ -4124,20 +4235,18 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   // SURVIVAL + HELO spawn enemies per-wave; initial redSize is overridden
   // by the mission factory anyway. Just set a sane initial squad size.
   if (gameMode === 'survival') { redSize = 3; }
-  // Phase 188 — SIEGE / 守城: a no-respawn last-stand at the BASTION fort. Reuses
-  // the survival wave engine wholesale (escalating reinforcements), but: SOLO (no
-  // auto-ally bots → blueSize 1), the run ENDS on team-wipe (game._siege → no
-  // respawn, handled in death_decider), and the map is forced to the fort. Score
-  // = waves/days survived. Additive; everything else is the survival path.
-  game._siege = (gameMode === 'siege');
+  // SIEGE / 守城 — purpose-built last stand at Bastion-7 (SIEGE_BLUEPRINT). SOLO,
+  // no auto-ally bots (the garrison is your lives), the siege director owns all
+  // spawns, the fort map is forced. game._siege is the STATE OBJECT (not a bool);
+  // null for every other mode so every siege code path stays inert.
   if (gameMode === 'siege') {
-    blueSize = 1; redSize = 3;
-    if (typeof _forceVariantId !== 'undefined') _forceVariantId = 'survival_fort';
-    game._siegeDay = null;          // 188B — director re-inits to Day 1 for this run
-    game._siegeWeather = 'clear';
-    gameMode = 'survival';   // reuse the survival factory + wave spawning verbatim
-  } else if (typeof _forceVariantId !== 'undefined') {
-    _forceVariantId = null;  // clear the fort force for every non-siege match
+    blueSize = 1; redSize = 0;
+    if (typeof _forceVariantId !== 'undefined') _forceVariantId = 'siege_bastion';
+    game._siege = (typeof _siegeInitState === 'function') ? _siegeInitState()
+      : { night: 0, t: 0, phase: 'lull', weather: 'clear', intent: null, fort: null };
+  } else {
+    game._siege = null;
+    if (typeof _forceVariantId !== 'undefined') _forceVariantId = null;  // clear forced map (editor TEST) before the pool roll
   }
   if (gameMode === 'helo')     { redSize = 0; blueSize = Math.max(blueSize, 3); }
   if (gameMode === 'convoy')   { redSize = 0; blueSize = Math.max(blueSize, 3); }
@@ -4225,8 +4334,8 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   // works anywhere on the battlefield. Per-kill +20 / passive +0.5/sec
   // payouts come from updateStructures' generator tick.
   game._energy = 100;
-  game._wolfRegenStacks = 0;   // Phase 186 — wolf devour regen stacks, fresh each match
-  if (typeof player !== 'undefined' && player) player._arsenal = null;   // 187b — heavy multiset, fresh each match
+  game._energyMax = 100;       // Phase 188E — energy pool ceiling; wolf devour grows it (总量变大), fresh each match
+  if (typeof player !== 'undefined' && player) { player._arsenal = null; player._dashOn = false; player._ultimateOn = false; }   // 187b/188E/188K — fresh each match
   game._structures = [];
   game._airstrikes = [];
   game._smokeClouds = [];
@@ -4401,7 +4510,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
 
   // Pick mission type by gameMode.
   // arena-mp: all game modes route to ARENA (endless DM). Other modes cut.
-  const missionType = 'nnDeathmatch';
+  const missionType = (gameMode === 'siege') ? 'siege' : 'nnDeathmatch';
   initMission({ type: missionType, id: 'nn-' + gameMode }, currentMap);
   const modeLabel = ({
     dm:       T(`对抗 · 蓝 ${blueSize} vs 红 ${redSize}`, `Skirmish · Blue ${blueSize} vs Red ${redSize}`),
@@ -4409,6 +4518,7 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
     defense:  T(`防御工事 · 边打边建`, `Defense · build while you fight`),
     helo:     T(`直升机撤离 · 守 LZ 60s`, `Helo Extract · hold LZ 60s`),
     convoy:   T(`护送 UGV · 一路向东`, `Convoy · escort UGV east`),
+    siege:    T(`守城 · 死守巴斯提昂-7`, `Siege · hold Bastion-7`),
     duel:     T(`单挑 1v1`, `Duel 1v1`),
     sniper:   T(`狙击巷战 · 一枪致命`, `Sniper · one-shot lethal`),
   })[gameMode] || gameMode;
@@ -4442,7 +4552,11 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   // Destroying it bumps that team's respawn timer from 5s to 20s. Placed
   // as a structure so it shows up on minimap + can be hit by bullets +
   // grenades + airstrikes via existing structure damage paths.
-  if (typeof STRUCTURE_DEFS !== 'undefined' && STRUCTURE_DEFS['spawn-relay']) {
+  // SIEGE places its OWN structures (the Heart spawn-relay + the Armory factory)
+  // in buildSiegeFort(); skip the default arena relays/factory so the fort isn't
+  // cluttered with a duplicate centre factory + irrelevant team relays.
+  if (!(typeof game !== 'undefined' && game._siege)
+      && typeof STRUCTURE_DEFS !== 'undefined' && STRUCTURE_DEFS['spawn-relay']) {
     const SR_DEF = STRUCTURE_DEFS['spawn-relay'];
     const SR_SIZE = SR_DEF.size;
     // Anchor slightly inset from the spawn point so units don't telefrag
@@ -4461,8 +4575,9 @@ async function startNNSkirmish(blueSize = 3, redSize = 3, difficulty = 'hard', w
   }
   // Phase 3C: neutral factory at arena center. Either team can capture
   // by standing in the radius for 5 sec; once owned, spawns a free bot
-  // every 30 sec (capped at ARENA_SQUAD_CAP).
-  if (typeof STRUCTURE_DEFS !== 'undefined' && STRUCTURE_DEFS['factory']) {
+  // every 30 sec (capped at ARENA_SQUAD_CAP). (Siege supplies its own Armory.)
+  if (!(typeof game !== 'undefined' && game._siege)
+      && typeof STRUCTURE_DEFS !== 'undefined' && STRUCTURE_DEFS['factory']) {
     const FD = STRUCTURE_DEFS['factory'];
     game._structures.push({
       x: NN_ARENA.x0 + NN_ARENA.w / 2,
@@ -4943,7 +5058,6 @@ function update() {
   // banners last the same wall-time on every display refresh. render() only
   // reads them. Runs after updateSoundEvents() so this tick's kills are seen.
   if (typeof updateKillstreakFx === 'function') updateKillstreakFx();
-  if (typeof updateSiegeDirector === 'function') updateSiegeDirector();   // 188B — siege timeline director
   if (typeof updateAchievementFx === 'function') updateAchievementFx();   // 184n — unlock card
   if (typeof updateSwapToast === 'function') updateSwapToast();           // 184p — display-rate-safe toast
   if (typeof updateRecruitFx === 'function') updateRecruitFx();
@@ -4991,35 +5105,40 @@ function updatePlayer() {
   // recover to STAMINA_RECOVERY_MIN before sprint re-engages (prevents
   // stuttering on/off as it dips around 0).
   const shiftHeld = !!(keys['shift']);
-  // Phase 187 — Shift accelerate is the WOLF's signature only ("加速現在是機器人的
-  // 特性"). Under game._classes, builder + heavy get NO sprint/dash from Shift
-  // (heavy's Shift fires its ultimate via the keydown edge — key_bindings.js).
-  // Classes off → everyone sprints (legacy). player.sprinting is the single source
-  // read by both local speed AND the MP input send, so gating here keeps MP in sync.
-  const _sprintAllowed = !(typeof game !== 'undefined' && game._classes)
-                       || (typeof player !== 'undefined' && player._chassis === 'wolf');
-  const wantsSprint = _sprintAllowed && shiftHeld && moving && player.stamina > 0
-                     && (!player._spentToZero || player.stamina >= STAMINA_RECOVERY_MIN);
-  player.sprinting = wantsSprint;
-
-  // Phase 184c — Charger DASH: for a wolf with the class system on, sprinting IS
-  // the dash — it additionally drains ENERGY and grants the -70% damage window
-  // (player._dashActive, read by chassis.js _applyDamageToUnit). Out of energy →
-  // dash + its speed boost end this frame. SOLO only (MP dash → server, 184e).
+  const _cls = (typeof game !== 'undefined' && game._classes);
+  const _isWolf = _cls && typeof player !== 'undefined' && player._chassis === 'wolf';
+  let wantsSprint;
   player._dashActive = false;
-  if (player.sprinting && typeof game !== 'undefined' && game._classes
-      && player._chassis === 'wolf') {
-    const _dashPerF = ((typeof BALANCE === 'object' && BALANCE.ability)
-      ? (BALANCE.ability.dash || 0) : 0) / 60;   // per-second rate → per-frame
-    if ((game._energy || 0) >= _dashPerF) {
+  if (_isWolf) {
+    // Phase 188E — WOLF dash is a TOGGLE (player._dashOn, flipped by Shift keydown
+    // in key_bindings). While ON it drains ENERGY (not stamina) + grants the dash
+    // DR (player._dashActive) + the speed boost while moving. Out of energy / dead
+    // → auto-off. Kills REFILL energy (extend the dash) + devour grows its max —
+    // so aggressive play sustains it. "shift 開關 · 能量損耗 · 擊殺恢復/延長".
+    const _dashPerF = ((typeof BALANCE === 'object' && BALANCE.ability) ? (BALANCE.ability.dash || 0) : 0) / 60;
+    if (player._dashOn && player.alive && (game._energy || 0) >= _dashPerF) {
       game._energy = Math.max(0, game._energy - _dashPerF);
       player._dashActive = true;
+      wantsSprint = !!moving;          // speed boost only when actually moving
     } else {
-      player.sprinting = false;
+      player._dashOn = false;          // out of energy / dead → toggle resets off
+      wantsSprint = false;
     }
+  } else if (!_cls) {
+    // Legacy (classes off): hold-Shift sprint, stamina-gated, everyone.
+    wantsSprint = shiftHeld && moving && player.stamina > 0
+                && (!player._spentToZero || player.stamina >= STAMINA_RECOVERY_MIN);
+  } else {
+    wantsSprint = false;               // classes-on builder/heavy: no sprint
   }
+  player.sprinting = wantsSprint;
+  // 188K — heavy ULTIMATE toggle: sustain the full-arsenal volley + drain energy
+  // per frame until empty or toggled off (self-guards on the heavy chassis).
+  if (typeof heavyUltimateFrame === 'function') heavyUltimateFrame();
 
-  if (player.sprinting) {
+  // Stamina drain/regen — only the LEGACY hold-sprint spends stamina; the wolf
+  // toggle dash spends ENERGY (above), so it must NOT also drain stamina.
+  if (player.sprinting && !_isWolf) {
     player.stamina = Math.max(0, player.stamina - STAMINA_DRAIN_PER_F);
     if (player.stamina === 0) player._spentToZero = true;
     player.staminaRegenLockUntil = game.time + STAMINA_REGEN_DELAY;
@@ -5384,7 +5503,17 @@ loop();
 <!-- Late-loaded modules — these have top-level .push() / .build() calls
      that reference WORLD or NN_ARENA, which the main inline <script>
      declares. Must run AFTER the inline script. -->
-<script src="js/maps.js?v=236"></script>
-<script src="js/missions/nn_arena_variants.js?v=236"></script>
+<script src="js/maps.js?v=242"></script>
+<script src="js/missions/nn_arena_variants.js?v=242"></script>
+<!-- SIEGE / 守城 (SIEGE_BLUEPRINT) — self-contained subtree. Loads AFTER
+     nn_arena_variants.js (siege_arena pushes the siege_bastion variant) and
+     structures.js / mission_runtime.js (Heart/Armory defs + MISSION_FACTORIES).
+     siege_script (data) → siege_arena (fort) → siege_director (cues) →
+     siege_mission (factory) → siege_fx (camera/weather/HUD). -->
+<script src="js/missions/siege/siege_script.js?v=242"></script>
+<script src="js/missions/siege/siege_arena.js?v=242"></script>
+<script src="js/missions/siege/siege_director.js?v=242"></script>
+<script src="js/missions/siege/siege_mission.js?v=242"></script>
+<script src="js/missions/siege/siege_fx.js?v=242"></script>
 </body>
 </html>
