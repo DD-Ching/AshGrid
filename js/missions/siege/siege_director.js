@@ -294,10 +294,12 @@ function _siegeDawn(c) {
     s._won = true;
     _siegeLogUnlock('dawn_holds');
     _siegeToast('破曉守住了', 'DAWN HOLDS', 260);
+    if (typeof playSfx === 'function') playSfx('match_win');   // opt R10 — you survived to dawn
   } else {
     s._gapUntil = (game.time || 0) + (c.windowSec || SIEGE_DAY_GAP_SEC) * SIEGE_TPS;
     _siegeToast('▶ 第 ' + s.night + ' 夜 守住了 · 整備 ' + (c.windowSec || SIEGE_DAY_GAP_SEC) + 's',
                 '▶ NIGHT ' + s.night + ' HELD · REGROUP ' + (c.windowSec || SIEGE_DAY_GAP_SEC) + 's', 200);
+    if (typeof playSfx === 'function') playSfx('respawn', { vol: 0.4 });   // opt R10 — softer "night held" beat
   }
 }
 
@@ -319,6 +321,10 @@ function _siegeStartNight(n) {
   s.intent = null;
   s._nightCues = _siegeCuesForNight(n);
   s._cuesFired = new Array(s._nightCues.length).fill(false);
+  // opt R10 — the headline mode was silent on its own events. A klaxon as each
+  // night's assault begins (uses the existing 'match_start' up-tone). One per
+  // night — atmospheric, not the per-kill spam the user removed.
+  if (typeof playSfx === 'function') playSfx('match_start', { vol: 0.5 });
 }
 
 // Memoized per tick — both updateSiegeDirector and _siegeTickAutopilot can ask in
@@ -543,7 +549,17 @@ function _siegeTickHeartThreat() {
   for (const e of enemies) {
     if (!e || !e.alive || e.team !== 1) continue;
     const dx = e.x - heart.x, dy = e.y - heart.y;
-    if (dx * dx + dy * dy < R2) { s._heartThreatUntil = (game.time || 0) + 30; return; }
+    if (dx * dx + dy * dy < R2) {
+      const now = (game.time || 0);
+      s._heartThreatUntil = now + 30;
+      // opt R10 — a low alarm thump while the core is under attack, rate-limited
+      // to ~1.2s so it pulses with tension instead of buzzing every tick.
+      if (typeof playSfx === 'function' && now - (s._heartAlarmAt || -999) > 100) {
+        s._heartAlarmAt = now;
+        playSfx('lowhp', { vol: 0.4 });
+      }
+      return;
+    }
   }
 }
 

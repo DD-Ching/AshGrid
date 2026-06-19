@@ -5009,17 +5009,9 @@ function update() {
     game._timeScale = 1.4;
   }
 
-  // Low-HP heartbeat — periodic thump while HP < 25%. Tempo speeds up as HP drops.
-  if (player.alive && player.hp > 0 && player.hp < player.maxHp * 0.25) {
-    const hpFrac = player.hp / player.maxHp;       // 0..0.25 in this branch
-    const periodTicks = Math.round(48 + hpFrac * 80);   // 48 ticks @ 0% HP → 68 @ 25%
-    if (game.time - (player._lastBeat || 0) >= periodTicks) {
-      player._lastBeat = game.time;
-      playSfx('lowhp');
-    }
-  } else {
-    player._lastBeat = game.time;
-  }
+  // opt R10 — the low-HP heartbeat is owned SOLELY by narrative.js _tickHeartbeat()
+  // (richer lub-dub, ramps from 45% HP). This second driver here (playSfx('lowhp')
+  // below 25%) overlapped it and muddied the cue, so it was removed. One owner.
 
   if (game.mode === 'drone' && drone.deployed) {
     updateDroneControl();
