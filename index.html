@@ -3562,8 +3562,23 @@ function _finishEntryCountdown() {
   }
   const overlay = document.getElementById('entryCountdown');
   if (overlay) overlay.style.display = 'none';
-  // Defaults from _lobby (3v3 DM · elite · RIFLE · random chassis).
-  // startNNSkirmish hides #nnLobby itself.
+  // MP is always plain PvP DEATHMATCH in the shared arena. The old COMBAT
+  // SETUP board used to reset the mode per match; now that MP skips it, we must
+  // NOT inherit a persisted SOLO mode from _lobby (siege / survival / duel…),
+  // or the countdown would boot a single-player mission inside the MP session
+  // (e.g. SIEGE Night 1 with an MP room tag). Force mode 'dm' + no lineup; the
+  // weapon stays the player's saved pick. startNNSkirmish also forces
+  // blue=1 / red=0 for ?mp=1 (human-vs-human, no local bots) + hides #nnLobby.
+  const _inMp = (() => {
+    try { return new URLSearchParams(location.search).get('mp') === '1'; }
+    catch (e) { return false; }
+  })();
+  if (_inMp) {
+    startNNSkirmish(1, 0, _lobby.difficulty, _lobby.weapon, null, 'dm');
+    return;
+  }
+  // SOLO / non-MP countdown — defaults from _lobby (3v3 DM · elite · RIFLE ·
+  // random chassis). startNNSkirmish hides #nnLobby itself.
   const lineup = _lobby.lineupOpen ? _lobby.lineup : null;
   startNNSkirmish(_lobby.blue, _lobby.red, _lobby.difficulty,
                   _lobby.weapon, lineup, _lobby.mode);
@@ -3749,8 +3764,12 @@ function _openCombatSetup() {
   if (!_inMpSession) {
     document.getElementById('nnSoloPick').classList.remove('hidden');
   } else {
-    document.getElementById('nnLobby').classList.remove('hidden');
-    if (typeof applyUnlockGating === 'function') applyUnlockGating();
+    // MP (?mp=1) no longer shows the old COMBAT SETUP board (#nnLobby). That
+    // team-size / bot-difficulty / mode grid is single-player NN-skirmish chrome
+    // and is meaningless for server-authoritative PvP — startNNSkirmish forces
+    // blue=1 / red=0 in MP (no local bots), so picking team sizes there did
+    // nothing. PvP drops straight to the join-hall countdown → match.
+    _startEntryCountdown();
   }
 }
 // Phase 20d — SOLO / MULTI toggle. Tracks which mode the player is about
@@ -3869,10 +3888,11 @@ if (_nnBtn) {
       if (input && typeof setOperatorName === 'function' && input.value.trim()) {
         setOperatorName(input.value.trim());
       }
-      // After the reload into the ?mp=1 session, open the full COMBAT SETUP board
-      // (ag.autoSetup → _openCombatSetup → #nnLobby for mp=1). MP gets the complete
-      // setup board (teams/mode/style/weapon/chassis), NOT the one-button quick-match.
-      try { sessionStorage.setItem('ag.autoSetup', '1'); } catch (e) {}
+      // After the reload into the ?mp=1 session, drop straight into the join-hall
+      // countdown → match (ag.autoEnter → _startEntryCountdown). MP no longer
+      // routes through the old COMBAT SETUP board (#nnLobby) — that team-size /
+      // bot-difficulty grid is single-player chrome and wrong for PvP.
+      try { sessionStorage.setItem('ag.autoEnter', '1'); } catch (e) {}
       location.search = p.toString();
       return;
     }
@@ -3894,14 +3914,15 @@ if (_nnBtn) {
       const typedRoom = (roomEl && roomEl.value.trim()) || '';
       if (typedRoom !== currentRoom) {
         if (typedRoom) p.set('room', typedRoom); else p.delete('room');
-        try { sessionStorage.setItem('ag.autoSetup', '1'); } catch (e) {}
+        // Room changed → reload into it, then straight to the countdown → match
+        // (autoEnter), not the old COMBAT SETUP board.
+        try { sessionStorage.setItem('ag.autoEnter', '1'); } catch (e) {}
         location.search = p.toString();
         return;
       }
     }
-    // Both routes open the setup screen: SOLO → the clean 2-choice (#nnSoloPick),
-    // MP (already in the ?mp=1 session) → the full COMBAT SETUP board (#nnLobby).
-    // _openCombatSetup branches by URL.
+    // SOLO → the clean 2-choice (#nnSoloPick). MP (already in the ?mp=1 session)
+    // → straight to the join-hall countdown → match. _openCombatSetup branches by URL.
     _openCombatSetup();
   };
 }
